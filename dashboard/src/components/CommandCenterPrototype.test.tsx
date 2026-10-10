@@ -2662,7 +2662,7 @@ describe('CommandCenterPrototype', () => {
     })
 
     const action = container.querySelector('button.command-group-name[aria-haspopup="menu"]') as HTMLButtonElement | null
-    expect(action).not.toBeNull()
+    expect(action).toBeTruthy()
     expect(action?.getAttribute('aria-label')).toBe('Live Checkout group actions')
     expect(action?.parentElement?.getAttribute('role')).toBe('cell')
     if (!action) return

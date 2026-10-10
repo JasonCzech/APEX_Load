@@ -26,7 +26,7 @@ describe('ProjectModal', () => {
 
   const typeName = async (value: string) => {
     const input = container.querySelector<HTMLInputElement>('.project-modal-field input')
-    expect(input).not.toBeNull()
+    expect(input).toBeTruthy()
     if (!input) return
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set

@@ -415,6 +415,7 @@ describe('GroupPlacementEditor', () => {
     const name = container.querySelector<HTMLInputElement>('[aria-label="New placement weight name"]')
     const value = container.querySelector<HTMLInputElement>('[aria-label="New placement weight value"]')
     const setInput = (input: HTMLInputElement | null, next: string) => {
+      expect(input).toBeTruthy()
       if (!input) return
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
       setter.call(input, next)
@@ -464,6 +465,7 @@ describe('GroupPlacementEditor', () => {
     const weight = container.querySelector<HTMLInputElement>('[aria-label="Region east weight"]')
     expect(weight?.step).toBe('1')
     act(() => {
+      expect(weight).toBeTruthy()
       if (!weight) return
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
       setter.call(weight, '1.5')

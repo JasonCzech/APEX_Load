@@ -271,7 +271,7 @@ describe('TestExecutionCharts context menu', () => {
   it('opens graph actions from a keyboard-focusable button and restores focus on Escape', async () => {
     await renderCharts()
     const actionsButton = container.querySelector<HTMLButtonElement>('button[aria-label="VUsers actions"]')
-    expect(actionsButton).not.toBeNull()
+    expect(actionsButton).toBeTruthy()
     if (!actionsButton) return
     actionsButton.focus()
 
@@ -746,7 +746,7 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
-    expect(responseChart).not.toBeNull()
+    expect(responseChart).toBeTruthy()
     if (!responseChart) return
 
     const visibleRows = Array.from(responseChart.querySelectorAll('.chart-metrics-table tbody tr'))
@@ -2177,7 +2177,7 @@ describe('TestExecutionCharts context menu', () => {
     }
 
     const granularitySelect = await openGranularityDrawer()
-    expect(granularitySelect).not.toBeNull()
+    expect(granularitySelect).toBeTruthy()
     if (!granularitySelect) return
 
     await act(async () => {

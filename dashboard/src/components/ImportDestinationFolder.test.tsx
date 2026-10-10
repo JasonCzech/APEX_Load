@@ -97,7 +97,7 @@ describe('ImportDestinationFolder', () => {
     await render({ onChange })
 
     const select = container.querySelector('select') as HTMLSelectElement | null
-    expect(select).not.toBeNull()
+    expect(select).toBeTruthy()
     if (!select) return
     await act(async () => {
       select.value = 'folder-a'

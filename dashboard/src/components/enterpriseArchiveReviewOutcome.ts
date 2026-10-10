@@ -2,6 +2,10 @@ import type { EnterpriseArchiveImportResult } from '../types/scriptImports'
 import type { ReplayPreflight } from '../types/scripts'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 
+// The archive review's unsaved-work guard. An editor opened from the review
+// keeps it when it returns there, since the review stays open behind it.
+export const ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID = 'enterprise-archive-import'
+
 interface ReviewState {
   result: EnterpriseArchiveImportResult | null
   savedResultScripts: Record<number, unknown>

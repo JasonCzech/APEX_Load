@@ -754,8 +754,9 @@ type ManagedTest struct {
 	liveErrorEvidence          map[string][]LiveErrorEvidence
 	vuserScaleRamps            map[string]*vuserScaleRamp
 	openWorkloadSheddingWarned bool
-	// runTotals turns the per-window live samples into run-to-date counters
-	// so dashboards can show a run's error rate instead of the last second's.
+	// runTotals keeps the run-to-date counters (from published samples for a
+	// local run, from accepted generator windows for a distributed one) so
+	// dashboards can show a run's error rate instead of the last second's.
 	runTotals      runTotalsAccumulator
 	ciSLAEvaluated bool
 	ciSLABreached  bool

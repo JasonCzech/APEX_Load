@@ -676,9 +676,9 @@ describe('TestExecutionArchive', () => {
     const overallBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Overall')
     const platformBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Platform')
     const engineBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Engine')
-    expect(overallBreakdownButton).toBeDefined()
-    expect(platformBreakdownButton).toBeDefined()
-    expect(engineBreakdownButton).toBeDefined()
+    expect(overallBreakdownButton).toBeTruthy()
+    expect(platformBreakdownButton).toBeTruthy()
+    expect(engineBreakdownButton).toBeTruthy()
     if (!overallBreakdownButton || !platformBreakdownButton || !engineBreakdownButton) {
       return
     }
@@ -707,9 +707,9 @@ describe('TestExecutionArchive', () => {
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
     const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
     const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
-    expect(copyFaultButton).toBeDefined()
-    expect(copyRequestButton).toBeDefined()
-    expect(copyResponseButton).toBeDefined()
+    expect(copyFaultButton).toBeTruthy()
+    expect(copyRequestButton).toBeTruthy()
+    expect(copyResponseButton).toBeTruthy()
     if (!copyFaultButton || !copyRequestButton || !copyResponseButton) {
       return
     }
@@ -762,7 +762,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('env:Fault')
 
     const expandSnapshotsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand snapshots'))
-    expect(expandSnapshotsButton).toBeDefined()
+    expect(expandSnapshotsButton).toBeTruthy()
     if (!expandSnapshotsButton) {
       return
     }
@@ -907,7 +907,8 @@ describe('TestExecutionArchive', () => {
     expect(statusFilter?.value).toBe('500')
 
     const durationSort = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Duration'))
-    expect(durationSort).toBeDefined()
+    expect(durationSort).toBeTruthy()
+    expect(statusFilter).toBeTruthy()
     if (!durationSort || !statusFilter) return
 
     await act(async () => {
@@ -1297,8 +1298,8 @@ describe('TestExecutionArchive', () => {
     expect(document.body.textContent).toContain('SOAP fault: soapenv:Client / client')
     const copyTelemetryButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Copy'))
     const openTelemetryButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Open full text'))
-    expect(copyTelemetryButton).toBeDefined()
-    expect(openTelemetryButton).toBeDefined()
+    expect(copyTelemetryButton).toBeTruthy()
+    expect(openTelemetryButton).toBeTruthy()
     if (!copyTelemetryButton || !openTelemetryButton) return
 
     await act(async () => {

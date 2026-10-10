@@ -128,7 +128,7 @@ describe('TestHub', () => {
 
   const clickButton = async (text: string) => {
     const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes(text))
-    expect(button).toBeDefined()
+    expect(button).toBeTruthy()
     if (!button) return
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -141,7 +141,7 @@ describe('TestHub', () => {
       await clickButton('Scenario Builder')
       button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
     }
-    expect(button).toBeDefined()
+    expect(button).toBeTruthy()
     if (!button) return
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -150,7 +150,7 @@ describe('TestHub', () => {
 
   const clickRunSettingsTab = async (text: string) => {
     const button = Array.from(container.querySelectorAll('.scenario-run-settings-tab')).find(item => item.textContent?.includes(text))
-    expect(button).toBeDefined()
+    expect(button).toBeTruthy()
     if (!button) return
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -159,7 +159,7 @@ describe('TestHub', () => {
 
   const clickScenarioSettingsSection = async (text: string) => {
     const button = Array.from(container.querySelectorAll('.scenario-settings-section-tab')).find(item => item.textContent?.includes(text))
-    expect(button).toBeDefined()
+    expect(button).toBeTruthy()
     if (!button) return
     await act(async () => { button.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
   }
@@ -180,7 +180,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
     const groupCard = Array.from(container.querySelectorAll('.scenario-script-group-list-spacious .scenario-script-group-card'))[groupIndex]
       || Array.from(container.querySelectorAll('.scenario-script-group-card'))[groupIndex]
-    expect(groupCard).toBeDefined()
+    expect(groupCard).toBeTruthy()
     if (!groupCard) return
 
     const groupNumber = groupIndex + 1
@@ -189,7 +189,7 @@ describe('TestHub', () => {
         || button.textContent?.includes('Add Script')
         || button.textContent?.includes(scriptName)
     ))
-    expect(pickerButton).toBeDefined()
+    expect(pickerButton).toBeTruthy()
     if (!pickerButton) return
 
     await act(async () => {
@@ -201,7 +201,7 @@ describe('TestHub', () => {
       button.textContent?.includes(`Use for Group ${groupNumber}`)
         && button.closest('tr')?.textContent?.includes(scriptName)
     ))
-    expect(useButton).toBeDefined()
+    expect(useButton).toBeTruthy()
     if (!useButton) return
 
     await act(async () => {
@@ -213,7 +213,7 @@ describe('TestHub', () => {
   const clickModelFamily = async (label: string) => {
     await clickWizardStep('Model & Shape')
     const card = Array.from(container.querySelectorAll('.scenario-source-card')).find(item => item.querySelector('span')?.textContent === label)
-    expect(card).toBeDefined()
+    expect(card).toBeTruthy()
     if (!card) return
     await act(async () => {
       card.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -239,10 +239,10 @@ describe('TestHub', () => {
       })
     }
     const card = findCard()
-    expect(card).toBeDefined()
+    expect(card).toBeTruthy()
     if (!card) return
     const manualButton = Array.from(card.querySelectorAll('button')).find(button => button.textContent === `Use ${shapeName}`)
-    expect(manualButton).toBeDefined()
+    expect(manualButton).toBeTruthy()
     if (!manualButton) return
     await act(async () => {
       manualButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1054,7 +1054,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -1065,7 +1065,7 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
     const loadGroupCard = container.querySelector('.scenario-script-group-card')
     const vusersInput = loadGroupCard ? Array.from(loadGroupCard.querySelectorAll('input')).find(input => input.getAttribute('type') === 'number') : undefined
-    expect(vusersInput).toBeDefined()
+    expect(vusersInput).toBeTruthy()
     if (!vusersInput) return
 
     await act(async () => {
@@ -1076,8 +1076,8 @@ describe('TestHub', () => {
     const durationField = getDurationFieldByLabel(container, 'Duration')
     const durationInput = durationField?.input
     const durationUnit = durationField?.select
-    expect(durationInput).toBeDefined()
-    expect(durationUnit).toBeDefined()
+    expect(durationInput).toBeTruthy()
+    expect(durationUnit).toBeTruthy()
     if (!durationInput || !durationUnit) return
 
     await act(async () => {
@@ -1085,7 +1085,7 @@ describe('TestHub', () => {
     })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -1164,7 +1164,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -1174,7 +1174,7 @@ describe('TestHub', () => {
     const firstGroup = container.querySelector('.scenario-script-group-card')
     const chooseScriptButton = Array.from(firstGroup?.querySelectorAll('button') || [])
       .find(button => button.textContent?.includes('Add Script'))
-    expect(chooseScriptButton).toBeDefined()
+    expect(chooseScriptButton).toBeTruthy()
     if (!chooseScriptButton) return
     expect(firstGroup?.textContent).not.toContain('Checkout Flow')
     expect(firstGroup?.textContent).not.toContain('Legacy Empty Id Script')
@@ -1188,7 +1188,7 @@ describe('TestHub', () => {
     expect(scriptDialog).toBeTruthy()
     expect(scriptDialog?.textContent).toContain('Choose Script')
     const searchInput = document.body.querySelector('.scenario-existing-script-library input[type="search"]') as HTMLInputElement | null
-    expect(searchInput).toBeDefined()
+    expect(searchInput).toBeTruthy()
     expect(document.activeElement).toBe(searchInput)
     expect(document.body.textContent).toContain('Choosing for Group 1')
     expect(document.body.textContent).toContain('grpc')
@@ -1214,11 +1214,11 @@ describe('TestHub', () => {
     })
     const createdHeader = Array.from(document.body.querySelectorAll('.scenario-existing-script-library th'))
       .find(header => header.textContent?.startsWith('Script'))
-    expect(createdHeader).toBeDefined()
+    expect(createdHeader).toBeTruthy()
     if (!createdHeader) return
     expect(createdHeader.getAttribute('aria-sort')).toBe('ascending')
     const createdSortButton = createdHeader.querySelector('button')
-    expect(createdSortButton).toBeDefined()
+    expect(createdSortButton).toBeTruthy()
     if (!createdSortButton) return
     await act(async () => {
       createdSortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1229,7 +1229,7 @@ describe('TestHub', () => {
 
     const usePaymentsButton = Array.from(document.body.querySelectorAll('.scenario-existing-script-library button'))
       .find(button => button.textContent?.includes('Use for Group 1') && button.closest('tr')?.textContent?.includes('Payments Flow'))
-    expect(usePaymentsButton).toBeDefined()
+    expect(usePaymentsButton).toBeTruthy()
     if (!usePaymentsButton) return
 
     await act(async () => {
@@ -1242,7 +1242,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1324,7 +1324,7 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Start')).toBe(false)
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -1356,7 +1356,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
-    expect(nameInput).not.toBeNull()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => {
       setInputValue(nameInput, 'Review Parity Scenario')
@@ -1365,14 +1365,14 @@ describe('TestHub', () => {
 
     await clickWizardStep('Run Settings')
     const vusers = findControlByLabel<HTMLInputElement>(container, 'VUsers', 'input[type="number"]')
-    expect(vusers).toBeDefined()
+    expect(vusers).toBeTruthy()
     if (!vusers) return
     await act(async () => {
       setInputValue(vusers, '17')
     })
     await clickScenarioSettingsSection('Run Phases')
     const duration = getDurationFieldByLabel(container, 'Duration')
-    expect(duration).not.toBeNull()
+    expect(duration).toBeTruthy()
     if (!duration) return
     await act(async () => {
       setInputValue(duration.input, '3')
@@ -1474,7 +1474,7 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
 
     const target = container.querySelector('input[aria-label="Target TPS for Checkout"]') as HTMLInputElement | null
-    expect(target).not.toBeNull()
+    expect(target).toBeTruthy()
     if (!target) return
     await act(async () => setInputValue(target, '50'))
 
@@ -1490,7 +1490,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Start')
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => {
       setInputValue(nameInput, 'Invalid Empty Goal')
@@ -1530,7 +1530,7 @@ describe('TestHub', () => {
     await selectManualShapeByName('Closed VUser')
     await clickWizardStep('Start')
     const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
-    expect(nameInput).not.toBeNull()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => setInputValue(nameInput, 'Closed Profile Scenario'))
     await chooseLibraryScriptForGroup()
@@ -1550,10 +1550,10 @@ describe('TestHub', () => {
     await clickScenarioSettingsSection('Run Phases')
 
     const rampDownToggle = container.querySelector<HTMLInputElement>('.closed-vuser-ramp-toggle input[type="checkbox"]') ?? undefined
-    expect(rampDownToggle).toBeDefined()
+    expect(rampDownToggle).toBeTruthy()
     if (!rampDownToggle) return
     const rampUpField = getDurationFieldByLabel(container, 'Ramp-up')
-    expect(rampUpField).not.toBeNull()
+    expect(rampUpField).toBeTruthy()
     if (!rampUpField) return
     await act(async () => setInputValue(rampUpField.input, '3'))
     await act(async () => rampDownToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -1597,7 +1597,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => {
       setInputValue(nameInput, 'Adaptive Stepped Scenario')
@@ -1606,7 +1606,7 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
 
     const endingLoadInput = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
-    expect(endingLoadInput).toBeDefined()
+    expect(endingLoadInput).toBeTruthy()
     if (!endingLoadInput) return
 
     await act(async () => {
@@ -1619,7 +1619,7 @@ describe('TestHub', () => {
 
     await clickScenarioSettingsSection('Run Phases')
     const durationField = getDurationFieldByLabel(container, 'Duration')
-    expect(durationField).not.toBeNull()
+    expect(durationField).toBeTruthy()
     if (!durationField) return
     await act(async () => {
       setInputValue(durationField.input, '2')
@@ -1659,13 +1659,13 @@ describe('TestHub', () => {
     await clickButton('Configure each group')
 
     const endingLoadInput = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
-    expect(endingLoadInput).toBeDefined()
+    expect(endingLoadInput).toBeTruthy()
     if (!endingLoadInput) return
     await act(async () => setInputValue(endingLoadInput, '42'))
 
     await clickWizardStep('Start')
     const groupNameInput = findControlByLabel<HTMLInputElement>(container, 'Group Name', 'input')
-    expect(groupNameInput).toBeDefined()
+    expect(groupNameInput).toBeTruthy()
     if (!groupNameInput) return
     await act(async () => setInputValue(groupNameInput, 'Renamed Checkout'))
 
@@ -1788,8 +1788,8 @@ describe('TestHub', () => {
 
     const protectToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Stop early on excessive errors'))?.querySelector('input')
     const shakeoutToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Script shakeout gate'))?.querySelector('input')
-    expect(protectToggle).toBeDefined()
-    expect(shakeoutToggle).toBeDefined()
+    expect(protectToggle).toBeTruthy()
+    expect(shakeoutToggle).toBeTruthy()
     if (!protectToggle || !shakeoutToggle) return
 
     await act(async () => {
@@ -1798,6 +1798,7 @@ describe('TestHub', () => {
     })
     const threshold = container.querySelector<HTMLInputElement>('[aria-label="Protect the Run error rate threshold"]')
     expect(threshold?.disabled).toBe(false)
+    expect(threshold).toBeTruthy()
     if (!threshold) return
     await act(async () => setInputValue(threshold, '7.5'))
 
@@ -1847,7 +1848,7 @@ describe('TestHub', () => {
 
     await clickScenarioSettingsSection('Ramp Pattern')
     const stageGroup = container.querySelector<HTMLSelectElement>('[aria-label="Load group for advanced stages"]')
-    expect(stageGroup).not.toBeNull()
+    expect(stageGroup).toBeTruthy()
     if (!stageGroup) return
     await act(async () => setSelectValue(stageGroup, '1'))
     expect(stageGroup.value).toBe('1')
@@ -1892,7 +1893,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -1909,8 +1910,8 @@ describe('TestHub', () => {
     await clickRunSettingsTab('Run Logic')
     const iterationsInput = findControlByLabel<HTMLInputElement>(container, 'Iterations', 'input')
     const autoTransactionsSelect = findControlByLabel<HTMLSelectElement>(container, 'Auto-transactions', 'select')
-    expect(iterationsInput).toBeDefined()
-    expect(autoTransactionsSelect).toBeDefined()
+    expect(iterationsInput).toBeTruthy()
+    expect(autoTransactionsSelect).toBeTruthy()
     if (!iterationsInput || !autoTransactionsSelect) return
     await act(async () => {
       setInputValue(iterationsInput, '3')
@@ -1919,19 +1920,19 @@ describe('TestHub', () => {
 
     await clickRunSettingsTab('Iteration Pacing')
     const pacingSelect = findControlByLabel<HTMLSelectElement>(container, 'Pacing', 'select')
-    expect(pacingSelect).toBeDefined()
+    expect(pacingSelect).toBeTruthy()
     if (!pacingSelect) return
     await act(async () => { setSelectValue(pacingSelect, 'fixed_delay') })
     const pacingDelayInput = findControlByLabel<HTMLInputElement>(container, 'Pacing delay (seconds)', 'input')
-    expect(pacingDelayInput).toBeDefined()
+    expect(pacingDelayInput).toBeTruthy()
     if (!pacingDelayInput) return
     await act(async () => { setInputValue(pacingDelayInput, '0.75') })
 
     await clickRunSettingsTab('Think Time')
     const distributionSelect = findControlByLabel<HTMLSelectElement>(container, 'Distribution', 'select')
     const meanInput = findControlByLabel<HTMLInputElement>(container, 'Mean (ms)', 'input')
-    expect(distributionSelect).toBeDefined()
-    expect(meanInput).toBeDefined()
+    expect(distributionSelect).toBeTruthy()
+    expect(meanInput).toBeTruthy()
     if (!distributionSelect || !meanInput) return
     await act(async () => {
       setSelectValue(distributionSelect, 'fixed')
@@ -1940,7 +1941,7 @@ describe('TestHub', () => {
 
     await clickRunSettingsTab('Error Handling')
     const logLevelSelect = findControlByLabel<HTMLSelectElement>(container, 'Log level', 'select')
-    expect(logLevelSelect).toBeDefined()
+    expect(logLevelSelect).toBeTruthy()
     if (!logLevelSelect) return
     await act(async () => { setSelectValue(logLevelSelect, 'extended') })
 
@@ -2304,6 +2305,7 @@ describe('TestHub', () => {
 
     const iterationsInput = findControlByLabel<HTMLInputElement>(container, 'Iterations', 'input')
     expect(iterationsInput?.value).toBe('7')
+    expect(iterationsInput).toBeTruthy()
     if (!iterationsInput) return
     await act(async () => {
       setInputValue(iterationsInput, '5')
@@ -2384,7 +2386,7 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Uses controller recommendations')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
-    expect(searchInput).not.toBeNull()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
 
     await act(async () => {
@@ -2405,7 +2407,7 @@ describe('TestHub', () => {
     expect(searchInput.value).toBe('')
 
     const viewRunsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View Runs'))
-    expect(viewRunsButton).toBeDefined()
+    expect(viewRunsButton).toBeTruthy()
     if (!viewRunsButton) return
 
     await act(async () => {
@@ -2502,6 +2504,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
     const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
     expect(nameInput?.value).toBe('')
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => setInputValue(nameInput, 'Project B Scenario'))
     await chooseLibraryScriptForGroup()
@@ -2732,7 +2735,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Start Your Scenario')
     const authoredName = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.placeholder === 'Scenario name')
-    expect(authoredName).toBeDefined()
+    expect(authoredName).toBeTruthy()
     if (!authoredName) return
     await act(async () => {
       setInputValue(authoredName, 'Payments Against Checkout Model')
@@ -2996,7 +2999,7 @@ describe('TestHub', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
-    expect(editButton).toBeDefined()
+    expect(editButton).toBeTruthy()
     if (!editButton) return
 
     await act(async () => {
@@ -3016,7 +3019,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Run Settings')
     const paymentGroupTab = Array.from(container.querySelectorAll('.composition-track-label')).find(tab => tab.textContent?.includes('Payments'))
-    expect(paymentGroupTab).toBeDefined()
+    expect(paymentGroupTab).toBeTruthy()
     if (!paymentGroupTab) return
 
     await act(async () => {
@@ -3027,7 +3030,7 @@ describe('TestHub', () => {
     expect(loadGroupCards).toHaveLength(1)
     expect(loadGroupCards[0].textContent).toContain('Payments')
     const secondGroupVUsers = Array.from(loadGroupCards[0].querySelectorAll('input')).find(input => input.type === 'number')
-    expect(secondGroupVUsers).toBeDefined()
+    expect(secondGroupVUsers).toBeTruthy()
     if (!secondGroupVUsers) return
 
     await act(async () => {
@@ -3035,7 +3038,7 @@ describe('TestHub', () => {
     })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -3225,8 +3228,9 @@ describe('TestHub', () => {
     const tolerateLoss = Array.from(rootPlacement?.querySelectorAll('label') || [])
       .find(label => label.textContent?.includes('Tolerate generator loss'))
       ?.querySelector<HTMLInputElement>('input')
-    expect(eastWeight).toBeDefined()
+    expect(eastWeight).toBeTruthy()
     expect(tolerateLoss?.checked).toBe(false)
+    expect(tolerateLoss).toBeTruthy()
     if (!eastWeight || !tolerateLoss) return
     await act(async () => {
       setInputValue(eastWeight, '85')
@@ -3355,7 +3359,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Data')
     const poolSelect = findControlByLabel<HTMLSelectElement>(container, 'Data Pool', 'select')
-    expect(poolSelect).toBeDefined()
+    expect(poolSelect).toBeTruthy()
     expect(poolSelect?.value).toBe('pool-1')
     if (!poolSelect) return
     await act(async () => {
@@ -3387,7 +3391,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Start')
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -3418,10 +3422,10 @@ describe('TestHub', () => {
     const touchSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Touch mode')) as HTMLSelectElement | undefined
     const headlessSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Headless')) as HTMLSelectElement | undefined
 
-    expect(profileSelect).toBeDefined()
-    expect(orientationSelect).toBeDefined()
-    expect(touchSelect).toBeDefined()
-    expect(headlessSelect).toBeDefined()
+    expect(profileSelect).toBeTruthy()
+    expect(orientationSelect).toBeTruthy()
+    expect(touchSelect).toBeTruthy()
+    expect(headlessSelect).toBeTruthy()
     if (!profileSelect || !orientationSelect || !touchSelect || !headlessSelect) return
 
     await act(async () => {
@@ -3432,7 +3436,7 @@ describe('TestHub', () => {
     })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -3514,7 +3518,7 @@ describe('TestHub', () => {
     expect(Array.from(container.querySelectorAll('.scenario-source-card > span')).map(label => label.textContent)).toEqual(['Fixed VUsers', 'Stepped Ramp', 'Goal-Driven', 'Traffic Profile'])
     await clickModelFamily('Goal-Driven')
 	const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Goal-Driven API'))
-    expect(templateButton).toBeDefined()
+    expect(templateButton).toBeTruthy()
     if (!templateButton) return
 
     await act(async () => {
@@ -3537,7 +3541,7 @@ describe('TestHub', () => {
     await clickWizardStep('Review')
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Load Model'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) return
 
     await act(async () => {
@@ -3582,7 +3586,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -4249,7 +4253,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -4260,7 +4264,7 @@ describe('TestHub', () => {
     await clickWizardStep('Review')
 
     const saveAndCreateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and configure run'))
-    expect(saveAndCreateButton).toBeDefined()
+    expect(saveAndCreateButton).toBeTruthy()
     if (!saveAndCreateButton) return
 
     await act(async () => {
@@ -4286,7 +4290,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -4298,7 +4302,7 @@ describe('TestHub', () => {
     await clickScenarioSettingsSection('Ramp Pattern')
 
     const enableStagesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enable Stages'))
-    expect(enableStagesButton).toBeDefined()
+    expect(enableStagesButton).toBeTruthy()
     if (!enableStagesButton) return
 
     await act(async () => {
@@ -4307,7 +4311,7 @@ describe('TestHub', () => {
 
     expect(container.textContent).toContain('Peak staged VUsers: 10')
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -4342,7 +4346,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -4355,7 +4359,7 @@ describe('TestHub', () => {
     await clickScenarioSettingsSection('Run Phases')
 
     let durationField = getDurationFieldByLabel(container, 'Duration')
-    expect(durationField).not.toBeNull()
+    expect(durationField).toBeTruthy()
     if (!durationField) return
 
     const durationInput = durationField.input
@@ -4365,7 +4369,7 @@ describe('TestHub', () => {
     await flushPromises()
 
     durationField = getDurationFieldByLabel(container, 'Duration')
-    expect(durationField).not.toBeNull()
+    expect(durationField).toBeTruthy()
     if (!durationField) return
 
     const durationUnitSelect = durationField.select
@@ -4393,8 +4397,8 @@ describe('TestHub', () => {
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
     const initializationSelect = Array.from(container.querySelectorAll('select')).find(select => select.textContent?.includes('Init/teardown once per group')) as HTMLSelectElement | undefined
-    expect(nameInput).toBeDefined()
-    expect(initializationSelect).toBeDefined()
+    expect(nameInput).toBeTruthy()
+    expect(initializationSelect).toBeTruthy()
     if (!nameInput || !initializationSelect) return
 
     await act(async () => {
@@ -4407,7 +4411,7 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -4478,7 +4482,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Start')
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {
@@ -4507,7 +4511,7 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -4574,7 +4578,7 @@ describe('TestHub', () => {
     // Enter the builder and make progress; the stale persisted draft is ignored.
     await clickWizardStep('Start')
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name') as HTMLInputElement | undefined
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     expect(nameInput.value).toBe('')
     await act(async () => {

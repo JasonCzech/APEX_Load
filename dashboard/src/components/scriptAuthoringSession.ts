@@ -78,3 +78,43 @@ export function admitValidationResponse(latestRequestId: number, request: Valida
     : echo?.validated_fingerprint === request.sent.fingerprint
   return bound ? 'current' : 'unbound'
 }
+
+// ScriptSaveInputs is what decides whether the editor may save now.
+export interface ScriptSaveInputs {
+  // A create landed and the page is opening the saved script.
+  opening?: boolean
+  // A stored script saves against its paired authoring baseline.
+  stored: boolean
+  revisionState: 'loading' | 'ready' | 'blocked'
+  hasBaseline: boolean
+  saving: boolean
+  secretBindingsOpen: boolean
+  validating: boolean
+  dirty: boolean
+  hasName: boolean
+  jsonParseMessage: string
+  baseURLError: string
+}
+
+// scriptSaveAvailability is the editor's save state: whether Save is
+// disabled, and the reason it shows.
+export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boolean; title: string } {
+  const disabled = Boolean(input.opening) || (input.stored && (input.revisionState !== 'ready' || !input.hasBaseline)) || input.saving || input.secretBindingsOpen || input.validating
+    || !input.dirty || !input.hasName || Boolean(input.jsonParseMessage) || Boolean(input.baseURLError)
+  const title = input.opening
+    ? 'The saved script is opening'
+    : input.stored && input.revisionState !== 'ready'
+    ? 'Load and review a protected authoring baseline before saving'
+    : input.saving
+      ? 'Saving script'
+      : input.validating
+        ? 'Wait for validation to finish before saving'
+        : input.jsonParseMessage
+          ? 'Fix invalid Script JSON before saving'
+          : !input.dirty
+            ? 'No unsaved changes to save'
+            : !input.hasName
+              ? 'Enter a script name before saving'
+              : input.baseURLError || 'Save script'
+  return { disabled, title }
+}

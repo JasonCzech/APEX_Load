@@ -42,7 +42,7 @@ describe('SnapshotTextPreview', () => {
     expect(container.textContent).not.toContain('X-Debug-13')
 
     const button = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Open full text'))
-    expect(button).not.toBeNull()
+    expect(button).toBeTruthy()
     if (!button) {
       return
     }
@@ -57,7 +57,7 @@ describe('SnapshotTextPreview', () => {
     expect(dialog?.textContent).toContain('X-Debug-13')
 
     const copyButton = Array.from(dialog?.querySelectorAll('button') ?? []).find(node => node.textContent?.includes('Copy'))
-    expect(copyButton).not.toBeNull()
+    expect(copyButton).toBeTruthy()
     if (!copyButton) {
       return
     }
@@ -71,7 +71,7 @@ describe('SnapshotTextPreview', () => {
     expect(dialog?.textContent).toContain('Copied')
 
     const closeButton = Array.from(dialog?.querySelectorAll('button') ?? []).find(node => node.textContent?.includes('Close'))
-    expect(closeButton).not.toBeNull()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -102,7 +102,7 @@ describe('SnapshotTextPreview', () => {
     })
 
     const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy'))
-    expect(copyButton).not.toBeNull()
+    expect(copyButton).toBeTruthy()
     if (!copyButton) {
       return
     }

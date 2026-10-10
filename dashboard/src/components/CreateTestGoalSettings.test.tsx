@@ -45,13 +45,14 @@ describe('CreateTestGoalSettings', () => {
     const maxErrorCountInput = container.querySelector('input[placeholder="e.g. 25"]') as HTMLInputElement | null
     const serverProcessingInput = container.querySelector('input[placeholder="e.g. 450"]') as HTMLInputElement | null
     const transferInput = container.querySelector('input[placeholder="e.g. 120"]') as HTMLInputElement | null
-    expect(maxErrorCountInput).not.toBeNull()
-    expect(serverProcessingInput).not.toBeNull()
-    expect(transferInput).not.toBeNull()
+    expect(maxErrorCountInput).toBeTruthy()
+    expect(serverProcessingInput).toBeTruthy()
+    expect(transferInput).toBeTruthy()
     expect(maxErrorCountInput?.value).toBe('8')
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     expect(checkboxes).toHaveLength(2)
+    expect(checkboxes[1]).toBeTruthy()
     expect(checkboxes[1]?.checked).toBe(false)
 
     if (!maxErrorCountInput || !serverProcessingInput || !transferInput || !checkboxes[1]) {
@@ -100,9 +101,9 @@ describe('CreateTestGoalSettings', () => {
     const lcpInput = container.querySelector('input[placeholder="e.g. 2500"]') as HTMLInputElement | null
     const inpInput = container.querySelector('input[placeholder="e.g. 200"]') as HTMLInputElement | null
     const clsInput = container.querySelector('input[placeholder="e.g. 0.1"]') as HTMLInputElement | null
-    expect(lcpInput).not.toBeNull()
-    expect(inpInput).not.toBeNull()
-    expect(clsInput).not.toBeNull()
+    expect(lcpInput).toBeTruthy()
+    expect(inpInput).toBeTruthy()
+    expect(clsInput).toBeTruthy()
     expect(lcpInput?.value).toBe('2500')
     expect(clsInput?.value).toBe('0.1')
     if (!lcpInput || !inpInput || !clsInput) return
@@ -177,7 +178,7 @@ describe('CreateTestGoalSettings', () => {
       const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       for (const [label, value] of edits) {
         const input = inputFor(label)
-        expect(input).not.toBeNull()
+        expect(input).toBeTruthy()
         if (!input) continue
         valueSetter?.call(input, value)
         input.dispatchEvent(new Event('input', { bubbles: true }))

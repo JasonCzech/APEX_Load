@@ -837,7 +837,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).not.toContain('Streaming settings execute in the HTTP runtime for media-like responses')
 
     const importCoverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
-    expect(importCoverageButton).toBeDefined()
+    expect(importCoverageButton).toBeTruthy()
     if (!importCoverageButton) return
     await act(async () => {
       importCoverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -854,7 +854,7 @@ describe('EnterpriseArchiveImport', () => {
     }
 
     const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings Coverage'))
-    expect(coverageButton).toBeDefined()
+    expect(coverageButton).toBeTruthy()
     if (!coverageButton) {
       return
     }
@@ -894,7 +894,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(document.activeElement).toBe(coverageButton)
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -909,7 +909,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const convertButton = findButton(container, 'Save to Script Library')
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -2379,7 +2379,7 @@ describe('EnterpriseArchiveImport', () => {
       bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
     })
     expect(onEdit).toHaveBeenCalledTimes(1)
-    expect(onEdit).toHaveBeenCalledWith(resolvedScript, { targetAction: 'Login' })
+    expect(onEdit).toHaveBeenCalledWith(resolvedScript, { targetAction: 'Login' }, expect.any(Function))
     expect(JSON.stringify(onEdit.mock.calls[0]?.[0])).not.toContain('[REDACTED]')
   })
 
@@ -2433,7 +2433,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -2465,7 +2465,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(preview()).toContain('"protocol": "http"')
 
     const jmsButton = container.querySelector('button[aria-label="Review generated script JMS Orders"]') as HTMLButtonElement | null
-    expect(jmsButton).not.toBeNull()
+    expect(jmsButton).toBeTruthy()
     if (!jmsButton) {
       return
     }
@@ -2477,7 +2477,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(preview()).toContain('"protocol": "jms-ibmmq"')
 
     const databaseButton = container.querySelector('button[aria-label="Review generated script Database Checks"]') as HTMLButtonElement | null
-    expect(databaseButton).not.toBeNull()
+    expect(databaseButton).toBeTruthy()
     if (!databaseButton) {
       return
     }
@@ -3897,7 +3897,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['zip-content'], 'web2.zip', { type: 'application/zip' })
@@ -3912,7 +3912,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -3953,7 +3953,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
@@ -3968,7 +3968,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -3980,8 +3980,8 @@ describe('EnterpriseArchiveImport', () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     const copySource = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy mapped source'))
     const copyDsl = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy mapped destination'))
-    expect(copySource).toBeDefined()
-    expect(copyDsl).toBeDefined()
+    expect(copySource).toBeTruthy()
+    expect(copyDsl).toBeTruthy()
     if (!copySource || !copyDsl) return
     expect((copySource as HTMLButtonElement).disabled).toBe(false)
     expect((copyDsl as HTMLButtonElement).disabled).toBe(false)
@@ -4035,7 +4035,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -4055,7 +4055,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('gamma.zip')
 
     const removeBeta = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement | null
-    expect(removeBeta).not.toBeNull()
+    expect(removeBeta).toBeTruthy()
     if (!removeBeta) {
       return
     }
@@ -4070,7 +4070,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save reviewed drafts'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -4114,7 +4114,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -4138,7 +4138,7 @@ describe('EnterpriseArchiveImport', () => {
     // The per-item review panel renders the last-added (gamma) archive, but its save
     // button now converts every validated archive in the queue.
     const reviewSaveButton = container.querySelector('.script-import-review-actions button:last-child') as HTMLButtonElement | null
-    expect(reviewSaveButton).not.toBeNull()
+    expect(reviewSaveButton).toBeTruthy()
     if (!reviewSaveButton) {
       return
     }
@@ -4214,6 +4214,80 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.saveEnterpriseArchiveImport.mock.calls[2][0].scripts)
       .toBe(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts)
     expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
+  })
+
+  it('disables the editor for an archive covered by an unconfirmed atomic save until it is reconciled', async () => {
+    const onEdit = vi.fn()
+    const files = [new File(['alpha'], 'alpha.zip', { type: 'application/zip' })]
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => executableEnterpriseResult({
+      name: file.name.replace(/\.zip$/i, ''),
+      version: '1.0.0',
+      protocol: 'http',
+      actions: [{ name: 'Homepage', type: 'request', method: 'GET', target: '/' }],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          preserved: { server_import_attestation_v1: `attestation-${file.name}` },
+        },
+      },
+    }))
+    let interruptFirstSave!: () => void
+    apiMock.saveEnterpriseArchiveImport
+      .mockImplementationOnce(() => new Promise((_, reject) => { interruptFirstSave = () => reject(new ApiError('response interrupted', 500)) }))
+      .mockRejectedValueOnce(new ApiError('receipt still finalizing', 500))
+      .mockResolvedValueOnce({
+        scripts: files.map((file, index) => ({
+          id: `saved-${index}`,
+          name: file.name.replace(/\.zip$/i, ''),
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        })),
+        count: 1,
+      })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Save draft')!)
+    await flushPromises()
+    // While the save is still in flight, the button says to wait for it;
+    // nothing is unconfirmed yet.
+    expect(findButton(container, 'Save draft and open in Visual Editor')?.title)
+      .toBe('Wait for the current validation, conversion or save to finish before editing.')
+    await act(async () => { interruptFirstSave() })
+    await flushPromises()
+    expect(container.textContent).toContain('Choose Convert again to reconcile the same operation')
+
+    // The save may have landed, so the editor, whose credential-preserving
+    // save would convert and save the draft again, waits for the
+    // reconciliation.
+    const blocked = findButton(container, 'Save draft and open in Visual Editor')
+    expect(blocked).toBeTruthy()
+    expect(blocked!.disabled).toBe(true)
+    expect(blocked!.title).toBe('An earlier save of this archive is unconfirmed. Convert again to reconcile it before editing.')
+    await clickButton(blocked!)
+    await flushPromises()
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+
+    // findButton would match the editor button by its "Save draft" prefix.
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-import-review-actions button'))
+      .find(button => button.textContent === 'Save draft')
+    expect(save).toBeTruthy()
+    await clickButton(save!)
+    await flushPromises()
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(3)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[2][0].operation_id)
+      .toBe(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].operation_id)
+    expect(container.textContent).toContain('Converted and saved 1 script to the library')
+    expect(container.textContent).not.toContain('An earlier save of this archive is unconfirmed')
   })
 
   it('reconverts an expired enterprise draft instead of retrying its stale attestation', async () => {
@@ -4555,12 +4629,367 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(findButton(container, 'Open draft in Visual Editor')!)
     await flushPromises()
 
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.zip' }), undefined)
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.zip' }), undefined, expect.any(Function))
     expect(apiMock.discardImportSecretSession).toHaveBeenCalledTimes(1)
     expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
       project_id: 'project-1',
       source_secret_session_id: 'alpha.zip-source-session',
     })
+  })
+
+  it('converts a validated archive again when the editor saved one of its drafts, keeping that one', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const lane = (name: string) => ({
+      name, version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: `${name} request`, type: 'request', method: 'GET', target: '/' }],
+    })
+    const twoDrafts = { ...executableEnterpriseResult(lane('First Lane')), scripts: [lane('First Lane'), lane('Second Lane')] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(twoDrafts)
+    apiMock.importEnterpriseArchive.mockResolvedValue(twoDrafts)
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['lanes'], 'lanes.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+    await clickButton(findButton(container, 'Open draft in Visual Editor')!)
+    await flushPromises()
+    const recordSave = onEdit.mock.calls[0]?.[2] as ((saved: { id: string; name: string }) => void) | undefined
+    expect(recordSave).toBeTruthy()
+
+    apiMock.importEnterpriseArchive.mockClear()
+    let finishConversion!: () => void
+    apiMock.importEnterpriseArchive.mockImplementationOnce(() => new Promise(resolve => { finishConversion = () => resolve(twoDrafts) }))
+    const saved = { id: 'script-first-lane', name: 'First Lane', protocol: 'http', version: '1.0.0', created_at: '2026-10-09T00:00:00Z' }
+    await act(async () => { recordSave!(saved) })
+    await flushPromises()
+    // While the remaining draft is converted again, the page says so and the
+    // options stay put.
+    expect(container.textContent).toContain('Converting the remaining drafts of lanes.zip again')
+    const baseURL = container.querySelector<HTMLInputElement>('input[placeholder="Auto-detected from first URL"]')
+    expect(baseURL?.disabled).toBe(true)
+    await act(async () => { finishConversion() })
+    await flushPromises()
+    await flushPromises()
+    expect(baseURL?.disabled).toBe(false)
+    expect(container.textContent).not.toContain('Converting the remaining drafts of lanes.zip again')
+    // The remaining draft was converted again; the saved one is kept.
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(call => (call[0] as File).name)).toEqual(['lanes.zip'])
+    expect(onImported).toHaveBeenCalledWith({ scripts: [saved], stayInImportReview: true })
+    expect(container.textContent).toContain('Saved First Lane to the script library')
+  })
+
+  it('keeps the options and the editor waiting while an archive\'s remaining drafts are converted again', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const lane = (name: string) => ({
+      name, version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: `${name} request`, type: 'request', method: 'GET', target: '/' }],
+    })
+    const twoDrafts = { ...executableEnterpriseResult(lane('First Lane')), scripts: [lane('First Lane'), lane('Second Lane')] }
+    const readiness = {
+      score_pct: 72,
+      blocked: true,
+      summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+      blocking_statuses: ['partial'],
+      blocking_settings: [{ id: 'logging', area: 'Logging', concept: 'Log level', status: 'partial', runtime_files: ['default.cfg'] }],
+      policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+    }
+    const blocked = executableEnterpriseResult({
+      name: 'Blocked Runtime Script', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Homepage', type: 'request', method: 'GET', target: '/' }],
+      metadata: { import: { source: 'enterprise_script_archive', preserved: { runtime_settings_migration_readiness: readiness } } },
+    })
+    const blockedResult = {
+      ...blocked,
+      summary: { ...blocked.summary, migration_readiness: readiness },
+      review_sections: [{ key: 'runtime_settings_migration_readiness', title: 'Migration Readiness', severity: 'warning', summary: 'Runtime settings block promotion under the active policy.', items: ['Logging'] }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file.name === 'blocked.zip' ? blockedResult : twoDrafts)
+    apiMock.importEnterpriseArchive.mockResolvedValue(twoDrafts)
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} onImported={onImported} />))
+    await flushPromises()
+    await act(async () => {
+      container.querySelectorAll<HTMLInputElement>('.lr-advanced-policy input')[0].click()
+      container.querySelectorAll<HTMLInputElement>('.lr-advanced-policy input')[1].click()
+    })
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['lanes'], 'lanes.zip', { type: 'application/zip' }), new File(['blocked'], 'blocked.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await flushPromises()
+    await clickButton(findButton(container, 'Open draft in Visual Editor')!)
+    await flushPromises()
+    const recordSave = onEdit.mock.calls[0]?.[2] as ((saved: { id: string; name: string }) => void) | undefined
+    expect(recordSave).toBeTruthy()
+    apiMock.importEnterpriseArchive.mockClear()
+    let finishConversion!: () => void
+    apiMock.importEnterpriseArchive.mockImplementationOnce(() => new Promise(resolve => { finishConversion = () => resolve(twoDrafts) }))
+    await act(async () => { recordSave!({ id: 'script-first-lane', name: 'First Lane', protocol: 'http', version: '1.0.0', created_at: '2026-10-09T00:00:00Z' } as never) })
+    await flushPromises()
+    expect(container.textContent).toContain('Converting the remaining drafts of lanes.zip again')
+
+    // The other archive's editor waits, and says for what. Its review offers
+    // to relax its policy, which would change the locked options: that waits
+    // too.
+    const blockedItem = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('blocked.zip'))
+    expect(blockedItem).toBeTruthy()
+    await clickButton(blockedItem!)
+    expect(findButton(container, 'Open draft in Visual Editor')?.title).toBe('Wait for the remaining drafts to be converted again before editing.')
+    const relax = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Allow Partial Runtime Settings And Refresh Review')
+    expect(relax).toBeTruthy()
+    expect(relax!.disabled).toBe(true)
+    expect(relax!.title).toBe('Wait for the current archive operation to finish before changing the options.')
+    apiMock.validateEnterpriseArchiveImport.mockClear()
+    await clickButton(relax!)
+    expect(apiMock.validateEnterpriseArchiveImport).not.toHaveBeenCalled()
+
+    await act(async () => { finishConversion() })
+    await flushPromises()
+    await flushPromises()
+    expect(container.textContent).not.toContain('Converting the remaining drafts of lanes.zip again')
+    const relaxAfter = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Allow Partial Runtime Settings And Refresh Review')
+    expect(relaxAfter).toBeTruthy()
+    expect(relaxAfter!.disabled).toBe(false)
+    expect(relaxAfter!.title).toBe('')
+  })
+
+  it('asks to finish an open settings edit before relaxing the policy', async () => {
+    const readiness = {
+      score_pct: 72,
+      blocked: true,
+      summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+      blocking_statuses: ['partial'],
+      blocking_settings: [{ id: 'logging', area: 'Logging', concept: 'Log level', status: 'partial', runtime_files: ['default.cfg'] }],
+      policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+    }
+    const blocked = executableEnterpriseResult({
+      name: 'Blocked Runtime Script', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Homepage', type: 'request', method: 'GET', target: '/' }],
+      metadata: { import: { source: 'enterprise_script_archive', preserved: { runtime_settings_migration_readiness: readiness } } },
+    })
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      ...blocked,
+      summary: { ...blocked.summary, migration_readiness: readiness },
+      review_sections: [{ key: 'runtime_settings_migration_readiness', title: 'Migration Readiness', severity: 'warning', summary: 'Runtime settings block promotion under the active policy.', items: ['Logging'] }],
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={vi.fn()} />))
+    await flushPromises()
+    await act(async () => {
+      container.querySelectorAll<HTMLInputElement>('.lr-advanced-policy input')[0].click()
+      container.querySelectorAll<HTMLInputElement>('.lr-advanced-policy input')[1].click()
+    })
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['blocked'], 'blocked.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+    const relax = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Allow Partial Runtime Settings And Refresh Review')
+    expect(relax()?.disabled).toBe(false)
+
+    const showUnconfigured = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.includes('unconfigured APEX settings'))?.querySelector('input')
+    expect(showUnconfigured).toBeTruthy()
+    await act(async () => showUnconfigured!.click())
+    const editHTTP = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit HTTP')
+    expect(editHTTP).toBeTruthy()
+    await clickButton(editHTTP!)
+    // Nothing is running; the open edit is what holds the options.
+    expect(relax()).toBeTruthy()
+    expect(relax()!.disabled).toBe(true)
+    expect(relax()!.title).toBe('Apply or cancel the open setting or credential edits before changing the options.')
+  })
+
+  it('does not call a later conversion of the same archive a re-conversion once the project changed', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const lane = (name: string) => ({
+      name, version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: `${name} request`, type: 'request', method: 'GET', target: '/' }],
+    })
+    const twoDrafts = { ...executableEnterpriseResult(lane('First Lane')), scripts: [lane('First Lane'), lane('Second Lane')] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(twoDrafts)
+    apiMock.importEnterpriseArchive.mockResolvedValue(twoDrafts)
+
+    const render = (projectId: string) => root.render(<EnterpriseArchiveImport projectId={projectId} onEdit={onEdit} onImported={onImported} />)
+    await act(async () => render('project-1'))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['lanes'], 'lanes.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+    await clickButton(findButton(container, 'Open draft in Visual Editor')!)
+    await flushPromises()
+    const recordSave = onEdit.mock.calls[0]?.[2] as ((saved: { id: string; name: string }) => void) | undefined
+    expect(recordSave).toBeTruthy()
+    apiMock.importEnterpriseArchive.mockImplementationOnce(() => new Promise(() => {}))
+    await act(async () => { recordSave!({ id: 'script-first-lane', name: 'First Lane', protocol: 'http', version: '1.0.0', created_at: '2026-10-09T00:00:00Z' } as never) })
+    await flushPromises()
+    expect(container.textContent).toContain('Converting the remaining drafts of lanes.zip again')
+
+    // The project changes while that request is still out; the archive is
+    // validated and converted again there.
+    await act(async () => render('project-2'))
+    await flushPromises()
+    expect(container.textContent).not.toContain('Converting the remaining drafts of lanes.zip again')
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+    let finishConversion!: () => void
+    apiMock.importEnterpriseArchive.mockImplementationOnce(() => new Promise(resolve => { finishConversion = () => resolve(twoDrafts) }))
+    await clickButton(findButton(container, 'Save draft')!)
+    await flushPromises()
+    expect(finishConversion).toBeTruthy()
+    expect(container.textContent).not.toContain('Converting the remaining drafts of lanes.zip again')
+    expect(container.textContent).not.toContain('Converting remaining drafts…')
+    await act(async () => { finishConversion() })
+    await flushPromises()
+  })
+
+  it('disables the editor while a validate batch is still running', async () => {
+    const onEdit = vi.fn()
+    const resultFor = (file: File) => executableEnterpriseResult({
+      name: file.name, version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+    })
+    let finishSecond!: () => void
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file.name === 'beta.zip'
+      ? new Promise(resolve => { finishSecond = () => resolve(resultFor(file)) })
+      : resultFor(file))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['alpha'], 'alpha.zip', { type: 'application/zip' }), new File(['beta'], 'beta.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await flushPromises()
+    // alpha's review is shown while beta is still validating. Its editor
+    // button stays, disabled, and says why.
+    expect(container.textContent).toContain('alpha.zip')
+    const whileValidating = findButton(container, 'Open draft in Visual Editor')
+    expect(whileValidating).toBeTruthy()
+    expect(whileValidating!.disabled).toBe(true)
+    expect(whileValidating!.title).toBe('Wait for the current validation, conversion or save to finish before editing.')
+    await act(async () => { finishSecond() })
+    await flushPromises()
+    const afterValidating = findButton(container, 'Open draft in Visual Editor')
+    expect(afterValidating).toBeTruthy()
+    expect(afterValidating!.disabled).toBe(false)
+    await clickButton(afterValidating!)
+    await flushPromises()
+    expect(onEdit).toHaveBeenCalledTimes(1)
+  })
+
+  it('says why the section editor buttons are disabled while a validate batch runs', async () => {
+    const onEdit = vi.fn()
+    // The default validation result has review sections with editor buttons.
+    const reviewResult = await apiMock.validateEnterpriseArchiveImport(new File(['default'], 'default.zip'))
+    let finishSecond!: () => void
+    apiMock.validateEnterpriseArchiveImport.mockReset()
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file.name === 'beta.zip'
+      ? new Promise(resolve => { finishSecond = () => resolve(reviewResult) })
+      : reviewResult)
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['alpha'], 'alpha.zip', { type: 'application/zip' }), new File(['beta'], 'beta.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await flushPromises()
+    const sectionButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.replay-panel-actions button'))
+      .filter(button => button.textContent === 'Open Imported Script In Editor')
+    expect(sectionButtons().length).toBeGreaterThan(0)
+    for (const button of sectionButtons()) {
+      expect(button.disabled).toBe(true)
+      expect(button.title).toBe('Wait for the current validation, conversion or save to finish before editing.')
+    }
+    await act(async () => { finishSecond() })
+    await flushPromises()
+    expect(sectionButtons().length).toBeGreaterThan(0)
+    for (const button of sectionButtons()) {
+      expect(button.disabled).toBe(false)
+      expect(button.title).toBe('')
+    }
+  })
+
+  it('records a draft the script editor saved, as its own save does, and moves on', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const resultFor = (file: File) => executableEnterpriseResult({
+      name: file.name,
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: '' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+    })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => resultFor(file))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => resultFor(file))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+          new File(['beta'], 'beta.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await flushPromises()
+    await clickButton(findButton(container, 'Open draft in Visual Editor')!)
+    await flushPromises()
+    const recordSave = onEdit.mock.calls[0]?.[2] as ((saved: { id: string; name: string }) => void) | undefined
+    expect(recordSave).toBeTruthy()
+
+    const saved = { id: 'script-alpha', name: 'alpha.zip', protocol: 'http', version: '1.0.0', created_at: '2026-10-09T00:00:00Z' }
+    await act(async () => { recordSave!(saved) })
+    await flushPromises()
+    expect(onImported).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledWith({ scripts: [saved], stayInImportReview: true })
+    expect(container.textContent).toContain('Saved alpha.zip to the script library. Continue reviewing the remaining generated scripts')
+    // A second report of the same save changes nothing.
+    await act(async () => { recordSave!(saved) })
+    expect(onImported).toHaveBeenCalledTimes(1)
+    // The review's own save converts and saves only what is left: beta.
+    apiMock.importEnterpriseArchive.mockClear()
+    const saveReviewed = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save reviewed drafts'))
+    expect(saveReviewed).toBeTruthy()
+    await act(async () => { saveReviewed!.click() })
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(call => (call[0] as File).name)).toEqual(['beta.zip'])
   })
 
   it('announces import progress and failed queue item details', async () => {
@@ -4583,7 +5012,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -4599,7 +5028,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save reviewed drafts'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -4827,7 +5256,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -4843,7 +5272,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -4868,7 +5297,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))).toBeUndefined()
 
     const saveArtifactButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save review artifact'))
-    expect(saveArtifactButton).toBeDefined()
+    expect(saveArtifactButton).toBeTruthy()
     if (!saveArtifactButton) {
       return
     }
@@ -4903,7 +5332,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -4929,7 +5358,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).not.toBeNull()
     if (!validateButton) {
       return
@@ -5097,8 +5526,8 @@ describe('EnterpriseArchiveImport', () => {
     const fileInputs = Array.from(container.querySelectorAll('input[type="file"]')) as HTMLInputElement[]
     const zipInput = fileInputs[0]
     const harInput = container.querySelector('input[accept=".har,.json,application/json"]') as HTMLInputElement | null
-    expect(zipInput).toBeDefined()
-    expect(harInput).toBeDefined()
+    expect(zipInput).toBeTruthy()
+    expect(harInput).toBeTruthy()
     if (!zipInput || !harInput) {
       return
     }
@@ -5133,7 +5562,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -5158,7 +5587,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Transaction markers')
 
     const openNativePreview = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Review Native Preview Limitation'))
-    expect(openNativePreview).toBeDefined()
+    expect(openNativePreview).toBeTruthy()
     if (!openNativePreview) {
       return
     }
@@ -5231,7 +5660,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5248,7 +5677,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5260,7 +5689,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked'))) as HTMLButtonElement | undefined
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -5287,7 +5716,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5304,7 +5733,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5316,7 +5745,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const openTargetButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Target Action In Editor'))
-    expect(openTargetButton).toBeDefined()
+    expect(openTargetButton).toBeTruthy()
     if (!openTargetButton) {
       return
     }
@@ -5328,7 +5757,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetAction: 'Homepage' })
+    }), { targetAction: 'Homepage' }, expect.any(Function))
   })
 
   it('locks inline runtime settings after saving the reviewed draft', async () => {
@@ -5341,7 +5770,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5358,7 +5787,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5389,7 +5818,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5406,7 +5835,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5418,7 +5847,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const openFixButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Fix In Editor'))
-    expect(openFixButton).toBeDefined()
+    expect(openFixButton).toBeTruthy()
     if (!openFixButton) {
       return
     }
@@ -5430,7 +5859,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetAction: 'Homepage' })
+    }), { targetAction: 'Homepage' }, expect.any(Function))
   })
 
   it('opens imported runtime review in the visual editor with a runtime focus hint', async () => {
@@ -5443,7 +5872,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5460,7 +5889,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5472,7 +5901,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const openRuntimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Runtime Settings In Editor'))
-    expect(openRuntimeButton).toBeDefined()
+    expect(openRuntimeButton).toBeTruthy()
     if (!openRuntimeButton) {
       return
     }
@@ -5484,7 +5913,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'runtime' })
+    }), { targetSection: 'runtime' }, expect.any(Function))
   })
 
   it('opens a runtime repair suggestion in the visual editor with a runtime focus hint', async () => {
@@ -5497,7 +5926,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5514,7 +5943,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5526,7 +5955,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const openRuntimeSuggestionButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Runtime Review In Editor'))
-    expect(openRuntimeSuggestionButton).toBeDefined()
+    expect(openRuntimeSuggestionButton).toBeTruthy()
     if (!openRuntimeSuggestionButton) {
       return
     }
@@ -5538,7 +5967,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'runtime' })
+    }), { targetSection: 'runtime' }, expect.any(Function))
   })
 
 
@@ -5557,7 +5986,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5574,7 +6003,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5586,7 +6015,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const openParameterFilesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Parameter Files In Editor'))
-    expect(openParameterFilesButton).toBeDefined()
+    expect(openParameterFilesButton).toBeTruthy()
     if (!openParameterFilesButton) {
       return
     }
@@ -5598,7 +6027,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function))
   })
 
   it('opens the first generated data source summary jump in the visual editor with a data source focus hint', async () => {
@@ -5611,7 +6040,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5628,7 +6057,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5640,7 +6069,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const openFirstDataSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open First Data Source In Editor'))
-    expect(openFirstDataSourceButton).toBeDefined()
+    expect(openFirstDataSourceButton).toBeTruthy()
     if (!openFirstDataSourceButton) {
       return
     }
@@ -5652,7 +6081,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function))
   })
 
 
@@ -5825,7 +6254,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5846,7 +6275,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -5861,7 +6290,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Partial, Compatibility Only')
 
     const relaxPolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Allow Partial Runtime Settings And Refresh Review'))
-    expect(relaxPolicyButton).toBeDefined()
+    expect(relaxPolicyButton).toBeTruthy()
     if (!relaxPolicyButton) {
       return
     }
@@ -5896,7 +6325,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Compatibility Only.')
 
     const restorePolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Restore Default Policy'))
-    expect(restorePolicyButton).toBeDefined()
+    expect(restorePolicyButton).toBeTruthy()
     if (!restorePolicyButton) {
       return
     }
@@ -5933,7 +6362,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -5991,7 +6420,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -6008,7 +6437,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const convertButton = findButton(container, 'Save to Script Library')
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -6100,7 +6529,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -6117,7 +6546,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -6132,14 +6561,14 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Not Run')
 
     const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay'))
-    expect(validateReplayButton).toBeDefined()
+    expect(validateReplayButton).toBeTruthy()
     if (!validateReplayButton) {
       return
     }
 
     const assertionOption = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Add default status_code assertions'))
       ?.querySelector('input') as HTMLInputElement | undefined
-    expect(assertionOption).toBeDefined()
+    expect(assertionOption).toBeTruthy()
     if (!assertionOption) {
       return
     }
@@ -6419,7 +6848,7 @@ describe('EnterpriseArchiveImport', () => {
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-      expect(fileInput).not.toBeNull()
+      expect(fileInput).toBeTruthy()
       if (!fileInput) {
         return
       }
@@ -6436,7 +6865,7 @@ describe('EnterpriseArchiveImport', () => {
       await clickImportAction(container, 'Validate Only')
 
       const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-      expect(convertButton).toBeDefined()
+      expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
       }
@@ -6448,7 +6877,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
-      expect(saveButton).toBeDefined()
+      expect(saveButton).toBeTruthy()
       if (!saveButton) {
         return
       }
@@ -6526,7 +6955,7 @@ describe('EnterpriseArchiveImport', () => {
       expect(container.textContent).toContain('1 transaction')
 
       const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-      expect(finalSaveButton).toBeDefined()
+      expect(finalSaveButton).toBeTruthy()
       if (!finalSaveButton) {
         return
       }
@@ -6653,7 +7082,7 @@ describe('EnterpriseArchiveImport', () => {
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-      expect(fileInput).not.toBeNull()
+      expect(fileInput).toBeTruthy()
       if (!fileInput) {
         return
       }
@@ -6670,7 +7099,7 @@ describe('EnterpriseArchiveImport', () => {
       await clickImportAction(container, 'Validate Only')
 
       const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-      expect(convertButton).toBeDefined()
+      expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
       }
@@ -6682,7 +7111,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
-      expect(saveButton).toBeDefined()
+      expect(saveButton).toBeTruthy()
       if (!saveButton) {
         return
       }
@@ -6775,7 +7204,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -6792,7 +7221,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -6804,7 +7233,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const startReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay'))
-    expect(startReplayButton).toBeDefined()
+    expect(startReplayButton).toBeTruthy()
     if (!startReplayButton) {
       return
     }
@@ -6916,7 +7345,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -6931,7 +7360,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -7041,7 +7470,7 @@ describe('EnterpriseArchiveImport', () => {
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-      expect(fileInput).not.toBeNull()
+      expect(fileInput).toBeTruthy()
       if (!fileInput) {
         return
       }
@@ -7056,7 +7485,7 @@ describe('EnterpriseArchiveImport', () => {
       })
 
       const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
-      expect(validateButton).toBeDefined()
+      expect(validateButton).toBeTruthy()
       if (!validateButton) {
         return
       }
@@ -7068,7 +7497,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-      expect(convertButton).toBeDefined()
+      expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
       }
@@ -7080,7 +7509,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
-      expect(replayFirstSaveButton).toBeDefined()
+      expect(replayFirstSaveButton).toBeTruthy()
       if (!replayFirstSaveButton) {
         return
       }
@@ -7104,7 +7533,7 @@ describe('EnterpriseArchiveImport', () => {
       expect(container.textContent).toContain('Rerun a draft browser replay against the converted browser script before saving it to the library.')
 
       const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Draft Browser Replay')
-      expect(rerunReplayButton).toBeDefined()
+      expect(rerunReplayButton).toBeTruthy()
       if (!rerunReplayButton) {
         return
       }
@@ -7198,7 +7627,7 @@ describe('EnterpriseArchiveImport', () => {
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-      expect(fileInput).not.toBeNull()
+      expect(fileInput).toBeTruthy()
       if (!fileInput) {
         return
       }
@@ -7213,7 +7642,7 @@ describe('EnterpriseArchiveImport', () => {
       })
 
       const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
-      expect(validateButton).toBeDefined()
+      expect(validateButton).toBeTruthy()
       if (!validateButton) {
         return
       }
@@ -7225,7 +7654,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-      expect(convertButton).toBeDefined()
+      expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
       }
@@ -7237,7 +7666,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
-      expect(replayFirstSaveButton).toBeDefined()
+      expect(replayFirstSaveButton).toBeTruthy()
       if (!replayFirstSaveButton) {
         return
       }
@@ -7255,7 +7684,7 @@ describe('EnterpriseArchiveImport', () => {
       await flushPromises()
 
       const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Draft Browser Replay')
-      expect(rerunReplayButton).toBeDefined()
+      expect(rerunReplayButton).toBeTruthy()
       if (!rerunReplayButton) {
         return
       }
@@ -7352,7 +7781,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -7369,7 +7798,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -7384,7 +7813,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Open the imported draft in the visual editor and run draft browser replay. Update selectors or waits for any failed action.')
 
     const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))
-    expect(openImportedScriptButton).toBeDefined()
+    expect(openImportedScriptButton).toBeTruthy()
     if (!openImportedScriptButton) {
       return
     }
@@ -7396,7 +7825,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Imported TruClient Mobile Web',
       protocol: 'browser',
-    }), undefined)
+    }), undefined, expect.any(Function))
   })
 })
 
@@ -7431,7 +7860,7 @@ async function clickButton(button: HTMLButtonElement) {
 
 async function clickImportAction(container: HTMLElement, label: string) {
   const button = findButton(container, label) || (label === 'Validate Only' ? findButton(container, 'Validate') : undefined)
-  expect(button).toBeDefined()
+  expect(button).toBeTruthy()
   if (!button) return null
   await clickButton(button)
   return button

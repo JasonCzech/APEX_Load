@@ -1,6 +1,6 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { importSourceName } from '../appTopbar'
-import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
+import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
@@ -33,7 +33,7 @@ import { getImportSummary } from './scriptEditorImportModel'
 import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
-import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
+import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
@@ -559,7 +559,8 @@ interface Props {
   // it when a review session is approved, so omitting it saves to project root.
   folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
-  onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
+  /** Opens a generated script in the script editor. onSaved tells the review the editor saved it to the library. */
+  onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus, onSaved?: (saved: StoredScript) => void) => void
   onClose?: () => void
   onOperationBusyChange?: (busy: boolean) => void
 }
@@ -633,6 +634,11 @@ type EditorActionButton = {
   key: string
   label: string
   onClick: () => void
+  // False for a button that only reviews or refreshes, so it does not wait
+  // for the editor to be available.
+  opensEditor?: boolean
+  // Why the button is unavailable for a reason of its own.
+  disabledReason?: string
 }
 
 type ImportOptions = {
@@ -942,6 +948,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   // useDesktopFileDrop dependency and must not change every render.
   const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
+  // An archive to convert again after the editor saved one of its validated
+  // drafts, and the archive whose remaining drafts are being converted again
+  // (nothing is saved meanwhile).
+  const [convertAfterEditorSave, setConvertAfterEditorSave] = useState<{ itemId: string; notice: string; archiveName: string } | null>(null)
+  const [refreshingRemainingDraftsOf, setRefreshingRemainingDraftsOf] = useState<{ itemId: string; archiveName: string } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [supportMatrix, setSupportMatrix] = useState<EnterpriseArchiveSupportMatrixEntry[]>([])
@@ -994,7 +1005,19 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     || guidedRepairBusy
     || scriptSaveInProgress
     || atomicSaveInProgress
+  // Batches and saves record drafts too, so no draft opens in the editor while
+  // one runs; the review's own busy states only disable its buttons.
+  const editorBlockedByBatch = workingMode !== null || atomicSaveInProgress || scriptSaveInProgress
+    || reviewArtifactSaving || reviewArtifactPersistenceInProgress || classpathUploadInProgress
+  // The archive whose remaining drafts are being converted again, while that
+  // run is the one in progress.
+  const refreshingRemainingDrafts = refreshingRemainingDraftsOf && workingMode === 'convert'
+    && importItems.find(item => item.id === refreshingRemainingDraftsOf.itemId)?.status === 'converting'
+    ? refreshingRemainingDraftsOf.archiveName
+    : null
   const sourceMutationLocked = classpathUploadInProgress || settingsEditing || reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
+    // Options stay put while an archive's remaining drafts are converted again.
+    || refreshingRemainingDrafts !== null
   const sourceMutationLockedRef = useRef(sourceMutationLocked)
   sourceMutationLockedRef.current = sourceMutationLocked
   useEffect(() => {
@@ -1017,6 +1040,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   // an ambiguous response produces different tokens and therefore a different
   // receipt digest. A retry must submit these same scripts unchanged.
   const retainedAtomicSaveRef = useRef<RetainedEnterpriseArchiveAtomicSave | null>(null)
+  // The archives an unconfirmed atomic save covers: none opens in the editor
+  // until Convert again reconciles that save.
+  const [retainedAtomicSaveItemIds, setRetainedAtomicSaveItemIds] = useState<readonly string[]>([])
+  const retainAtomicSave = useCallback((retained: RetainedEnterpriseArchiveAtomicSave | null) => {
+    retainedAtomicSaveRef.current = retained
+    setRetainedAtomicSaveItemIds(retained ? retained.entries.map(entry => entry.itemId) : [])
+  }, [])
   const clearRetainedAtomicSave = useCallback((itemIds?: readonly string[]) => {
     const retained = retainedAtomicSaveRef.current
     if (!retained) return
@@ -1025,8 +1055,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       if (!retained.entries.some(entry => invalidatedIds.has(entry.itemId))) return
     }
     saveOperationIDsRef.current.delete(retained.operationKey)
-    retainedAtomicSaveRef.current = null
-  }, [])
+    retainAtomicSave(null)
+  }, [retainAtomicSave])
   const itemRequestTokensRef = useRef<Map<string, number>>(new Map())
   const replayRequestTokensRef = useRef<Map<string, number>>(new Map())
   const replayNotFoundCountsRef = useRef<Map<string, number>>(new Map())
@@ -1144,6 +1174,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     if (!invalidatesActiveAtomicSave) clearRetainedAtomicSave(itemIds)
     void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
     fenceOperationScopes(itemIds)
+    // A fenced re-conversion of an archive's remaining drafts no longer
+    // counts as one, even while its request is still out.
+    setRefreshingRemainingDraftsOf(current => current && (!itemIds || itemIds.includes(current.itemId)) ? null : current)
     // A queue-item fence does not stop a running validate/convert batch, and
     // clearing workingMode would re-enable Validate so the operator could fence
     // their own batch from under it. Only a whole-surface fence resets it.
@@ -1233,7 +1266,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const reviewSessionIsSaved = (item: EnterpriseArchiveImportQueueItem, index: number) =>
     savedReviewSessions[`${item.id}:${index}`] === item.reviewGeneration
   const pendingItemReviewCount = (item: EnterpriseArchiveImportQueueItem) => {
-    if (item.status !== 'converted' && item.status !== 'validated') return 0
+    const partlySavedRunning = (item.status === 'converting' || item.status === 'validating') && Object.keys(item.savedResultScripts || {}).length > 0
+    if (item.status !== 'converted' && item.status !== 'validated' && !partlySavedRunning) return 0
     const scripts = getEnterpriseArchiveResultScripts(item.result)
     if (!scripts.length) {
       const artifact = item.result?.review_artifact ?? item.result?.summary?.review_artifact
@@ -1246,17 +1280,24 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const pendingReviewScriptCount = importItems.reduce((count, item) => count + pendingItemReviewCount(item), 0)
   const validatedAwaitingSaveCount = validatedItems.filter(item => pendingItemReviewCount(item) > 0).length
   // Validated drafts and review decisions live only in this page until saved.
-  useUnsavedWorkGuard('enterprise-archive-import', 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
+  const pendingItemReviewCountRef = useRef(pendingItemReviewCount)
+  pendingItemReviewCountRef.current = pendingItemReviewCount
+  const reviewHasPendingDrafts = (items: readonly EnterpriseArchiveImportQueueItem[]) =>
+    items.some(item => pendingItemReviewCountRef.current(item) > 0)
+  const { markClean: markNavigationGuardClean } = useNavigationGuardRunner()
+  useUnsavedWorkGuard(ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
     invalidateOperationScopes()
     setImportItems([])
     setSelectedItemId('')
-  })
+  }, () => reviewHasPendingDrafts(importItemsRef.current))
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
   const allValidatedReviewsMatchOptions = validatedItems.every(item => item.reviewOptionsIdentity === importOptionsIdentity(options))
   const selectedItemValidated = selectedItem?.status === 'validated'
   const activeImportFileCount = runningFileCount || queuedFileCount
   const importProgressMessage = workingMode === 'validate'
     ? `Validating ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. Review will appear when the dry run finishes.`
+    : refreshingRemainingDrafts
+      ? `Converting the remaining drafts of ${refreshingRemainingDrafts} again. The saved drafts are kept; nothing else is saved.`
     : workingMode === 'convert'
       ? `Processing ${activeImportFileCount} reviewed archive${activeImportFileCount === 1 ? '' : 's'}. Saving eligible scripts and retaining drafts that need attention.`
       : ''
@@ -1265,7 +1306,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
   const convertButtonLabel = queuedFileCount > 1 ? 'Save reviewed drafts' : 'Save draft'
-  const conversionGateMessage = workingMode === 'convert'
+  const conversionGateMessage = refreshingRemainingDrafts
+    ? 'Converting the remaining drafts again. Nothing is saved until you save them.'
+    : workingMode === 'convert'
     ? 'Saving eligible scripts. Archives that need repair, replay, or approval remain in this queue.'
     : queuedFileCount === 0
       ? 'Add an enterprise script archive before validating or converting.'
@@ -1910,8 +1953,19 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     }
   }
 
+  const editorBlockedByUnconfirmedSave = Boolean(selectedItem && retainedAtomicSaveItemIds.includes(selectedItem.id))
+  const editorBlocked = editorBlockedByBatch || editorBlockedByUnconfirmedSave
+  const editorBlockedReason = classpathUploadInProgress
+    ? 'Wait for the Java dependency upload to finish before editing.'
+    : refreshingRemainingDrafts
+      ? 'Wait for the remaining drafts to be converted again before editing.'
+      : editorBlockedByBatch
+        ? 'Wait for the current validation, conversion or save to finish before editing.'
+        : 'An earlier save of this archive is unconfirmed. Convert again to reconcile it before editing.'
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
-    if (!onEdit || combinedJavaVuserGate) return
+    // A draft saved from the editor is recorded here, so none opens while a
+    // validate or save batch is running and could overwrite that record.
+    if (!onEdit || combinedJavaVuserGate || editorBlocked) return
     if (editRequiresCredentialPreservingSave) {
       if (!onImported) {
         setError('Save this credential-preserving import before opening it in the Visual Editor.')
@@ -1925,6 +1979,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       return
     }
     const sourceItemId = selectedItem?.id || ''
+    const sourceGeneration = selectedItem?.reviewGeneration
+    const sourceScriptIndex = activeResultScriptIndex
     void (async () => {
       const currentScript = await prepareImportedScriptForEditor()
       if (currentScript) {
@@ -1932,9 +1988,43 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           importItemsRef.current,
           sourceItemId ? [sourceItemId] : [],
         )
-        onEdit(currentScript, focus)
+        onEdit(currentScript, focus, saved => recordEditorSave(sourceItemId, sourceGeneration, sourceScriptIndex, saved))
       }
     })()
+  }
+
+  // recordEditorSave marks a generated script that the script editor saved to
+  // the library, as this review's own save does, so it is not offered or saved
+  // again. A review refreshed since the script was opened is left alone.
+  const recordEditorSave = (itemId: string, generation: number | undefined, scriptIndex: number, saved: StoredScript) => {
+    const item = importItemsRef.current.find(candidate => candidate.id === itemId)
+    if (!item || item.reviewGeneration !== generation || enterpriseArchiveResultScriptIsSaved(item, scriptIndex)) return
+    // A validated archive with a saved draft is treated as any partly saved
+    // archive is: it becomes a conversion review, and its remaining drafts are
+    // converted again (runReview), so validation's save cannot repeat this one.
+    const validated = item.status === 'validated'
+    const nextItems = importItemsRef.current.map(candidate => candidate.id !== itemId
+      ? candidate
+      : {
+          ...candidate,
+          savedResultScripts: { ...candidate.savedResultScripts, [scriptIndex]: saved },
+          ...(validated ? { status: 'converted' as const, reviewMode: 'conversion' as const } : {}),
+          notice: `Saved ${saved.name} to the script library.`,
+        })
+    const updated = nextItems.find(candidate => candidate.id === itemId)
+    if (validated && updated && getEnterpriseArchiveResultScripts(updated.result).some((_script, index) => !enterpriseArchiveResultScriptIsSaved(updated, index))) {
+      setConvertAfterEditorSave({ itemId, notice: `Saved ${saved.name} to the script library. Continue reviewing the remaining generated scripts before leaving this import.`, archiveName: item.file.name })
+    }
+    // The guard's rendered state catches up only on the next render; a save
+    // made on the way to another page must not prompt for this review.
+    if (!reviewHasPendingDrafts(nextItems)) markNavigationGuardClean(ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID)
+    void publishSavedEnterpriseArchiveScripts(
+      nextItems,
+      [saved],
+      `Saved ${saved.name} to the script library. Continue reviewing the remaining generated scripts before leaving this import.`,
+      `Saved ${saved.name} to the script library.`,
+      () => true,
+    )
   }
 
   const openSalesforceNativePreviewInEditor = () => {
@@ -1972,7 +2062,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     return getRelaxableMigrationBlockStatuses(migrationReadiness, options).map((status) => ({
       key: `${keyPrefix}:${status}`,
       label: `Allow ${formatRuntimeSettingStatusLabel(status)} Runtime Settings And Refresh Review`,
+      opensEditor: false,
+      // It changes the options, which stay put while they are locked.
+      disabledReason: settingsEditing
+        ? 'Apply or cancel the open setting or credential edits before changing the options.'
+        : sourceMutationLocked ? 'Wait for the current archive operation to finish before changing the options.' : undefined,
       onClick: () => {
+        if (sourceMutationLockedRef.current) return
         const nextOptions = getRelaxedMigrationBlockOptions(options, status)
         if (!nextOptions) return
 
@@ -2009,16 +2105,20 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
 
     return (
       <div className="replay-panel-actions" style={style}>
-        {availableButtons.map((button) => (
-          <button
-            key={button.key}
-            className="btn btn-secondary btn-sm"
-            onClick={button.onClick}
-            disabled={editorActionPreparing || scriptSaveInProgress}
-          >
-            {editorActionPreparing ? 'Preparing credentials…' : button.label}
-          </button>
-        ))}
+        {availableButtons.map((button) => {
+          const blockedReason = button.disabledReason ?? (button.opensEditor !== false && editorBlocked ? editorBlockedReason : undefined)
+          return (
+            <button
+              key={button.key}
+              className="btn btn-secondary btn-sm"
+              onClick={button.onClick}
+              disabled={editorActionPreparing || scriptSaveInProgress || Boolean(blockedReason)}
+              title={blockedReason}
+            >
+              {editorActionPreparing ? 'Preparing credentials…' : button.label}
+            </button>
+          )
+        })}
       </div>
     )
   }
@@ -2112,6 +2212,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           buttons.push({
             key: 'review-salesforce-native-preview',
             label: 'Open Native Preview',
+            opensEditor: false,
             onClick: openSalesforceNativePreviewInEditor,
           })
         }
@@ -2737,6 +2838,17 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       setNotice(`${action} ${successCount} of ${reviewedCount} enterprise script archive${reviewedCount === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
     }
   }
+  const runReviewRef = useRef(runReview)
+  runReviewRef.current = runReview
+  useEffect(() => {
+    if (!convertAfterEditorSave) return
+    const { itemId, notice, archiveName } = convertAfterEditorSave
+    setConvertAfterEditorSave(null)
+    const refreshing = { itemId, archiveName }
+    setRefreshingRemainingDraftsOf(refreshing)
+    void runReviewRef.current('convert', optionsRef.current, notice, [itemId])
+      .finally(() => setRefreshingRemainingDraftsOf(current => current === refreshing ? null : current))
+  }, [convertAfterEditorSave])
 
   const convertValidatedItems = async (itemIds?: string[], destination: ImportSaveDestination = 'stay') => {
     const targetItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id)) && item.status === 'validated')
@@ -2991,7 +3103,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       // Publish the full retry scope before the request yields. Source/options
       // are locked for the physical request, and route invalidation preserves
       // this exact payload/identity until the promise settles.
-      retainedAtomicSaveRef.current = retainedAtomicSave ?? {
+      retainAtomicSave(retainedAtomicSave ?? {
         operationKey,
         operationId: operationID,
         projectId: sourceProjectId,
@@ -3006,7 +3118,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           scripts: entry.scripts,
         })),
         scriptsToPersist,
-      }
+      })
       const atomicSaveScope = { operationKey, operationId: operationID }
       atomicSaveInFlightRef.current = atomicSaveScope
       setAtomicSaveInProgress(true)
@@ -3032,7 +3144,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         if (!operationIsCurrent() || currentReadySaves.some(({ item }) => !requestIsCurrent(item))) {
           saveOperationIDsRef.current.delete(operationKey)
           if (retainedAtomicSaveRef.current?.operationId === operationID) {
-            retainedAtomicSaveRef.current = null
+            retainAtomicSave(null)
           }
           onImported?.({ scripts: response.scripts, stayInImportReview: true })
           currentReadySaves.forEach(entry => {
@@ -3068,7 +3180,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         }
         saveOperationIDsRef.current.delete(operationKey)
         if (retainedAtomicSaveRef.current?.operationId === operationID) {
-          retainedAtomicSaveRef.current = null
+          retainAtomicSave(null)
         }
       } catch (saveError: unknown) {
         if (!operationIsCurrent() || currentReadySaves.some(({ item }) => !requestIsCurrent(item))) {
@@ -3080,7 +3192,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             // server has explicitly said can no longer authorize a save.
             saveOperationIDsRef.current.delete(operationKey)
             if (retainedAtomicSaveRef.current?.operationId === operationID) {
-              retainedAtomicSaveRef.current = null
+              retainAtomicSave(null)
             }
           } else {
             atomicSaveUnconfirmed = true
@@ -4446,7 +4558,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : validateButtonLabel}
             </button>
             {(queuedFileCount > 1 || reviewMode !== 'conversion') && <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
-              {workingMode === 'convert' ? <><span className="spinner" /> Converting and saving…</> : convertButtonLabel}
+              {workingMode === 'convert' ? <><span className="spinner" /> {refreshingRemainingDrafts ? 'Converting remaining drafts…' : 'Converting and saving…'}</> : convertButtonLabel}
             </button>}
           </div>
           <p className="lr-subtitle">{conversionGateMessage}</p>
@@ -4827,6 +4939,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             onSave={!(saveBlockedByProtocolGate && reviewArtifact) && reviewMode === 'validation' && selectedItem
               ? () => runValidatedReviewAction(selectedItem.id, selectedItem.reviewGeneration, 'save', validatedItemIds, () => { void convertValidatedItems(validatedItemIds) })
               : convertedReviewSave}
+            editDisabledReason={editorBlocked ? editorBlockedReason : undefined}
             onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1))
               ? (reviewMode === 'validation' && selectedItem
                   ? () => runValidatedReviewAction(selectedItem.id, selectedItem.reviewGeneration, 'edit', validatedItemIds, () => openImportedScriptInEditor())
@@ -5093,6 +5206,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     {
                       key: 'salesforce-native-open',
                       label: 'Review Native Preview Limitation',
+                      opensEditor: false,
                       onClick: openSalesforceNativePreviewInEditor,
                     },
                   ], sectionActionStyle)}
@@ -5125,7 +5239,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                         {repairSuggestion?.target_action && importedEditorAvailable && (
                           <>
                             {' '}
-                            <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: repairSuggestion.target_action })}>
+                            <button className="btn btn-secondary btn-sm" disabled={editorBlocked} title={editorBlocked ? editorBlockedReason : undefined} onClick={() => openImportedScriptInEditor({ targetAction: repairSuggestion.target_action })}>
                               Open Fix In Editor
                             </button>
                           </>
@@ -5239,6 +5353,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                             salesforceNativeScript ? {
                               key: `${suggestion.id}:native-preview`,
                               label: 'Review Native Preview Limitation',
+                              opensEditor: false,
                               onClick: openSalesforceNativePreviewInEditor,
                             } : null,
                             {

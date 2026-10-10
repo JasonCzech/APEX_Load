@@ -61,6 +61,8 @@ const projectState = {
   activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
 }
 let publishLateEnterpriseSave: (() => void) | null = null
+// Scripts the mock archive review heard were saved from the editor.
+let archiveDraftSaves: string[] = []
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
@@ -75,8 +77,13 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void }) => (
-    <div data-testid="script-editor">
+  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
+    <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
+      {returnTarget && <button onClick={returnTarget.onReturn}>{returnTarget.label}</button>}
+      {/* Save changes in the prompt on the way back: the editor saves, then the return goes ahead. */}
+      {returnTarget && <button onClick={() => { onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }); returnTarget.onReturn() }}>mock-return-after-saving</button>}
+      <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }, { laterEdits: true })}>mock-edited-while-saving</button>
+      <button onClick={() => onSave?.({ id: initialScript?.name === 'Second Converted Draft' ? 'saved-script-2' : 'saved-script-1', name: initialScript?.name || 'Saved Script', script: { name: initialScript?.name || 'Saved Script', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Login', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] } }, { configureSecrets: true })}>mock-secrets-after-saving</button>
       <span>editor:{initialScript?.name || 'blank'}</span>
       <span>script-id:{scriptId || 'none'}</span>
       <span>initially-dirty:{initiallyDirty ? 'yes' : 'no'}</span>
@@ -87,7 +94,7 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./EnterpriseArchiveImport', () => ({
-  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null; stayInImportReview?: boolean }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }) => void, onClose?: () => void }) => {
+  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null; stayInImportReview?: boolean }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }, onSaved?: (saved: { id: string }) => void) => void, onClose?: () => void }) => {
     publishLateEnterpriseSave = () => onImported?.({
       scripts: [{
         id: 'imported-script-late',
@@ -127,6 +134,20 @@ vi.mock('./EnterpriseArchiveImport', () => ({
         config: { base_url: 'https://import.example.com' },
         actions: [],
       }, { targetSection: 'runtime' })}>mock-enterprise-archive-review-option</button>
+      <button onClick={() => onEdit?.({
+        name: 'Converted Enterprise Script Archive Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://import.example.com' },
+        actions: [],
+      }, undefined, saved => { archiveDraftSaves.push(saved.id) })}>mock-enterprise-archive-open-tracked</button>
+      <button onClick={() => onEdit?.({
+        name: 'Second Converted Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://import.example.com' },
+        actions: [],
+      }, undefined, saved => { archiveDraftSaves.push(saved.id) })}>mock-enterprise-archive-open-second-tracked</button>
       <button onClick={onClose}>mock-enterprise-archive-close</button>
     </div>
   },
@@ -750,7 +771,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('0 scenarios')
 
     const existingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Existing Script'))
-    expect(existingRow).toBeDefined()
+    expect(existingRow).toBeTruthy()
     if (!existingRow) {
       return
     }
@@ -776,7 +797,7 @@ describe('ScriptsPage', () => {
     await clickButton('Blank & Assisted Editors')
 
     const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
-    expect(sampleButton).toBeDefined()
+    expect(sampleButton).toBeTruthy()
     if (!sampleButton) {
       return
     }
@@ -792,7 +813,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="sample-import"]')).not.toBeNull()
 
     const sampleEditButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-sample-edit'))
-    expect(sampleEditButton).toBeDefined()
+    expect(sampleEditButton).toBeTruthy()
     if (!sampleEditButton) {
       return
     }
@@ -806,7 +827,7 @@ describe('ScriptsPage', () => {
 
     apiMock.getScript.mockResolvedValueOnce({ script: { name: 'Canonical saved script', protocol: 'http', actions: [] } })
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-save'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -1523,7 +1544,7 @@ describe('ScriptsPage', () => {
     await clickButton('Script Library')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
-    expect(searchInput).not.toBeNull()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) {
       return
     }
@@ -1672,7 +1693,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Edit')
-    expect(editButton).toBeDefined()
+    expect(editButton).toBeTruthy()
     if (!editButton) return
 
     await act(async () => {
@@ -1770,7 +1791,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
-    expect(jmeterButton).toBeDefined()
+    expect(jmeterButton).toBeTruthy()
     if (!jmeterButton) {
       return
     }
@@ -1782,7 +1803,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="jmeter-import"]')).not.toBeNull()
 
     const jmeterEditButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-edit'))
-    expect(jmeterEditButton).toBeDefined()
+    expect(jmeterEditButton).toBeTruthy()
     if (!jmeterEditButton) {
       return
     }
@@ -1806,7 +1827,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
-    expect(jmeterButton).toBeDefined()
+    expect(jmeterButton).toBeTruthy()
     if (!jmeterButton) {
       return
     }
@@ -1816,7 +1837,7 @@ describe('ScriptsPage', () => {
     })
 
     const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-save'))
-    expect(importSaveButton).toBeDefined()
+    expect(importSaveButton).toBeTruthy()
     if (!importSaveButton) {
       return
     }
@@ -1845,7 +1866,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
-    expect(enterpriseArchiveButton).toBeDefined()
+    expect(enterpriseArchiveButton).toBeTruthy()
     if (!enterpriseArchiveButton) {
       return
     }
@@ -1857,7 +1878,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
 
     const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-save'))
-    expect(importSaveButton).toBeDefined()
+    expect(importSaveButton).toBeTruthy()
     if (!importSaveButton) {
       return
     }
@@ -1957,7 +1978,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
-    expect(enterpriseArchiveButton).toBeDefined()
+    expect(enterpriseArchiveButton).toBeTruthy()
     if (!enterpriseArchiveButton) {
       return
     }
@@ -1970,7 +1991,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Back to Create Script')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -1995,7 +2016,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
-    expect(enterpriseArchiveButton).toBeDefined()
+    expect(enterpriseArchiveButton).toBeTruthy()
     if (!enterpriseArchiveButton) {
       return
     }
@@ -2006,7 +2027,7 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     const preservedInput = container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null
-    expect(preservedInput).not.toBeNull()
+    expect(preservedInput).toBeTruthy()
     if (!preservedInput) {
       return
     }
@@ -2018,6 +2039,8 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:Converted Enterprise Script Archive Draft')
     expect(container.textContent).toContain('Back to Converted Script')
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    // The review stays open behind the editor, so leaving keeps its guard.
+    expect(container.querySelector('[data-testid="script-editor"]')?.getAttribute('data-retained-guards')).toBe('enterprise-archive-import')
 
     await clickButton('Back to Converted Script')
 
@@ -2025,6 +2048,151 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
     expect(container.textContent).toContain('mock-enterprise-archive-review-option')
+  })
+
+  it('opens a script saved on the way back even when its save returned no authoring projection', async () => {
+    apiMock.getScript.mockResolvedValue({ script: { id: 'saved-script-1', name: 'Converted Enterprise Script Archive Draft', protocol: 'http', version: '1', created_at: '2026-10-09T00:00:00Z' } })
+    let loadSaved!: () => void
+    apiMock.getScriptAuthoring.mockReturnValue(new Promise(resolve => {
+      loadSaved = () => resolve(authoringFixture({ name: 'Converted Enterprise Script Archive Draft' }, 'saved-script-1'))
+    }))
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('Import Loadrunner Script Archive')
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull(), { timeout: 5000 })
+    await clickButton('mock-enterprise-archive-review-option')
+
+    // The saved script carries no projection, so the page loads it; the
+    // return that follows the save must not drop that load. Until it lands,
+    // the editor and the review behind it stay as they were.
+    await clickButton('mock-return-after-saving')
+    await flushPromises()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="script-editor"]')?.getAttribute('data-retained-guards')).toBe('enterprise-archive-import')
+    await act(async () => { loadSaved() })
+    await vi.waitFor(() => expect(container.textContent).toContain('script-id:saved-script-1'), { timeout: 5000 })
+    expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(true)
+  })
+
+  it('returns to the review when Back is clicked while a saved script is still loading', async () => {
+    apiMock.getScript.mockResolvedValue({ script: { id: 'saved-script-1', name: 'Converted Enterprise Script Archive Draft', protocol: 'http', version: '1', created_at: '2026-10-09T00:00:00Z' } })
+    let loadSaved!: () => void
+    apiMock.getScriptAuthoring.mockReturnValue(new Promise(resolve => {
+      loadSaved = () => resolve(authoringFixture({ name: 'Converted Enterprise Script Archive Draft' }, 'saved-script-1'))
+    }))
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('Import Loadrunner Script Archive')
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull(), { timeout: 5000 })
+    await clickButton('mock-enterprise-archive-review-option')
+
+    // A plain save, then, a moment later, Back.
+    const plainSave = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'mock-save')
+    expect(plainSave).toBeTruthy()
+    await act(async () => { plainSave!.click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    await clickButton('Back to Converted Script')
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    // The dropped load does not reopen the saved script when it lands.
+    await act(async () => { loadSaved() })
+    await flushPromises()
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+  })
+
+  describe('a converted draft saved from the editor', () => {
+    const onScriptSaved = vi.fn()
+    const openTrackedDraft = async () => {
+      archiveDraftSaves = []
+      onScriptSaved.mockClear()
+      apiMock.getScriptAuthoring.mockClear()
+      await act(async () => {
+        root.render(<ScriptsPage initialMode="create-options" onScriptSaved={onScriptSaved} />)
+      })
+      await flushPromises()
+      await clickButton('Import')
+      await clickButton('Import Loadrunner Script Archive')
+      await vi.waitFor(() => expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull(), { timeout: 5000 })
+      const preservedInput = container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement
+      preservedInput.value = 'review-state-preserved'
+      await clickButton('mock-enterprise-archive-open-tracked')
+      expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    }
+    const clickExactly = async (label: string) => {
+      const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === label)
+      expect(button).toBeTruthy()
+      await act(async () => { button!.click() })
+      await flushPromises()
+    }
+    const expectBackOnTheReview = () => {
+      expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+      expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
+      expect(archiveDraftSaves).toEqual(['saved-script-1'])
+      expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(false)
+      // A page embedding this one still hears of the save, once.
+      expect(onScriptSaved).toHaveBeenCalledTimes(1)
+      expect(onScriptSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1' }))
+    }
+
+    it('goes back to the archive review, which records it as saved', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-save')
+      expectBackOnTheReview()
+    })
+
+    it('goes back to the review once when it was saved on the way back', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-return-after-saving')
+      expectBackOnTheReview()
+    })
+
+    it('opens the saved script instead when it was edited while saving, and the review still counts it', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-edited-while-saving')
+      expect(archiveDraftSaves).toEqual(['saved-script-1'])
+      expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(true)
+    })
+
+    it('goes back to the review when the save also asked to set up secrets, and opens them in the library', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-secrets-after-saving')
+      expectBackOnTheReview()
+      expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+      await clickButton('mock-enterprise-archive-close')
+      await clickButton('Script Library')
+      await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')?.textContent).toContain('Secret Bindings'), { timeout: 5000 })
+    })
+
+    it('opens the secrets of each draft saved that way in turn', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-secrets-after-saving')
+      await clickExactly('mock-enterprise-archive-open-second-tracked')
+      expect(container.textContent).toContain('editor:Second Converted Draft')
+      await clickExactly('mock-secrets-after-saving')
+      expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+      expect(archiveDraftSaves).toEqual(['saved-script-1', 'saved-script-2'])
+
+      // The dialog names the script it loads.
+      apiMock.getScriptAuthoring.mockImplementation(async (id: string, projectId?: string) => authoringFixture(
+        { name: id === 'saved-script-2' ? 'Second Converted Draft' : 'Converted Enterprise Script Archive Draft' }, id, projectId))
+      await clickButton('mock-enterprise-archive-close')
+      await clickButton('Script Library')
+      const dialogTitle = () => document.body.querySelector('[role="dialog"][aria-modal="true"] h3')?.textContent ?? ''
+      await vi.waitFor(() => expect(dialogTitle()).toBe('Secret Bindings · Converted Enterprise Script Archive Draft'), { timeout: 5000 })
+      const close = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-modal="true"] button')).find(button => button.textContent === 'Close')
+      expect(close()).toBeTruthy()
+      await act(async () => { close()!.click() })
+      await vi.waitFor(() => expect(dialogTitle()).toBe('Secret Bindings · Second Converted Draft'), { timeout: 5000 })
+      await act(async () => { close()!.click() })
+      await flushPromises()
+      expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+    })
   })
 
   it('returns JMeter import close actions to the create options shell', async () => {
@@ -2037,7 +2205,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
-    expect(jmeterButton).toBeDefined()
+    expect(jmeterButton).toBeTruthy()
     if (!jmeterButton) {
       return
     }
@@ -2050,7 +2218,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Back to Create Script')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2082,7 +2250,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('embedded or sidecar helper execution')
 
     const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web Services (SOAP)'))
-    expect(soapButton).toBeDefined()
+    expect(soapButton).toBeTruthy()
     if (!soapButton) {
       return
     }
@@ -2095,7 +2263,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:blank')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2105,7 +2273,7 @@ describe('ScriptsPage', () => {
     })
 
     const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Script Builder'))
-    expect(createButtonAgain).toBeDefined()
+    expect(createButtonAgain).toBeTruthy()
     if (!createButtonAgain) {
       return
     }
@@ -2118,7 +2286,7 @@ describe('ScriptsPage', () => {
     await clickButton('Blank & Assisted Editors')
 
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
-    expect(javaButton).toBeDefined()
+    expect(javaButton).toBeTruthy()
     if (!javaButton) {
       return
     }
@@ -2186,7 +2354,7 @@ describe('ScriptsPage', () => {
     await clickButton('Starter Templates')
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
-    expect(templateButton).toBeDefined()
+    expect(templateButton).toBeTruthy()
     if (!templateButton) {
       return
     }
@@ -2228,7 +2396,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
 
     const componentButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('OAuth Bearer Token Flow'))
-    expect(componentButton).toBeDefined()
+    expect(componentButton).toBeTruthy()
     if (!componentButton) {
       return
     }
@@ -2295,7 +2463,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Review validation warnings before promotion.')
 
     const resumeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Resume'))
-    expect(resumeButton).toBeDefined()
+    expect(resumeButton).toBeTruthy()
     if (!resumeButton) {
       return
     }
@@ -2308,7 +2476,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:Migrated checkout review')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2320,7 +2488,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
-    expect(approveButton).toBeDefined()
+    expect(approveButton).toBeTruthy()
     if (!approveButton) {
       return
     }
@@ -2369,7 +2537,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
-    expect(approveButton).toBeDefined()
+    expect(approveButton).toBeTruthy()
     if (!approveButton) {
       return
     }
@@ -2528,7 +2696,7 @@ describe('ScriptsPage', () => {
     })
 
     const previewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Preview Repair'))
-    expect(previewButton).toBeDefined()
+    expect(previewButton).toBeTruthy()
     if (!previewButton) {
       return
     }
@@ -2551,7 +2719,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('actions[1].body')
 
     const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Apply Repair'))
-    expect(applyButton).toBeDefined()
+    expect(applyButton).toBeTruthy()
     if (!applyButton) {
       return
     }
@@ -2578,7 +2746,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const sampleImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Request / Response Sample'))
-    expect(sampleImportButton).toBeDefined()
+    expect(sampleImportButton).toBeTruthy()
     if (!sampleImportButton) {
       return
     }
@@ -2722,7 +2890,7 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
 
 async function clickButton(label: string) {
   const button = Array.from(document.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
-  expect(button).toBeDefined()
+  expect(button).toBeTruthy()
   if (!button) {
     return
   }

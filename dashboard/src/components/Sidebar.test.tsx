@@ -228,6 +228,7 @@ describe('Sidebar', () => {
 
     const logoutButton = container.querySelector('.sidebar-identity-action-button') as HTMLButtonElement | null
     expect(logoutButton?.textContent).toBe('Sign out')
+    expect(logoutButton).toBeTruthy()
     if (!logoutButton) {
       return
     }
@@ -389,7 +390,7 @@ describe('Sidebar', () => {
     await openWorkspaceContext()
 
     const projectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
-    expect(projectButton).toBeDefined()
+    expect(projectButton).toBeTruthy()
     if (!projectButton) {
       return
     }
@@ -399,7 +400,7 @@ describe('Sidebar', () => {
     })
 
     const searchButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Search')
-    expect(searchButton).toBeDefined()
+    expect(searchButton).toBeTruthy()
     if (!searchButton) {
       return
     }
@@ -429,7 +430,7 @@ describe('Sidebar', () => {
 
     await openWorkspaceContext()
     const projectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
-    expect(projectButton).toBeDefined()
+    expect(projectButton).toBeTruthy()
     if (!projectButton) {
       return
     }
@@ -485,8 +486,8 @@ describe('Sidebar', () => {
     await openWorkspaceContext()
     const domainButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-domain-options"]')
     const projectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
-    expect(domainButton).toBeDefined()
-    expect(projectButton).toBeDefined()
+    expect(domainButton).toBeTruthy()
+    expect(projectButton).toBeTruthy()
     if (!domainButton || !projectButton) {
       return
     }
@@ -521,7 +522,7 @@ describe('Sidebar', () => {
     await expandSidebar()
 
     const guideButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Help & documentation'))
-    expect(guideButton).toBeDefined()
+    expect(guideButton).toBeTruthy()
     if (!guideButton) {
       return
     }
@@ -688,7 +689,7 @@ describe('Sidebar', () => {
     await expandSidebar()
 
     const accessButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Access'))
-    expect(accessButton).toBeDefined()
+    expect(accessButton).toBeTruthy()
     if (!accessButton) {
       return
     }
@@ -718,11 +719,11 @@ describe('Sidebar', () => {
       await Promise.resolve()
     })
     const badge = container.querySelector<HTMLButtonElement>('.build-badge-pill')
-    expect(badge).not.toBeNull()
+    expect(badge).toBeTruthy()
     if (!badge) return
     await act(async () => { badge.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const copyButton = container.querySelector<HTMLButtonElement>('.build-badge-copy')
-    expect(copyButton).not.toBeNull()
+    expect(copyButton).toBeTruthy()
     if (!copyButton) return
     await act(async () => { copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Version: v1.4.2-dev.20260613+abc1234'))
@@ -779,7 +780,7 @@ describe('Sidebar', () => {
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
 
     const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Editor')
-    expect(userButton).toBeDefined()
+    expect(userButton).toBeTruthy()
     if (!userButton) {
       return
     }
@@ -830,7 +831,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Dev User Preview')
     const signOutButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === 'Sign out')
-    expect(signOutButton).toBeDefined()
+    expect(signOutButton).toBeTruthy()
     if (!signOutButton) return
 
     await act(async () => {
@@ -1081,7 +1082,7 @@ describe('Sidebar', () => {
     })
 
     const nameInput = container.querySelector<HTMLInputElement>('.project-modal-field input')
-    expect(nameInput).not.toBeNull()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set

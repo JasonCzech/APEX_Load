@@ -1066,6 +1066,10 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('iPad Air')
     expect(container.textContent).toContain('iPadOS · WebKit · tablet tier')
 
+    expect(deviceToggle).toBeTruthy()
+    expect(overallToggle).toBeTruthy()
+    expect(engineToggle).toBeTruthy()
+    expect(platformToggle).toBeTruthy()
     if (!platformToggle || !engineToggle || !overallToggle || !deviceToggle) {
       return
     }
@@ -1096,6 +1100,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Series: solid LCP and dashed INP for each selected run.')
     expect(container.textContent).not.toContain('iPhone 14 Pro')
 
+    expect(exportButton).toBeTruthy()
     if (!exportButton) {
       return
     }

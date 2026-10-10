@@ -33,7 +33,7 @@ describe('ThemeToggle', () => {
     })
 
     const select = container.querySelector('select')
-    expect(select).toBeDefined()
+    expect(select).toBeTruthy()
     if (!select) return
 
     expect(select.value).toBe('solarized-dark')

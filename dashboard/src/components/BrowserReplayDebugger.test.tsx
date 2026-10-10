@@ -123,8 +123,8 @@ describe('BrowserReplayDebugger', () => {
 
     const copyURLButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy URL'))
     const copyErrorButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy error'))
-    expect(copyURLButton).toBeDefined()
-    expect(copyErrorButton).toBeDefined()
+    expect(copyURLButton).toBeTruthy()
+    expect(copyErrorButton).toBeTruthy()
     if (!copyURLButton || !copyErrorButton) {
       return
     }
@@ -147,7 +147,7 @@ describe('BrowserReplayDebugger', () => {
 
     const copyConsoleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy console'))
     const copyNetworkButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy network'))
-    expect(copyConsoleButton).toBeDefined()
+    expect(copyConsoleButton).toBeTruthy()
     expect(copyNetworkButton).toBeUndefined()
     if (!copyConsoleButton) {
       return
@@ -162,7 +162,7 @@ describe('BrowserReplayDebugger', () => {
     expect(copyConsoleButton.textContent).toContain('Console copied')
 
     const showConsolePreviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Show preview'))
-    expect(showConsolePreviewButton).toBeDefined()
+    expect(showConsolePreviewButton).toBeTruthy()
     if (!showConsolePreviewButton) {
       return
     }
@@ -191,7 +191,7 @@ describe('BrowserReplayDebugger', () => {
     expect(container.querySelector('.browser-debugger-detail-status.success')).not.toBeNull()
 
     const viewScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
-    expect(viewScreenshotButton).toBeDefined()
+    expect(viewScreenshotButton).toBeTruthy()
     if (!viewScreenshotButton) {
       return
     }
@@ -225,7 +225,7 @@ describe('BrowserReplayDebugger', () => {
     expect(document.activeElement).toBe(viewScreenshotButton)
 
     const expandAllButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand all'))
-    expect(expandAllButton).toBeDefined()
+    expect(expandAllButton).toBeTruthy()
     if (!expandAllButton) {
       return
     }
@@ -262,7 +262,7 @@ describe('BrowserReplayDebugger', () => {
     expect(collapseAllButton).toBeDefined()
 
     const copyHTMLButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy HTML'))
-    expect(copyHTMLButton).toBeDefined()
+    expect(copyHTMLButton).toBeTruthy()
     if (!copyHTMLButton) {
       return
     }
@@ -276,7 +276,7 @@ describe('BrowserReplayDebugger', () => {
     expect(copyHTMLButton.textContent).toContain('HTML copied')
 
     const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy details'))
-    expect(copyButton).toBeDefined()
+    expect(copyButton).toBeTruthy()
     if (!copyButton) {
       return
     }
@@ -329,7 +329,7 @@ describe('BrowserReplayDebugger', () => {
     expect(container.textContent).toContain('web2_browser_profile')
 
     const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy details'))
-    expect(copyButton).toBeDefined()
+    expect(copyButton).toBeTruthy()
     if (!copyButton) {
       return
     }
@@ -412,7 +412,7 @@ describe('BrowserReplayDebugger', () => {
     expect(container.textContent).toContain('[data-testid="search-submit"]')
 
     const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Use suggested selector'))
-    expect(applyButton).toBeDefined()
+    expect(applyButton).toBeTruthy()
     if (!applyButton) {
       return
     }
