@@ -146,6 +146,10 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
 	}
+	b.quic = browserQUICAuto
+	if quic, ok := config["browser_quic"].(string); ok && strings.TrimSpace(quic) != "" {
+		b.quic = strings.ToLower(strings.TrimSpace(quic))
+	}
 	if autoActivatePopups, ok := config["browser_auto_activate_popups"].(bool); ok {
 		b.autoActivatePopups = autoActivatePopups
 	}
@@ -306,6 +310,15 @@ func (b *Browser) validateConfig() error {
 	}
 	if err := validateBrowserProxy(b.proxy); err != nil {
 		return err
+	}
+	switch b.quic {
+	case browserQUICAuto:
+	case browserQUICOff:
+		if b.engine == "webkit" {
+			return fmt.Errorf("browser QUIC off is not supported by WebKit")
+		}
+	default:
+		return fmt.Errorf("browser QUIC mode must be auto or off")
 	}
 	if b.proxy != nil {
 		if err := protocol.ValidateTargetAddress(b.proxy.Server, b.allowedTargetHosts); err != nil {

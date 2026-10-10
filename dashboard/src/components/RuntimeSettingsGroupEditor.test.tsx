@@ -624,6 +624,33 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.browser).toBeUndefined() // legacy browser folded into browser_config
   })
 
+  it('overrides the browser QUIC mode for a group and can return to inherit', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={1}
+          onFocusChange={() => {}}
+          overrides={[undefined, { log_level: '', auto_transactions: '' }]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Browser (Playwright)')
+    const quicSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.textContent === 'Off (launch with QUIC disabled)'),
+    ) as HTMLSelectElement
+    expect(quicSelect).toBeTruthy()
+    expect(quicSelect.value).toBe('')
+    act(() => setSelectValue(quicSelect, 'off'))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].browser_config).toEqual(expect.objectContaining({ quic: 'off' }))
+    act(() => setSelectValue(quicSelect, ''))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].browser_config?.quic).toBeUndefined()
+  })
+
   it('falls back to the Summary tab when switching focus to a group that hides the active tab', () => {
     const groups: RuntimeEditorGroup[] = [
       { name: 'Api', scriptId: 's1', protocol: 'http' },

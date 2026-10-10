@@ -7176,6 +7176,14 @@
         "proxy": {
           "$ref": "#/$defs/BrowserProxyConfig"
         },
+        "quic": {
+          "enum": [
+            "",
+            "auto",
+            "off"
+          ],
+          "type": "string"
+        },
         "review_policy": {
           "$ref": "#/$defs/BrowserReviewPolicy"
         },

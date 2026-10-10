@@ -61,7 +61,7 @@ func TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire(t *testing.T) {
 	}
 	replacements := map[string]map[string]json.RawMessage{
 		"null_scalar": {"redirect_hop": json.RawMessage("null")}, "null_bytes": {"bytes": json.RawMessage("null")}, "wrong_boolean": {"service_worker": json.RawMessage(`"false"`)},
-		"future": {"version": json.RawMessage("4")}, "v2_with_association": {"document_association": json.RawMessage(`"cdp_loader_join"`), "document_id": json.RawMessage(`"0123456789abcdef0123456789abcdef-d1"`)}, "v2_with_association_reason": {"identity_unavailable_reason": json.RawMessage(`"ambiguous_cdp_join"`)}, "subnanosecond": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20.1234567891Z"`)}, "offset": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20+00:00"`)},
+		"future": {"version": json.RawMessage("5")}, "v2_with_protocol": {"protocol": json.RawMessage(`"h3"`)}, "v3_with_protocol": {"version": json.RawMessage("3"), "protocol": json.RawMessage(`"h3"`)}, "v4_protocol_and_reason": {"version": json.RawMessage("4"), "protocol": json.RawMessage(`"h3"`), "protocol_unavailable_reason": json.RawMessage(`"cached"`)}, "v4_unknown_protocol": {"version": json.RawMessage("4"), "protocol": json.RawMessage(`"h3-29"`)}, "v4_unknown_reason": {"version": json.RawMessage("4"), "protocol_unavailable_reason": json.RawMessage(`"guessed"`)}, "v2_with_association": {"document_association": json.RawMessage(`"cdp_loader_join"`), "document_id": json.RawMessage(`"0123456789abcdef0123456789abcdef-d1"`)}, "v2_with_association_reason": {"identity_unavailable_reason": json.RawMessage(`"ambiguous_cdp_join"`)}, "subnanosecond": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20.1234567891Z"`)}, "offset": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20+00:00"`)},
 		"invalid_date": {"observed_at": json.RawMessage(`"2023-02-30T22:13:20Z"`)}, "wrong_generation": {"request_id": json.RawMessage(`"fedcba9876543210fedcba9876543210-request-1"`)},
 		"unsafe_origin": {"origin": json.RawMessage(`"https://secret@example.test"`)}, "unknown": {"server_time_ms": json.RawMessage("0")},
 		"duplicate_phase":      {"phases": json.RawMessage(`[{"name":"response","start_ms":0,"end_ms":0},{"name":"response","start_ms":0,"end_ms":0}]`)},
@@ -86,5 +86,39 @@ func TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire(t *testing.T) {
 				t.Fatal("invalid wire admitted")
 			}
 		})
+	}
+}
+
+func TestDecodeBrowserResourceEvidenceVersion4Protocol(t *testing.T) {
+	raw := resourceWireFixture(t)
+	for _, tc := range []struct{ protocol, reason string }{{"h1", ""}, {"h2", ""}, {"h3", ""}, {"", "cached"}, {"", "service_worker"}, {"", "draft_protocol"}, {"", "not_exposed"}, {"", "no_observation"}, {"", ""}} {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		fields["version"] = json.RawMessage("4")
+		if tc.protocol != "" {
+			fields["protocol"], _ = json.Marshal(tc.protocol)
+		}
+		if tc.reason != "" {
+			fields["protocol_unavailable_reason"], _ = json.Marshal(tc.reason)
+		}
+		value, _ := json.Marshal(fields)
+		decoded, err := DecodeBrowserResourceEvidence(value)
+		if err != nil || decoded.Protocol != tc.protocol || decoded.ProtocolUnavailableReason != tc.reason {
+			t.Fatalf("protocol=%q reason=%q: decoded=%+v err=%v", tc.protocol, tc.reason, decoded, err)
+		}
+	}
+}
+
+func TestNormalizeBrowserResourceProtocol(t *testing.T) {
+	cases := map[string][2]string{
+		"http/1.1": {"h1", ""}, "HTTP/1.0": {"h1", ""}, "h2": {"h2", ""}, "HTTP/2.0": {"h2", ""}, "h3": {"h3", ""}, "HTTP/3": {"h3", ""},
+		"h3-29": {"", "draft_protocol"}, "hq-29": {"", "draft_protocol"}, "quic/1+spdy/3": {"", "draft_protocol"},
+		"": {"", "not_exposed"}, "data": {"", "not_network"}, "blob": {"", "not_network"}, "spdy/3.1": {"", "unsupported"},
+	}
+	for raw, want := range cases {
+		protocol, reason := NormalizeBrowserResourceProtocol(raw)
+		if protocol != want[0] || reason != want[1] {
+			t.Errorf("NormalizeBrowserResourceProtocol(%q) = %q, %q; want %q, %q", raw, protocol, reason, want[0], want[1])
+		}
 	}
 }

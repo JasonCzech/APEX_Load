@@ -81,6 +81,9 @@ type Options struct {
 	WindowY      int
 	WindowWidth  int
 	WindowHeight int
+	// DisableQUIC launches the recorded Chromium with --disable-quic, so the
+	// recording captures no HTTP/3 traffic.
+	DisableQUIC bool
 	// Scrubber redacts WebSocket frame payloads before storage. Injected by the
 	// API layer (which owns pkg/scrub); nil disables payload redaction.
 	Scrubber func(string) string
@@ -2424,9 +2427,13 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 	}()
 }
 
-// windowArgs builds Chromium launch args for window positioning/sizing.
+// windowArgs builds Chromium launch args for window positioning/sizing and
+// the recorded browser's QUIC mode.
 func (r *Recorder) windowArgs() []string {
 	var args []string
+	if r.opts.DisableQUIC {
+		args = append(args, "--disable-quic")
+	}
 	if r.opts.WindowWidth > 0 && r.opts.WindowHeight > 0 {
 		args = append(args, fmt.Sprintf("--window-size=%d,%d", r.opts.WindowWidth, r.opts.WindowHeight))
 	}

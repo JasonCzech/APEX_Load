@@ -1,5 +1,5 @@
 import type { BrowserResourceEvidenceV2 } from '../types/browserResourceEvidence'
-import { browserResourcePhaseRows } from './browserResourceEvidenceModel'
+import { browserResourcePhaseRows, browserResourceProtocolLabel } from './browserResourceEvidenceModel'
 
 const measured = (value: number | null | undefined, suffix: string) => value === undefined || value === null ? 'Unavailable' : `${value.toLocaleString('en-US', { maximumFractionDigits: 6 })}${suffix}`
 const observedBoolean = (value: boolean | null | undefined, reason?: string) => value === undefined || value === null ? `Unavailable${reason ? `: ${reason}` : ''}` : `${value} (observed)`
@@ -32,6 +32,7 @@ export default function BrowserNativeRequestEvidence({ evidence, onSelectDocumen
       <dt>Native epoch start</dt><dd>{measured(evidence.epoch_start_ms, ' ms')} · clock unverified</dd>
       <dt>Document-relative offset</dt><dd>{measured(evidence.document_offset_ms, ' ms')}</dd>
       <dt>Request state / timing source</dt><dd>{evidence.state} / {evidence.timing_source}</dd>
+      <dt>Negotiated protocol</dt><dd>{browserResourceProtocolLabel(evidence)}</dd>
       <dt>Service worker</dt><dd>{observedBoolean(evidence.service_worker, evidence.service_worker_unavailable_reason)}</dd>
       <dt>Cache</dt><dd>{observedBoolean(evidence.cache, evidence.cache_unavailable_reason)}</dd>
       <dt>Initiator provenance</dt><dd>{evidence.initiator_type

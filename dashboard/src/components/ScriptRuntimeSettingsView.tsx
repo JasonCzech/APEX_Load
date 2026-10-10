@@ -1426,6 +1426,14 @@ export function ScriptRuntimeSettingsView({
                 <option value="all">All non-HTML resources</option>
               </select>
             </label>
+            <label>
+              <span>HTTP/3 (QUIC)</span>
+              <select value={script.config.browser?.quic || 'auto'}
+                onChange={e => updateField('config.browser', { ...script.config.browser, quic: e.target.value === 'off' ? 'off' : undefined })}>
+                <option value="auto">Browser default (uses HTTP/3 when a site offers it)</option>
+                <option value="off" disabled={script.config.browser?.engine === 'webkit'}>Off (launch with QUIC disabled)</option>
+              </select>
+            </label>
             <div className="browser-emulation-checkbox-list" aria-label="Browser emulation toggles">
               <label className="checkbox-label">
                 <input type="checkbox" checked={script.config.browser?.headless ?? true}

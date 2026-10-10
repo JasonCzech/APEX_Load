@@ -28,6 +28,7 @@ type Browser struct {
 	availableScreenHeight  int
 
 	engine                     string
+	quic                       string // browserQUICAuto or browserQUICOff
 	baseURL                    string
 	currentURL                 string
 	deviceProfile              string

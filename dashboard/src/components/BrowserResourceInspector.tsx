@@ -3,7 +3,7 @@ import type { BrowserResourcePageQuery } from '../types/browserResourcePage'
 import { DEFAULT_BROWSER_RESOURCE_QUERY } from '../types/browserResourcePage'
 import { readArchiveBrowserResourcePage } from '../hooks/api/useBrowserResourceApi'
 import { useBrowserResourcePage, type BrowserResourcePageLoader } from './useBrowserResourcePage'
-import { browserDocumentWaterfall, browserResourceRowKey } from './browserResourceEvidenceModel'
+import { browserDocumentWaterfall, browserResourceProtocolLabel, browserResourceRowKey } from './browserResourceEvidenceModel'
 import BrowserNativeRequestEvidence from './BrowserNativeRequestEvidence'
 import BrowserHARDownloads from './BrowserHARDownloads'
 import BrowserHAREntryView from './BrowserHAREntryView'
@@ -116,9 +116,9 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
           </li>)}</ul> : <p>No request on this page carries a document-relative start for this document.</p>}
         </section>}
         {page.items.length ? <div role="region" aria-label="Retained archive resources table" tabIndex={0} className="browser-resource-table-scroll"><table className="tx-table"><thead><tr>
-          <th scope="col">Resource</th><th scope="col">Type / status</th><th scope="col">Legacy duration / transfer</th><th scope="col">Capturing action / cohort</th><th scope="col">Inspection</th>
+          <th scope="col">Resource</th><th scope="col">Type / status / protocol</th><th scope="col">Legacy duration / transfer</th><th scope="col">Capturing action / cohort</th><th scope="col">Inspection</th>
         </tr></thead><tbody>{page.items.map((row, index) => <tr key={browserResourceRowKey(JSON.stringify(row.locator), row.browser_evidence)}>
-          <td className="browser-resource-url">{row.url || 'Unavailable'}</td><td>{row.resource_type || 'Unavailable'} / {row.status_code ?? 'Unavailable'}{row.failure_kind ? ` · ${row.failure_kind}` : ''}</td>
+          <td className="browser-resource-url">{row.url || 'Unavailable'}</td><td>{row.resource_type || 'Unavailable'} / {row.status_code ?? 'Unavailable'}{row.failure_kind ? ` · ${row.failure_kind}` : ''}<br />{row.browser_evidence ? browserResourceProtocolLabel(row.browser_evidence) : 'Protocol unavailable'}</td>
           <td>{number(row.duration_ms, ' ms')} / {number(row.bytes_received, ' B')}</td><td>{row.action_name || 'Unavailable'}<br />{[row.group, row.region, row.device_profile, row.device_platform, row.browser_engine].filter(Boolean).join(' / ') || 'Unavailable'}</td>
           <td><details><summary>Inspect retained resource {index + 1}</summary>
             <dl className="browser-resource-details"><dt>Capture locator</dt><dd>Transaction {row.locator.transaction_ordinal}, resource {row.locator.resource_ordinal}, {row.locator.branch}</dd>

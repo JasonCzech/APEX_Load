@@ -13,9 +13,21 @@ var (
 	globalPlaywright *playwright.Playwright
 	globalBrowsers   = make(map[string]playwright.Browser)
 	globalMutex      sync.Mutex
+	// testChromiumLaunchArgs lets integration tests add Chromium flags, such
+	// as trusting a fixture certificate for QUIC. It is part of the pool key
+	// and is never set outside tests. Guarded by globalMutex.
+	testChromiumLaunchArgs []string
 )
 
-func getBrowserInstance(engine string, headless bool) (playwright.Browser, error) {
+// Browser QUIC modes (config.browser.quic). "auto" leaves the engine's own
+// HTTP/3 behavior alone; "off" disables QUIC at launch. QUIC is a
+// launch-level switch, so it is part of the browser pool key.
+const (
+	browserQUICAuto = "auto"
+	browserQUICOff  = "off"
+)
+
+func getBrowserInstance(engine string, headless bool, quic ...string) (playwright.Browser, error) {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
 
@@ -31,8 +43,12 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 	if engine == "" {
 		engine = "chromium"
 	}
+	quicMode := browserQUICAuto
+	if len(quic) > 0 && quic[0] == browserQUICOff {
+		quicMode = browserQUICOff
+	}
 
-	key := browserPoolKey(engine, headless)
+	key := browserPoolKey(engine, headless, quicMode)
 	if browser := globalBrowsers[key]; browser != nil {
 		if browser.IsConnected() {
 			return browser, nil
@@ -57,10 +73,14 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 	}
 
 	if engine == "firefox" {
-		b, err = globalPlaywright.Firefox.Launch(playwright.BrowserTypeLaunchOptions{
+		options := playwright.BrowserTypeLaunchOptions{
 			Headless: playwright.Bool(headless),
 			Timeout:  playwright.Float(30000),
-		})
+		}
+		if quicMode == browserQUICOff {
+			options.FirefoxUserPrefs = map[string]any{"network.http.http3.enable": false}
+		}
+		b, err = globalPlaywright.Firefox.Launch(options)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +89,7 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 	}
 
 	if engine == "chrome" {
-		b, err = globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, "chrome"))
+		b, err = globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, "chrome", quicMode))
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +97,7 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 		return b, nil
 	}
 
-	b, err = globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, ""))
+	b, err = globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, "", quicMode))
 	if err != nil {
 		return nil, err
 	}
@@ -85,10 +105,13 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 	return b, nil
 }
 
-func browserPoolKey(engine string, headless bool) string {
+func browserPoolKey(engine string, headless bool, quic string) string {
 	channel := ""
 	if engine == "chrome" {
 		channel = "chrome"
+	}
+	if quic != browserQUICOff {
+		quic = browserQUICAuto
 	}
 	return strings.Join([]string{
 		engine,
@@ -96,6 +119,8 @@ func browserPoolKey(engine string, headless bool) string {
 		"channel=" + channel,
 		"executable=" + strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_EXECUTABLE")),
 		fmt.Sprintf("sandbox=%t", envFlagEnabled("APEXLOAD_BROWSER_SANDBOX")),
+		"quic=" + quic,
+		"test_args=" + strings.Join(testChromiumLaunchArgs, " "),
 	}, "|")
 }
 
@@ -119,7 +144,7 @@ func browserPoolKey(engine string, headless bool) string {
 // --disable-dev-shm-usage is always set: containers default to a 64MB
 // /dev/shm, which crashes Chromium renderers under load; this moves shared
 // memory to /tmp, which the manifests back with a sized emptyDir.
-func chromiumLaunchOptions(headless bool, channel string) playwright.BrowserTypeLaunchOptions {
+func chromiumLaunchOptions(headless bool, channel string, quic ...string) playwright.BrowserTypeLaunchOptions {
 	options := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
 		Timeout:  playwright.Float(30000),
@@ -132,6 +157,10 @@ func chromiumLaunchOptions(headless bool, channel string) playwright.BrowserType
 	if !envFlagEnabled("APEXLOAD_BROWSER_SANDBOX") {
 		options.Args = append(options.Args, "--no-sandbox")
 	}
+	if len(quic) > 0 && quic[0] == browserQUICOff {
+		options.Args = append(options.Args, "--disable-quic")
+	}
+	options.Args = append(options.Args, testChromiumLaunchArgs...)
 	if executable := strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_EXECUTABLE")); executable != "" {
 		options.ExecutablePath = playwright.String(executable)
 	} else if channel != "" {

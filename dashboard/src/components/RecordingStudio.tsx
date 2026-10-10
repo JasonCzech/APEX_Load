@@ -687,6 +687,7 @@ export default function RecordingStudio({
   >([]);
   const [browserScreenshots, setBrowserScreenshots] = useState(false);
   const [browserWSPayloads, setBrowserWSPayloads] = useState(false);
+  const [browserDisableQUIC, setBrowserDisableQUIC] = useState(false);
   const [browserStorageState, setBrowserStorageState] = useState("");
   const [browserExcludeHosts, setBrowserExcludeHosts] = useState("");
   const [browserSidebar, setBrowserSidebar] = useState(true);
@@ -1491,6 +1492,7 @@ export default function RecordingStudio({
         device_preset: browserDevice || undefined,
         capture_screenshots: browserScreenshots,
         capture_ws_payloads: browserWSPayloads,
+        quic_mode: browserDisableQUIC ? "off" : undefined,
         storage_state_path: browserStorageState.trim() || undefined,
         sidebar: browserSidebar,
         exclude_hosts: browserExcludeHosts.trim()
@@ -2866,6 +2868,14 @@ export default function RecordingStudio({
                       onChange={(e) => setBrowserWSPayloads(e.target.checked)}
                     />
                     <span>Capture WebSocket frame payloads (scrubbed)</span>
+                  </label>
+                  <label className="rec-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={browserDisableQUIC}
+                      onChange={(e) => setBrowserDisableQUIC(e.target.checked)}
+                    />
+                    <span>Disable HTTP/3 (QUIC) in the recorded browser</span>
                   </label>
                   <div className="rec-form-row">
                     <div className="rec-label">

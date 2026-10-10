@@ -1968,6 +1968,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -4905,6 +4907,10 @@ paths:
                                     unavailable_reason:
                                       type: string
                                 nullable: true
+                              protocol:
+                                type: string
+                              protocol_unavailable_reason:
+                                type: string
                               redirect_chain_id:
                                 type: string
                               redirect_from_request_id:
@@ -12182,6 +12188,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -13305,6 +13313,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -14207,6 +14217,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -16323,6 +16335,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -18247,6 +18261,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -34222,6 +34238,8 @@ paths:
                   type: string
                 project_id:
                   type: string
+                quic_mode:
+                  type: string
                 section:
                   type: string
                 sidebar:
@@ -36071,6 +36089,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -37922,6 +37944,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -39854,6 +39880,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -41668,6 +41698,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -43482,6 +43516,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -50592,6 +50630,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -82671,6 +82711,8 @@ paths:
                         proxy:
                           type: object
                           additionalProperties: true
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           additionalProperties: true
@@ -83704,6 +83746,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -89514,6 +89558,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -95531,6 +95577,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -101549,6 +101597,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -107579,6 +107629,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -113609,6 +113661,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -119639,6 +119693,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -125669,6 +125725,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -127247,6 +127305,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -129297,6 +129359,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -131407,6 +131473,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -133463,6 +133533,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -135513,6 +135587,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -137568,6 +137646,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -139624,6 +139706,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -141750,6 +141836,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -142842,6 +142930,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -143436,6 +143526,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -145408,6 +145500,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -146447,6 +146541,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -148570,6 +148666,8 @@ paths:
                                     type: string
                                   username:
                                     type: string
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 properties:
@@ -149609,6 +149707,8 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserProxyConfig'
                                       additionalProperties: true
+                                    quic:
+                                      type: string
                                     review_policy:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
@@ -150978,6 +151078,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -152129,6 +152231,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -152723,6 +152827,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -154695,6 +154801,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -155734,6 +155842,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -157755,6 +157865,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -158794,6 +158906,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -161623,6 +161737,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -162662,6 +162778,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -164383,6 +164501,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -167925,6 +168045,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -169784,6 +169906,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -171852,6 +171976,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -173522,6 +173648,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -175381,6 +175509,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -176889,6 +177019,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -177483,6 +177615,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -179502,6 +179636,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -181553,6 +181691,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -183665,6 +183807,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -185722,6 +185868,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -187773,6 +187923,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -189829,6 +189983,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -191886,6 +192044,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -193797,6 +193959,8 @@ paths:
                                   type: string
                                 username:
                                   type: string
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               properties:
@@ -196924,6 +197088,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -200005,6 +200171,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -201938,6 +202106,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -203963,6 +204133,8 @@ paths:
                                   type: string
                                 username:
                                   type: string
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               properties:
@@ -207088,6 +207260,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -210097,6 +210271,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -211850,6 +212026,8 @@ paths:
                           type: string
                         username:
                           type: string
+                    quic:
+                      type: string
                     review_policy:
                       type: object
                       properties:
@@ -212232,6 +212410,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -214330,6 +214510,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -216072,6 +216256,8 @@ paths:
                           type: string
                         username:
                           type: string
+                    quic:
+                      type: string
                     review_policy:
                       type: object
                       properties:
@@ -216480,6 +216666,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -218690,6 +218878,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -221407,6 +221599,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -223132,6 +223326,8 @@ paths:
                           type: string
                         username:
                           type: string
+                    quic:
+                      type: string
                     review_policy:
                       type: object
                       properties:
@@ -223540,6 +223736,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -225750,6 +225948,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -228541,6 +228743,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -232269,6 +232473,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -234218,6 +234424,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -236258,6 +236466,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -238217,6 +238427,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -240100,6 +240312,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -244054,6 +244268,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -245991,6 +246207,8 @@ paths:
                           type: string
                         username:
                           type: string
+                    quic:
+                      type: string
                     review_policy:
                       type: object
                       properties:
@@ -246373,6 +246591,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -248473,6 +248693,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -249932,6 +250156,10 @@ paths:
                                 unavailable_reason:
                                   type: string
                             nullable: true
+                          protocol:
+                            type: string
+                          protocol_unavailable_reason:
+                            type: string
                           redirect_chain_id:
                             type: string
                           redirect_from_request_id:
@@ -250316,6 +250544,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -252211,6 +252441,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -254358,6 +254590,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -256127,6 +256361,8 @@ paths:
                           type: string
                         username:
                           type: string
+                    quic:
+                      type: string
                     review_policy:
                       type: object
                       properties:
@@ -256535,6 +256771,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -258745,6 +258983,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -260535,6 +260777,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -263363,6 +263607,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -265147,6 +265393,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -267352,6 +267600,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -269102,6 +269352,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -271282,6 +271534,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -274317,6 +274571,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -276713,6 +276969,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -280231,6 +280489,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -282151,6 +282411,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -283992,6 +284254,8 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserProxyConfig'
                                       additionalProperties: true
+                                    quic:
+                                      type: string
                                     review_policy:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
@@ -285564,6 +285828,8 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserProxyConfig'
                                       additionalProperties: true
+                                    quic:
+                                      type: string
                                     review_policy:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
@@ -287589,6 +287855,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -289509,6 +289777,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -291350,6 +291620,8 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserProxyConfig'
                                       additionalProperties: true
+                                    quic:
+                                      type: string
                                     review_policy:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
@@ -292922,6 +293194,8 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserProxyConfig'
                                       additionalProperties: true
+                                    quic:
+                                      type: string
                                     review_policy:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
@@ -294984,6 +295258,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -296854,6 +297130,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -298862,6 +299140,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -300572,6 +300852,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -302290,6 +302572,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -303997,6 +304281,8 @@ paths:
                           type: string
                         username:
                           type: string
+                    quic:
+                      type: string
                     review_policy:
                       type: object
                       properties:
@@ -304405,6 +304691,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -306615,6 +306903,10 @@ paths:
                                         required:
                                           - name
                                       nullable: true
+                                    protocol:
+                                      type: string
+                                    protocol_unavailable_reason:
+                                      type: string
                                     redirect_chain_id:
                                       type: string
                                     redirect_from_request_id:
@@ -308409,6 +308701,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -310312,6 +310606,8 @@ paths:
                             proxy:
                               type: object
                               additionalProperties: true
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               additionalProperties: true
@@ -312176,6 +312472,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -314088,6 +314386,8 @@ paths:
                                   proxy:
                                     type: object
                                     additionalProperties: true
+                                  quic:
+                                    type: string
                                   review_policy:
                                     type: object
                                     additionalProperties: true
@@ -316148,6 +316448,8 @@ paths:
                                   type: string
                                 username:
                                   type: string
+                            quic:
+                              type: string
                             review_policy:
                               type: object
                               properties:
@@ -327648,6 +327950,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -328272,6 +328576,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -331818,6 +332124,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -340941,6 +341249,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -344924,6 +345234,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -354047,6 +354359,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -357007,6 +357321,10 @@ paths:
                                 required:
                                   - name
                               nullable: true
+                            protocol:
+                              type: string
+                            protocol_unavailable_reason:
+                              type: string
                             redirect_chain_id:
                               type: string
                             redirect_from_request_id:
@@ -359968,6 +360286,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -362674,6 +362994,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -367290,6 +367612,10 @@ paths:
                                 required:
                                   - name
                               nullable: true
+                            protocol:
+                              type: string
+                            protocol_unavailable_reason:
+                              type: string
                             redirect_chain_id:
                               type: string
                             redirect_from_request_id:
@@ -387851,6 +388177,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -396974,6 +397302,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -400901,6 +401231,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -410024,6 +410356,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -412369,6 +412703,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -413165,6 +413501,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -413919,6 +414257,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -414673,6 +415013,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -415490,6 +415832,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -416234,6 +416578,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -419616,6 +419962,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -428739,6 +429087,8 @@ paths:
                                 type: string
                               username:
                                 type: string
+                          quic:
+                            type: string
                           review_policy:
                             type: object
                             properties:
@@ -430808,6 +431158,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -432296,6 +432648,8 @@ paths:
                               proxy:
                                 type: object
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 additionalProperties: true
@@ -433867,6 +434221,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -450127,6 +450483,10 @@ paths:
                                     required:
                                       - name
                                   nullable: true
+                                protocol:
+                                  type: string
+                                protocol_unavailable_reason:
+                                  type: string
                                 redirect_chain_id:
                                   type: string
                                 redirect_from_request_id:
@@ -450937,6 +451297,8 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserProxyConfig'
                                 additionalProperties: true
+                              quic:
+                                type: string
                               review_policy:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
@@ -451561,6 +451923,8 @@ paths:
                               type: string
                             username:
                               type: string
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           properties:
@@ -453004,6 +453368,8 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserProxyConfig'
                                   additionalProperties: true
+                                quic:
+                                  type: string
                                 review_policy:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
@@ -454482,6 +454848,8 @@ paths:
                         proxy:
                           type: object
                           additionalProperties: true
+                        quic:
+                          type: string
                         review_policy:
                           type: object
                           additionalProperties: true

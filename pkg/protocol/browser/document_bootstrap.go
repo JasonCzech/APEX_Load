@@ -13,8 +13,9 @@ import (
 //go:embed third_party/web_vitals/web-vitals-5.1.0.iife.js
 var browserVitalsLibrary string
 
-// resources reports each Resource Timing entry's name hash and start, the
-// only document association WebKit exposes; it never sends the URL itself.
+// resources reports each Resource Timing entry's name hash, start,
+// nextHopProtocol and transferSize, the only document association and
+// protocol evidence WebKit exposes; it never sends the URL itself.
 // loader names the evidence CDP session's binding: a new document reports its
 // token there once, from its own context, and removes the binding.
 func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resources bool) string {
@@ -48,7 +49,7 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
   let sentResources=0;
   const sendResource=entry=>{if(sentResources>=512)return;sentResources++;
    const expectedLife=lifecycleToken, admission=beginReceipt;
-   const payload={kind:'resource',document_token:documentToken,lifecycle_token:lifecycleToken,restored,time_origin:performance.timeOrigin,offset:performance.now(),metric:resourceHash(entry.name),state:'provisional',boundary,reason:'',interaction_count:0,value:entry.startTime};
+   const payload={kind:'resource',document_token:documentToken,lifecycle_token:lifecycleToken,restored,time_origin:performance.timeOrigin,offset:performance.now(),metric:resourceHash(entry.name),state:'provisional',boundary,reason:'',interaction_count:0,value:entry.startTime,protocol:typeof entry.nextHopProtocol==='string'?entry.nextHopProtocol.slice(0,32):'',transfer_size:typeof entry.transferSize==='number'?entry.transferSize:null};
    Promise.resolve(admission).then(accepted=>{if(accepted===true&&expectedLife===lifecycleToken){try{globalThis[binding](payload).catch(()=>false)}catch{}}});
   };
   new globalThis.PerformanceObserver(list=>{for(const entry of list.getEntries())sendResource(entry)}).observe({type:'resource',buffered:true});

@@ -424,6 +424,8 @@ export interface BrowserConfig {
   orientation?: string
   client_metrics?: boolean
   experience_canary?: boolean
+  /** The browser's own HTTP/3: 'auto' (default) or 'off' (launch with QUIC disabled). WebKit supports only 'auto'. */
+  quic?: '' | 'auto' | 'off'
   traceparent?: boolean
   har_capture?: string
   har_capture_policy?: string

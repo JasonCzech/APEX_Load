@@ -2,6 +2,7 @@ package sample
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -40,6 +41,7 @@ func TestHARReportsOriginsAdvertisingHTTP3(t *testing.T) {
 		t.Fatal(err)
 	}
 	var origins []string
+	details := map[string]string{}
 	for _, d := range result.Unsupported {
 		if d.Code != OriginAdvertisesH3Code {
 			continue
@@ -48,6 +50,11 @@ func TestHARReportsOriginsAdvertisingHTTP3(t *testing.T) {
 			t.Fatalf("advertisement finding severity = %s, want info", d.Severity)
 		}
 		origins = append(origins, d.Location)
+		details[d.Location] = d.Detail
+	}
+	// app.example.test has an h3 entry; the CDN only advertised.
+	if !strings.Contains(details["https://app.example.test"], "captured requests used it") || !strings.Contains(details["https://cdn.example.test"], "no captured request used it") {
+		t.Fatalf("details = %v", details)
 	}
 	want := []string{"https://app.example.test", "https://cdn.example.test"}
 	if len(origins) != len(want) || origins[0] != want[0] || origins[1] != want[1] {

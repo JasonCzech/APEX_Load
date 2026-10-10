@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserResourceEvidenceV2 } from '../types/browserResourceEvidence'
-import { browserDocumentWaterfall, browserResourceEvidenceView, browserResourcePhaseRows, browserResourceRowKey } from './browserResourceEvidenceModel'
+import { browserDocumentWaterfall, browserResourceEvidenceView, browserResourcePhaseRows, browserResourceProtocolLabel, browserResourceRowKey } from './browserResourceEvidenceModel'
 
 const generation = '0123456789abcdef0123456789abcdef'
 function fixture(): BrowserResourceEvidenceV2 {
@@ -42,7 +42,7 @@ describe('typed retained browser request evidence', () => {
       bytes: {}, document_offset_ms: -1 }).evidence).toMatchObject({ epoch_start_ms: null, service_worker: null, cache: false, bytes: {}, document_offset_ms: -1 })
   })
   it('treats missing or unsupported evidence as a gap without a native identity', () => {
-    for (const input of [undefined, null, {}, { version: 3 }, { ...fixture(), version: 4 }]) {
+    for (const input of [undefined, null, {}, { version: 3 }, { ...fixture(), version: 5 }]) {
       const view = browserResourceEvidenceView(input)
       expect(view.evidence).toBeNull()
       expect(view.issue).toBeTruthy()
@@ -54,7 +54,7 @@ describe('typed retained browser request evidence', () => {
     expect(browserResourceEvidenceView(input).evidence).toBeNull()
   })
   it.each([
-    ['version', 4], ['source_generation', generation.toUpperCase()], ['source_generation', 'a'.repeat(31)],
+    ['version', 5], ['source_generation', generation.toUpperCase()], ['source_generation', 'a'.repeat(31)],
     ['request_id', `${'a'.repeat(32)}-r1`], ['request_id', `${generation}-secret\n`], ['request_id', `${generation}-${'a'.repeat(128)}`],
     ['request_id', `${generation}-bad\0id`],
     ['frame_id', null], ['document_id', `${'a'.repeat(32)}-d1`], ['redirect_hop', -1], ['redirect_hop', 0.5], ['redirect_hop', 65],
@@ -134,5 +134,28 @@ describe('typed retained browser request evidence', () => {
     expect(rows.map(row => row.key)).toEqual(['early', 'late'])
     expect(rows[0]).toMatchObject({ start: 2, end: 11, segments: [{ name: 'dns', start: 2, end: 3 }, { name: 'response', start: 6, end: 11 }], gaps: [{ start: 3, end: 6 }] })
     expect(rows[1].gaps).toEqual([{ start: 40, end: 45 }])
+  })
+})
+
+describe('version 4 negotiated protocol', () => {
+  const v4 = (patch: Record<string, unknown>) => ({ ...fixture(), version: 4, identity_unavailable_reason: 'cdp_unobserved', ...patch })
+  it('admits a negotiated protocol or an unavailable reason, never both', () => {
+    for (const protocol of ['h1', 'h2', 'h3']) expect(browserResourceEvidenceView(v4({ protocol })).issue).toBeNull()
+    for (const reason of ['cached', 'service_worker', 'draft_protocol', 'not_exposed', 'no_observation', 'no_response', 'not_network', 'unsupported']) {
+      expect(browserResourceEvidenceView(v4({ protocol_unavailable_reason: reason })).issue).toBeNull()
+    }
+    expect(browserResourceEvidenceView(v4({ protocol: 'h3', protocol_unavailable_reason: 'cached' })).issue).not.toBeNull()
+    expect(browserResourceEvidenceView(v4({ protocol: 'h3-29' })).issue).not.toBeNull()
+    expect(browserResourceEvidenceView(v4({ protocol_unavailable_reason: 'guessed' })).issue).not.toBeNull()
+  })
+  it('refuses protocol fields on version 2 and 3 records', () => {
+    expect(browserResourceEvidenceView(change('protocol', 'h3')).issue).not.toBeNull()
+    expect(browserResourceEvidenceView({ ...fixture(), version: 3, identity_unavailable_reason: 'cdp_unobserved', protocol: 'h2' }).issue).not.toBeNull()
+  })
+  it('labels the protocol, the reason it is unknown, and older evidence', () => {
+    expect(browserResourceProtocolLabel(v4({ protocol: 'h3' }) as BrowserResourceEvidenceV2)).toBe('HTTP/3 (QUIC)')
+    expect(browserResourceProtocolLabel(v4({ protocol: 'h1' }) as BrowserResourceEvidenceV2)).toBe('HTTP/1.x')
+    expect(browserResourceProtocolLabel(v4({ protocol_unavailable_reason: 'cached' }) as BrowserResourceEvidenceV2)).toBe('Unavailable: served from cache')
+    expect(browserResourceProtocolLabel(fixture())).toBe('Not recorded (older evidence)')
   })
 })

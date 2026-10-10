@@ -1283,3 +1283,29 @@ func TestBrowserRecordingManagerNotifyConverted(t *testing.T) {
 		t.Errorf("converted broadcast = %+v", messages[0])
 	}
 }
+
+func TestBrowserRecordingManagerPassesQUICMode(t *testing.T) {
+	for _, tc := range []struct {
+		mode        string
+		wantDisable bool
+	}{{"", false}, {"auto", false}, {"off", true}, {" off ", true}} {
+		m := NewBrowserRecordingManager(NewHub())
+		var seen recbrowser.Options
+		fake := newFakeBrowserRecorder(nil)
+		m.factory = func(opts recbrowser.Options) browserRecorderBackend {
+			seen = opts
+			return fake
+		}
+		if _, err := m.Start(BrowserRecordingStartRequest{Name: "QUIC", StartURL: "https://shop.example/", QUICMode: tc.mode}); err != nil {
+			t.Fatalf("mode %q: %v", tc.mode, err)
+		}
+		if seen.DisableQUIC != tc.wantDisable {
+			t.Fatalf("mode %q: DisableQUIC = %v", tc.mode, seen.DisableQUIC)
+		}
+	}
+	for mode, want := range map[string]bool{"": true, "auto": true, "off": true, "force": false, "on": false} {
+		if got := validBrowserRecordingQUICMode(mode); got != want {
+			t.Fatalf("validBrowserRecordingQUICMode(%q) = %v", mode, got)
+		}
+	}
+}

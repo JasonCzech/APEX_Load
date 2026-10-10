@@ -1339,6 +1339,14 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="all">All resources</option>
                       </select>
                     </label>
+                    <label>
+                      <span>HTTP/3 (QUIC)</span>
+                      <select className="settings-input" value={draft.browser_config?.quic || ''} onChange={event => patchBrowserConfig({ quic: event.target.value === 'auto' || event.target.value === 'off' ? event.target.value : undefined })}>
+                        <option value="">{inheritedBrowser.quic === 'off' ? 'Inherit (off)' : 'Inherit (browser default)'}</option>
+                        <option value="auto">Browser default</option>
+                        <option value="off">Off (launch with QUIC disabled)</option>
+                      </select>
+                    </label>
                   </div>
                   <div className="scenario-option-grid">
                     <label className={`scenario-option-card ${effectiveBrowser.client_metrics ? 'selected' : ''}`}>

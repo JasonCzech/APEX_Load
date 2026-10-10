@@ -657,6 +657,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -1746,6 +1747,8 @@ export interface operations {
                   "start_ms"?: (number) | null;
                   "unavailable_reason"?: string;
                 }>) | null;
+                "protocol"?: string;
+                "protocol_unavailable_reason"?: string;
                 "redirect_chain_id"?: string;
                 "redirect_from_request_id"?: string;
                 "redirect_hop"?: number;
@@ -4394,6 +4397,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -4817,6 +4821,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -5146,6 +5151,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -5976,6 +5982,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -6708,6 +6715,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -12088,6 +12096,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -12980,6 +12989,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -13689,6 +13699,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -14363,6 +14374,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -14919,6 +14931,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -15552,6 +15565,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -16201,6 +16215,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -17083,6 +17098,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -17589,6 +17605,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -19298,6 +19315,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -19684,6 +19702,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -20379,6 +20398,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -20765,6 +20785,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -21515,6 +21536,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -22588,6 +22610,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -23413,6 +23436,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -25321,6 +25345,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -25960,6 +25985,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -26873,6 +26899,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -28034,6 +28061,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -28755,6 +28783,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -33753,6 +33782,7 @@ export interface operations {
               "new_user_per_iteration"?: (boolean) | null;
               "orientation"?: string;
               "proxy"?: Record<string, unknown>;
+              "quic"?: string;
               "review_policy"?: Record<string, unknown>;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
@@ -34130,6 +34160,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -35997,6 +36028,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -37013,6 +37045,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -37233,6 +37266,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -37955,6 +37989,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -38341,6 +38376,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -38986,6 +39022,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -40150,6 +40187,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -41072,6 +41110,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -41305,6 +41344,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -42476,6 +42516,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -45210,6 +45251,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -48182,6 +48224,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -48847,6 +48890,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -49434,6 +49478,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -50099,6 +50144,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -52465,6 +52511,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -52698,6 +52745,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -53242,6 +53290,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -54019,6 +54068,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -55936,6 +55986,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -57675,6 +57726,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -60224,6 +60277,8 @@ export interface operations {
                     "start_ms"?: (number) | null;
                     "unavailable_reason"?: string;
                   }>) | null;
+                  "protocol"?: string;
+                  "protocol_unavailable_reason"?: string;
                   "redirect_chain_id"?: string;
                   "redirect_from_request_id"?: string;
                   "redirect_hop": number;
@@ -65557,6 +65612,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -66588,6 +66644,8 @@ export interface operations {
                   "start_ms"?: (number) | null;
                   "unavailable_reason"?: string;
                 }>) | null;
+                "protocol"?: string;
+                "protocol_unavailable_reason"?: string;
                 "redirect_chain_id"?: string;
                 "redirect_from_request_id"?: string;
                 "redirect_hop": number;
@@ -67474,6 +67532,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -68378,6 +68437,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -69749,6 +69809,8 @@ export interface operations {
                   "start_ms"?: (number) | null;
                   "unavailable_reason"?: string;
                 }>) | null;
+                "protocol"?: string;
+                "protocol_unavailable_reason"?: string;
                 "redirect_chain_id"?: string;
                 "redirect_from_request_id"?: string;
                 "redirect_hop": number;
@@ -73828,6 +73890,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -74214,6 +74277,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -74676,6 +74740,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -75411,6 +75476,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -76124,6 +76190,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -76955,6 +77022,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -77655,6 +77724,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -79492,6 +79563,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -82226,6 +82298,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -82848,6 +82921,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -83156,6 +83230,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -83450,6 +83525,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -83744,6 +83820,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -84328,6 +84405,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -84839,6 +84917,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -85367,6 +85446,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -87709,6 +87789,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -88422,6 +88503,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -97773,6 +97855,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -98541,6 +98625,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -99246,6 +99332,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -100592,6 +100680,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -103326,6 +103415,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -104306,6 +104396,7 @@ export interface operations {
               "new_user_per_iteration"?: (boolean) | null;
               "orientation"?: string;
               "proxy"?: Record<string, unknown>;
+              "quic"?: string;
               "review_policy"?: Record<string, unknown>;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
@@ -106309,6 +106400,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -107106,6 +107198,8 @@ export interface operations {
                 "start_ms"?: (number) | null;
                 "unavailable_reason"?: string;
               }>) | null;
+              "protocol"?: string;
+              "protocol_unavailable_reason"?: string;
               "redirect_chain_id"?: string;
               "redirect_from_request_id"?: string;
               "redirect_hop"?: number;
@@ -107248,6 +107342,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -107970,6 +108065,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -108761,6 +108857,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -109731,6 +109828,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -110440,6 +110538,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -111114,6 +111213,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -111670,6 +111770,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -113751,6 +113852,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -114464,6 +114566,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -115170,6 +115273,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -117724,6 +117828,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -119674,6 +119779,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -121624,6 +121730,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -123574,6 +123681,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -125524,6 +125632,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -126080,6 +126189,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -126887,6 +126997,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -128537,6 +128648,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -131271,6 +131383,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -132006,6 +132119,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -132774,6 +132889,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -133479,6 +133596,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -134180,6 +134299,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -135921,6 +136041,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -136191,6 +136312,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -136828,6 +136950,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -138772,6 +138895,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -139038,6 +139162,7 @@ export interface operations {
           "include_hosts"?: Array<string>;
           "name"?: string;
           "project_id"?: string;
+          "quic_mode"?: string;
           "section"?: string;
           "sidebar"?: (boolean) | null;
           "start_url"?: string;
@@ -139204,6 +139329,7 @@ export interface operations {
               "server"?: string;
               "username"?: string;
             };
+            "quic"?: string;
             "review_policy"?: {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
@@ -139346,6 +139472,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -140133,6 +140260,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -140655,6 +140784,7 @@ export interface operations {
               "server"?: string;
               "username"?: string;
             };
+            "quic"?: string;
             "review_policy"?: {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
@@ -140797,6 +140927,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -141584,6 +141715,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -142170,6 +142303,7 @@ export interface operations {
               "server"?: string;
               "username"?: string;
             };
+            "quic"?: string;
             "review_policy"?: {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
@@ -142325,6 +142459,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -143151,6 +143286,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -143720,6 +143857,7 @@ export interface operations {
               "server"?: string;
               "username"?: string;
             };
+            "quic"?: string;
             "review_policy"?: {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
@@ -143875,6 +144013,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -144701,6 +144840,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -145271,6 +145412,7 @@ export interface operations {
               "server"?: string;
               "username"?: string;
             };
+            "quic"?: string;
             "review_policy"?: {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
@@ -145426,6 +145568,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -146252,6 +146395,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -146821,6 +146966,7 @@ export interface operations {
               "server"?: string;
               "username"?: string;
             };
+            "quic"?: string;
             "review_policy"?: {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
@@ -146976,6 +147122,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -147802,6 +147949,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -148632,6 +148781,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -149346,6 +149497,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -150051,6 +150204,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -150814,6 +150969,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -151514,6 +151671,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -153551,6 +153710,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -156285,6 +156445,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -157094,6 +157255,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -157814,6 +157976,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -161629,6 +161792,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -161849,6 +162013,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -162570,6 +162735,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -162956,6 +163122,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -163721,6 +163888,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -164883,6 +165051,7 @@ export interface operations {
                   "new_user_per_iteration"?: (boolean) | null;
                   "orientation"?: string;
                   "proxy"?: Record<string, unknown>;
+                  "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
@@ -165754,6 +165923,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -166468,6 +166639,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -167182,6 +167355,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -167896,6 +168071,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;
@@ -169086,6 +169263,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -169389,6 +169567,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -170128,6 +170307,7 @@ export interface operations {
                   "server"?: string;
                   "username"?: string;
                 };
+                "quic"?: string;
                 "review_policy"?: {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
@@ -171343,6 +171523,7 @@ export interface operations {
                 "new_user_per_iteration"?: (boolean) | null;
                 "orientation"?: string;
                 "proxy"?: Record<string, unknown>;
+                "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
@@ -171563,6 +171744,7 @@ export interface operations {
                 "server"?: string;
                 "username"?: string;
               };
+              "quic"?: string;
               "review_policy"?: {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
@@ -172372,6 +172554,8 @@ export interface operations {
                       "start_ms"?: (number) | null;
                       "unavailable_reason"?: string;
                     }>) | null;
+                    "protocol"?: string;
+                    "protocol_unavailable_reason"?: string;
                     "redirect_chain_id"?: string;
                     "redirect_from_request_id"?: string;
                     "redirect_hop": number;

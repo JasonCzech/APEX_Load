@@ -232,7 +232,7 @@ func benchmarkColdPool(t *testing.T, engine string) map[int32]bool {
 
 func benchmarkClosePooledBrowser(engine string) {
 	globalMutex.Lock()
-	key := browserPoolKey(engine, true)
+	key := browserPoolKey(engine, true, browserQUICAuto)
 	pooled := globalBrowsers[key]
 	delete(globalBrowsers, key)
 	globalMutex.Unlock()

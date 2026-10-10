@@ -75,6 +75,10 @@ type browserDocumentPayload struct {
 	Reason           string   `json:"reason"`
 	InteractionCount float64  `json:"interaction_count"`
 	Value            *float64 `json:"value"`
+	// Protocol and TransferSize accompany "resource" payloads: the entry's
+	// nextHopProtocol and transferSize (zero means a cache hit).
+	Protocol     string   `json:"protocol,omitempty"`
+	TransferSize *float64 `json:"transfer_size,omitempty"`
 }
 
 func (s *browserEvidenceState) nextID(kind string) string {
@@ -176,7 +180,17 @@ func browserDocumentPayloadNumber(value any) (float64, bool) {
 func decodeBrowserDocumentPayload(raw any) (browserDocumentPayload, bool) {
 	var payload browserDocumentPayload
 	fields, ok := raw.(map[string]any)
-	if !ok || len(fields) != 12 {
+	if !ok || len(fields) != 12 && len(fields) != 14 {
+		return payload, false
+	}
+	// Every payload carries the 12 base fields; a "resource" payload may add
+	// exactly the two protocol fields.
+	for _, name := range []string{"kind", "document_token", "lifecycle_token", "restored", "time_origin", "offset", "metric", "state", "boundary", "reason", "interaction_count", "value"} {
+		if _, present := fields[name]; !present {
+			return payload, false
+		}
+	}
+	if len(fields) == 14 && fields["kind"] != "resource" {
 		return payload, false
 	}
 	for name, value := range fields {
@@ -201,6 +215,18 @@ func decodeBrowserDocumentPayload(raw any) (browserDocumentPayload, bool) {
 			}
 			_, ok := browserDocumentPayloadNumber(value)
 			if !ok {
+				return payload, false
+			}
+		case "protocol":
+			text, ok := value.(string)
+			if !ok || len(text) > maxBrowserProtocolBytes {
+				return payload, false
+			}
+		case "transfer_size":
+			if value == nil {
+				continue
+			}
+			if n, ok := browserDocumentPayloadNumber(value); !ok || n < 0 {
 				return payload, false
 			}
 		default:
@@ -303,6 +329,11 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 		}
 		entry.count++
 		entry.start = *p.Value
+		entry.protocol, entry.protocolKnown, entry.cached = "", false, false
+		if p.Protocol != "" && len(p.Protocol) <= maxBrowserProtocolBytes {
+			entry.protocol, entry.protocolKnown = p.Protocol, true
+			entry.cached = p.TransferSize != nil && *p.TransferSize == 0
+		}
 		d.resources[p.Metric] = entry
 		return true
 	}

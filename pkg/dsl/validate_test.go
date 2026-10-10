@@ -1799,3 +1799,35 @@ func TestParallelBranchLocalLoopControl(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateBrowserQUICMode(t *testing.T) {
+	browserScript := func(engine, deviceProfile, quic string) *Script {
+		return &Script{Version: "1", Name: "quic", Protocol: "browser",
+			Config:  ScriptConfig{Browser: BrowserConfig{Engine: engine, DeviceProfile: deviceProfile, QUIC: quic}},
+			Actions: []Action{{Name: "open", Type: "browser_navigate", Target: "https://example.test/"}}}
+	}
+	for _, tc := range []struct {
+		engine, profile, quic string
+		want                  string
+	}{
+		{"", "", "auto", ""},
+		{"chromium", "", "off", ""},
+		{"webkit", "", "auto", ""},
+		{"", "", "force", "config.browser.quic must be auto or off"},
+		{"webkit", "", "off", "config.browser.quic off is not supported by WebKit"},
+	} {
+		issues := ValidateScriptIssues(browserScript(tc.engine, tc.profile, tc.quic))
+		found := false
+		for _, issue := range issues {
+			if strings.Contains(issue, "config.browser.quic") {
+				found = true
+				if tc.want == "" || !strings.Contains(issue, tc.want) {
+					t.Fatalf("%s/%s: issue %q, want %q", tc.engine, tc.quic, issue, tc.want)
+				}
+			}
+		}
+		if tc.want != "" && !found {
+			t.Fatalf("%s/%s: no QUIC issue in %v", tc.engine, tc.quic, issues)
+		}
+	}
+}

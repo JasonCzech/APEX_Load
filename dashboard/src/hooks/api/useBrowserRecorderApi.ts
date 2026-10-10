@@ -129,6 +129,9 @@ export type BrowserRecorderStartRequest = {
   // recorded browser. Omitted/true shows it; false falls back to the minimal
   // pause/assert toolbar.
   sidebar?: boolean
+  // quic_mode 'off' launches the recorded browser with QUIC disabled, so the
+  // recording holds no HTTP/3 traffic. Omitted means the browser default.
+  quic_mode?: 'auto' | 'off'
 }
 
 export type BrowserRecorderConvertRequest = {

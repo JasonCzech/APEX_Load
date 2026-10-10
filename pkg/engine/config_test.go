@@ -1394,3 +1394,14 @@ func TestEventHubsPartitionTailRuntimeConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildProtoConfigBrowserQUIC(t *testing.T) {
+	script := &dsl.Script{Name: "quic", Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{QUIC: " off "}}}
+	if cfg := buildProtoConfig(script); cfg["browser_quic"] != "off" {
+		t.Fatalf("browser_quic = %v, want off", cfg["browser_quic"])
+	}
+	script.Config.Browser.QUIC = ""
+	if _, present := buildProtoConfig(script)["browser_quic"]; present {
+		t.Fatal("an unset QUIC mode must stay unset so the runtime default applies")
+	}
+}

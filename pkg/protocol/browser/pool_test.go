@@ -80,14 +80,14 @@ func TestBrowserPoolKeySeparatesLaunchSettings(t *testing.T) {
 	t.Setenv("APEXLOAD_BROWSER_EXECUTABLE", "")
 	t.Setenv("APEXLOAD_BROWSER_SANDBOX", "")
 
-	headless := browserPoolKey("chromium", true)
-	headed := browserPoolKey("chromium", false)
+	headless := browserPoolKey("chromium", true, browserQUICAuto)
+	headed := browserPoolKey("chromium", false, browserQUICAuto)
 	if headless == headed {
 		t.Fatal("browser pool key did not include headless mode")
 	}
 
 	t.Setenv("APEXLOAD_BROWSER_EXECUTABLE", "/usr/bin/chromium")
-	withExecutable := browserPoolKey("chromium", true)
+	withExecutable := browserPoolKey("chromium", true, browserQUICAuto)
 	if withExecutable == headless {
 		t.Fatal("browser pool key did not include executable override")
 	}

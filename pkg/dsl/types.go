@@ -620,6 +620,10 @@ type BrowserConfig struct {
 	Orientation      string `json:"orientation,omitempty"`
 	ClientMetrics    *bool  `json:"client_metrics,omitempty"`
 	ExperienceCanary bool   `json:"experience_canary,omitempty"`
+	// QUIC controls the browser's own HTTP/3: "auto" (default) leaves the
+	// engine to use HTTP/3 when a site advertises it; "off" launches the
+	// browser with QUIC disabled. WebKit supports only "auto".
+	QUIC string `json:"quic,omitempty" jsonschema:"enum=,enum=auto,enum=off"`
 	// Traceparent injects a fresh W3C traceparent header per action into
 	// browser-originated requests so waterfall entries correlate with backend
 	// traces. Opt-in: the extra header can introduce CORS preflights real user

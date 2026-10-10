@@ -40,6 +40,13 @@ func validateBrowserConfigIssues(script *Script) []string {
 	if browser.Orientation != "" && !isAllowedValue(browser.Orientation, "portrait", "landscape") {
 		issues = append(issues, "config.browser.orientation must be portrait or landscape")
 	}
+	if quic := strings.TrimSpace(browser.QUIC); quic != "" {
+		if !isAllowedValue(quic, "auto", "off") {
+			issues = append(issues, "config.browser.quic must be auto or off")
+		} else if quic == "off" && browserEngineIsWebKit(trimmedEngine, trimmedDeviceProfile) {
+			issues = append(issues, "config.browser.quic off is not supported by WebKit; WebKit uses its own HTTP/3 behavior (auto)")
+		}
+	}
 	if browser.Viewport.Width < 0 {
 		issues = append(issues, "config.browser.viewport.width must be zero or greater")
 	} else if browser.Viewport.Width > browserprotocol.MaxConfiguredViewportDimension {
@@ -215,4 +222,17 @@ func validBrowserProxyServerConfig(server string) bool {
 	}
 	host, port, err := net.SplitHostPort(trimmed)
 	return err == nil && strings.TrimSpace(host) != "" && strings.TrimSpace(port) != ""
+}
+
+// browserEngineIsWebKit reports whether the configured engine, or the device
+// profile when no engine is set, runs WebKit.
+func browserEngineIsWebKit(engine, deviceProfile string) bool {
+	if engine != "" {
+		return engine == "webkit"
+	}
+	if deviceProfile == "" {
+		return false
+	}
+	profile, ok := browserprotocol.LookupDevice(deviceProfile)
+	return ok && profile.BrowserFamily == "webkit"
 }

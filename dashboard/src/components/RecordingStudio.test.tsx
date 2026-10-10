@@ -204,7 +204,7 @@ describe("RecordingStudio", () => {
           code: "origin_advertises_h3",
           element: "HTTP/3 advertisement",
           location: "https://shop.example.test",
-          detail: "The origin advertises HTTP/3 (Alt-Svc). The import keeps each request's captured HTTP version.",
+          detail: "The origin advertises HTTP/3 (Alt-Svc), but no captured request used it. The import keeps each request's captured HTTP version.",
           severity: "info",
         },
       ],
@@ -1032,7 +1032,7 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("review dynamic headers");
     const notes = container.querySelector('[aria-label="Recording notes"]');
     expect(notes?.textContent).toContain(
-      "HTTP/3 advertisement (https://shop.example.test): The origin advertises HTTP/3 (Alt-Svc).",
+      "HTTP/3 advertisement (https://shop.example.test): The origin advertises HTTP/3 (Alt-Svc), but no captured request used it.",
     );
     expect(container.querySelector(".rec-warnings")?.textContent).not.toContain("HTTP/3");
     expect(container.textContent).toContain("{{var.session_id}}");
@@ -2864,6 +2864,54 @@ describe("RecordingStudio", () => {
     expect(urlInput.value).toBe("app.example.com:8080/login?source=qa");
   });
 
+  it("starts a browser recording with QUIC disabled when asked", async () => {
+    await act(async () => {
+      root.render(
+        <RecordingStudio
+          activeProject={{ id: "proj-1", name: "Web" } as any}
+          folderId="folder-9"
+        />,
+      );
+    });
+    await flushPromises();
+    const urlInput = container.querySelector(
+      'input[aria-label="Start URL address"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(urlInput, "app.example.com/login");
+      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const advanced = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const quicLabel = Array.from(container.querySelectorAll("label")).find(
+      (label) => label.textContent?.includes("Disable HTTP/3 (QUIC) in the recorded browser"),
+    );
+    expect(quicLabel).toBeDefined();
+    const quicBox = quicLabel!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(quicBox.checked).toBe(false);
+    await act(async () => {
+      quicBox.click();
+    });
+    const recordButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Start browser recording"),
+    );
+    await act(async () => {
+      recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ start_url: "https://app.example.com/login", quic_mode: "off" }),
+    );
+  });
+
   it("starts a browser recording and docks the control panel", async () => {
     await act(async () => {
       root.render(
@@ -2899,6 +2947,7 @@ describe("RecordingStudio", () => {
         start_url: "https://app.example.com/login",
         project_id: "proj-1",
         capture_har: true,
+        quic_mode: undefined,
       }),
     );
     // The companion panel opens in the recording browser context; the docked

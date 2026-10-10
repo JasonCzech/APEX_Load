@@ -90,6 +90,19 @@ type BrowserRecordingStartRequest struct {
 	// Sidebar toggles the in-page advanced control sidebar embedded in the
 	// recorded browser. Default true; set false for only the minimal toolbar.
 	Sidebar *bool `json:"sidebar,omitempty"`
+	// QUICMode is the recorded browser's own HTTP/3: "auto" (default) lets
+	// Chromium use HTTP/3 when a site offers it; "off" launches it with QUIC
+	// disabled, so the recording holds only HTTP/1.1 and HTTP/2 traffic.
+	QUICMode string `json:"quic_mode,omitempty" enums:"auto,off"`
+}
+
+// validBrowserRecordingQUICMode reports whether mode is an accepted QUIC mode.
+func validBrowserRecordingQUICMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case "", "auto", "off":
+		return true
+	}
+	return false
 }
 
 // BrowserRecordingSession is the API view of one headed-browser recording.
@@ -297,6 +310,7 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 		WindowY:      req.WindowY,
 		WindowWidth:  req.WindowWidth,
 		WindowHeight: req.WindowHeight,
+		DisableQUIC:  strings.TrimSpace(req.QUICMode) == "off",
 		Sidebar:      sidebar,
 		Scrubber:     func(s string) string { return scrub.Value(s, scrub.Policy{}) },
 	})

@@ -20,15 +20,65 @@ const BrowserEvidenceVersion = 2
 
 // BrowserResourceEvidenceVersion is the version of native request evidence.
 // Version 3 adds document_association, initiator_type, initiator_origin and
-// the resource identity reasons; version 2 records stay readable. A reader
-// that knows only version 2 reports a version 3 record as unsupported rather
-// than malformed.
-const BrowserResourceEvidenceVersion = 3
+// the resource identity reasons; version 4 adds the negotiated protocol and
+// its unavailable reason. Versions 2 and 3 stay readable. A reader that knows
+// only an older version reports a newer record as unsupported rather than
+// malformed.
+const BrowserResourceEvidenceVersion = 4
+
+// browserResourceAssociationVersion is the version that introduced the
+// association fields.
+const browserResourceAssociationVersion = 3
 
 // SupportedBrowserResourceEvidenceVersion reports whether this build reads
 // request evidence of version v.
 func SupportedBrowserResourceEvidenceVersion(v int) bool {
-	return v == BrowserEvidenceVersion || v == BrowserResourceEvidenceVersion
+	return v == BrowserEvidenceVersion || v == browserResourceAssociationVersion || v == BrowserResourceEvidenceVersion
+}
+
+// Browser resource protocols are the negotiated application protocol of one
+// network exchange, normalized across engines.
+const (
+	BrowserResourceProtocolHTTP1 = "h1"
+	BrowserResourceProtocolHTTP2 = "h2"
+	BrowserResourceProtocolHTTP3 = "h3"
+)
+
+// NormalizeBrowserResourceProtocol maps an engine's protocol string (CDP
+// Response.protocol, Resource Timing nextHopProtocol) to h1, h2 or h3, or
+// returns the reason none applies. It never infers a protocol: an empty,
+// draft, local or unknown value stays unavailable.
+func NormalizeBrowserResourceProtocol(raw string) (protocol, reason string) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "http/0.9", "http/1.0", "http/1.1":
+		return BrowserResourceProtocolHTTP1, ""
+	case "h2", "h2c", "http/2", "http/2.0":
+		return BrowserResourceProtocolHTTP2, ""
+	case "h3", "http/3", "http/3.0":
+		return BrowserResourceProtocolHTTP3, ""
+	case "":
+		return "", "not_exposed"
+	case "data", "blob", "file", "about", "chrome-extension":
+		return "", "not_network"
+	}
+	if strings.HasPrefix(value, "h3-") || strings.HasPrefix(value, "hq") || strings.HasPrefix(value, "quic") || strings.HasPrefix(value, "h2-") {
+		return "", "draft_protocol"
+	}
+	return "", "unsupported"
+}
+
+func browserResourceProtocolValid(protocol, reason string) bool {
+	switch protocol {
+	case BrowserResourceProtocolHTTP1, BrowserResourceProtocolHTTP2, BrowserResourceProtocolHTTP3:
+		return reason == ""
+	case "":
+		switch reason {
+		case "", "not_exposed", "no_observation", "cached", "service_worker", "draft_protocol", "not_network", "unsupported", "no_response":
+			return true
+		}
+	}
+	return false
 }
 
 const MaxBrowserDocumentEvidenceBytes = 512 * 1024
@@ -87,6 +137,12 @@ type BrowserResourceEvidence struct {
 	// paths and query strings are never retained.
 	InitiatorType   string `json:"initiator_type,omitempty"`
 	InitiatorOrigin string `json:"initiator_origin,omitempty"`
+	// Protocol is the negotiated application protocol (h1, h2 or h3) of the
+	// network exchange; ProtocolUnavailableReason says why it is absent
+	// (cached, service_worker, draft_protocol, not_exposed and so on).
+	// Version 4 only.
+	Protocol                  string `json:"protocol,omitempty"`
+	ProtocolUnavailableReason string `json:"protocol_unavailable_reason,omitempty"`
 }
 
 // BrowserResourceInitiatorTypes are the CDP initiator categories retained.
@@ -522,11 +578,20 @@ func (e *BrowserResourceEvidence) Clone() *BrowserResourceEvidence {
 	identityReason := browserEvidenceReason
 	switch v.Version {
 	case BrowserEvidenceVersion:
-		// Version 2 predates association; it carries none of its fields.
-		if v.DocumentAssociation != "" || v.InitiatorType != "" || v.InitiatorOrigin != "" {
+		// Version 2 predates association and protocol; it carries none of
+		// their fields.
+		if v.DocumentAssociation != "" || v.InitiatorType != "" || v.InitiatorOrigin != "" || v.Protocol != "" || v.ProtocolUnavailableReason != "" {
 			return nil
 		}
+	case browserResourceAssociationVersion:
+		if v.Protocol != "" || v.ProtocolUnavailableReason != "" {
+			return nil
+		}
+		identityReason = browserResourceIdentityReason
 	case BrowserResourceEvidenceVersion:
+		if !browserResourceProtocolValid(v.Protocol, v.ProtocolUnavailableReason) {
+			return nil
+		}
 		identityReason = browserResourceIdentityReason
 	default:
 		return nil

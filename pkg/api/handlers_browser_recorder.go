@@ -278,6 +278,10 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !validBrowserRecordingQUICMode(req.QUICMode) {
+		writeError(w, http.StatusBadRequest, "quic_mode must be auto or off")
+		return
+	}
 	// A storage-state path is a server-side file Playwright will read; confine
 	// it to the export directory so a client cannot point it at arbitrary host
 	// files (path traversal / absolute paths).

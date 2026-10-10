@@ -481,6 +481,9 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	if browserCfg.Engine != "" {
 		cfg["browser_engine"] = browserCfg.Engine
 	}
+	if quic := strings.TrimSpace(browserCfg.QUIC); quic != "" {
+		cfg["browser_quic"] = quic
+	}
 	if browserCfg.Headless != nil {
 		cfg["browser_headless"] = *browserCfg.Headless
 	}

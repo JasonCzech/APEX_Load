@@ -205,3 +205,63 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
     expect(defaultsPanel?.textContent).toContain('Typed Request Behavior')
   })
 })
+
+describe('ScriptRuntimeSettingsView browser QUIC', () => {
+  let container: HTMLDivElement
+  let root: Root
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  function renderBrowser(script: ScriptDefinition) {
+    const onUpdateField = vi.fn<(path: string, value: unknown) => void>()
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab={'browser' as never}
+          activeSection={'http' as never}
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(element => element.closest('label')?.textContent?.includes('HTTP/3 (QUIC)'))
+    return { onUpdateField, select }
+  }
+
+  it('writes off and clears back to the browser default', () => {
+    const { onUpdateField, select } = renderBrowser(browserScript())
+    expect(select?.value).toBe('auto')
+    act(() => {
+      select!.value = 'off'
+      select!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ engine: 'chromium', quic: 'off' }))
+    act(() => {
+      select!.value = 'auto'
+      select!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ quic: undefined }))
+  })
+
+  it('does not offer off for WebKit', () => {
+    const script = browserScript()
+    script.config.browser = { engine: 'webkit' }
+    const { select } = renderBrowser(script)
+    expect(select?.querySelector<HTMLOptionElement>('option[value="off"]')?.disabled).toBe(true)
+  })
+})

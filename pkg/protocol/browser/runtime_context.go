@@ -140,7 +140,7 @@ func (b *Browser) openAdmittedBrowserContext() error {
 	if err := b.applyHARCaptureOptions(&options); err != nil {
 		return err
 	}
-	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
+	pwBrowser, err := getBrowserInstance(b.engine, b.headless, b.quic)
 	if err != nil {
 		return errors.Join(err, b.discardHARWorkingFile())
 	}

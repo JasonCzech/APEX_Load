@@ -75,6 +75,32 @@ type cdpRequestRecord struct {
 	startMS                        float64
 	initiatorType, initiatorOrigin string
 	cacheKnown, cached             bool
+	// protocol is CDP's Response.protocol, bounded; responded records that
+	// a responseReceived event arrived at all.
+	protocol  string
+	responded bool
+}
+
+// maxBrowserProtocolBytes bounds an engine-reported protocol string before it
+// is normalized; real values are a few bytes.
+const maxBrowserProtocolBytes = 32
+
+// browserResourceProtocol decides the negotiated protocol of one request from
+// what the engine reported. A cached or service-worker response never claims
+// a network negotiation, and an unreported protocol is never inferred.
+func browserResourceProtocol(raw string, responded, cached bool, serviceWorker *bool) (string, string) {
+	switch {
+	case !responded:
+		return "", "no_response"
+	case cached:
+		return "", "cached"
+	case serviceWorker != nil && *serviceWorker:
+		return "", "service_worker"
+	}
+	if len(raw) > maxBrowserProtocolBytes {
+		return "", "unsupported"
+	}
+	return protocol.NormalizeBrowserResourceProtocol(raw)
 }
 
 // cdpFrameCommit is a frame's latest committed loader; commit counts the
@@ -126,6 +152,10 @@ const cdpDocumentTokenLength = 32
 type resourceTimingEntry struct {
 	count int
 	start float64
+	// protocol is the entry's nextHopProtocol when the page exposed one;
+	// cached marks a zero transferSize.
+	protocol              string
+	protocolKnown, cached bool
 }
 
 // resourceTimingKey counts a frame's requests for one URL hash: a URL
@@ -293,6 +323,12 @@ func (b *Browser) observeCDPResponse(state *cdpEvidencePage, params map[string]a
 	if record := state.latest[requestID]; record != nil && response != nil {
 		record.cacheKnown, record.cached = true, cdpCached(response) || state.served[requestID]
 		record.startMS = cdpStartMS(record, response, state.served[requestID])
+		record.responded = true
+		if raw := cdpText(response, "protocol"); len(raw) <= maxBrowserProtocolBytes {
+			record.protocol = raw
+		} else {
+			record.protocol = raw[:maxBrowserProtocolBytes+1]
+		}
 	}
 }
 
@@ -495,6 +531,9 @@ func (b *Browser) associateResourceEvidence(v *protocol.BrowserResourceEvidence,
 func (b *Browser) associateCDPLocked(v *protocol.BrowserResourceEvidence, join resourceJoin, state *cdpEvidencePage) {
 	s := &b.evidence
 	records := state.records[join.key]
+	// Until the join proves which CDP record this request is, its protocol is
+	// unobserved.
+	v.Protocol, v.ProtocolUnavailableReason = "", "no_observation"
 	if join.ordinal > len(records) {
 		v.IdentityUnavailableReason = "cdp_unobserved"
 		if state.truncated {
@@ -521,6 +560,7 @@ func (b *Browser) associateCDPLocked(v *protocol.BrowserResourceEvidence, join r
 	if !pwKnown && len(s.pwFrameCDP) < browserFrameIdentityLimit {
 		s.pwFrameCDP[join.frame], s.cdpFramePW[record.frameID] = record.frameID, join.frame
 	}
+	v.Protocol, v.ProtocolUnavailableReason = browserResourceProtocol(record.protocol, record.responded, record.cacheKnown && record.cached, v.ServiceWorker)
 	if record.cacheKnown {
 		cached := record.cached
 		v.Cache, v.CacheUnavailableReason = &cached, ""
@@ -580,6 +620,7 @@ func (b *Browser) loaderDocumentLocked(state *cdpEvidencePage, record *cdpReques
 }
 
 func (b *Browser) associateResourceTimingLocked(v *protocol.BrowserResourceEvidence, join resourceJoin) {
+	v.Protocol, v.ProtocolUnavailableReason = "", "no_observation"
 	if b.evidence.timingRequests[resourceTimingKey{frame: join.frame, hash: join.urlHash}] != 1 {
 		v.IdentityUnavailableReason = "ambiguous_resource_timing"
 		return
@@ -601,9 +642,17 @@ func (b *Browser) associateResourceTimingLocked(v *protocol.BrowserResourceEvide
 	case matches > 1:
 		v.IdentityUnavailableReason = "ambiguous_resource_timing"
 	default:
-		start := found.resources[join.urlHash].start
+		entry := found.resources[join.urlHash]
+		start := entry.start
 		v.DocumentID, v.DocumentAssociation, v.IdentityUnavailableReason = found.documentID, "page_resource_timing_join", ""
 		v.DocumentOffsetMS = &start
+		// Resource Timing exposes nextHopProtocol only for same-origin or
+		// Timing-Allow-Origin responses, and a zero transfer size is a
+		// cache hit, which never claims a negotiation.
+		v.Protocol, v.ProtocolUnavailableReason = "", "not_exposed"
+		if entry.protocolKnown {
+			v.Protocol, v.ProtocolUnavailableReason = browserResourceProtocol(entry.protocol, true, entry.cached, v.ServiceWorker)
+		}
 	}
 }
 

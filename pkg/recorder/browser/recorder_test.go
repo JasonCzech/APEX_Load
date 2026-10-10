@@ -1347,3 +1347,12 @@ func TestControlKindRequiresTrustCoversStateMutatingKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestRecorderLaunchArgsDisableQUIC(t *testing.T) {
+	if args := New(Options{DisableQUIC: true}).windowArgs(); !slices.Contains(args, "--disable-quic") {
+		t.Fatalf("args = %v", args)
+	}
+	if args := New(Options{}).windowArgs(); slices.Contains(args, "--disable-quic") {
+		t.Fatalf("args = %v", args)
+	}
+}
