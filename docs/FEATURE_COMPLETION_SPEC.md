@@ -641,9 +641,12 @@ Delivery progress, 2026-10-09 (Wave 5, A8): every seam above has a decision, an 
 
   The Save button follows one rule, `scriptSaveAvailability`, beside the session. The ratchet fails if `ScriptEditor` keeps its own baseline, initial-save flag, guard, dirty comparison or save rule again.
 
-  Leaving for a converted archive review changed in two ways:
+  Leaving for a converted archive review changed in three ways:
   - **The return button now belongs to the editor.** Leaving an edited converted draft for its archive review asks first; before, the edits were discarded without a prompt.
   - **The review's own guard is kept.** The review stays open behind the editor, so going back never prompts for it.
+  - **Saving a converted draft goes back to the review.** The review records the draft as saved and moves on to the next draft. A validation review becomes a conversion review once a draft is saved, as with the review's own saves, so its own save cannot save that draft again. Its remaining drafts are converted again first; the options cannot be changed until that is done. The editor cannot be opened from the review while a validate, convert or save batch runs, while a Java dependency uploads, or while an earlier save of the archive is unconfirmed; its buttons stay, disabled, and say why. Before, the saved script opened and the review closed, dropping its other unsaved drafts without a prompt.
+    - A request to set up the script's secrets is kept: the secrets dialog opens in the script library, as for any new script. When several saved scripts asked for it, their dialogs open one after another.
+    - If the draft was edited while the save was in flight, the saved script opens instead, as before. The review still records the save, but it closes, and its other unsaved drafts are dropped without a prompt.
 
 Deviations:
 - TestHub keeps a form as its editing view (its groups, name and other scalar fields), now holding only canonical values; it does not hold a `ScenarioDraft` itself.
@@ -651,8 +654,7 @@ Deviations:
 - A queued run's summary carries no traffic profile, so its preview draws profile-mapped groups from their ramps.
 - `NewTestPage`'s group edit draft remains a run-only projection.
 - The Scripts page keeps the routing state in `useScriptsAuthoringState`: the open sub-view and the return target it reopens. An archive import's pending sibling drafts live in the importer, which stays mounted behind the editor. The script session decides only whether the editor may leave.
-- Saving a converted draft still opens the saved script and closes the archive review, dropping its other unsaved drafts without a prompt. That holds for the Save button and for Save changes in the prompt on the way back, which saves but then lands on the saved script. This was true before the absorption too.
-- When a create's response lacks the script's authoring data, the page loads the saved script before opening it. Back during that load returns to the archive review, which still lists the draft as unsaved.
+- Inside the scenario editor's "Create prerequisite script", saving a converted draft returns the script to the scenario group and closes the embedded Scripts page, as any save from the script editor there does. The archive review closes with it, and its other unsaved drafts are dropped without a prompt.
 - A converted Java Vuser draft is queued for approval, not saved to the library. Save changes on the way back queues it and returns to the review. The review still lists the draft as unsaved, and no notice says it was queued.
 - Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
 

@@ -61,6 +61,8 @@ const projectState = {
   activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
 }
 let publishLateEnterpriseSave: (() => void) | null = null
+// Scripts the mock archive review heard were saved from the editor.
+let archiveDraftSaves: string[] = []
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
@@ -75,11 +77,13 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
+  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
     <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
       {returnTarget && <button onClick={returnTarget.onReturn}>{returnTarget.label}</button>}
       {/* Save changes in the prompt on the way back: the editor saves, then the return goes ahead. */}
       {returnTarget && <button onClick={() => { onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }); returnTarget.onReturn() }}>mock-return-after-saving</button>}
+      <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }, { laterEdits: true })}>mock-edited-while-saving</button>
+      <button onClick={() => onSave?.({ id: initialScript?.name === 'Second Converted Draft' ? 'saved-script-2' : 'saved-script-1', name: initialScript?.name || 'Saved Script', script: { name: initialScript?.name || 'Saved Script', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Login', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] } }, { configureSecrets: true })}>mock-secrets-after-saving</button>
       <span>editor:{initialScript?.name || 'blank'}</span>
       <span>script-id:{scriptId || 'none'}</span>
       <span>initially-dirty:{initiallyDirty ? 'yes' : 'no'}</span>
@@ -90,7 +94,7 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./EnterpriseArchiveImport', () => ({
-  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null; stayInImportReview?: boolean }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }) => void, onClose?: () => void }) => {
+  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null; stayInImportReview?: boolean }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }, onSaved?: (saved: { id: string }) => void) => void, onClose?: () => void }) => {
     publishLateEnterpriseSave = () => onImported?.({
       scripts: [{
         id: 'imported-script-late',
@@ -130,6 +134,20 @@ vi.mock('./EnterpriseArchiveImport', () => ({
         config: { base_url: 'https://import.example.com' },
         actions: [],
       }, { targetSection: 'runtime' })}>mock-enterprise-archive-review-option</button>
+      <button onClick={() => onEdit?.({
+        name: 'Converted Enterprise Script Archive Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://import.example.com' },
+        actions: [],
+      }, undefined, saved => { archiveDraftSaves.push(saved.id) })}>mock-enterprise-archive-open-tracked</button>
+      <button onClick={() => onEdit?.({
+        name: 'Second Converted Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://import.example.com' },
+        actions: [],
+      }, undefined, saved => { archiveDraftSaves.push(saved.id) })}>mock-enterprise-archive-open-second-tracked</button>
       <button onClick={onClose}>mock-enterprise-archive-close</button>
     </div>
   },
@@ -2086,6 +2104,95 @@ describe('ScriptsPage', () => {
     await act(async () => { loadSaved() })
     await flushPromises()
     expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+  })
+
+  describe('a converted draft saved from the editor', () => {
+    const onScriptSaved = vi.fn()
+    const openTrackedDraft = async () => {
+      archiveDraftSaves = []
+      onScriptSaved.mockClear()
+      apiMock.getScriptAuthoring.mockClear()
+      await act(async () => {
+        root.render(<ScriptsPage initialMode="create-options" onScriptSaved={onScriptSaved} />)
+      })
+      await flushPromises()
+      await clickButton('Import')
+      await clickButton('Import Loadrunner Script Archive')
+      await vi.waitFor(() => expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull(), { timeout: 5000 })
+      const preservedInput = container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement
+      preservedInput.value = 'review-state-preserved'
+      await clickButton('mock-enterprise-archive-open-tracked')
+      expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    }
+    const clickExactly = async (label: string) => {
+      const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === label)
+      expect(button).toBeTruthy()
+      await act(async () => { button!.click() })
+      await flushPromises()
+    }
+    const expectBackOnTheReview = () => {
+      expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+      expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
+      expect(archiveDraftSaves).toEqual(['saved-script-1'])
+      expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(false)
+      // A page embedding this one still hears of the save, once.
+      expect(onScriptSaved).toHaveBeenCalledTimes(1)
+      expect(onScriptSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1' }))
+    }
+
+    it('goes back to the archive review, which records it as saved', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-save')
+      expectBackOnTheReview()
+    })
+
+    it('goes back to the review once when it was saved on the way back', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-return-after-saving')
+      expectBackOnTheReview()
+    })
+
+    it('opens the saved script instead when it was edited while saving, and the review still counts it', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-edited-while-saving')
+      expect(archiveDraftSaves).toEqual(['saved-script-1'])
+      expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(true)
+    })
+
+    it('goes back to the review when the save also asked to set up secrets, and opens them in the library', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-secrets-after-saving')
+      expectBackOnTheReview()
+      expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+      await clickButton('mock-enterprise-archive-close')
+      await clickButton('Script Library')
+      await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')?.textContent).toContain('Secret Bindings'), { timeout: 5000 })
+    })
+
+    it('opens the secrets of each draft saved that way in turn', async () => {
+      await openTrackedDraft()
+      await clickExactly('mock-secrets-after-saving')
+      await clickExactly('mock-enterprise-archive-open-second-tracked')
+      expect(container.textContent).toContain('editor:Second Converted Draft')
+      await clickExactly('mock-secrets-after-saving')
+      expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+      expect(archiveDraftSaves).toEqual(['saved-script-1', 'saved-script-2'])
+
+      // The dialog names the script it loads.
+      apiMock.getScriptAuthoring.mockImplementation(async (id: string, projectId?: string) => authoringFixture(
+        { name: id === 'saved-script-2' ? 'Second Converted Draft' : 'Converted Enterprise Script Archive Draft' }, id, projectId))
+      await clickButton('mock-enterprise-archive-close')
+      await clickButton('Script Library')
+      const dialogTitle = () => document.body.querySelector('[role="dialog"][aria-modal="true"] h3')?.textContent ?? ''
+      await vi.waitFor(() => expect(dialogTitle()).toBe('Secret Bindings · Converted Enterprise Script Archive Draft'), { timeout: 5000 })
+      const close = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-modal="true"] button')).find(button => button.textContent === 'Close')
+      expect(close()).toBeTruthy()
+      await act(async () => { close()!.click() })
+      await vi.waitFor(() => expect(dialogTitle()).toBe('Secret Bindings · Second Converted Draft'), { timeout: 5000 })
+      await act(async () => { close()!.click() })
+      await flushPromises()
+      expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+    })
   })
 
   it('returns JMeter import close actions to the create options shell', async () => {

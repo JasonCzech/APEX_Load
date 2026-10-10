@@ -170,6 +170,29 @@ describe('NavigationGuardProvider', () => {
     expect(proceed).toHaveBeenCalledOnce()
   })
 
+  it('lets an unsaved-work guard read its live state', async () => {
+    const proceed = vi.fn()
+    let live = true
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={proceed} />
+      <LiveUnsavedWork dirty={false} isDirty={() => live} discard={vi.fn()} />
+    </NavigationGuardProvider>))
+    // Rendered clean, but the live state is dirty: the prompt appears.
+    await click('Navigate')
+    expect(container.textContent).toContain('Import review has work that is not saved yet')
+    await click('Keep editing')
+    // Rendered dirty, live state clean and the guard marked clean: no prompt.
+    live = false
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={proceed} />
+      <LiveUnsavedWork dirty isDirty={() => live} discard={vi.fn()} withMarkCleanButton />
+    </NavigationGuardProvider>))
+    await click('Mark clean')
+    await click('Navigate')
+    expect(proceed).toHaveBeenCalledOnce()
+    expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
   it('ignores a second guarded navigation while a prompt is open', async () => {
     const proceed = vi.fn()
 
@@ -364,4 +387,10 @@ function NestedRunner({ proceed }: { proceed: () => void }) {
 function UnsavedWork({ dirty, discard }: { dirty: boolean; discard: () => void }) {
   useUnsavedWorkGuard('import-review', 'Import review', dirty, discard)
   return null
+}
+
+function LiveUnsavedWork({ dirty, isDirty, discard, withMarkCleanButton }: { dirty: boolean; isDirty: () => boolean; discard: () => void; withMarkCleanButton?: boolean }) {
+  useUnsavedWorkGuard('import-review', 'Import review', dirty, discard, isDirty)
+  const { markClean } = useNavigationGuardRunner()
+  return withMarkCleanButton ? <button type="button" onClick={() => markClean('import-review')}>Mark clean</button> : null
 }

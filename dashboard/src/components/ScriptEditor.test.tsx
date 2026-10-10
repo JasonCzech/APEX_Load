@@ -7558,7 +7558,7 @@ describe('ScriptEditor', () => {
     await act(async () => { complete(saved) })
     await flushReact()
     expect(name().value).toBe('Edited while saving')
-    expect(onSave).toHaveBeenCalledWith(saved, expect.objectContaining({ retainedDraft: expect.objectContaining({ name: 'Edited while saving' }) }))
+    expect(onSave).toHaveBeenCalledWith(saved, expect.objectContaining({ laterEdits: true, retainedDraft: expect.objectContaining({ name: 'Edited while saving' }) }))
     await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={saved.authoring_projection!.script} initialAuthoring={{ projection: saved.authoring_projection!, etag: `"script-authoring-v1:${saved.content_revision}"` }} projectId="project-1" onSave={onSave} />) })
     expect(name().value).toBe('Edited while saving')
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(false)

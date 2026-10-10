@@ -1,7 +1,7 @@
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import ObjectHistory from './ObjectHistory'
 import type { ObjectActivitySummary } from '../types/objectActivity'
-import { lazy, useEffect, useState, type ReactNode } from 'react'
+import { lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import { type ImportKind } from './ProtocolAssetImport'
@@ -176,8 +176,28 @@ function ScriptsAuthoringContent({
     description: 'Return to the converted enterprise script archive review without losing the current import results.',
     retainedGuardIds: [ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID],
   }
-  const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
+  // The archive review's record of a draft it opened in the editor.
+  const archiveDraftSavedRef = useRef<((saved: StoredScript) => void) | null>(null)
+  const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void) => {
+    archiveDraftSavedRef.current = onDraftSaved || null
     onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
+  }
+  // A converted draft saved from the editor goes back to the archive review,
+  // which counts it as saved and moves on to the next draft. A request to set
+  // up the script's secrets is kept: the library's secrets dialog opens when
+  // the user is back in the library, as for any new script. Edits made while
+  // the save was in flight open the saved script instead, as any other save
+  // does; the review still counts the draft as saved.
+  const saveArchiveDraft = (saved: StoredScript, options?: ScriptSaveOptions) => {
+    const recordSave = archiveDraftSavedRef.current
+    archiveDraftSavedRef.current = null
+    recordSave?.(saved)
+    if (!recordSave || options?.laterEdits) {
+      onSaved(saved, options)
+      return
+    }
+    onReturnToDraftSource()
+    onSaved(saved, { returnedToSource: true, ...(options?.configureSecrets ? { configureSecrets: true } : {}) })
   }
   const renderEnterpriseArchiveImportSurface = (hidden = false) => createOptionsSurface(
     <EnterpriseArchiveImport destinationControl={destinationFolderControl} initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
@@ -195,7 +215,7 @@ function ScriptsAuthoringContent({
             {renderEnterpriseArchiveImportSurface(true)}
             <div className="page">
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={saveArchiveDraft} onClose={closeCreateEditor} />
             </div>
           </div>
         )

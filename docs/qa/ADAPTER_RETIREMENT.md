@@ -98,6 +98,11 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
 - **Behavior changes when going back to a converted archive review:**
   - Leaving an edited converted draft asks first. Before, the page's button discarded the edits without a prompt.
   - The review stays open behind the editor. Its own unsaved-work guard is kept, so going back never prompts for it.
+  - Saving a converted draft goes back to the review, which records it as saved and moves on to the next draft. Before, the saved script opened and the review closed, dropping its other unsaved drafts without a prompt.
+  - A validation review becomes a conversion review once a draft is saved, as with the review's own saves, so its own save cannot save that draft again. Its remaining drafts are converted again first; the options cannot be changed until that is done.
+  - The editor cannot be opened from the review while a validate, convert or save batch runs, while a Java dependency uploads, or while an earlier save of the archive is unconfirmed. Its buttons stay, disabled, and say why.
+  - A request to set up the script's secrets is kept. The secrets dialog opens in the script library, as for any new script. When several saved scripts asked for it, their dialogs open one after another.
+  - If the draft was edited while the save was in flight, the saved script opens instead. The review still records the save, but it closes, and its other unsaved drafts are dropped without a prompt.
 - **Leave prompts:** Save changes goes ahead without saving when the work was saved, or its editor closed, while the prompt was open. This holds for every guarded editor.
   - Only the script editor also waits for a save that is still running, instead of refusing it. That includes queueing a Java Vuser draft for approval.
   - If edits were made after that save started, the prompt stays open and says they are not saved yet. They stay in the editor.
@@ -106,7 +111,12 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
   - Edits made after the save finished, before the script opens, are not kept.
 - **Proof:**
   - `useScriptAuthoringSession.ownership.test.tsx` covers the baseline load, the block, adoption, reconciliation, the dirty calculation, guarded leaving with the source's guards kept, a session without a baseline, and the save rule.
-  - `NavigationGuardProvider.test.tsx` checks that a prompt goes ahead without saving once the work was saved or closed, and still saves when the guard reads dirty.
+  - `EnterpriseArchiveImport.test.tsx` checks:
+    - that the review records a draft the editor saved, once, moves on to the next draft, and does not save it again with the rest;
+    - that a validated archive with another draft is converted again, and that a later conversion of it after a project change is not shown as that;
+    - that while it is converted again, another archive's editor and its "Allow … And Refresh Review" buttons wait, and say why, and that those buttons ask to finish an open settings edit first;
+    - that the editor buttons are disabled, with the reason, while a validate batch or a save runs, and while an unconfirmed save of the archive waits for Convert again.
+  - `NavigationGuardProvider.test.tsx` checks that a prompt goes ahead without saving once the work was saved or closed, and still saves when the guard reads dirty. It also checks that an unsaved-work guard reads its live state and can be marked clean.
   - `ScriptEditor.test.tsx` covers:
     - the guarded return with the review's guard open beside it, including a save on the way back;
     - Save changes on the way back while a save or a Java Vuser queue is still running, which shares it, and keeps the prompt open when edits were made after it started;
@@ -114,17 +124,19 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
     - the guarded close with a save.
   - `ScriptsPage.test.tsx` checks:
     - the import return, and that the return target names the review's guard;
-    - that a script saved on the way back opens even when its save returned no authoring projection, with the editor and the review left in place until it does;
-    - that Back, clicked after a plain Save while the saved script is still loading, returns to the review, and the late load does not reopen it.
+    - that a converted draft saved from the editor goes back to the review, which records it. That holds for Save, for a save on the way back and for a save that also asks to set up secrets, whose dialog then opens in the library. An embedding page still hears of the save;
+    - that the secrets dialogs of two drafts saved that way open one after another;
+    - that edits made while saving open the saved script instead, and the review still records the save;
+    - for a draft opened without a review to record it, that a script saved on the way back opens even when its save returned no authoring projection, with the editor and the review left in place until it does;
+    - for the same kind of draft, that Back, clicked after a plain Save while the saved script is still loading, returns to the review, and the late load does not reopen it.
   - The ratchet fails if `ScriptEditor` keeps its own baseline, initial-save flag, guard, dirty comparison or save rule again.
 - **Kept with the page:**
   - `useScriptsAuthoringState` holds the routing state: the open sub-view and the return target it reopens.
   - An archive import's pending sibling drafts live in the importer (`EnterpriseArchiveImport`), which stays mounted behind the editor.
   - The session decides only whether the editor may leave.
 - **Open:**
-  - Saving a converted draft still opens the saved script and closes the review, dropping its other unsaved drafts without a prompt, as before. That holds for the Save button and for Save changes in the prompt on the way back.
-  - When a create's response lacks the script's authoring data, the page loads the saved script before opening it. Back during that load returns to the review, which still lists the draft as unsaved.
-  - A converted Java Vuser draft is queued for approval instead. Save changes on the way back queues it and returns to the review, which still lists the draft as unsaved, with no notice.
+  - Inside the scenario editor's "Create prerequisite script", saving a converted draft closes the embedded Scripts page with the review, dropping its other unsaved drafts without a prompt.
+  - A converted Java Vuser draft is queued for approval, not saved to the library. Save changes on the way back queues it and returns to the review, which still lists the draft as unsaved, with no notice.
 
 ## Retained seams
 

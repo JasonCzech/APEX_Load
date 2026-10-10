@@ -2944,7 +2944,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const retainedCreatedSecretNames = pendingCreatedSecretNamesRef.current.length ? [...pendingCreatedSecretNamesRef.current] : undefined
       // Nothing is awaited after onSave: the page holds back the return that
       // follows a save in the same turn (useScriptsAuthoringState).
-      if (configureSecrets || retainedDraft || retainedCreatedSecretNames) onSave?.(savedScript, { ...(configureSecrets ? { configureSecrets: true } : {}), ...(retainedDraft ? { retainedDraft } : {}), ...(retainedJsonText !== undefined ? { retainedJsonText } : {}), ...(retainedCreatedSecretNames ? { retainedCreatedSecretNames } : {}) })
+      if (hasLaterDraft || configureSecrets || retainedDraft || retainedCreatedSecretNames) onSave?.(savedScript, { ...(hasLaterDraft ? { laterEdits: true } : {}), ...(configureSecrets ? { configureSecrets: true } : {}), ...(retainedDraft ? { retainedDraft } : {}), ...(retainedJsonText !== undefined ? { retainedJsonText } : {}), ...(retainedCreatedSecretNames ? { retainedCreatedSecretNames } : {}) })
       else onSave?.(savedScript)
       return true
     } catch (e: unknown) {
