@@ -387,3 +387,45 @@ func TestAcquireHoldsASlotForTheConnectionLifetime(t *testing.T) {
 	}
 	t.Fatal("the slot was not released when the connection closed")
 }
+
+func TestCloseEndsQueuedAndHandshakingDials(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state h3fixture.QUICState
+		queue bool
+	}{{"handshaking", h3fixture.QUICBlackholed, false}, {"queued for the budget", h3fixture.QUICServing, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := h3fixture.Start(t, h3fixture.Options{QUIC: tc.state})
+			transport := newTransport(t, fixture, func(o *Options) {
+				o.HandshakeTimeout, o.ConnectTimeout = 30*time.Second, 30*time.Second
+				if tc.queue {
+					o.Acquire = func(ctx context.Context, _ string) (func(), error) {
+						<-ctx.Done() // the budget never frees a slot
+						return nil, ctx.Err()
+					}
+				}
+			})
+			done := make(chan error, 1)
+			go func() {
+				_, err := get(t, transport, context.Background(), fixture.URL("/echo"))
+				done <- err
+			}()
+			time.Sleep(150 * time.Millisecond)
+			closed := make(chan struct{})
+			go func() { _ = transport.Close(); close(closed) }()
+			select {
+			case <-closed:
+			case <-time.After(3 * time.Second):
+				t.Fatal("Close waited on a pending dial")
+			}
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Fatal("the pending request succeeded after Close")
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("the pending request did not end after Close")
+			}
+		})
+	}
+}

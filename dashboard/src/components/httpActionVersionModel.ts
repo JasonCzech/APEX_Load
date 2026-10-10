@@ -120,6 +120,7 @@ export function httpReplayVersionEvidence(evidence: ProtocolEvidence | undefined
 
 const quicConnectionLabels: Record<string, string> = {
   new: 'New connection', reused: 'Reused connection', shared_pending: 'Joined a connection still being opened',
+  dial_failed: 'Could not open a connection',
 }
 const certaintyLabels: Record<string, string> = {
   not_sent: 'Not sent', possibly_sent: 'Possibly sent (the target may have processed it)', rejected_unprocessed: 'Rejected unprocessed by the server',

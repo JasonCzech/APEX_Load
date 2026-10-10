@@ -67,7 +67,7 @@ export interface ProtocolEvidence {
   /** HTTP/3 version receipt (evidence version 2). */
   http_version_selection_reason?: string
   quic_attempted?: boolean
-  quic_connection?: 'new' | 'reused' | 'shared_pending'
+  quic_connection?: 'new' | 'reused' | 'shared_pending' | 'dial_failed'
   quic_error_class?: string
   attempt_count?: number
   tls_in_transport_handshake?: boolean

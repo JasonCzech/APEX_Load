@@ -132,6 +132,10 @@ describe('qualified HTTP version evidence', () => {
       { label: 'HTTP attempts', value: '1' },
       { label: 'TLS timing', value: 'Part of the QUIC handshake (counted in connect time)' },
     ])
+    expect(httpReplayVersionEvidence({ http_version_policy: '3', quic_attempted: true, quic_connection: 'dial_failed', http3_failure_certainty: 'not_sent' })?.http3).toEqual([
+      { label: 'QUIC connection', value: 'Could not open a connection' },
+      { label: 'Failure certainty', value: 'Not sent' },
+    ])
     expect(httpReplayVersionEvidence({ http_version_policy: '3', quic_attempted: true, http3_failure_certainty: 'possibly_sent', quic_connection: 'surprise', attempt_count: -1 } as unknown as ProtocolEvidence)?.http3).toEqual([
       { label: 'Failure certainty', value: 'Possibly sent (the target may have processed it)' },
     ])

@@ -118,10 +118,14 @@ type Options struct {
 
 // Transport is an http.RoundTripper for exact HTTP/3.
 type Transport struct {
-	opts    Options
-	h3      *http3.Transport
-	session tls.ClientSessionCache
-	tokens  quic.TokenStore
+	opts Options
+	h3   *http3.Transport
+	// lifetime bounds every dial; Close cancels it first, so a dial queued
+	// for the budget or mid-handshake ends instead of holding Close.
+	lifetime context.Context
+	stop     context.CancelFunc
+	session  tls.ClientSessionCache
+	tokens   quic.TokenStore
 
 	mu      sync.Mutex
 	closed  bool
@@ -154,12 +158,15 @@ func New(opts Options) (*Transport, error) {
 	// Session tickets stay inside this VUser: its cache is never shared.
 	session := tls.NewLRUClientSessionCache(64)
 	tlsConfig.ClientSessionCache = session
+	lifetime, stop := context.WithCancel(opts.Lifetime)
 	t := &Transport{
-		opts:    opts,
-		session: session,
-		tokens:  quic.NewLRUTokenStore(16, 4),
-		sockets: map[socketKey]*quic.Transport{},
-		conns:   map[*quic.Conn]struct{}{},
+		opts:     opts,
+		lifetime: lifetime,
+		stop:     stop,
+		session:  session,
+		tokens:   quic.NewLRUTokenStore(16, 4),
+		sockets:  map[socketKey]*quic.Transport{},
+		conns:    map[*quic.Conn]struct{}{},
 	}
 	quicConfig := &quic.Config{
 		HandshakeIdleTimeout:           opts.HandshakeTimeout,
@@ -290,6 +297,7 @@ func (t *Transport) Close() error {
 		return nil
 	}
 	t.closed = true
+	t.stop()
 	conns := make([]*quic.Conn, 0, len(t.conns))
 	for conn := range t.conns {
 		conns = append(conns, conn)
@@ -489,7 +497,7 @@ func (t *Transport) dialContext(parent context.Context) (context.Context, contex
 		ctx, cancelTimeout = context.WithTimeout(ctx, t.opts.ConnectTimeout)
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(t.opts.Lifetime, cancel)
+	stop := context.AfterFunc(t.lifetime, cancel)
 	return ctx, func() {
 		stop()
 		cancel()

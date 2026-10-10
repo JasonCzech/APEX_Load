@@ -121,7 +121,7 @@ func TestHTTP3ReceiptForFailuresAndRefusals(t *testing.T) {
 	}
 	fresh := http3Session(t, nil)
 	timedOut := run(t, fresh, h3Get(t, fixture.URL("/echo"), "3"))
-	if timedOut.ProtocolEvidence["quic_error_class"] != "timeout" || timedOut.ProtocolEvidence["quic_attempted"] != true || availability(t, timedOut)["ttfb"] != "no_response" {
+	if timedOut.ProtocolEvidence["quic_error_class"] != "timeout" || timedOut.ProtocolEvidence["quic_attempted"] != true || timedOut.ProtocolEvidence["quic_connection"] != "dial_failed" || availability(t, timedOut)["ttfb"] != "no_response" {
 		t.Fatalf("blackholed: %v", timedOut.ProtocolEvidence)
 	}
 	proxy := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))

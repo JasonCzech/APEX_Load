@@ -77,8 +77,12 @@ func (r *http3Receipt) evidence(result *protocol.Result) map[string]any {
 	}
 	connection := "not_attempted"
 	switch {
-	case r.dialed:
+	case r.dialed && r.gotConn:
 		connection = "new"
+	case r.dialed:
+		// The action dialed but no connection was ever handed to a request:
+		// the handshake failed or never completed.
+		connection = "dial_failed"
 	case r.gotConn && r.reused:
 		connection = "reused"
 	case r.gotConn:
@@ -88,7 +92,7 @@ func (r *http3Receipt) evidence(result *protocol.Result) map[string]any {
 	}
 	availability := map[string]any{"ttfb": "available", "tls": "in_transport_handshake"}
 	switch connection {
-	case "new":
+	case "new", "dial_failed":
 		availability["connect"] = "available"
 		availability["dns"] = "available"
 		if !r.resolved {
