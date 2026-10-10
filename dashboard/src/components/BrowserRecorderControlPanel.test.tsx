@@ -2238,7 +2238,26 @@ describe('BrowserRecorderControlPanel', () => {
       split_at_transactions: true,
       also_create_http_script: true,
       parameterize: false,
+      http_version_mode: 'upgrade',
     }))
+  })
+
+  it('passes the HTTP script version mode only with the HTTP script', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    const modeSelect = () => Array.from(container.querySelectorAll('.brp-convert label')).find(label => label.textContent?.includes('HTTP version in generated script'))?.querySelector('select') as HTMLSelectElement | undefined
+    expect(modeSelect()).toBeUndefined()
+    const dualHTTP = (Array.from(container.querySelectorAll('.brp-convert input[type="checkbox"]')) as HTMLInputElement[])
+      .find(c => c.parentElement?.textContent?.includes('HTTP'))!
+    await act(async () => { dualHTTP.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const select = modeSelect()!
+    await act(async () => {
+      select.value = 'inherit'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickButton('Save unverified draft')
+    await flushPromises()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({ also_create_http_script: true, http_version_mode: 'inherit' }))
   })
 
   it('passes the recording profile and its preselected HTTP script level to convert', async () => {

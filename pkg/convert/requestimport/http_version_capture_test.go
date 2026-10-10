@@ -28,7 +28,15 @@ func TestReviewHTTPVersionCapture(t *testing.T) {
 		{name: "null", present: true, reason: "http_version_unavailable"},
 		{name: "object", request: map[string]any{"secret": "synthetic-canary"}, present: true, reason: "malformed_http_version"},
 		{name: "oversized", request: strings.Repeat("x", 257), present: true, reason: "malformed_http_version"},
-		{name: "H3", request: "HTTP/3", present: true, reason: "unsupported_http_version"},
+		{name: "H3", request: "HTTP/3", present: true, version: "3"},
+		{name: "H3 Chrome token", request: "h3", present: true, version: "3"},
+		{name: "H3 draft", request: "h3-29", present: true, reason: ReasonHTTP3DraftToken},
+		{name: "H3 QUIC draft", request: "h3-Q050", present: true, reason: ReasonHTTP3DraftToken},
+		{name: "HTTP/1.0", request: "HTTP/1.0", present: true, reason: "unsupported_http_version"},
+		{name: "browser provenance", request: "h3", present: true, response: "h3", provenance: BrowserHTTPVersionProvenance("browser", "h3"), proxy: true, version: "3"},
+		{name: "browser run provenance unknown", request: "HTTP/2.0", present: true, provenance: BrowserHTTPVersionProvenance("browser_run", "unknown"), proxy: true, version: "2"},
+		{name: "browser provenance contradicts", request: "HTTP/2.0", present: true, provenance: BrowserHTTPVersionProvenance("browser", "h3"), proxy: true, reason: "malformed_http_version_provenance"},
+		{name: "browser provenance bad source", request: "h3", present: true, provenance: map[string]any{"version": 2, "source": "synthetic-canary", "observed": "h3"}, proxy: true, reason: "malformed_http_version_provenance"},
 		{name: "auto is policy not observation", request: "auto", present: true, reason: "unsupported_http_version"},
 		{name: "equal proxy", request: "HTTP/2", present: true, response: "HTTP/2.0", proxy: true, provenance: ProxyHTTPVersionProvenance(), version: "2"},
 		{name: "different legs", request: "HTTP/1.1", present: true, response: "HTTP/2", proxy: true, provenance: ProxyHTTPVersionProvenance(), reason: "proxy_http_version_legs_differ"},
@@ -40,6 +48,9 @@ func TestReviewHTTPVersionCapture(t *testing.T) {
 			got := ReviewHTTPVersionCapture(tc.request, tc.present, tc.response, tc.response != nil, tc.provenance, tc.proxy, tc.legacy)
 			if got.Version != tc.version || got.ReasonCode != tc.reason {
 				t.Fatalf("decision=%+v", got)
+			}
+			if browser := strings.HasPrefix(tc.name, "browser provenance") || strings.HasPrefix(tc.name, "browser run"); browser && tc.reason == "" && (got.Proxy || got.Provenance != "browser") {
+				t.Fatalf("browser provenance read as proxy legs: %+v", got)
 			}
 			action := dsl.Action{}
 			ApplyHTTPVersionCapture(&action, got, SourceRef{Format: "har", Pointer: "log.entries[0].request.httpVersion"})
@@ -239,5 +250,44 @@ func TestFinalizeActionExplicitAutoLeaf(t *testing.T) {
 	}
 	if !action.HTTPVersion.IsPresent() || action.HTTPVersion.Value() != "auto" {
 		t.Fatal("explicit auto became inheritance")
+	}
+}
+
+func TestHTTPVersionModeMapping(t *testing.T) {
+	h3 := HTTPVersionCapture{Version: "3"}
+	h2 := HTTPVersionCapture{Version: "2"}
+	for _, tc := range []struct {
+		mode    string
+		capture HTTPVersionCapture
+		want    string
+	}{
+		{HTTPVersionModeUpgrade, h3, "auto+h3"},
+		{HTTPVersionModeExact, h3, "3"},
+		{HTTPVersionModeInherit, h3, ""},
+		{HTTPVersionModeUpgrade, h2, "2"},
+		{HTTPVersionModeExact, h2, "2"},
+		{HTTPVersionModeInherit, h2, ""},
+		{HTTPVersionModeUpgrade, HTTPVersionCapture{ReasonCode: ReasonHTTP3DraftToken}, ""},
+	} {
+		if got := HTTPVersionPolicyForCapture(tc.capture, tc.mode); got != tc.want {
+			t.Fatalf("%s %+v = %q, want %q", tc.mode, tc.capture, got, tc.want)
+		}
+	}
+	for raw, want := range map[string]string{"": "upgrade", " Exact ": "exact", "inherit": "inherit"} {
+		if got, err := NormalizeHTTPVersionMode(raw); err != nil || got != want {
+			t.Fatalf("mode %q = %q, %v", raw, got, err)
+		}
+	}
+	if _, err := NormalizeHTTPVersionMode("assume"); err == nil {
+		t.Fatal("an unknown mode was accepted")
+	}
+}
+
+func TestDraftTokenGatesPromotionNotExecution(t *testing.T) {
+	action := dsl.Action{}
+	ApplyHTTPVersionCapture(&action, ReviewHTTPVersionCapture("h3-29", true, nil, false, nil, false, false), SourceRef{Format: "har", Pointer: "log.entries[0].request.httpVersion"})
+	reasons, _ := action.Metadata["review_reasons"].([]string)
+	if action.Metadata["execution_blocker"] != nil || len(reasons) != 1 || reasons[0] != ReasonHTTP3DraftToken {
+		t.Fatalf("draft token metadata = %v", action.Metadata)
 	}
 }

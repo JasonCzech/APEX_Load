@@ -48,6 +48,7 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 			ResourceMode:      opts.ResourceMode,
 			AsyncScan:         opts.AsyncScan,
 			Profile:           opts.Profile,
+			HTTPVersionMode:   opts.HTTPVersionMode,
 			OmitSourceReview:  true,
 			// As before convergence, a recording rewrites only
 			// high-confidence correlations.

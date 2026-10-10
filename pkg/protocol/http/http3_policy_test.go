@@ -33,11 +33,14 @@ func TestHTTP3VersionVocabulary(t *testing.T) {
 			t.Errorf("ValidateVersion(%q) = %v, want an unsupported version", invalid, err)
 		}
 	}
-	// HTTP/3 is vocabulary, not yet an executable mode.
+	// The HTTP/3 policies are selectable modes; draft tokens never are.
 	for _, raw := range []string{"3", "auto+h3", "h3"} {
-		if VersionExecutable(raw) {
-			t.Errorf("VersionExecutable(%q) = true", raw)
+		if !VersionExecutable(raw) {
+			t.Errorf("VersionExecutable(%q) = false", raw)
 		}
+	}
+	if VersionExecutable("h3-29") {
+		t.Error("VersionExecutable(h3-29) = true")
 	}
 	if got := SupportedVersions(); !slices.Equal(got, []string{VersionHTTP11, VersionHTTP2}) {
 		t.Errorf("SupportedVersions() = %v", got)

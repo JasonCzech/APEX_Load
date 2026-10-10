@@ -46,6 +46,8 @@ import {
   importDraftExpiryStatus,
 } from './protectedImportSession'
 import { createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
+import { HTTPVersionModeField } from './HTTPVersionModeField'
+import type { HTTPVersionImportMode } from './httpVersionModel'
 import './RecordingStudio.css'
 
 const SECTIONS: { value: string; label: string }[] = [
@@ -225,6 +227,7 @@ export default function BrowserRecorderControlPanel({
   const [splitAtTransactions, setSplitAtTransactions] = useState(false)
   const [alsoCreateHTTP, setAlsoCreateHTTP] = useState(false)
   const [httpScriptLevel, setHTTPScriptLevel] = useState<'url' | 'html'>('url')
+  const [httpVersionMode, setHTTPVersionMode] = useState<HTTPVersionImportMode>('upgrade')
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const [suggestions, setSuggestions] = useState<BrowserRecorderTransactionSuggestion[]>([])
   const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
@@ -667,6 +670,7 @@ export default function BrowserRecorderControlPanel({
     http_script_level: alsoCreateHTTP && (httpScriptLevel === 'html' || recordingProfileId) ? httpScriptLevel : undefined,
     parameterize: parameterizeInputs,
     recording_profile_id: alsoCreateHTTP ? recordingProfileId : undefined,
+    http_version_mode: alsoCreateHTTP ? httpVersionMode : undefined,
   })
 
   const discardSourceSecretSession = async (
@@ -1977,6 +1981,10 @@ export default function BrowserRecorderControlPanel({
                 <option value="html">HTML-based: follow links and submit forms on the page</option>
               </select>
             </label>
+          )}
+          {session.har_available && alsoCreateHTTP && (
+            <HTTPVersionModeField className="rec-checkbox-row rec-http-version-mode" value={httpVersionMode} disabled={busy}
+              onChange={mode => { advancePreviewReviewGeneration(); setHTTPVersionMode(mode) }} />
           )}
           <label className="rec-checkbox-row">
             <input type="checkbox" checked={parameterizeInputs} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setParameterizeInputs(e.target.checked) }} />

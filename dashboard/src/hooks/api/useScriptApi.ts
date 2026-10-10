@@ -236,6 +236,8 @@ export type BrowserToHTTPPreviewRequest = {
   source_browser_script?: ScriptDefinition
   network_entries?: BrowserReplayNetworkEntry[]
   include_static_assets?: boolean
+  /** How captured HTTP versions become request policies; the server defaults to upgrade. */
+  http_version_mode?: 'upgrade' | 'exact' | 'inherit'
 }
 
 export type BrowserToHTTPPreviewResponse = {
@@ -955,6 +957,7 @@ export function useScriptApi() {
         infer_extractors?: boolean
         sanitize_sensitive?: boolean
         include_static_assets?: boolean
+        http_version_mode?: 'upgrade' | 'exact' | 'inherit'
       }
     }) => request<SampleImportResult>('/scripts/import/sample', { method: 'POST', body: JSON.stringify(data) }),
     [],
@@ -1102,6 +1105,7 @@ export function useScriptApi() {
       salesforce_native?: boolean
       agentforce_transform?: boolean
       salvage_truncated?: boolean
+      http_version_mode?: 'upgrade' | 'exact' | 'inherit'
     }): Promise<HARImportResult> => {
       const formData = new FormData()
       if (options?.project_id) formData.append('project_id', options.project_id)
@@ -1114,6 +1118,7 @@ export function useScriptApi() {
       if (typeof options?.retention_days === 'number') formData.append('retention_days', String(options.retention_days))
       if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
       if (options?.salvage_truncated) formData.append('salvage_truncated', 'true')
+      if (options?.http_version_mode) formData.append('http_version_mode', options.http_version_mode)
 
       const query = new URLSearchParams()
       if (options?.project_id) query.set('project_id', options.project_id)

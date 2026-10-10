@@ -619,6 +619,10 @@ type browserRecordingConvertRequest struct {
 	// applies (filters, headers, think-time threshold, correlation settings,
 	// and the options above when left unset).
 	RecordingProfileID string `json:"recording_profile_id,omitempty"`
+	// HTTPVersionMode maps the HTTP script's captured versions to leaf
+	// policies: upgrade (default; captured h3 becomes auto+h3), exact (3) or
+	// inherit (none).
+	HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
 	// Parameterize applies safe auto-parameterization suggestions to the
 	// converted browser script(s) before preview/save.
 	Parameterize bool `json:"parameterize,omitempty"`
@@ -651,6 +655,7 @@ type browserRecordingPreviewRequest struct {
 	HTTPScriptLevel      string `json:"http_script_level,omitempty" enums:"url,html"`
 	AsyncScan            *bool  `json:"async_scan,omitempty"`
 	RecordingProfileID   string `json:"recording_profile_id,omitempty"`
+	HTTPVersionMode      string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
 	Parameterize         bool   `json:"parameterize,omitempty"`
 }
 
@@ -665,6 +670,7 @@ func (req browserRecordingPreviewRequest) convertRequest() browserRecordingConve
 		HTTPScriptLevel:      req.HTTPScriptLevel,
 		AsyncScan:            req.AsyncScan,
 		RecordingProfileID:   req.RecordingProfileID,
+		HTTPVersionMode:      req.HTTPVersionMode,
 		Parameterize:         req.Parameterize,
 	}
 }
@@ -2020,6 +2026,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 type browserHTTPScriptOptions struct {
 	AsyncScan          *bool
 	RecordingProfileID string
+	HTTPVersionMode    string
 }
 
 func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, info *BrowserRecordingSession, name, level string, scriptOptions browserHTTPScriptOptions) (*dsl.Script, []string, []scriptImportReviewSection, error) {
@@ -2038,7 +2045,7 @@ func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, in
 		httpName = info.Name
 	}
 	httpName += " (HTTP)"
-	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile}
+	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile, HTTPVersionMode: scriptOptions.HTTPVersionMode}
 	var levelNotes []string
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "", recbrowser.HTTPScriptLevelURL:
@@ -2099,7 +2106,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	}
 
 	var previewReq browserRecordingPreviewRequest
-	if !decodeOptionalJSONBody(w, r, &previewReq) {
+	if !decodeOptionalJSONBody(w, r, &previewReq) || !validHTTPVersionMode(w, previewReq.HTTPVersionMode) {
 		return
 	}
 	req := previewReq.convertRequest()
@@ -2117,7 +2124,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	if req.AlsoCreateHTTPScript {
 		var httpWarnings []string
 		var err error
-		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID})
+		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID, HTTPVersionMode: req.HTTPVersionMode})
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript != nil {
@@ -2143,6 +2150,9 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	id := r.PathValue("id")
 	var req browserRecordingConvertRequest
 	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
+	if !validHTTPVersionMode(w, req.HTTPVersionMode) {
 		return
 	}
 	if req.ExpectedScriptCount < 0 ||
@@ -2237,7 +2247,7 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		// The convert route persists the drafts and answers with StoredScripts,
 		// which carry no review sections; the preview route above is where the
 		// generated HTTP draft's sections are shown.
-		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID})
+		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID, HTTPVersionMode: req.HTTPVersionMode})
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript == nil {
@@ -3094,6 +3104,9 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
+	if !validHTTPVersionMode(w, req.Conversion.HTTPVersionMode) {
+		return
+	}
 	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -3115,7 +3128,7 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 	result := s.convertBrowserRecording(artifact, info, req.Conversion)
 	scripts := append([]*dsl.Script(nil), result.Scripts...)
 	if req.Conversion.AlsoCreateHTTPScript {
-		httpScript, warnings, _, err := s.createHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.Conversion.AsyncScan, RecordingProfileID: req.Conversion.RecordingProfileID})
+		httpScript, warnings, _, err := s.createHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.Conversion.AsyncScan, RecordingProfileID: req.Conversion.RecordingProfileID, HTTPVersionMode: req.Conversion.HTTPVersionMode})
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
 			return

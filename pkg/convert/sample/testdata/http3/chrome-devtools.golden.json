@@ -1,0 +1,253 @@
+{
+  "exact": {
+    "actions": [
+      {
+        "name": "01 - GET root",
+        "target": "/",
+        "http_version": "3",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - POST api login",
+        "target": "/api/login",
+        "http_version": "3",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "03 - GET status",
+        "target": "https://legacy.example.test/status",
+        "http_version": "1.1",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "1.1",
+          "response_state": "available",
+          "response_version": "1.1",
+          "version": 1
+        }
+      },
+      {
+        "name": "04 - GET v1 items",
+        "target": "https://api.example.test/v1/items",
+        "http_version": "2",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "2",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        }
+      },
+      {
+        "name": "05 - GET v1 broken",
+        "target": "https://api.example.test/v1/broken",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "malformed",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        },
+        "execution_blockers": [
+          "import_review_required",
+          "import_review_required"
+        ]
+      }
+    ],
+    "findings": [
+      "info captured_h3 https://app.example.test",
+      "info origin_advertises_h3 https://app.example.test",
+      "info origin_advertises_h3 https://legacy.example.test"
+    ]
+  },
+  "inherit": {
+    "actions": [
+      {
+        "name": "01 - GET root",
+        "target": "/",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - POST api login",
+        "target": "/api/login",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "03 - GET status",
+        "target": "https://legacy.example.test/status",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "1.1",
+          "response_state": "available",
+          "response_version": "1.1",
+          "version": 1
+        }
+      },
+      {
+        "name": "04 - GET v1 items",
+        "target": "https://api.example.test/v1/items",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "2",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        }
+      },
+      {
+        "name": "05 - GET v1 broken",
+        "target": "https://api.example.test/v1/broken",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "malformed",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        },
+        "execution_blockers": [
+          "import_review_required",
+          "import_review_required"
+        ]
+      }
+    ],
+    "findings": [
+      "info origin_advertises_h3 https://app.example.test",
+      "info origin_advertises_h3 https://legacy.example.test",
+      "warning h3_not_preserved https://app.example.test"
+    ]
+  },
+  "upgrade": {
+    "actions": [
+      {
+        "name": "01 - GET root",
+        "target": "/",
+        "http_version": "auto+h3",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - POST api login",
+        "target": "/api/login",
+        "http_version": "auto+h3",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "03 - GET status",
+        "target": "https://legacy.example.test/status",
+        "http_version": "1.1",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "1.1",
+          "response_state": "available",
+          "response_version": "1.1",
+          "version": 1
+        }
+      },
+      {
+        "name": "04 - GET v1 items",
+        "target": "https://api.example.test/v1/items",
+        "http_version": "2",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "2",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        }
+      },
+      {
+        "name": "05 - GET v1 broken",
+        "target": "https://api.example.test/v1/broken",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "malformed",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        },
+        "execution_blockers": [
+          "import_review_required",
+          "import_review_required"
+        ]
+      }
+    ],
+    "findings": [
+      "info captured_h3 https://app.example.test",
+      "info origin_advertises_h3 https://app.example.test",
+      "info origin_advertises_h3 https://legacy.example.test"
+    ]
+  }
+}

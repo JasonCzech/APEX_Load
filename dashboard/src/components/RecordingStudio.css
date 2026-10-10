@@ -395,6 +395,16 @@
   accent-color: var(--accent);
 }
 
+.rec-http-version-mode {
+  flex-wrap: wrap;
+}
+
+.rec-http-version-mode small {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .rec-label {
   font-size: 13px;
   font-weight: 500;

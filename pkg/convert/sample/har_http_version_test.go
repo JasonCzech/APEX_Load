@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -26,7 +27,9 @@ func TestHARPerLeafHTTPVersionStrictCaptureAdmission(t *testing.T) {
 		{name: "boolean", raw: true, present: true, wantReason: "malformed_http_version"},
 		{name: "null", present: true, wantReason: "http_version_unavailable"},
 		{name: "object", raw: map[string]any{"token": "synthetic-version-canary"}, present: true, wantReason: "malformed_http_version"},
-		{name: "H3", raw: "HTTP/3", present: true, wantReason: "unsupported_http_version"},
+		{name: "H3", raw: "HTTP/3", present: true, wantVersion: "auto+h3"},
+		{name: "H3 draft", raw: "h3-29", present: true, wantReason: "http3_draft_token"},
+		{name: "HTTP/1.0", raw: "HTTP/1.0", present: true, wantReason: "unsupported_http_version"},
 		{name: "unsupported arbitrary text", raw: "synthetic-version-canary", present: true, wantReason: "unsupported_http_version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,8 +76,19 @@ func TestHARPerLeafHTTPVersionStrictCaptureAdmission(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if (len(findings) > 0) != gated {
-					t.Fatal("reopen changed capture gate")
+				blocking, review := 0, 0
+				for _, finding := range findings {
+					switch {
+					case finding.Gate == importreview.GateExecution || finding.Severity == diag.Blocker:
+						blocking++
+					case finding.Gate == importreview.GatePromotion:
+						review++
+					}
+				}
+				// A draft HTTP/3 token waits for review before promotion but
+				// does not block execution.
+				if (blocking > 0) != gated || (review > 0) != (tc.wantReason == requestimport.ReasonHTTP3DraftToken) {
+					t.Fatalf("reopen changed capture gate: blocking=%d review=%d", blocking, review)
 				}
 				result.Script = finalized.Script
 			}

@@ -62,6 +62,11 @@ type ConvertOptions struct {
 	// (correlate.HighConfidence); the rest stay review candidates. The proxy
 	// recorder sets it.
 	HighConfidenceOnly bool `json:"-"`
+	// HTTPVersionMode (HAR input) maps captured HTTP versions to leaf
+	// policies: "upgrade" (default; captured h3 becomes auto+h3), "exact"
+	// (captured h3 becomes 3) or "inherit" (no leaf policy). Captured HTTP/2
+	// and HTTP/1.1 stay exact except under inherit.
+	HTTPVersionMode string `json:"http_version_mode,omitempty"`
 }
 
 type ConvertStats struct {
@@ -193,6 +198,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		skipped     int
 	)
 
+	httpVersionMode, err := requestimport.NormalizeHTTPVersionMode(req.Options.HTTPVersionMode)
+	if err != nil {
+		return nil, err
+	}
 	var pageResources map[int][]any
 	switch format {
 	case "raw_http":
@@ -203,7 +212,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
 		includeStatic := convertutil.BoolOption(req.Options.IncludeStaticAssets, false) || strings.EqualFold(req.Options.ResourceMode, "separate")
-		exchanges, warnings, filtered, skipped, err = parseHAR(req.Content, includeStatic, &diagnostics)
+		exchanges, warnings, filtered, skipped, err = parseHARWithMode(req.Content, includeStatic, httpVersionMode, &diagnostics)
 		if err == nil && !includeStatic && strings.EqualFold(req.Options.ResourceMode, "in_step") {
 			pageResources = harInStepResources(req.Content)
 		}

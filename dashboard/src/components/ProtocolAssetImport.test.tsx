@@ -1918,6 +1918,7 @@ describe('ProtocolAssetImport', () => {
       project_id: 'project-1',
       include_static_assets: true,
       salvage_truncated: true,
+      http_version_mode: 'upgrade',
       secondary_file: comparisonFile,
       artifact_mode: 'design_har_pair',
       retention_days: 7,

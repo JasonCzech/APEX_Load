@@ -721,3 +721,8 @@
     padding: 12px 8px;
   }
 }
+
+.sample-import-field small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

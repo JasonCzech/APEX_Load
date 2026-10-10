@@ -52,6 +52,9 @@ type ConvertOptions struct {
 	// header drop list, think-time threshold and correlation settings and
 	// supplies the options above that are left unset.
 	Profile *recordingprofile.Profile `json:"-"`
+	// HTTPVersionMode maps captured HTTP versions to leaf policies: upgrade
+	// (default; captured h3 becomes auto+h3), exact (3) or inherit (none).
+	HTTPVersionMode string `json:"http_version_mode,omitempty"`
 }
 
 type ArtifactGovernance struct {
@@ -127,6 +130,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			HTMLSteps:           opts.HTMLSteps,
 			AsyncScan:           opts.AsyncScan,
 			Profile:             opts.Profile,
+			HTTPVersionMode:     opts.HTTPVersionMode,
 		},
 	})
 	if err != nil {

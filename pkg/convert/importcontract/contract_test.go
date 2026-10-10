@@ -62,7 +62,7 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "dd7c0e2eb00381e8c741f959c856b175b3f62c837064fb8efdd3566d53b4bbe1",
+	"har":      "0b3323c2222f9a34eaaee03c3e106421e0afc3fe5b768a8dda5e8a8fea37fc88",
 	"jmeter":   "e0cfea72ada43ce06b4d58479d9244996dd39ba0dc6edaba651421a20ba6b819",
 	"k6":       "223d2eb2c757a624f7c0f670f04d32bb0d9de0abb406ab040af52cbf2b2eba94",
 	"openapi":  "1daf8f24fc70e9e8968051d47ac70c1aedbbb909ce76e124f07766d960f80e65",
@@ -96,6 +96,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 				requireIntentionalDelta(t, "per_leaf_http_version_policy")
 				requireIntentionalDelta(t, "har_capture_version_provenance")
 				requireIntentionalDelta(t, "har_response_content_storage_provenance")
+				requireIntentionalDelta(t, "har_http_version_mode")
 			}
 			if importer.name == "postman" {
 				requireIntentionalDelta(t, "postman_source_file_provenance")
@@ -592,6 +593,7 @@ var intentionalDeltaAllowlist = map[string]string{
 	"har_request_http_version_fidelity":              "HAR request protocol versions now reach the shared request model and select an exact script-wide native version when every request agrees.",
 	"per_leaf_http_version_policy":                   "Supported request observations select presence-aware exact leaf transport policies, preserving mixed HTTP/1.1 and HTTP/2 captures without changing sibling inheritance.",
 	"har_capture_version_provenance":                 "HAR drafts retain bounded request/response observation states and canonical supported versions; unavailable, malformed, unsupported, or untrusted proxy-leg captures retain durable source review gates.",
+	"har_http_version_mode":                          "HAR captures record which http_version_mode mapped each observed version: captured final h3 becomes auto+h3 (upgrade, the default) or 3 (exact), or inherits (inherit); HTTP/2 and HTTP/1.1 stay exact except under inherit.",
 	"har_response_content_storage_provenance":        "HAR content is admitted as already-decoded logical storage, with exact bounded text/binary size provenance and durable gates for malformed explicit recorder envelopes or invalid storage; captured wire headers never trigger a second content decode.",
 	"http_imports_disable_implicit_traceparent":      "HTTP-producing imports without an explicit source choice persist traceparent=false so runtime defaults cannot add an unauthored wire header.",
 	"jmeter_normalized_review_evidence":              "JMeter returns source-qualified structured diagnostics and separate behavior-level review counts, restricts unsupported elements to unrepresentable behavior, and retains normalized evidence in new draft provenance.",

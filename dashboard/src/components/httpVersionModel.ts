@@ -79,3 +79,28 @@ export function scriptHTTPVersionSettings(protocol: string, scriptVersion?: unkn
     effectiveLabel: formatScriptHTTPVersion(protocol, scriptVersion),
   }
 }
+
+/** How an import maps captured HTTP versions to request policies (http_version_mode). */
+export type HTTPVersionImportMode = 'upgrade' | 'exact' | 'inherit'
+
+export const HTTP_VERSION_IMPORT_MODES: ReadonlyArray<{ value: HTTPVersionImportMode; label: string; help: string }> = [
+  {
+    value: 'upgrade',
+    label: 'Upgrade captured HTTP/3 (auto+h3)',
+    help: 'Captured HTTP/3 requests replay with auto+h3: TCP until the origin advertises HTTP/3, then HTTP/3. Captured HTTP/2 and HTTP/1.1 stay exact.',
+  },
+  {
+    value: 'exact',
+    label: 'Keep captured versions exactly',
+    help: 'Captured HTTP/3 requests require HTTP/3 and fail rather than fall back. Captured HTTP/2 and HTTP/1.1 stay exact.',
+  },
+  {
+    value: 'inherit',
+    label: 'Inherit the script setting',
+    help: 'No request keeps its captured version; each inherits the script setting, and dropped HTTP/3 observations are reported.',
+  },
+]
+
+export function isHTTPVersionImportMode(value: unknown): value is HTTPVersionImportMode {
+  return value === 'upgrade' || value === 'exact' || value === 'inherit'
+}

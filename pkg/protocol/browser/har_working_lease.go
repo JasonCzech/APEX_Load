@@ -551,6 +551,11 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 			if readErr == nil {
 				data, readErr = scrub.HAR(data, scrub.Policy{})
 			}
+			if readErr == nil {
+				// Imports read the browser's protocol as a browser-run
+				// observation, never as proxy legs.
+				data, readErr = protocol.TagBrowserHARHTTPVersions(data, protocol.HARProvenanceBrowserRun)
+			}
 			if readErr == nil && redactor != nil {
 				data, readErr = redactRuntimeHARText(data, redactor)
 			}

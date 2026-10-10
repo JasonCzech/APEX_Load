@@ -1,0 +1,166 @@
+{
+  "exact": {
+    "actions": [
+      {
+        "name": "01 - GET a",
+        "target": "/a",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http3_draft_token",
+          "request_state": "draft",
+          "response_state": "draft",
+          "version": 1
+        },
+        "review_reasons": [
+          "http3_draft_token",
+          "http3_draft_token"
+        ]
+      },
+      {
+        "name": "02 - GET b",
+        "target": "/b",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http3_draft_token",
+          "request_state": "draft",
+          "response_state": "draft",
+          "version": 1
+        },
+        "review_reasons": [
+          "http3_draft_token",
+          "http3_draft_token"
+        ]
+      },
+      {
+        "name": "03 - GET c",
+        "target": "/c",
+        "http_version": "3",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      }
+    ],
+    "findings": [
+      "info captured_h3 https://old-quic.example.test",
+      "warning http3_draft_token https://old-quic.example.test"
+    ]
+  },
+  "inherit": {
+    "actions": [
+      {
+        "name": "01 - GET a",
+        "target": "/a",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http3_draft_token",
+          "request_state": "draft",
+          "response_state": "draft",
+          "version": 1
+        },
+        "review_reasons": [
+          "http3_draft_token",
+          "http3_draft_token"
+        ]
+      },
+      {
+        "name": "02 - GET b",
+        "target": "/b",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http3_draft_token",
+          "request_state": "draft",
+          "response_state": "draft",
+          "version": 1
+        },
+        "review_reasons": [
+          "http3_draft_token",
+          "http3_draft_token"
+        ]
+      },
+      {
+        "name": "03 - GET c",
+        "target": "/c",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      }
+    ],
+    "findings": [
+      "warning h3_not_preserved https://old-quic.example.test",
+      "warning http3_draft_token https://old-quic.example.test"
+    ]
+  },
+  "upgrade": {
+    "actions": [
+      {
+        "name": "01 - GET a",
+        "target": "/a",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http3_draft_token",
+          "request_state": "draft",
+          "response_state": "draft",
+          "version": 1
+        },
+        "review_reasons": [
+          "http3_draft_token",
+          "http3_draft_token"
+        ]
+      },
+      {
+        "name": "02 - GET b",
+        "target": "/b",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http3_draft_token",
+          "request_state": "draft",
+          "response_state": "draft",
+          "version": 1
+        },
+        "review_reasons": [
+          "http3_draft_token",
+          "http3_draft_token"
+        ]
+      },
+      {
+        "name": "03 - GET c",
+        "target": "/c",
+        "http_version": "auto+h3",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      }
+    ],
+    "findings": [
+      "info captured_h3 https://old-quic.example.test",
+      "warning http3_draft_token https://old-quic.example.test"
+    ]
+  }
+}

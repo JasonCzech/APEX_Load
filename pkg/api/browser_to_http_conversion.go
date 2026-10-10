@@ -27,7 +27,10 @@ type BrowserToHTTPPreviewRequest struct {
 	NetworkEntries          []protocol.NetworkEntry               `json:"network_entries,omitempty"`
 	CorrelationObservations []BrowserToHTTPCorrelationObservation `json:"correlation_observations,omitempty"`
 	IncludeStaticAssets     bool                                  `json:"include_static_assets,omitempty"`
-	Approval                BrowserToHTTPApproval                 `json:"approval,omitempty"`
+	// HTTPVersionMode maps the browser's observed protocols to leaf
+	// policies: upgrade (default), exact or inherit.
+	HTTPVersionMode string                `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
+	Approval        BrowserToHTTPApproval `json:"approval,omitempty"`
 }
 
 type BrowserToHTTPPreviewResponse struct {
@@ -165,7 +168,7 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req BrowserToHTTPPreviewRequest
-	if !decodeJSONBody(w, r, &req) {
+	if !decodeJSONBody(w, r, &req) || !validHTTPVersionMode(w, req.HTTPVersionMode) {
 		return
 	}
 	var replaySession *BrowserReplaySession
@@ -223,6 +226,7 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		IncludeAssertions:   &includeAssertions,
 		InferExtractors:     &inferExtractors,
 		IncludeStaticAssets: &includeStaticAssets,
+		HTTPVersionMode:     req.HTTPVersionMode,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to generate HTTP draft: "+err.Error())

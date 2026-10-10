@@ -90,9 +90,29 @@ describe('per-request HTTP version policy', () => {
 })
 
 describe('qualified HTTP version evidence', () => {
+  it('labels captured HTTP/3, draft tokens and browser captures, with the import mode', () => {
+    const browserH3 = httpCapturedVersionEvidence({
+      'har.request.http_version': 'h3',
+      http_version_capture: { version: 1, request_state: 'available', response_state: 'available', request_version: '3', response_version: '3', provenance: 'browser', proxy: false, mode: 'upgrade' },
+    })
+    expect(browserH3).toEqual({
+      proxyLegs: false, requestLabel: 'Captured request HTTP version (browser)', responseLabel: 'Captured response HTTP version (browser)',
+      request: 'HTTP/3', response: 'HTTP/3', importMode: 'Upgrade captured HTTP/3 (auto+h3)',
+    })
+    const draft = httpCapturedVersionEvidence({
+      'har.request.http_version': 'h3-29',
+      http_version_capture: { version: 1, request_state: 'draft', response_state: 'unavailable', provenance: 'request', proxy: false, reason_code: 'http3_draft_token' },
+    })
+    expect(draft).toMatchObject({ request: 'Draft HTTP/3 (h3-29; replays on the inherited policy)', importMode: null })
+    // A draft value outside the token shape is never echoed.
+    expect(capturedHTTPVersionLabel('h3-<script>', 'draft')).toBe('Draft HTTP/3 (replays on the inherited policy)')
+    expect(httpCapturedVersionEvidence({ http_version_capture: { version: 1, request_state: 'available', response_state: 'available', request_version: '2', provenance: 'request', proxy: false, mode: 'surprise' } })?.importMode).toBeNull()
+  })
+
   it.each([
     ['HTTP/1.1', 'HTTP/1.1'], ['HTTP/2.0', 'HTTP/2'], ['unknown', 'Not observed'],
     ['HTTP/1.0', 'HTTP/1.0 (captured; unsupported for replay)'], ['untrusted-detail', 'Unrecognized captured version'],
+    ['h3', 'HTTP/3'], ['HTTP/3', 'HTTP/3'], ['3', 'HTTP/3'],
     [undefined, 'Not observed'], [null, 'Not observed'], [2, 'Not observed'],
   ])('labels captured observation %j without treating it as replay proof', (raw, expected) => {
     expect(capturedHTTPVersionLabel(raw)).toBe(expected)
@@ -101,7 +121,7 @@ describe('qualified HTTP version evidence', () => {
   it('prioritizes bounded observations and identifies the two proven proxy legs', () => {
     const metadata = { http_version_capture: { version: 1, request_state: 'available', response_state: 'available', proxy: true, provenance: 'proxy_legs', request_version: '2', response_version: '1.1' },
       'har.request.http_version': 'HTTP/1.1', 'har.response.http_version': 'HTTP/2' }
-    expect(httpCapturedVersionEvidence(metadata)).toEqual({ proxyLegs: true, requestLabel: 'Captured request HTTP version (client to proxy)', responseLabel: 'Captured response HTTP version (proxy to origin)', request: 'HTTP/2', response: 'HTTP/1.1' })
+    expect(httpCapturedVersionEvidence(metadata)).toEqual({ proxyLegs: true, requestLabel: 'Captured request HTTP version (client to proxy)', responseLabel: 'Captured response HTTP version (proxy to origin)', request: 'HTTP/2', response: 'HTTP/1.1', importMode: null })
     expect(metadata['har.request.http_version']).toBe('HTTP/1.1')
   })
 

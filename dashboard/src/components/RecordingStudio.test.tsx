@@ -204,7 +204,7 @@ describe("RecordingStudio", () => {
           code: "origin_advertises_h3",
           element: "HTTP/3 advertisement",
           location: "https://shop.example.test",
-          detail: "The origin advertises HTTP/3 (Alt-Svc), but no captured request used it. The import keeps each request's captured HTTP version.",
+          detail: "The origin advertises HTTP/3 (Alt-Svc), but no captured request used it. Its requests keep their captured HTTP version; moving the origin to auto+h3 is an explicit choice.",
           severity: "info",
         },
       ],

@@ -27680,6 +27680,7 @@ export interface operations {
           "expected_script_count"?: number;
           "folder_id"?: (string) | null;
           "http_script_level"?: string;
+          "http_version_mode"?: string;
           "max_think_time_ms"?: number;
           "name"?: string;
           "parameterization_selections"?: Array<{
@@ -27759,6 +27760,7 @@ export interface operations {
       content: {
         "application/json": {
           "async_scan"?: (boolean) | null;
+          "http_version_mode"?: string;
           "name"?: string;
           "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
@@ -87596,6 +87598,7 @@ export interface operations {
         "async_scan"?: boolean;
         "base_url"?: string;
         "filename"?: string;
+        "http_version_mode"?: string;
         "include_static_assets"?: boolean;
         "name"?: string;
         "project_id"?: string;
@@ -87612,6 +87615,7 @@ export interface operations {
           "async_scan"?: string;
           "base_url"?: string;
           "file"?: string;
+          "http_version_mode"?: string;
           "include_static_assets"?: string;
           "name"?: string;
           "recording_profile_id"?: string;
@@ -87970,6 +87974,7 @@ export interface operations {
         "async_scan"?: boolean;
         "base_url"?: string;
         "filename"?: string;
+        "http_version_mode"?: string;
         "include_static_assets"?: boolean;
         "name"?: string;
         "project_id"?: string;
@@ -87986,6 +87991,7 @@ export interface operations {
           "async_scan"?: string;
           "base_url"?: string;
           "file"?: string;
+          "http_version_mode"?: string;
           "include_static_assets"?: string;
           "name"?: string;
           "recording_profile_id"?: string;
@@ -88038,6 +88044,7 @@ export interface operations {
           "options"?: {
             "async_scan"?: (boolean) | null;
             "base_url"?: string;
+            "http_version_mode"?: string;
             "include_assertions"?: (boolean) | null;
             "include_static_assets"?: (boolean) | null;
             "infer_extractors"?: (boolean) | null;
@@ -107526,6 +107533,7 @@ export interface operations {
           "async_scan"?: (boolean) | null;
           "end_seq"?: number;
           "http_script_level"?: string;
+          "http_version_mode"?: string;
           "max_think_time_ms"?: number;
           "name"?: string;
           "parameterize"?: boolean;
@@ -107596,6 +107604,7 @@ export interface operations {
             "response_body"?: string;
             "response_headers"?: Record<string, string>;
           }>;
+          "http_version_mode"?: string;
           "include_static_assets"?: boolean;
           "name"?: string;
           "network_entries"?: Array<{
@@ -112900,6 +112909,7 @@ export interface operations {
       content: {
         "application/json": {
           "async_scan"?: (boolean) | null;
+          "http_version_mode"?: string;
           "name"?: string;
           "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
@@ -173048,6 +173058,7 @@ export interface operations {
             "expected_script_count"?: number;
             "folder_id"?: (string) | null;
             "http_script_level"?: string;
+            "http_version_mode"?: string;
             "max_think_time_ms"?: number;
             "name"?: string;
             "parameterization_selections"?: Array<{

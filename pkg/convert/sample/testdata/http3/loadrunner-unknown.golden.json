@@ -1,0 +1,86 @@
+{
+  "exact": {
+    "actions": [
+      {
+        "name": "01 - GET home",
+        "target": "/home",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http_version_unavailable",
+          "request_state": "unavailable",
+          "response_state": "unavailable",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - POST api save",
+        "target": "/api/save",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http_version_unavailable",
+          "request_state": "unavailable",
+          "response_state": "unavailable",
+          "version": 1
+        }
+      }
+    ]
+  },
+  "inherit": {
+    "actions": [
+      {
+        "name": "01 - GET home",
+        "target": "/home",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http_version_unavailable",
+          "request_state": "unavailable",
+          "response_state": "unavailable",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - POST api save",
+        "target": "/api/save",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http_version_unavailable",
+          "request_state": "unavailable",
+          "response_state": "unavailable",
+          "version": 1
+        }
+      }
+    ]
+  },
+  "upgrade": {
+    "actions": [
+      {
+        "name": "01 - GET home",
+        "target": "/home",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http_version_unavailable",
+          "request_state": "unavailable",
+          "response_state": "unavailable",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - POST api save",
+        "target": "/api/save",
+        "captured": {
+          "provenance": "request",
+          "proxy": false,
+          "reason_code": "http_version_unavailable",
+          "request_state": "unavailable",
+          "response_state": "unavailable",
+          "version": 1
+        }
+      }
+    ]
+  }
+}

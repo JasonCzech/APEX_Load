@@ -62,6 +62,13 @@ export function setHTTPActionVersion(action: ScriptActionDefinition, policy: HTT
 /** Observations retain their original metadata; unknown strings are not inferred as facts. */
 export function capturedHTTPVersionLabel(value: unknown, state?: unknown): string {
   if (state === 'unavailable') return 'Not observed'
+  if (state === 'draft') {
+    // A draft token (h3-29) is kept as the raw observation; show it only
+    // when it has the bounded token shape.
+    return typeof value === 'string' && /^h3-[A-Za-z0-9]{1,16}$/.test(value.trim())
+      ? `Draft HTTP/3 (${value.trim()}; replays on the inherited policy)`
+      : 'Draft HTTP/3 (replays on the inherited policy)'
+  }
   if (state === 'unsupported') return 'Unsupported captured HTTP version (source value not retained)'
   if (state === 'malformed') return 'Malformed captured HTTP version (source value not retained)'
   if (state === 'available' && (value === undefined || value === null || value === '')) return 'Captured version not retained'
@@ -70,11 +77,15 @@ export function capturedHTTPVersionLabel(value: unknown, state?: unknown): strin
     case '1.0': case 'HTTP/1.0': return 'HTTP/1.0 (captured; unsupported for replay)'
     case '1.1': case 'HTTP/1.1': return 'HTTP/1.1'
     case '2': case 'HTTP/2': case 'HTTP/2.0': return 'HTTP/2'
+    case '3': case 'H3': case 'HTTP/3': case 'HTTP/3.0': return 'HTTP/3'
     default: return 'Unrecognized captured version'
   }
 }
 
-const CAPTURE_STATES = new Set(['available', 'unavailable', 'malformed', 'unsupported'])
+const CAPTURE_STATES = new Set(['available', 'unavailable', 'malformed', 'unsupported', 'draft'])
+const IMPORT_MODE_LABELS: Record<string, string> = {
+  upgrade: 'Upgrade captured HTTP/3 (auto+h3)', exact: 'Keep captured versions exactly', inherit: 'Inherit the script setting',
+}
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 
 /** Bounded captured observations are independent of authored and replay policy. */
@@ -87,18 +98,22 @@ export function httpCapturedVersionEvidence(metadata: ScriptActionDefinition['me
     && legacyProvenance.request_leg === 'client_to_proxy' && legacyProvenance.response_leg === 'proxy_to_origin'
   const proxyLegs = capture?.provenance === 'proxy_legs' && capture.proxy === true
     || (!capture?.provenance && legacyProxyLegs)
+  const browser = capture?.provenance === 'browser' && capture.proxy === false
   const rawRequest = own(source, 'har.request.http_version') ? source['har.request.http_version'] : source.http_version
   const observation = (key: 'request' | 'response', raw: unknown) => {
     const bounded = capture?.[`${key}_version`]
-    const value = bounded === '1.1' || bounded === '2' ? bounded : raw
+    const value = bounded === '1.1' || bounded === '2' || bounded === '3' ? bounded : raw
     return capturedHTTPVersionLabel(value, capture?.[`${key}_state`])
   }
   return {
     proxyLegs: Boolean(proxyLegs),
-    requestLabel: proxyLegs ? 'Captured request HTTP version (client to proxy)' : 'Captured request HTTP version',
-    responseLabel: proxyLegs ? 'Captured response HTTP version (proxy to origin)' : 'Captured response HTTP version',
+    requestLabel: proxyLegs ? 'Captured request HTTP version (client to proxy)' : browser ? 'Captured request HTTP version (browser)' : 'Captured request HTTP version',
+    responseLabel: proxyLegs ? 'Captured response HTTP version (proxy to origin)' : browser ? 'Captured response HTTP version (browser)' : 'Captured response HTTP version',
     request: observation('request', rawRequest),
     response: observation('response', source['har.response.http_version']),
+    // The http_version_mode that turned the observation into this request's
+    // imported policy; later edits change the policy, not this record.
+    importMode: typeof capture?.mode === 'string' && own(IMPORT_MODE_LABELS, capture.mode) ? IMPORT_MODE_LABELS[capture.mode] : null,
   }
 }
 

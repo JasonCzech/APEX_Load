@@ -1,0 +1,114 @@
+{
+  "exact": {
+    "actions": [
+      {
+        "name": "01 - GET cart",
+        "target": "/cart",
+        "http_version": "3",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - GET api prices",
+        "target": "/api/prices",
+        "http_version": "2",
+        "captured": {
+          "mode": "exact",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "2",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        }
+      }
+    ],
+    "findings": [
+      "info captured_h3 https://shop.example.test",
+      "info origin_advertises_h3 https://shop.example.test"
+    ]
+  },
+  "inherit": {
+    "actions": [
+      {
+        "name": "01 - GET cart",
+        "target": "/cart",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - GET api prices",
+        "target": "/api/prices",
+        "captured": {
+          "mode": "inherit",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "2",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        }
+      }
+    ],
+    "findings": [
+      "info origin_advertises_h3 https://shop.example.test",
+      "warning h3_not_preserved https://shop.example.test"
+    ]
+  },
+  "upgrade": {
+    "actions": [
+      {
+        "name": "01 - GET cart",
+        "target": "/cart",
+        "http_version": "auto+h3",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "3",
+          "response_state": "available",
+          "response_version": "3",
+          "version": 1
+        }
+      },
+      {
+        "name": "02 - GET api prices",
+        "target": "/api/prices",
+        "http_version": "2",
+        "captured": {
+          "mode": "upgrade",
+          "provenance": "request",
+          "proxy": false,
+          "request_state": "available",
+          "request_version": "2",
+          "response_state": "available",
+          "response_version": "2",
+          "version": 1
+        }
+      }
+    ],
+    "findings": [
+      "info captured_h3 https://shop.example.test",
+      "info origin_advertises_h3 https://shop.example.test"
+    ]
+  }
+}

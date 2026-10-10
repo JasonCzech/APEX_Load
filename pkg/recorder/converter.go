@@ -75,6 +75,11 @@ type ConvertOptions struct {
 	// content-type filters, think-time threshold and correlation settings
 	// apply, and it supplies the options above that are left unset.
 	Profile *recordingprofile.Profile
+	// HTTPVersionMode maps captured HTTP versions to leaf policies (see
+	// sample.ConvertOptions.HTTPVersionMode). The proxy's client leg never
+	// carries h3, so it matters for advertisements only through the mode's
+	// handling of HTTP/2 and HTTP/1.1.
+	HTTPVersionMode string
 }
 
 // ConvertSession converts a recording with default options.

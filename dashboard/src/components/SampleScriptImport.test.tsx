@@ -685,6 +685,14 @@ describe('SampleScriptImport', () => {
     await act(async () => {
       includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    const versionMode = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('HTTP version in generated script'))?.querySelector('select') as HTMLSelectElement | undefined
+    expect(versionMode?.value).toBe('upgrade')
+    if (!versionMode) return
+    await act(async () => {
+      versionMode.value = 'exact'
+      versionMode.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(versionMode.closest('label')?.textContent).toContain('fail rather than fall back')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
@@ -699,6 +707,7 @@ describe('SampleScriptImport', () => {
       format: 'har',
       options: expect.objectContaining({
         include_static_assets: true,
+        http_version_mode: 'exact',
       }),
     }))
     expect(container.textContent).toContain('Filtered assets')

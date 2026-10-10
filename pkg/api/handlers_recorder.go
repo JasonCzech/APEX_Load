@@ -373,8 +373,13 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		// RecordingProfileID names a project recording profile; it defaults
 		// to the one the session was started with.
 		RecordingProfileID string `json:"recording_profile_id,omitempty"`
+		// HTTPVersionMode maps captured HTTP versions to leaf policies.
+		HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
+	if !validHTTPVersionMode(w, req.HTTPVersionMode) {
 		return
 	}
 	profile, err := s.sessionRecordingProfile(session, req.RecordingProfileID)
@@ -383,7 +388,7 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile, HTTPVersionMode: req.HTTPVersionMode})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
@@ -465,8 +470,13 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 		// RecordingProfileID names a project recording profile; it defaults
 		// to the one the session was started with.
 		RecordingProfileID string `json:"recording_profile_id,omitempty"`
+		// HTTPVersionMode maps captured HTTP versions to leaf policies.
+		HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
+	if !validHTTPVersionMode(w, req.HTTPVersionMode) {
 		return
 	}
 	profile, err := s.sessionRecordingProfile(session, req.RecordingProfileID)
@@ -475,7 +485,7 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile, HTTPVersionMode: req.HTTPVersionMode})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")

@@ -40,6 +40,8 @@ import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry 
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
+import { HTTPVersionModeField } from './HTTPVersionModeField'
+import type { HTTPVersionImportMode } from './httpVersionModel'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -53,6 +55,7 @@ type SampleImportOptions = {
   infer_extractors: boolean
   sanitize_sensitive: boolean
   include_static_assets: boolean
+  http_version_mode: HTTPVersionImportMode
   auth_type: AuthType
   auth_username: string
   auth_password: string
@@ -385,6 +388,7 @@ const initialOptions: SampleImportOptions = {
   infer_extractors: true,
   sanitize_sensitive: true,
   include_static_assets: false,
+  http_version_mode: 'upgrade',
   auth_type: 'none',
   auth_username: '',
   auth_password: '',
@@ -824,6 +828,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               infer_extractors: options.infer_extractors,
               sanitize_sensitive: options.sanitize_sensitive,
               include_static_assets: format === 'har' ? options.include_static_assets : undefined,
+              http_version_mode: format === 'har' ? options.http_version_mode : undefined,
             },
           })
 
@@ -1282,6 +1287,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
           {format === 'har' && <label className="sample-toggle"><input type="checkbox" checked={options.include_static_assets} onChange={e => updateOption('include_static_assets', e.target.checked)} />Include static assets</label>}
           <label className="sample-toggle"><input type="checkbox" checked={options.continue_on_error} onChange={e => updateOption('continue_on_error', e.target.checked)} />Continue on error</label>
         </div>
+        {format === 'har' && <HTTPVersionModeField value={options.http_version_mode} onChange={mode => updateOption('http_version_mode', mode)} />}
       </div>
 
       <div className="sample-import-actions">

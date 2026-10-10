@@ -41,6 +41,8 @@ import {
   mergeProtectedParameterizationSelectionIds,
 } from './protectedImportSession'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import { HTTPVersionModeField } from './HTTPVersionModeField'
+import type { HTTPVersionImportMode } from './httpVersionModel'
 import './SampleScriptImport.css'
 
 export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi' | 'k6' | 'cloudtest' | 'eventhubs-capture' | 'broker-config'
@@ -846,6 +848,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [soapVersion, setSoapVersion] = useState('1.1')
   const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
   const [salvageTruncatedHAR, setSalvageTruncatedHAR] = useState(false)
+  const [harHTTPVersionMode, setHARHTTPVersionMode] = useState<HTTPVersionImportMode>('upgrade')
   const [redactSensitive, setRedactSensitive] = useState(true)
   const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
   const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
@@ -1089,6 +1092,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           ...options,
           include_static_assets: includeStaticAssets,
           salvage_truncated: salvageTruncatedHAR,
+          http_version_mode: harHTTPVersionMode,
           secondary_file: secondaryHARFile || undefined,
           artifact_mode: secondaryHARFile ? 'design_har_pair' : 'design_har',
           retention_days: retentionDays,
@@ -2296,6 +2300,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setSalvageTruncatedHAR(event.target.checked) }} />
                 Recover the complete entries of a truncated HAR
               </label>
+              <HTTPVersionModeField className="sample-import-field sample-import-span-2" value={harHTTPVersionMode} disabled={sourceMutationLocked}
+                onChange={mode => { invalidateConversionSource(); setHARHTTPVersionMode(mode) }} />
             </>
           )}
           {supportsAgentforceTransform && file && (

@@ -83,6 +83,12 @@ func harObservations(content string, includeStaticAssets, sourceIDs bool) ([]HAR
 }
 
 func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
+	return parseHARWithMode(content, includeStaticAssets, requestimport.HTTPVersionModeUpgrade, diagnostics)
+}
+
+// parseHARWithMode parses a HAR, mapping each observed HTTP version to a leaf
+// policy by mode (requestimport.HTTPVersionMode*).
+func parseHARWithMode(content string, includeStaticAssets bool, mode string, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
 	var payload any
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
@@ -106,6 +112,9 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 	warnings := []string{}
 	h3Advertised := map[string]bool{}
 	h3Used := map[string]bool{}
+	// Per origin: final h3 requests mapped by mode, and draft tokens seen.
+	h3Mapped := map[string]int{}
+	h3Drafts := map[string]int{}
 	for index, item := range items {
 		if origin := harOriginAdvertisingH3(item); origin != "" {
 			h3Advertised[origin] = true
@@ -142,10 +151,23 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 		responseVersion, responsePresent := responseData["httpVersion"]
 		provenance, provenancePresent := item[requestimport.HARHTTPVersionProvenanceKey]
 		capture := requestimport.ReviewHTTPVersionCapture(requestVersion, requestPresent, responseVersion, responsePresent, provenance, provenancePresent, legacyRecorder)
-		ex.HTTPVersion = capture.Version
+		// The observation stays in http_version_capture; the leaf policy is
+		// the mode's mapping of it.
+		ex.HTTPVersion = requestimport.HTTPVersionPolicyForCapture(capture, mode)
 		action := dsl.Action{Metadata: ex.Metadata}
 		requestimport.ApplyHTTPVersionCapture(&action, capture, requestimport.SourceRef{Format: "har", Pointer: fmt.Sprintf("log.entries[%d].request.httpVersion", index)})
 		ex.Metadata = action.Metadata
+		if observation, ok := ex.Metadata["http_version_capture"].(map[string]any); ok && capture.Version != "" {
+			observation["mode"] = mode
+		}
+		if origin := harEntryOrigin(requestData); origin != "" {
+			switch {
+			case capture.Version == httpprotocol.VersionHTTP3:
+				h3Mapped[origin]++
+			case capture.ReasonCode == requestimport.ReasonHTTP3DraftToken:
+				h3Drafts[origin]++
+			}
+		}
 		if capture.Provenance == "unavailable" {
 			delete(ex.Metadata, "har.request.http_version")
 			delete(ex.Metadata, "har.response.http_version")
@@ -164,10 +186,29 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 	if len(exchanges) > 1 {
 		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
 	}
+	for _, origin := range slices.Sorted(maps.Keys(h3Mapped)) {
+		count := h3Mapped[origin]
+		switch mode {
+		case requestimport.HTTPVersionModeInherit:
+			diagnostics.AddCoded(diag.Warning, requestimport.CodeH3NotPreserved, "HTTP version", origin,
+				fmt.Sprintf("%d captured HTTP/3 request%s keep the script's inherited HTTP version policy (http_version_mode: inherit).", count, pluralSuffix(count, "", "s")))
+		case requestimport.HTTPVersionModeExact:
+			diagnostics.AddCoded(diag.Info, requestimport.CodeCapturedH3, "HTTP version", origin,
+				fmt.Sprintf("%d captured HTTP/3 request%s replay with exact HTTP/3 (3), which fails rather than falls back when HTTP/3 is unavailable.", count, pluralSuffix(count, "", "s")))
+		default:
+			diagnostics.AddCoded(diag.Info, requestimport.CodeCapturedH3, "HTTP version", origin,
+				fmt.Sprintf("%d captured HTTP/3 request%s replay with auto+h3: TCP until the origin advertises HTTP/3, then HTTP/3.", count, pluralSuffix(count, "", "s")))
+		}
+	}
+	for _, origin := range slices.Sorted(maps.Keys(h3Drafts)) {
+		count := h3Drafts[origin]
+		diagnostics.AddCoded(diag.Warning, requestimport.ReasonHTTP3DraftToken, "HTTP version", origin,
+			fmt.Sprintf("%d request%s used a draft HTTP/3 version; they replay on the inherited policy until final HTTP/3 is chosen explicitly.", count, pluralSuffix(count, "", "s")))
+	}
 	for _, origin := range slices.Sorted(maps.Keys(h3Advertised)) {
-		detail := "The origin advertises HTTP/3 (Alt-Svc), but no captured request used it. The import keeps each request's captured HTTP version."
+		detail := "The origin advertises HTTP/3 (Alt-Svc), but no captured request used it. Its requests keep their captured HTTP version; moving the origin to auto+h3 is an explicit choice."
 		if h3Used[origin] {
-			detail = "The origin advertises HTTP/3 (Alt-Svc), and captured requests used it. The import keeps each request's captured HTTP version."
+			detail = "The origin advertises HTTP/3 (Alt-Svc), and captured requests used it."
 		}
 		diagnostics.AddCoded(diag.Info, OriginAdvertisesH3Code, "HTTP/3 advertisement", origin, detail)
 	}
@@ -505,7 +546,8 @@ func harEntryMetadata(item map[string]any, requestData map[string]any, responseD
 func addCapturedVersionMetadata(metadata map[string]any, key string, raw any) {
 	if value, ok := raw.(string); ok && len(value) <= 256 {
 		capture := requestimport.ReviewHTTPVersionCapture(value, true, nil, false, nil, false, false)
-		if capture.RequestState == "available" || capture.RequestState == "unavailable" {
+		// A draft token is kept as the raw observation it is.
+		if capture.RequestState == "available" || capture.RequestState == "unavailable" || capture.ReasonCode == requestimport.ReasonHTTP3DraftToken {
 			metadata[key] = value
 		}
 	}
@@ -594,6 +636,15 @@ func harOriginAdvertisingH3(item map[string]any) string {
 
 // harOriginUsingH3 returns the request origin when the entry itself was
 // captured over final HTTP/3, else "".
+// harEntryOrigin is the scheme://host of a HAR request, lowercased.
+func harEntryOrigin(requestData map[string]any) string {
+	parsed, err := url.Parse(stringValue(requestData["url"]))
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	return strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+}
+
 func harOriginUsingH3(item map[string]any) string {
 	requestData, _ := item["request"].(map[string]any)
 	switch strings.ToLower(strings.TrimSpace(stringValue(requestData["httpVersion"]))) {

@@ -1464,7 +1464,7 @@ func runtimeSurfaceDeclaredHTTPVersion(ref dslwalk.SurfaceRef) string {
 func sourceHTTPVersionPolicy(raw string) (string, bool) {
 	version := sourceHTTPVersionNormalized(raw)
 	switch version {
-	case "auto", "1.1", "2":
+	case "auto", "1.1", "2", httpprotocol.VersionAutoH3, httpprotocol.VersionHTTP3:
 		return version, true
 	default:
 		return "", false

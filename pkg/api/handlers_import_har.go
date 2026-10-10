@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -256,6 +257,9 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
+		if !validHTTPVersionMode(w, req.Options.HTTPVersionMode) {
+			return nil, false
+		}
 		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
 		secondary := firstNonEmpty(req.SecondaryContent, req.ComparisonContent, req.ContentB)
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
@@ -277,6 +281,10 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			return nil, false
 		}
 	}
+	httpVersionMode := strings.TrimSpace(upload.Value("http_version_mode"))
+	if !validHTTPVersionMode(w, httpVersionMode) {
+		return nil, false
+	}
 	return &harImportRequest{
 		Data:               upload.Data,
 		SecondaryData:      secondaryData,
@@ -291,6 +299,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
 			SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
 			AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
+			HTTPVersionMode:     httpVersionMode,
 		},
 	}, true
 }
@@ -339,4 +348,14 @@ func parseOptionalBool(value string) *bool {
 	}
 	parsed := parseBoolDefault(value, false)
 	return &parsed
+}
+
+// validHTTPVersionMode writes 400 for an http_version_mode import option that
+// is not upgrade, exact or inherit; empty selects upgrade.
+func validHTTPVersionMode(w http.ResponseWriter, mode string) bool {
+	if _, err := requestimport.NormalizeHTTPVersionMode(mode); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	return true
 }

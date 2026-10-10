@@ -34686,6 +34686,8 @@ paths:
                   nullable: true
                 http_script_level:
                   type: string
+                http_version_mode:
+                  type: string
                 max_think_time_ms:
                   type: integer
                   format: int64
@@ -34811,6 +34813,8 @@ paths:
                   type: integer
                   format: int64
                 http_script_level:
+                  type: string
+                http_version_mode:
                   type: string
                 max_think_time_ms:
                   type: integer
@@ -35700,6 +35704,8 @@ paths:
                       type: string
                       nullable: true
                     http_script_level:
+                      type: string
+                    http_version_mode:
                       type: string
                     max_think_time_ms:
                       type: integer
@@ -80895,6 +80901,8 @@ paths:
                 async_scan:
                   type: boolean
                   nullable: true
+                http_version_mode:
+                  type: string
                 name:
                   type: string
                 page_title_checks:
@@ -80981,6 +80989,8 @@ paths:
                 async_scan:
                   type: boolean
                   nullable: true
+                http_version_mode:
+                  type: string
                 name:
                   type: string
                 page_title_checks:
@@ -251384,6 +251394,8 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                http_version_mode:
+                  type: string
                 include_static_assets:
                   type: boolean
                 name:
@@ -272402,6 +272414,8 @@ paths:
                 file:
                   type: string
                   format: binary
+                http_version_mode:
+                  type: string
                 include_static_assets:
                   type: string
                 name:
@@ -272469,6 +272483,12 @@ paths:
           schema:
             type: string
         - name: filename
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: http_version_mode
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -296128,6 +296148,8 @@ paths:
                 file:
                   type: string
                   format: binary
+                http_version_mode:
+                  type: string
                 include_static_assets:
                   type: string
                 name:
@@ -296195,6 +296217,12 @@ paths:
           schema:
             type: string
         - name: filename
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: http_version_mode
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -296271,6 +296299,8 @@ paths:
                       type: boolean
                       nullable: true
                     base_url:
+                      type: string
+                    http_version_mode:
                       type: string
                     include_assertions:
                       type: boolean

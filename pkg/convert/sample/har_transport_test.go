@@ -109,10 +109,10 @@ func TestHARUnknownVersionIsUnavailableMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 			action := result.Script.Actions[0]
-			if version != "HTTP/1.0" && version != "HTTP/3" && action.Metadata["har.request.http_version"] != version {
+			if version != "HTTP/1.0" && action.Metadata["har.request.http_version"] != version {
 				t.Fatalf("recorded version metadata lost: %+v", action.Metadata)
 			}
-			if (version == "HTTP/1.0" || version == "HTTP/3") && action.Metadata["har.request.http_version"] != nil {
+			if version == "HTTP/1.0" && action.Metadata["har.request.http_version"] != nil {
 				t.Fatal("unsupported source value copied instead of bounded capture state")
 			}
 			// Unknown and non-selectable versions are capture-quality warnings:
@@ -126,7 +126,7 @@ func TestHARUnknownVersionIsUnavailableMetadata(t *testing.T) {
 					warned = true
 				}
 			}
-			wantWarned := version == "HTTP/1.0" || version == "HTTP/3" || strings.EqualFold(strings.TrimSpace(version), "unknown")
+			wantWarned := version == "HTTP/1.0" || strings.EqualFold(strings.TrimSpace(version), "unknown")
 			if blocked || warned != wantWarned {
 				t.Fatalf("HTTP version blocker=%v warning=%v, want warning=%v and no blocker", blocked, warned, wantWarned)
 			}

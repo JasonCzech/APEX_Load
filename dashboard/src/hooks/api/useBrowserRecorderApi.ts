@@ -147,6 +147,8 @@ export type BrowserRecorderConvertRequest = {
   http_script_level?: 'url' | 'html'
   /** Project recording profile the HAR-derived HTTP script applies. */
   recording_profile_id?: string
+  /** How the HTTP script maps captured HTTP versions: upgrade (default), exact or inherit. */
+  http_version_mode?: 'upgrade' | 'exact' | 'inherit'
   parameterize?: boolean
   // Save-only override applied to the fresh server conversion before its
   // create transaction. The script index binds each opaque requirement ID to

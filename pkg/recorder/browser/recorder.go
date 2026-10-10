@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -1544,6 +1545,13 @@ func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadlin
 			if filterErr == nil {
 				result.data = filtered
 				result.dropped = dropped
+			}
+		}
+		if result.err == nil && result.filterErr == nil {
+			// Each entry names the browser as its version's source; import
+			// treats that as description only.
+			if tagged, tagErr := protocol.TagBrowserHARHTTPVersions(result.data, protocol.HARProvenanceBrowser); tagErr == nil {
+				result.data = tagged
 			}
 		}
 		done <- result

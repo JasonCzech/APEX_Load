@@ -212,13 +212,14 @@ func SupportedVersions() []string {
 	return append([]string(nil), supportedVersions[:]...)
 }
 
-// VersionExecutable reports whether raw is an executable explicit version or
-// the empty automatic mode. HTTP/3 policies are valid vocabulary but are not
-// executable on this runtime, so importers keep treating captured HTTP/3 as
-// an observation.
+// VersionExecutable reports whether raw is a policy the runtime can select
+// exactly: the empty automatic mode, an exact TCP version or an HTTP/3 policy.
+// HTTP/3 policies still need an installation with HTTP/3 execution enabled
+// (APEXLOAD_HTTP3), which admission checks; importers may map captured HTTP/3
+// to them because a draft that cannot run there is refused, not altered.
 func VersionExecutable(raw string) bool {
 	switch NormalizeVersion(raw) {
-	case "", VersionHTTP11, VersionHTTP2:
+	case "", VersionHTTP11, VersionHTTP2, VersionHTTP3, VersionAutoH3:
 		return true
 	default:
 		return false
