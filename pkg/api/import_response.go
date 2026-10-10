@@ -1161,11 +1161,7 @@ func writeScriptImportResponse(w http.ResponseWriter, status int, response map[s
 				return
 			case errors.Is(cause, importsession.ErrSessionClaimed),
 				errors.Is(cause, importsession.ErrSessionClaimLost):
-				writeJSON(w, http.StatusConflict, map[string]any{
-					"error":     "Protected import session ownership changed. Retry from the current import review.",
-					"code":      "protected_import_session_conflict",
-					"retryable": true,
-				})
+				writeProtectedImportSessionConflict(w, "Protected import session ownership changed. Retry from the current import review.")
 				return
 			}
 		}

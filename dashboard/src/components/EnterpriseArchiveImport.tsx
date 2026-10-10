@@ -1002,6 +1002,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     return () => onOperationBusyChange?.(false)
   }, [onOperationBusyChange, operationBusy])
   const operationGenerationRef = useRef(0)
+  // The converted-draft Save/Edit actions of the latest render. See
+  // runValidatedReviewAction for why queued validation actions read them.
+  const convertedReviewActionsRef = useRef<{
+    save: () => void | Promise<void>
+    edit: () => void
+    convertValidated: (itemIds: string[]) => Promise<void>
+  }>({ save: () => {}, edit: () => {}, convertValidated: async () => {} })
   // Reuse the same server idempotency identity after a lost response. A retry
   // must reconcile the original atomic save, never create another copy.
   const saveOperationIDsRef = useRef(new Map<string, string>())
@@ -1324,6 +1331,18 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     selectedItem
     && enterpriseArchiveResultScriptIsSaved(selectedItem, activeResultScriptIndex),
   )
+  // Saves, conversions, and draft mutations consume the selected protected
+  // candidate. The guided-repair inspection waits for them instead of racing
+  // the consumer (and then reporting a stale candidate beside a good save).
+  // Work on other queued archives never touches this candidate.
+  const guidedRepairInspectionPaused = selectedResultScriptSaved
+    || Boolean(selectedItem && enterpriseArchiveImportStatusIsRunning(selectedItem.status))
+    || scriptSaveInProgress
+    || atomicSaveInProgress
+    || editorActionPreparing
+    || internalReviewBusy
+    || reviewArtifactSaving
+    || reviewArtifactPersistenceInProgress
   // Source-secret sessions may be archive-wide and single-use, but requirements
   // and editor/save readiness are script-specific. A credential needed by one
   // generated lane must not block an unrelated lane.
@@ -4027,6 +4046,64 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     selectEnterpriseResultScript(nextIndex, true)
   }
 
+  // The review's Save for a converted draft; a validated draft delegates to it
+  // once credential preparation has promoted the draft (runValidatedReviewAction).
+  const convertedReviewSave = saveBlockedByProtocolGate && reviewArtifact
+    ? handleSaveReviewArtifact
+    : enterprisePrepareSelectedForBatch
+      ? handlePrepareEnterpriseCredentialsForBatch
+      : enterpriseCredentialBatchFlow
+        ? handleSaveCredentialBatch
+        : handleSaveConverted
+  convertedReviewActionsRef.current = {
+    save: () => convertedReviewSave(),
+    edit: () => openImportedScriptInEditor(),
+    convertValidated: itemIds => convertValidatedItems(itemIds),
+  }
+  // ScriptImportReview queues Save/Edit before it prepares credentials, so the
+  // queued handler is the one from the click. Applying the bindings promotes a
+  // validated draft to a converted draft in place (validation and conversion
+  // return the same draft), and the click-time validation handler would then
+  // re-run the whole conversion, discard the bindings it just applied, and
+  // leave the operator to click Save a second time. Once that promotion has
+  // happened, run the converted draft's action from the latest render instead.
+  // "Save reviewed drafts" still covers the other validated archives: they
+  // follow once the promoted draft is saved.
+  const runValidatedReviewAction = (
+    itemId: string,
+    generation: number,
+    action: 'save' | 'edit',
+    validatedIds: readonly string[],
+    fallback: () => void,
+  ) => {
+    const current = importItemsRef.current.find(item => item.id === itemId)
+    if (current?.reviewMode !== 'conversion' || current.reviewGeneration !== generation) {
+      fallback()
+      return
+    }
+    if (action === 'edit') {
+      convertedReviewActionsRef.current.edit()
+      return
+    }
+    const scriptIndex = selectedResultScriptIndexRef.current
+    const remainingIds = validatedIds.filter(id => id !== itemId)
+    const sourceOperationGeneration = operationGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    void (async () => {
+      await convertedReviewActionsRef.current.save()
+      if (remainingIds.length === 0) return
+      // Closing the import, switching project, or starting another operation
+      // fences the batch: no further durable write may start after that.
+      if (operationGenerationRef.current !== sourceOperationGeneration || reviewProjectIdRef.current !== sourceProjectId) return
+      const promoted = importItemsRef.current.find(item => item.id === itemId)
+      // A failed or non-saving action (such as preparing the next script's
+      // credentials) keeps its message visible and leaves the rest for the
+      // operator's next Save.
+      if (!promoted || !enterpriseArchiveResultScriptIsSaved(promoted, scriptIndex)) return
+      await convertedReviewActionsRef.current.convertValidated(remainingIds)
+    })()
+  }
+
   const reviewProjectPicker = importItems.length > 1 && <label className="lr-review-project-picker">
     <span>Review imported project</span>
     <select value={selectedItem?.id || ''} disabled={sourceMutationLocked} onChange={event => selectEnterpriseQueueItem(event.target.value)}>
@@ -4747,16 +4824,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             saveDisabledReason={reviewSaveDisabledReason}
             saveLabel={saveActionLabel}
             savedAction={savedReviewScript && onImported ? { label: 'Open saved script in Visual Editor', onClick: () => onImported({ scripts: [savedReviewScript] }) } : undefined}
-            onSave={saveBlockedByProtocolGate && reviewArtifact
-              ? handleSaveReviewArtifact
-              : reviewMode === 'validation' && selectedItem
-                ? () => convertValidatedItems(validatedItemIds)
-                : enterprisePrepareSelectedForBatch
-                  ? handlePrepareEnterpriseCredentialsForBatch
-                  : enterpriseCredentialBatchFlow
-                    ? handleSaveCredentialBatch
-                    : handleSaveConverted}
-            onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1)) ? () => { openImportedScriptInEditor() } : undefined}
+            onSave={!(saveBlockedByProtocolGate && reviewArtifact) && reviewMode === 'validation' && selectedItem
+              ? () => runValidatedReviewAction(selectedItem.id, selectedItem.reviewGeneration, 'save', validatedItemIds, () => { void convertValidatedItems(validatedItemIds) })
+              : convertedReviewSave}
+            onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1))
+              ? (reviewMode === 'validation' && selectedItem
+                  ? () => runValidatedReviewAction(selectedItem.id, selectedItem.reviewGeneration, 'edit', validatedItemIds, () => openImportedScriptInEditor())
+                  : () => { openImportedScriptInEditor() })
+              : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save draft and open in Visual Editor' : 'Open draft in Visual Editor'}
             previewTitle="DSL Preview"
             previewData={importedScript}
@@ -4767,7 +4842,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
           >
-            {importedScript && <ImportGuidedRepair onCredentialTarget={setCredentialTarget} onReimport={() => { if (archiveSetupRef.current) { archiveSetupRef.current.open = true; archiveSetupRef.current.querySelector('summary')?.focus(); archiveSetupRef.current.scrollIntoView({ block: 'start' }) } }} categoryFocus={categoryFocus} onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={guidedRepairScope} onReviewedChange={ids => setReviewedRepairIssues({ scope: guidedRepairScope, ids })} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={tab => { setReturnToIssue(true); selectReviewSection(tab) }} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptSaved ? 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={(path, finding) => {
+            {importedScript && <ImportGuidedRepair onCredentialTarget={setCredentialTarget} onReimport={() => { if (archiveSetupRef.current) { archiveSetupRef.current.open = true; archiveSetupRef.current.querySelector('summary')?.focus(); archiveSetupRef.current.scrollIntoView({ block: 'start' }) } }} categoryFocus={categoryFocus} onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={guidedRepairScope} onReviewedChange={ids => setReviewedRepairIssues({ scope: guidedRepairScope, ids })} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={tab => { setReturnToIssue(true); selectReviewSection(tab) }} onReview={review => setProtectedReview({ project: projectId || '', result: review })} inspectionPaused={guidedRepairInspectionPaused} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptSaved ? 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={(path, finding) => {
               const mapping = sourceReview?.mappings?.find(entry => finding?.source_mapping_id ? entry.id === finding.source_mapping_id : path && entry.target_path === path)
               setReturnToIssue(true)
               setRepairSourceFocus(previous => ({ id: mapping?.id || '', file: finding?.source_file || '', revision: previous.revision + 1 }))

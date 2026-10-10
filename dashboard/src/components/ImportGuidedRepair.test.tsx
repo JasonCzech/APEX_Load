@@ -289,3 +289,54 @@ it('moves notes marked reviewed out of the unresolved counts and reports them up
     expect(onReviewedChange).toHaveBeenLastCalledWith([])
   } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
 })
+
+it('waits to inspect a candidate the importer is consuming and keeps an inspection already in flight', async () => {
+  const draft = (token: string) => ({ name: 'Paused draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: token } } } }) as ScriptDefinition
+  const inspected = (token: string) => ({ candidate_id: token, revision: token, script: draft(token), before: draft(token), findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:9', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2099-09-19', fidelity_report: {} })
+  const inspectCalls = () => mock.request.mock.calls.filter(([url, options]) => url === '/scripts/import/repairs/preview' && JSON.parse(options.body).operation.type === 'inspect')
+  let finishFirst: (value: unknown) => void = () => {}
+  mock.request.mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
+  mock.request.mockResolvedValue(inspected('protected:two'))
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container); const onReview = vi.fn()
+  const render = (token: string, inspectionPaused: boolean) => root.render(<StrictMode><ImportGuidedRepair script={draft(token)} projectId="p" onApplied={vi.fn()} onReview={onReview} inspectionPaused={inspectionPaused} /></StrictMode>)
+  try {
+    await act(async () => render('protected:one', false))
+    expect(inspectCalls()).toHaveLength(1)
+    // A save starts while the first inspection is still running: it is still delivered.
+    await act(async () => render('protected:one', true))
+    await act(async () => finishFirst(inspected('protected:one')))
+    expect(onReview).toHaveBeenLastCalledWith(expect.objectContaining({ candidate_id: 'protected:one' }))
+    // The rotated candidate arrives while the save consumes it: no inspection races the save.
+    await act(async () => render('protected:two', true))
+    expect(inspectCalls()).toHaveLength(1)
+    expect(container.textContent).not.toContain('stale')
+    // The save failed and released the draft: inspect it once, and not again on later toggles.
+    await act(async () => render('protected:two', false))
+    expect(inspectCalls()).toHaveLength(2)
+    expect(JSON.parse(inspectCalls()[1][1].body).candidate_id).toBe('protected:two')
+    await act(async () => render('protected:two', true))
+    await act(async () => render('protected:two', false))
+    expect(inspectCalls()).toHaveLength(2)
+    expect(onReview).toHaveBeenCalledTimes(2)
+  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})
+
+it('locks repairs while the importer consumes the draft', async () => {
+  const script = { name: 'Locked draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: 'protected:locked' } } } } as ScriptDefinition
+  mock.request.mockResolvedValue({ candidate_id: 'protected:locked', revision: 'protected:locked', script, before: script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:4', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2099-09-19', fidelity_report: {} })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  const render = (inspectionPaused: boolean) => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} inspectionPaused={inspectionPaused} />)
+  const previewButton = () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')
+  try {
+    await act(async () => render(false))
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Restore protected request body'))!.click() })
+    expect(previewButton()?.disabled).toBe(false)
+    // A save or conversion of this draft starts: the repair must not race it.
+    await act(async () => render(true))
+    expect(previewButton()?.disabled).toBe(true)
+    await act(async () => render(false))
+    expect(previewButton()?.disabled).toBe(false)
+  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})

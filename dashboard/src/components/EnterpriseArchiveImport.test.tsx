@@ -1132,6 +1132,193 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
   })
 
+  it('saves a validated draft in one click when Save prepares its credentials', async () => {
+    // Save from validation first applies the credential bindings, which promotes
+    // the validated draft in place. The queued save must then save that draft;
+    // re-running the conversion discarded the bindings and forced a second click.
+    const script = {
+      name: 'One click credentials', version: '1.0.0', protocol: 'http', config: {},
+      actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '[REDACTED]' } }],
+    }
+    const resolved = { ...script, actions: [{ ...script.actions[0], headers: { Authorization: '{{secret.ONE_CLICK_TOKEN}}' } }] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, {
+      secret_binding_requirements: [{ id: 'token', path: '/actions/0/headers/Authorization', label: 'Token', suggested_name: 'ONE_CLICK_TOKEN', script_index: 0 }],
+    }))
+    apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['test'], 'one-click.zip', { type: 'application/zip' })] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
+  })
+
+  it('saves and opens a validated draft in one click when the editor action prepares its credentials', async () => {
+    // A server-attested draft is what turns the editor action into
+    // "Save draft and open in Visual Editor".
+    const draftMetadata = (token: string) => ({ import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: token } } })
+    const script = {
+      name: 'One click editor', version: '1.0.0', protocol: 'http', config: {},
+      metadata: draftMetadata('attestation-validated-draft'),
+      actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '[REDACTED]' } }],
+    }
+    const resolved = {
+      ...script,
+      metadata: draftMetadata('attestation-bound-draft'),
+      actions: [{ ...script.actions[0], headers: { Authorization: '{{secret.ONE_CLICK_EDITOR_TOKEN}}' } }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, {
+      secret_binding_requirements: [{ id: 'token', path: '/actions/0/headers/Authorization', label: 'Token', suggested_name: 'ONE_CLICK_EDITOR_TOKEN', script_index: 0 }],
+    }))
+    apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
+    const onImported = vi.fn()
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={vi.fn()} onImported={onImported} />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['test'], 'one-click-editor.zip', { type: 'application/zip' })] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    await clickButton(findButton(container, 'Save draft and open in Visual Editor')!)
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
+    expect(onImported).toHaveBeenCalledTimes(1)
+    // Without stayInImportReview the host leaves the import for the editor.
+    expect(onImported.mock.calls[0][0]).toEqual(expect.objectContaining({ scripts: [expect.objectContaining({ name: 'One click editor' })] }))
+    expect(onImported.mock.calls[0][0].stayInImportReview).toBeUndefined()
+  })
+
+  it('saves every reviewed archive when Save prepares credentials for one of several validated archives', async () => {
+    const credentialed = {
+      name: 'Credentialed archive', version: '1.0.0', protocol: 'http', config: {},
+      actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '[REDACTED]' } }],
+    }
+    const resolved = { ...credentialed, actions: [{ ...credentialed.actions[0], headers: { Authorization: '{{secret.QUEUE_TOKEN}}' } }] }
+    const ready = { name: 'Ready archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => (file.name === 'credentialed.zip'
+      ? executableEnterpriseResult(credentialed, {
+        secret_binding_requirements: [{ id: 'token', path: '/actions/0/headers/Authorization', label: 'Token', suggested_name: 'QUEUE_TOKEN', script_index: 0 }],
+      })
+      : executableEnterpriseResult(ready)))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(ready))
+    apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    const credentialedFile = new File(['zip'], 'credentialed.zip', { type: 'application/zip' })
+    const readyFile = new File(['zip'], 'ready.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [credentialedFile, readyFile] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+    // Only the archive that was not promoted in place is converted.
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+    expect(apiMock.importEnterpriseArchive.mock.calls[0][0]).toBe(readyFile)
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Ready archive' }), 'project-1', undefined)
+  })
+
+  it('does not continue saving the remaining archives after the import closes mid-save', async () => {
+    const credentialed = {
+      name: 'Closed credentialed archive', version: '1.0.0', protocol: 'http', config: {},
+      actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '[REDACTED]' } }],
+    }
+    const resolved = { ...credentialed, actions: [{ ...credentialed.actions[0], headers: { Authorization: '{{secret.CLOSED_TOKEN}}' } }] }
+    const ready = { name: 'Closed ready archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => (file.name === 'closed-credentialed.zip'
+      ? executableEnterpriseResult(credentialed, {
+        secret_binding_requirements: [{ id: 'token', path: '/actions/0/headers/Authorization', label: 'Token', suggested_name: 'CLOSED_TOKEN', script_index: 0 }],
+      })
+      : executableEnterpriseResult(ready)))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(ready))
+    apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
+    let finishSave: () => void = () => {}
+    apiMock.saveEnterpriseArchiveImport.mockImplementationOnce(() => new Promise(resolve => {
+      finishSave = () => resolve({ scripts: [{ id: 'closed-a', name: resolved.name, protocol: 'http', version: '1.0.0', created_at: '2026-10-10T00:00:00Z', script: resolved }], count: 1 })
+    }))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['zip'], 'closed-credentialed.zip'), new File(['zip'], 'closed-ready.zip')] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
+    await flushPromises()
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+
+    // The operator leaves the import while the first archive is still saving.
+    await act(async () => root.render(<div />))
+    await act(async () => { finishSave() })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+  })
+
+  it('inspects a validated archive while another queued archive is still validating', async () => {
+    const protectedDraft = (name: string) => ({
+      name, version: '1.0.0', protocol: 'http', config: {},
+      metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: `protected:${name}` } } },
+      actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }],
+    })
+    let finishSecond: (value: unknown) => void = () => {}
+    apiMock.validateEnterpriseArchiveImport.mockImplementation((file: File) => (file.name === 'first.zip'
+      ? Promise.resolve(executableEnterpriseResult(protectedDraft('first')))
+      : new Promise(resolve => { finishSecond = resolve })))
+    const inspected = protectedDraft('first')
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => new Response(JSON.stringify({
+      candidate_id: 'protected:first', revision: 'protected:first', script: inspected, before: inspected, findings: [],
+      readiness: { replay_ready: true, blocking_codes: [] }, expires_at: '2099-09-19', fidelity_report: {},
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const inspections = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/scripts/import/repairs/preview'))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+      await act(async () => {
+        Object.defineProperty(input, 'files', { configurable: true, value: [new File(['zip'], 'first.zip'), new File(['zip'], 'second.zip')] })
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await clickImportAction(container, 'Validate Only')
+      await flushPromises()
+      // second.zip is still validating; the first draft is not being consumed.
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      expect(inspections()).toHaveLength(1)
+      await act(async () => finishSecond(executableEnterpriseResult(protectedDraft('second'))))
+      await flushPromises()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('surfaces credential preparation failures while the credential panel is hidden and permits retry', async () => {
     const script = {
       name: 'Reviewed credential failure', version: '1.0.0', protocol: 'http', config: {},

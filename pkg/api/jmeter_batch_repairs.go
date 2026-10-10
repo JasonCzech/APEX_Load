@@ -17,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
@@ -61,17 +62,31 @@ func (s *Server) processJMeterBatchRepair(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, "Batch receipt is unavailable")
 		return
 	}
-	b, claim, err := s.claimJMeterBatch(r, id, req.ProjectID)
+	// Preview never replaces the batch, so it reads without the consume lease
+	// and cannot block a concurrent save or apply of the same batch.
+	var b *jmeterBatchCandidate
+	var claim *importsession.Claim
+	var err error
+	if apply {
+		b, claim, err = s.claimJMeterBatch(r, id, req.ProjectID)
+	} else {
+		b, err = s.openJMeterBatch(r, id, req.ProjectID)
+	}
 	if err != nil {
 		writeError(w, 409, "Batch is stale, expired, or outside this project")
 		return
 	}
-	defer s.releaseImportCandidateClaim(claim)
+	if claim != nil {
+		defer s.releaseImportCandidateClaim(claim)
+	}
 	for _, doc := range b.Source {
 		defer clear(doc.Data)
 	}
-	lease := s.startImportCandidateClaimLease(claim)
-	defer lease.stop()
+	var lease *importCandidateClaimLease
+	if claim != nil {
+		lease = s.startImportCandidateClaimLease(claim)
+		defer lease.stop()
+	}
 	if _, err = s.openBatchReceipt(r, id.Revision, req.ProjectID); !errors.Is(err, os.ErrNotExist) {
 		writeError(w, 409, "Batch revision changed")
 		return

@@ -195,6 +195,9 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 				if claim != nil {
 					s.releaseImportDraftAttestation(claim)
 				}
+				if writeImportDraftBusy(w, claimErr) {
+					return
+				}
 				writeError(w, http.StatusConflict, fmt.Sprintf("AsyncAPI script %d draft is invalid or expired; run the conversion again", index+1))
 				return
 			}
