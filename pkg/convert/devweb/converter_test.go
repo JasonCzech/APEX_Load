@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
@@ -1508,5 +1509,49 @@ parameters:
 	reported := strings.Join(result.Unsupported.Strings(), " | ")
 	if !strings.Contains(reported, "everyThirdTuesday") || !strings.Contains(reported, "explodeGracefully") {
 		t.Fatalf("unknown parameter vocabulary was not surfaced for review: %s", reported)
+	}
+}
+
+func TestDevWebDisclosesHTTP3ReplayToggle(t *testing.T) {
+	for _, tc := range []struct {
+		name, rts string
+		want      []string
+	}{
+		{"enabled", "ssl:\n  ignoreBadCertificate: true\n  enableHttp3: true\n", []string{"ssl.enableHttp3"}},
+		{"nested enabled", "ssl:\n  http3:\n    enabled: \"yes\"\n", []string{"ssl.http3.enabled"}},
+		{"disabled", "ssl:\n  enableHttp3: false\n", nil},
+		{"quic flag", "client:\n  useQuic: 1\n", []string{"client.useQuic"}},
+		{"unrelated section ignored", "replay:\n  enableHttp3: true\n", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			writeDevWebZipFile(t, zw, "AOS/main.js", "load.action(\"Action\", async function() {\n  new load.WebRequest({ url: \"https://aos.example.test/\", method: \"GET\" }).sendSync();\n});\n")
+			writeDevWebZipFile(t, zw, "AOS/rts.yml", tc.rts)
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip: %v", err)
+			}
+			var got []string
+			for _, d := range result.Unsupported {
+				if d.Code != DevWebHTTP3EnabledCode {
+					continue
+				}
+				if d.Severity != diag.Info || d.Location != "AOS/rts.yml" {
+					t.Fatalf("finding = %+v", d)
+				}
+				for _, path := range tc.want {
+					if strings.Contains(d.Detail, "("+path+")") {
+						got = append(got, path)
+					}
+				}
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("disclosed %v, want %v; unsupported=%+v", got, tc.want, result.Unsupported)
+			}
+		})
 	}
 }

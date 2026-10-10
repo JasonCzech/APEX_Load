@@ -5,6 +5,7 @@ package devweb
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -396,6 +397,12 @@ func applyDevWebRTS(result *ConvertResult, ctx *convertContext, diagnostics *dia
 	}
 	preserved := ensureDevWebImportPreserved(result.Script)
 	preserved["runtime_file"] = rtsPath
+	for _, toggle := range devWebHTTP3Toggles(raw) {
+		if diagnostics != nil {
+			diagnostics.AddCoded(diag.Info, DevWebHTTP3EnabledCode, "DevWeb HTTP/3 replay", rtsPath,
+				"rts.yml enables HTTP/3 replay ("+toggle+"). DevWeb tries HTTP/3 first and falls back to an older version; APEX does not map this setting yet and replays over HTTP/2 or HTTP/1.1.")
+		}
+	}
 	parity := map[string]string{}
 	if httpConnection := mapValue(raw, "httpConnection"); len(httpConnection) > 0 {
 		if value := intValue(httpConnection["maxPersistentConnectionsPerHost"]); value > 0 {
@@ -634,4 +641,83 @@ func devWebSameLineAs(value string) string {
 		return strings.TrimSpace(value[len("same as "):])
 	}
 	return ""
+}
+
+// DevWebHTTP3EnabledCode discloses a DevWeb runtime setting that turns on
+// HTTP/3 replay (DevWeb 24.3 and later). The exact rts.yml key is not yet
+// confirmed against a real script, so the setting is disclosed, not mapped.
+const DevWebHTTP3EnabledCode = "devweb_http3_enabled"
+
+// devWebHTTP3Toggles lists enabled settings, as dotted paths, whose key names
+// HTTP/3 or QUIC under the rts.yml sections that hold transport settings. The
+// walk is bounded in depth and size because rts.yml is source input.
+func devWebHTTP3Toggles(raw map[string]any) []string {
+	var found []string
+	var walk func(prefix string, value map[string]any, depth int)
+	walk = func(prefix string, value map[string]any, depth int) {
+		if depth > 3 {
+			return
+		}
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if len(found) >= 8 {
+				return
+			}
+			path := key
+			if prefix != "" {
+				path = prefix + "." + key
+			}
+			switch child := value[key].(type) {
+			case map[string]any:
+				walk(path, child, depth+1)
+			default:
+				// Either the key itself names HTTP/3 (enableHttp3: true) or it
+				// switches an HTTP/3 block on (http3: {enabled: true}).
+				names := devWebNamesHTTP3(key) || devWebEnableKey(key) && devWebNamesHTTP3(prefix[strings.LastIndex(prefix, ".")+1:])
+				if names && devWebTruthy(child) {
+					found = append(found, path)
+				}
+			}
+		}
+	}
+	for _, section := range []string{"ssl", "http", "httpConnection", "network", "client"} {
+		if value, ok := raw[section].(map[string]any); ok {
+			walk(section, value, 1)
+		}
+	}
+	return found
+}
+
+func devWebNamesHTTP3(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "http3") || strings.Contains(lower, "quic") || lower == "h3" || strings.HasSuffix(lower, "h3")
+}
+
+func devWebEnableKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "enabled", "enable", "on", "active":
+		return true
+	}
+	return false
+}
+
+func devWebTruthy(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "yes", "on", "enabled":
+			return true
+		}
+	case int:
+		return v == 1
+	case float64:
+		return v == 1
+	}
+	return false
 }

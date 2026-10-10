@@ -1,6 +1,6 @@
 # HTTP/3 Implementation Plan and Decision Records
 
-Status: Wave 0 in progress. Native HTTP/3 execution is **not** available yet; the web support matrix still lists HTTP/3 as a gap.
+Status: Wave 0 complete; Wave 1 next. Native HTTP/3 execution is **not** available yet; the web support matrix still lists HTTP/3 as a gap.
 
 This file is the in-repo companion to the HTTP/3 delivery specification (24 work packages in 7 waves). It records the decisions the code depends on, the measurements behind them, and what each wave has delivered. Code references are to `main`.
 
@@ -8,7 +8,7 @@ This file is the in-repo companion to the HTTP/3 delivery specification (24 work
 
 | Wave | Scope | Status |
 | --- | --- | --- |
-| 0 | Fixture, quic-go contract tests, Alt-Svc observation, browser protocol evidence and QUIC setting, cURL/Postman TCP versions, DevWeb disclosure | In progress |
+| 0 | Fixture, quic-go contract tests, Alt-Svc observation, browser protocol evidence and QUIC setting, cURL TCP versions, DevWeb disclosure | Complete (see deviations) |
 | 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | Not started |
 | 2 | Exact HTTP/3 (`3`) preview | Not started |
 | 3 | `auto+h3` upgrade pilot | Not started |
@@ -84,3 +84,14 @@ Decision: each VUser lazily creates one `quic.Transport` and UDP socket per loca
 
 - Timing: quic-go emits `GotFirstResponseByte` and `WroteHeaders` (D1). The specification's QUIC `ttfb_boundary: headers` is unnecessary; `first_byte` applies to both transports.
 - Dial cancellation coupling (D2) is new; the transport work package must implement the detached dial.
+
+## Wave 0 delivery notes
+
+| WP | Delivered | Deviation from the specification |
+| --- | --- | --- |
+| WP0.1 | `pkg/internal/h3fixture`, quic-go contract tests, decisions D1–D4 | None |
+| WP0.2 | `alt_svc_h3_advertised` replay evidence; RFC 7838 parser; `origin_advertises_h3` for HAR imports and both recorders, shown as Recording Studio notes | The proxy recorder finding comes from the shared HAR pipeline rather than a recorder-specific capture |
+| WP0.3 | Browser resource evidence version 4 with `protocol` and `protocol_unavailable_reason`; dashboard admission, request details and resource table | Chromium never acts on `Alt-Svc` from a certificate outside the public roots, so loopback tests force QUIC with `--origin-to-force-quic-on` through a test-only launch-args hook; TCP-to-HTTP/3 discovery was verified manually against public CDNs |
+| WP0.4 | `config.browser.quic` (`auto`, `off`) for VUsers, Runtime Settings and group overrides; browser recorder `quic_mode` with a Recording Studio option | Per-request protocol badges in the recorder are deferred: the recorder has no live request list. "Advertised but not observed" is reported in the conversion notes |
+| WP0.5 | cURL `--http1.1`, `--http2`, `--http2-prior-knowledge` mapped; `--http1.0`, `-0`, `--http3`, `--http3-only` and cleartext `--http2` keep specific gates | Postman is not mapped: no real exported collection has yet shown that its HTTP version setting is serialized |
+| WP0.6 | `devweb_http3_enabled` disclosure; `PROTOCOL_SUPPORT.md` HTTP version rules corrected | The DevWeb key is detected by name pattern under the transport sections until a real DevWeb 24.3+ `rts.yml` confirms it |
