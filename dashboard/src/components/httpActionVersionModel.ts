@@ -66,8 +66,8 @@ export function capturedHTTPVersionLabel(value: unknown, state?: unknown): strin
     // A draft token (h3-29) is kept as the raw observation; show it only
     // when it has the bounded token shape.
     return typeof value === 'string' && /^h3-[A-Za-z0-9]{1,16}$/.test(value.trim())
-      ? `Draft HTTP/3 (${value.trim()}; replays on the inherited policy)`
-      : 'Draft HTTP/3 (replays on the inherited policy)'
+      ? `Draft HTTP/3 (${value.trim()})`
+      : 'Draft HTTP/3'
   }
   if (state === 'unsupported') return 'Unsupported captured HTTP version (source value not retained)'
   if (state === 'malformed') return 'Malformed captured HTTP version (source value not retained)'
@@ -87,6 +87,19 @@ const IMPORT_MODE_LABELS: Record<string, string> = {
   upgrade: 'Upgrade captured HTTP/3 (auto+h3)', exact: 'Keep captured versions exactly', inherit: 'Inherit the script setting',
 }
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+
+const TRANSPORT_POLICY_LABELS: Record<string, string> = {
+  inherit: 'Inherit the script setting', auto: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', '1.1': 'Require HTTP/1.1',
+  '2': 'Require HTTP/2 (no fallback)', 'auto+h3': 'Upgrade to HTTP/3 when advertised', '3': 'Require HTTP/3 (no fallback)',
+}
+
+/** The import review Transport panel's recorded choice for this request, or null. */
+function transportEditSummary(raw: unknown): string | null {
+  const edit = record(raw)
+  if (edit?.version !== 1 || typeof edit.policy !== 'string' || typeof edit.previous_policy !== 'string') return null
+  if (!own(TRANSPORT_POLICY_LABELS, edit.policy) || !own(TRANSPORT_POLICY_LABELS, edit.previous_policy)) return null
+  return `${TRANSPORT_POLICY_LABELS[edit.policy]} (previously: ${TRANSPORT_POLICY_LABELS[edit.previous_policy]})`
+}
 
 /** Bounded captured observations are independent of authored and replay policy. */
 export function httpCapturedVersionEvidence(metadata: ScriptActionDefinition['metadata']) {
@@ -114,6 +127,7 @@ export function httpCapturedVersionEvidence(metadata: ScriptActionDefinition['me
     // The http_version_mode that turned the observation into this request's
     // imported policy; later edits change the policy, not this record.
     importMode: typeof capture?.mode === 'string' && own(IMPORT_MODE_LABELS, capture.mode) ? IMPORT_MODE_LABELS[capture.mode] : null,
+    transportEdit: transportEditSummary(source.http_version_transport_edit),
   }
 }
 

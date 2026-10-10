@@ -36,6 +36,7 @@ export function HTTPActionVersionFields({ action, index, protocol, scriptVersion
       <dt>{observations.responseLabel}</dt><dd>{observations.response}</dd></dl>
     {observations.proxyLegs && <p>The client-to-proxy and proxy-to-origin observations describe different connections.</p>}
     {observations.importMode && <p>Imported with HTTP version mode: {observations.importMode}.</p>}
+    {observations.transportEdit && <p>Chosen in import review: {observations.transportEdit}.</p>}
     <small>Captured versions are observations from the source. Replay shows its actual negotiated version separately. Requests keep the current virtual user’s cookies and authentication.</small>
   </section>
 }

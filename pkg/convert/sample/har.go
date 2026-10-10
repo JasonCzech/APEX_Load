@@ -154,6 +154,13 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 		// The observation stays in http_version_capture; the leaf policy is
 		// the mode's mapping of it.
 		ex.HTTPVersion = requestimport.HTTPVersionPolicyForCapture(capture, mode)
+		if ex.HTTPVersion == httpprotocol.VersionHTTP3 && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ex.URL)), "https://") {
+			// HTTP/3 serves only https origins, so exact 3 cannot represent
+			// this entry; it keeps the inherited policy instead of failing
+			// the whole import.
+			ex.HTTPVersion = ""
+			diagnostics.Add(diag.Warning, "HTTP version", fmt.Sprintf("HAR entry %d", index+1), "The capture records HTTP/3 for a cleartext URL, which HTTP/3 cannot serve; the request keeps the script's inherited HTTP version policy.")
+		}
 		action := dsl.Action{Metadata: ex.Metadata}
 		requestimport.ApplyHTTPVersionCapture(&action, capture, requestimport.SourceRef{Format: "har", Pointer: fmt.Sprintf("log.entries[%d].request.httpVersion", index)})
 		ex.Metadata = action.Metadata
@@ -162,7 +169,9 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 		}
 		if origin := harEntryOrigin(requestData); origin != "" {
 			switch {
-			case capture.Version == httpprotocol.VersionHTTP3:
+			case capture.Version == httpprotocol.VersionHTTP3 && (ex.HTTPVersion != "" || mode == requestimport.HTTPVersionModeInherit):
+				// A cleartext entry exact mode could not map is reported on
+				// its own, not as mapped.
 				h3Mapped[origin]++
 			case capture.ReasonCode == requestimport.ReasonHTTP3DraftToken:
 				h3Drafts[origin]++
@@ -176,6 +185,8 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			ex.Metadata["har.http_version_provenance"] = requestimport.ProxyHTTPVersionProvenance()
 		}
 		switch {
+		case capture.ReasonCode == requestimport.ReasonHTTP3DraftToken:
+			diagnostics.Add(diag.Warning, "HTTP version", fmt.Sprintf("HAR entry %d", index+1), "The capture used a draft HTTP/3 version (http3_draft_token); replay uses the script's inherited HTTP version policy until final HTTP/3 is chosen.")
 		case requestimport.HTTPVersionCaptureQualityOnly(capture.ReasonCode):
 			diagnostics.Add(diag.Warning, "HTTP version", fmt.Sprintf("HAR entry %d", index+1), "The capture does not record a replayable HTTP version ("+capture.ReasonCode+"); replay uses the script's inherited HTTP version policy.")
 		case capture.ReasonCode != "":

@@ -225,3 +225,22 @@ func TestHARBrowserProvenanceIsDescriptive(t *testing.T) {
 		}
 	}
 }
+
+func TestHARExactModeKeepsCleartextHTTP3Importable(t *testing.T) {
+	data, _ := json.Marshal(map[string]any{"log": map[string]any{"entries": []any{map[string]any{
+		"request":  map[string]any{"method": "GET", "url": "http://plain.example.test/", "httpVersion": "h3"},
+		"response": map[string]any{"status": 200, "httpVersion": "h3"},
+	}}}})
+	result, err := Convert(ImportRequest{Format: "har", Content: string(data), Options: ConvertOptions{HTTPVersionMode: requestimport.HTTPVersionModeExact}})
+	if err != nil {
+		t.Fatalf("a cleartext h3 entry failed the import: %v", err)
+	}
+	if action := result.Script.Actions[0]; action.HTTPVersion.IsPresent() || result.Script.Config.HTTP.Version != "" {
+		t.Fatalf("exact 3 kept for a cleartext URL: leaf=%v config=%q", action.HTTPVersion, result.Script.Config.HTTP.Version)
+	}
+	for _, d := range result.Unsupported {
+		if d.Code == requestimport.CodeCapturedH3 {
+			t.Fatalf("the unmapped entry was reported as mapped: %+v", d)
+		}
+	}
+}
