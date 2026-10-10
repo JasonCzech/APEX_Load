@@ -1849,6 +1849,7 @@ export interface UDPDropCounters {
   scope_id?: string
   receive_buffer_errors: number
   send_buffer_errors: number
+  /** Every input error; Linux counts each receive-buffer drop here too. */
   in_errors: number
   sampled_at?: string
 }

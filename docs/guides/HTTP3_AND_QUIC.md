@@ -165,7 +165,7 @@ Before a run that uses HTTP/3 starts, APEX Load checks each `https` origin an `a
 | `block` | Also refuses to start the run when an exact-`3` origin fails its handshake. The error names the group, origin, generator and failure class, and no load-test traffic is sent. |
 | `off` | Skips the preflight. |
 
-Only a failed exact-`3` check blocks: an `auto+h3` origin that cannot complete a handshake stays on TCP. Origins built from templates (`https://{{param.host}}/`) and proxied routes are listed as not checked, as are checks cut short by the preflight's 20-second limit and generators that cannot run it. The run report's Diagnostics section lists every check under **HTTP/3 preflight**, and failed checks of a run that started add a finding: major for exact `3`, whose requests cannot fall back, minor for `auto+h3`. A run adopted by another controller after a failover does not carry the preflight results of the controller that started it.
+Only a failed exact-`3` check blocks: an `auto+h3` origin that cannot complete a handshake stays on TCP. Origins built from templates (`https://{{param.host}}/`) and proxied routes are listed as not checked, as are checks cut short by the preflight's 20-second limit and generators that cannot run it. The run report's Diagnostics section lists every check under **HTTP/3 preflight**, and failed checks of a run that started add a finding: major for exact `3`, whose requests cannot fall back, minor for `auto+h3`. Generators that join later, through scale-out or replacement, are not checked, and a run adopted by another controller after a failover does not carry the preflight results of the controller that started it.
 
 ## Network egress and UDP buffers
 

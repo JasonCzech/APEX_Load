@@ -48,7 +48,7 @@ it('lists each load generator UDP limits and drops, and warns only for its own p
   const root = createRoot(container)
   const report = { host_network: [
     { source: 'gen-0', open_files: { available: true, soft: 65536 }, udp_buffers: { available: true, receive_max_bytes: 212992, send_max_bytes: 7340032 },
-      udp_drops_at_end: { scope: 'pod', receive_buffer_errors: 12, send_buffer_errors: 0, in_errors: 3 }, udp_drops_delta: { receive_buffer_errors: 12, send_buffer_errors: 0, in_errors: 3 },
+      udp_drops_at_end: { scope: 'pod', receive_buffer_errors: 12, send_buffer_errors: 0, in_errors: 15 }, udp_drops_delta: { receive_buffer_errors: 12, send_buffer_errors: 0, in_errors: 15 },
       warning: 'UDP packets were dropped on gen-0 during the run.' },
     { source: 'controller', udp_drops_at_end: { scope: 'network_namespace', receive_buffer_errors: 50, send_buffer_errors: 0, in_errors: 0 }, udp_drops_delta: { receive_buffer_errors: 45, send_buffer_errors: 0, in_errors: 0 } },
   ] } as unknown as RunArchiveReport

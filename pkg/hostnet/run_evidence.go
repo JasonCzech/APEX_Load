@@ -32,11 +32,16 @@ func (e *RunEvidence) Finish(root string, getenv func(string) string) {
 type UDPDropDelta struct {
 	ReceiveBufferErrors uint64 `json:"receive_buffer_errors"`
 	SendBufferErrors    uint64 `json:"send_buffer_errors"`
-	InErrors            uint64 `json:"in_errors"`
+	InErrors            uint64 `json:"in_errors"` // includes ReceiveBufferErrors
 }
 
-// Total is the sum of the deltas.
-func (d UDPDropDelta) Total() uint64 { return d.ReceiveBufferErrors + d.SendBufferErrors + d.InErrors }
+// InputErrors is the input error growth. InErrors already counts each
+// receive-buffer drop; the larger value guards a kernel that does not.
+func (d UDPDropDelta) InputErrors() uint64 { return max(d.InErrors, d.ReceiveBufferErrors) }
+
+// Total is the packets lost in either direction: input errors, receive
+// buffer drops included, plus send buffer drops.
+func (d UDPDropDelta) Total() uint64 { return d.InputErrors() + d.SendBufferErrors }
 
 // DropDelta compares the two samples. It is unavailable when either is
 // missing, they describe different namespaces or scopes, or a counter went
@@ -77,5 +82,5 @@ func (e RunEvidence) DropWarning() string {
 	if source == "" {
 		source = "the load generator"
 	}
-	return fmt.Sprintf("UDP packets were dropped on %s during the run (receive buffer %d, send buffer %d, other input errors %d, in its pod's network namespace). HTTP/3 throughput and latency may reflect the generator rather than the target; raise the node's UDP buffer limits (net.core.rmem_max, wmem_max) or lower the VUsers per generator.", source, delta.ReceiveBufferErrors, delta.SendBufferErrors, delta.InErrors)
+	return fmt.Sprintf("UDP packets were dropped on %s during the run (input errors %d, receive buffer %d of them; send buffer %d; in its pod's network namespace). HTTP/3 throughput and latency may reflect the generator rather than the target; raise the node's UDP buffer limits (net.core.rmem_max, wmem_max) or lower the VUsers per generator.", source, delta.InputErrors(), delta.ReceiveBufferErrors, delta.SendBufferErrors)
 }

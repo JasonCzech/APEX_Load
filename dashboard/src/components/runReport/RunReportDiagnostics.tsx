@@ -72,7 +72,7 @@ export default function RunReportDiagnostics({ report, loading, error }: Props) 
             <th scope="row">{item.source || 'Load generator'}</th>
             <td>{item.open_files?.available ? formatNumber(item.open_files.soft) : 'Unavailable'}</td>
             <td>{item.udp_buffers?.available ? `${formatNumber(item.udp_buffers.receive_max_bytes)} / ${formatNumber(item.udp_buffers.send_max_bytes)} bytes` : 'Unavailable'}</td>
-            <td>{item.udp_drops_delta ? `${formatNumber(item.udp_drops_delta.receive_buffer_errors + item.udp_drops_delta.send_buffer_errors + item.udp_drops_delta.in_errors)}${item.udp_drops_at_end?.scope === 'pod' ? '' : ' (shared namespace)'}` : 'Unavailable'}</td>
+            <td>{item.udp_drops_delta ? `${formatNumber(udpDropTotal(item.udp_drops_delta))}${item.udp_drops_at_end?.scope === 'pod' ? '' : ' (shared namespace)'}` : 'Unavailable'}</td>
           </tr>)}</tbody>
         </table></div>
         {hostNetwork.filter(item => item.warning).map((item, index) => <p key={index} role="note" className="run-report-error">{item.warning}</p>)}
@@ -112,6 +112,12 @@ export default function RunReportDiagnostics({ report, loading, error }: Props) 
       </details>
     </section>
   )
+}
+
+// in_errors already counts each receive-buffer drop (Linux), so the total is
+// input errors plus send-buffer drops.
+function udpDropTotal(delta: { receive_buffer_errors: number; send_buffer_errors: number; in_errors: number }): number {
+  return Math.max(delta.in_errors, delta.receive_buffer_errors) + delta.send_buffer_errors
 }
 
 function preflightSource(source: string, region?: string): string {

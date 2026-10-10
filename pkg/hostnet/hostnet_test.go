@@ -90,10 +90,10 @@ func TestRunEvidenceAttributesOnlyOwnScopeGrowth(t *testing.T) {
 	}
 	pod := RunEvidence{Source: "gen-0", DropsAtStart: sample(ScopePod, "net:[1]", 10, 0, 20), DropsAtEnd: sample(ScopePod, "net:[1]", 25, 1, 30)}
 	delta, ok := pod.AttributableDropGrowth()
-	if !ok || delta != (UDPDropDelta{ReceiveBufferErrors: 15, SendBufferErrors: 1, InErrors: 10}) || delta.Total() != 26 {
+	if !ok || delta != (UDPDropDelta{ReceiveBufferErrors: 15, SendBufferErrors: 1, InErrors: 10}) || delta.Total() != 16 || delta.InputErrors() != 15 {
 		t.Fatalf("pod delta = %+v %v", delta, ok)
 	}
-	if warning := pod.DropWarning(); !strings.Contains(warning, "gen-0") || !strings.Contains(warning, "receive buffer 15") {
+	if warning := pod.DropWarning(); !strings.Contains(warning, "gen-0") || !strings.Contains(warning, "input errors 15, receive buffer 15 of them; send buffer 1") {
 		t.Fatalf("warning = %q", warning)
 	}
 	shared := RunEvidence{DropsAtStart: sample(ScopeNetworkNamespace, "net:[1]", 10, 0, 0), DropsAtEnd: sample(ScopeNetworkNamespace, "net:[1]", 99, 0, 0)}

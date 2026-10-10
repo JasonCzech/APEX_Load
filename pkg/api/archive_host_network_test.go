@@ -35,7 +35,7 @@ func TestDistributedArchiveNamesEachGeneratorsHostNetworkEvidence(t *testing.T) 
 func TestHostNetworkEvidenceRendersAndWarnsOnlyForOwnScopeDrops(t *testing.T) {
 	evidence := buildRunArchiveHostNetwork([]hostnet.RunEvidence{
 		{Source: "gen-0", OpenFiles: hostnet.OpenFileLimit{Available: true, Soft: 65536}, UDPBuffers: hostnet.UDPBufferLimits{Available: true, ReceiveMaxBytes: 212992, SendMaxBytes: 7340032},
-			DropsAtStart: hostNetworkSample(hostnet.ScopePod, 0, 0, 0), DropsAtEnd: hostNetworkSample(hostnet.ScopePod, 12, 0, 3)},
+			DropsAtStart: hostNetworkSample(hostnet.ScopePod, 0, 0, 0), DropsAtEnd: hostNetworkSample(hostnet.ScopePod, 12, 0, 15)},
 		{Source: "controller", DropsAtStart: hostNetworkSample(hostnet.ScopeNetworkNamespace, 5, 0, 0), DropsAtEnd: hostNetworkSample(hostnet.ScopeNetworkNamespace, 50, 0, 0)},
 		{Source: "gen-1"},
 	})
@@ -53,7 +53,7 @@ func TestHostNetworkEvidenceRendersAndWarnsOnlyForOwnScopeDrops(t *testing.T) {
 	data := buildRunArchiveReportRenderData(report, buildRunArchiveReportProfiles()[0], nil, consistencyMatrixManifest())
 	renderer := reportSectionRegistry["network_phases"]
 	html, err := renderer.HTML(&data)
-	if err != nil || !strings.Contains(string(html), "Load generator UDP") || !strings.Contains(string(html), "receive buffer 12, send buffer 0, other input errors 3") {
+	if err != nil || !strings.Contains(string(html), "Load generator UDP") || !strings.Contains(string(html), "input errors 15 (receive buffer 12), send buffer 0") {
 		t.Fatalf("HTML = %v\n%s", err, html)
 	}
 	var lines []string

@@ -241,7 +241,11 @@ func (tr *TestRunner) recordHTTP3Preflight(test *ManagedTest, preflight *RunArch
 			failed++
 		}
 	}
-	slog.Info("HTTP/3 preflight", "test_id", test.ID, "policy", preflight.Policy, "checked", checked, "failed", failed, "skipped", skipped, "unchecked_sources", len(preflight.Unchecked), "blocked", preflight.Blocked)
+	record := slog.Info
+	if failed > 0 {
+		record = slog.Warn
+	}
+	record("HTTP/3 preflight", "test_id", test.ID, "policy", preflight.Policy, "checked", checked, "failed", failed, "skipped", skipped, "unchecked_sources", len(preflight.Unchecked), "blocked", preflight.Blocked)
 	tr.mu.Lock()
 	test.http3Preflight = preflight
 	tr.mu.Unlock()

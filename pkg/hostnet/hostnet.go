@@ -70,11 +70,13 @@ type UDPDropCounters struct {
 	Scope string `json:"scope"`
 	// ScopeID identifies the network namespace, so two samples are compared
 	// only when they describe the same one.
-	ScopeID             string    `json:"scope_id,omitempty"`
-	ReceiveBufferErrors uint64    `json:"receive_buffer_errors"`
-	SendBufferErrors    uint64    `json:"send_buffer_errors"`
-	InErrors            uint64    `json:"in_errors"`
-	SampledAt           time.Time `json:"sampled_at"`
+	ScopeID             string `json:"scope_id,omitempty"`
+	ReceiveBufferErrors uint64 `json:"receive_buffer_errors"`
+	SendBufferErrors    uint64 `json:"send_buffer_errors"`
+	// InErrors counts every input error; Linux increments it for each
+	// receive-buffer drop as well, so it includes ReceiveBufferErrors.
+	InErrors  uint64    `json:"in_errors"`
+	SampledAt time.Time `json:"sampled_at"`
 }
 
 // Collect reads the facts from root ("" for the real filesystem) and the

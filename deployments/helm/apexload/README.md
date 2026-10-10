@@ -108,8 +108,10 @@ load-test targets in `networkPolicy.egress.targets` (any address on TCP 80 and
 gRPC port and controller peers, plus `controllerExtraRules` and
 `generatorExtraRules`. List the controller's database, Redis, Kubernetes API
 server (when it is not on 443) and telemetry endpoints in
-`controllerExtraRules` before enabling the profiles. `exceptCidrs` entries
-apply to the target CIDRs of the same address family and must lie inside them.
+`controllerExtraRules` before enabling the profiles, and add a DNS rule to both
+extra-rule lists when the cluster resolves through NodeLocal DNSCache rather
+than the `kube-dns` pods. `exceptCidrs` entries apply to the target CIDRs of
+the same address family and must lie inside them.
 
 Set `controller.ha.enabled=true` before setting more than one controller
 replica; the chart fails rendering otherwise. HA also requires PostgreSQL and

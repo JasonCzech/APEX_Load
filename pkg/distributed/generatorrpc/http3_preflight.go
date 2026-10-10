@@ -42,9 +42,15 @@ func (s *Service) ProbeHTTP3(ctx context.Context, req *pb.HTTP3ProbeRequest) (*p
 	defer cancel()
 	response := &pb.HTTP3ProbeResponse{}
 	for _, group := range groups {
+		if len(response.Results) >= maxHTTP3ProbeResults {
+			break
+		}
 		for _, result := range engine.ProbeHTTP3Group(probeCtx, group) {
 			response.Results = append(response.Results, http3ProbeResultToProto(result))
 		}
+	}
+	if len(response.Results) > maxHTTP3ProbeResults {
+		response.Results = response.Results[:maxHTTP3ProbeResults]
 	}
 	return response, nil
 }
@@ -122,6 +128,7 @@ func (c *Client) ProbeHTTP3(ctx context.Context, testID string, generation uint6
 	return results, nil
 }
 
-// maxHTTP3ProbeResults bounds what the controller accepts from one generator:
-// 1024 groups with up to dsl.MaxHTTP3ProbeOrigins origins each.
-const maxHTTP3ProbeResults = 1024 * 16
+// maxHTTP3ProbeResults bounds one generator's response, well inside the
+// gRPC message limit; groups beyond it are not probed. The controller
+// stores at most 512 results per run.
+const maxHTTP3ProbeResults = 2048

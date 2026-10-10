@@ -72,7 +72,7 @@ func reportHostNetworkRows(evidence []RunArchiveHostNetworkEvidence) []reportHos
 			}
 		}
 		if item.Delta != nil {
-			row.Drops = fmt.Sprintf("receive buffer %d, send buffer %d, other input errors %d", item.Delta.ReceiveBufferErrors, item.Delta.SendBufferErrors, item.Delta.InErrors)
+			row.Drops = fmt.Sprintf("input errors %d (receive buffer %d), send buffer %d", item.Delta.InputErrors(), item.Delta.ReceiveBufferErrors, item.Delta.SendBufferErrors)
 			if item.DropsAtEnd != nil && item.DropsAtEnd.Scope != hostnet.ScopePod {
 				row.Note = "Counters cover a shared network namespace, so they are not attributed to this run."
 			}
