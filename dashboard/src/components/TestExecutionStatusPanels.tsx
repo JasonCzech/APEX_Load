@@ -205,6 +205,13 @@ export default function TestExecutionStatusPanels({
   const httpVersions = usedHTTP3(metrics?.http_versions) ? metrics?.http_versions : undefined
   const fallback = ratioParts(httpVersions?.fallback_ratio, 'upgrade-eligible actions')
   const quicFailures = ratioParts(httpVersions?.quic_failure_ratio, 'QUIC attempts')
+  // The Protocol Mix finding judges a ratio only from min_samples on; before
+  // that, no finding means "not judged yet", not "within expectation".
+  const minSamples = httpVersions?.min_samples ?? 0
+  const judged = minSamples <= 0 || (httpVersions?.fallback_ratio?.denominator ?? 0) >= minSamples || (httpVersions?.quic_failure_ratio?.denominator ?? 0) >= minSamples
+  const versionBadge = httpVersions?.finding
+    ? { tone: 'warning', label: 'Protocol Mix above expectation' }
+    : judged ? { tone: 'healthy', label: 'Within expectation' } : { tone: 'neutral', label: `Too few samples to judge (needs ${minSamples.toLocaleString()})` }
 
   return (
     <>
@@ -326,8 +333,8 @@ export default function TestExecutionStatusPanels({
               <h3 className="goal-status-title">HTTP versions</h3>
               <p className="goal-status-subtitle">Every HTTP action since the run started, by the version its response used.</p>
             </div>
-            <div className={`goal-status-badge ${httpVersions.finding ? 'warning' : 'healthy'}`}>
-              {httpVersions.finding ? 'Protocol Mix above expectation' : 'Within expectation'}
+            <div className={`goal-status-badge ${versionBadge.tone}`}>
+              {versionBadge.label}
             </div>
           </div>
           <p className="http-versions-headline">{versionMixHeadline(httpVersions) || 'No response version observed yet'}</p>

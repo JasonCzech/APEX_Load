@@ -282,3 +282,32 @@ func TestDeclaredProtocolMixExpectationTakesTheStrictestGroupValue(t *testing.T)
 		t.Fatal("no declaration means the defaults (nil)")
 	}
 }
+
+func TestProtocolMixPDFLinesKeepTinySharesVisible(t *testing.T) {
+	mix := &protocol.HTTPVersionMix{}
+	for i := 0; i < 4999; i++ {
+		mix.Add(protocol.HTTPVersionFacts{Policy: "auto", Negotiated: "2", Source: "wire"})
+	}
+	mix.Add(protocol.HTTPVersionFacts{Policy: "auto+h3", Negotiated: "3", Source: "wire", Selection: "upgraded", QUICAttempted: true})
+	lines := strings.Join(reportProtocolMixLines(RunArchiveNetworkPhaseSummary{VersionMix: buildRunArchiveHTTPVersionMix(mix, nil)}), "\n")
+	if !strings.Contains(lines, "- HTTP/3: 1 (<0.1%)") || !strings.Contains(lines, "- HTTP/2: 4999 (100.0%)") {
+		t.Fatalf("PDF lines = %s", lines)
+	}
+}
+
+func TestRunArchiveVersionMixPublishesTheMinimumSamplesOnlyForHTTP3Runs(t *testing.T) {
+	h3 := &protocol.HTTPVersionMix{}
+	h3.Add(protocol.HTTPVersionFacts{Policy: "3", Negotiated: "3", Source: "wire", QUICAttempted: true})
+	minimum := 50
+	if mix := buildRunArchiveHTTPVersionMix(h3, &dsl.ProtocolMixExpectation{MinSamples: minimum}); mix.MinSamples != minimum {
+		t.Fatalf("min samples = %d, want the declared %d", mix.MinSamples, minimum)
+	}
+	if mix := buildRunArchiveHTTPVersionMix(h3, nil); mix.MinSamples != dsl.DefaultProtocolMixMinSamples {
+		t.Fatalf("min samples = %d, want the default", mix.MinSamples)
+	}
+	tcp := &protocol.HTTPVersionMix{}
+	tcp.Add(protocol.HTTPVersionFacts{Policy: "auto", Negotiated: "2", Source: "wire"})
+	if mix := buildRunArchiveHTTPVersionMix(tcp, nil); mix.MinSamples != 0 {
+		t.Fatalf("a TCP-only run has no Protocol Mix judgement: %d", mix.MinSamples)
+	}
+}

@@ -122,6 +122,12 @@ describe('TestExecutionStatusPanels', () => {
     expect(card?.querySelector('[role="note"]')?.textContent).toContain('expected at most 5.0%')
     card = await render({ actions: 5, by_version: { '3': 5 }, http3_policies: 5, quic_attempted: 5, fallback_ratio: ratio(0, 0), quic_failure_ratio: ratio(0, 5) })
     expect(card?.textContent).toContain('Within expectation')
+    // Below min_samples nothing is judged yet, even at a high ratio.
+    card = await render({ actions: 5, by_version: { '2': 2, '3': 3 }, http3_policies: 5, upgrade_eligible: 5, fell_back: 3, quic_attempted: 5, quic_failed: 3, fallback_ratio: ratio(3, 5), quic_failure_ratio: ratio(3, 5), min_samples: 20 })
+    expect(card?.textContent).toContain('Too few samples to judge (needs 20)')
+    expect(card?.querySelector('.goal-status-badge.neutral')).not.toBeNull()
+    card = await render({ actions: 40, by_version: { '3': 40 }, http3_policies: 40, quic_attempted: 40, fallback_ratio: ratio(0, 0), quic_failure_ratio: ratio(0, 40), min_samples: 20 })
+    expect(card?.textContent).toContain('Within expectation')
     expect(card?.textContent).toContain('Fell back to TCPn/ano upgrade-eligible actions')
     expect(await render({ actions: 5, by_version: { '2': 5 }, fallback_ratio: ratio(0, 0), quic_failure_ratio: ratio(0, 0) })).toBeNull()
     expect(await render(undefined)).toBeNull()

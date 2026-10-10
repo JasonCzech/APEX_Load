@@ -16,9 +16,12 @@ import (
 // Protocol Mix finding when a ratio exceeds its expectation.
 type RunArchiveHTTPVersionMix struct {
 	protocol.HTTPVersionMix
-	FallbackRatio    protocol.Ratio                `json:"fallback_ratio"`
-	QUICFailureRatio protocol.Ratio                `json:"quic_failure_ratio"`
-	Finding          *RunArchiveProtocolMixFinding `json:"finding,omitempty"`
+	FallbackRatio    protocol.Ratio `json:"fallback_ratio"`
+	QUICFailureRatio protocol.Ratio `json:"quic_failure_ratio"`
+	// MinSamples is the denominator a ratio needs before the finding judges
+	// it; set when the run used HTTP/3.
+	MinSamples int                           `json:"min_samples,omitempty"`
+	Finding    *RunArchiveProtocolMixFinding `json:"finding,omitempty"`
 }
 
 // RunArchiveProtocolMixFinding reports the ratios above their expectation and
@@ -114,6 +117,7 @@ func buildRunArchiveHTTPVersionMix(mix *protocol.HTTPVersionMix, expectation *ds
 		return out
 	}
 	maxFallback, maxQUICFailure, minSamples := expectation.Effective()
+	out.MinSamples = minSamples
 	var breaches []RunArchiveProtocolMixBreach
 	for _, candidate := range []struct {
 		name     string
@@ -358,7 +362,7 @@ func reportProtocolMixLines(summary RunArchiveNetworkPhaseSummary) []string {
 	}
 	lines := []string{fmt.Sprintf("HTTP version mix (%d HTTP actions):", mix.Actions)}
 	for _, row := range reportHTTPVersionMixRows(mix) {
-		lines = append(lines, fmt.Sprintf("- %s: %d (%.1f%%)", row.Label, row.Count, row.SharePct))
+		lines = append(lines, fmt.Sprintf("- %s: %d (%s)", row.Label, row.Count, reportRatioPercent(row.SharePct/100)))
 	}
 	if mix.UsedHTTP3() {
 		lines = append(lines,

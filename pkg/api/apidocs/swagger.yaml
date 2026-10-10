@@ -11312,6 +11312,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -88007,6 +88010,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -89819,6 +89825,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -94308,6 +94317,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -96120,6 +96132,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -100610,6 +100625,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -102422,6 +102440,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -106924,6 +106945,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -108736,6 +108760,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -113238,6 +113265,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -115050,6 +115080,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -119552,6 +119585,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -121364,6 +121400,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -125866,6 +125905,9 @@ paths:
                                 http3_policies:
                                   type: integer
                                   format: int64
+                                min_samples:
+                                  type: integer
+                                  format: int64
                                 quic_attempted:
                                   type: integer
                                   format: int64
@@ -127678,6 +127720,9 @@ paths:
                                   - summary
                                 nullable: true
                               http3_policies:
+                                type: integer
+                                format: int64
+                              min_samples:
                                 type: integer
                                 format: int64
                               quic_attempted:
@@ -340209,6 +340254,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -343990,6 +344038,9 @@ paths:
                               - summary
                             nullable: true
                           http3_policies:
+                            type: integer
+                            format: int64
+                          min_samples:
                             type: integer
                             format: int64
                           quic_attempted:
@@ -353637,6 +353688,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -357418,6 +357472,9 @@ paths:
                               - summary
                             nullable: true
                           http3_policies:
+                            type: integer
+                            format: int64
+                          min_samples:
                             type: integer
                             format: int64
                           quic_attempted:
@@ -385304,6 +385361,9 @@ paths:
                           http3_policies:
                             type: integer
                             format: int64
+                          min_samples:
+                            type: integer
+                            format: int64
                           quic_attempted:
                             type: integer
                             format: int64
@@ -397994,6 +398054,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -401775,6 +401838,9 @@ paths:
                               - summary
                             nullable: true
                           http3_policies:
+                            type: integer
+                            format: int64
+                          min_samples:
                             type: integer
                             format: int64
                           quic_attempted:
@@ -411366,6 +411432,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -415147,6 +415216,9 @@ paths:
                               - summary
                             nullable: true
                           http3_policies:
+                            type: integer
+                            format: int64
+                          min_samples:
                             type: integer
                             format: int64
                           quic_attempted:
@@ -430619,6 +430691,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -434400,6 +434475,9 @@ paths:
                               - summary
                             nullable: true
                           http3_policies:
+                            type: integer
+                            format: int64
+                          min_samples:
                             type: integer
                             format: int64
                           quic_attempted:
@@ -445700,6 +445778,9 @@ paths:
                             http3_policies:
                               type: integer
                               format: int64
+                            min_samples:
+                              type: integer
+                              format: int64
                             quic_attempted:
                               type: integer
                               format: int64
@@ -449469,6 +449550,9 @@ paths:
                               - summary
                             nullable: true
                           http3_policies:
+                            type: integer
+                            format: int64
+                          min_samples:
                             type: integer
                             format: int64
                           quic_attempted:

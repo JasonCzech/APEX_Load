@@ -1903,6 +1903,8 @@ export interface RunArchiveHTTPVersionMix extends HTTPVersionMix {
   fallback_ratio: HTTPVersionRatio
   /** Failed ÷ attempted QUIC actions. */
   quic_failure_ratio: HTTPVersionRatio
+  /** Denominator a ratio needs before the finding judges it (runs that used HTTP/3). */
+  min_samples?: number
   finding?: RunArchiveProtocolMixFinding
 }
 

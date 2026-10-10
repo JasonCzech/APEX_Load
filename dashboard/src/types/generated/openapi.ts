@@ -4075,6 +4075,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio"?: {
@@ -36268,6 +36269,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -36820,6 +36822,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -44254,6 +44257,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -45391,6 +45395,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -62070,6 +62075,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -63203,6 +63209,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -66344,6 +66351,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -66896,6 +66904,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -74614,6 +74623,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -82096,6 +82106,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -83233,6 +83244,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -103370,6 +103382,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -104507,6 +104520,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -119279,6 +119293,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -119831,6 +119846,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -121312,6 +121328,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -121864,6 +121881,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -123345,6 +123363,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -123897,6 +123916,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -125378,6 +125398,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -125930,6 +125951,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -127411,6 +127433,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -127963,6 +127986,7 @@ export interface operations {
                     }>;
                   }) | null;
                   "http3_policies"?: number;
+                  "min_samples"?: number;
                   "quic_attempted"?: number;
                   "quic_failed"?: number;
                   "quic_failure_ratio": {
@@ -131873,6 +131897,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -133010,6 +133035,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -157051,6 +157077,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
@@ -158188,6 +158215,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "http3_policies"?: number;
+                "min_samples"?: number;
                 "quic_attempted"?: number;
                 "quic_failed"?: number;
                 "quic_failure_ratio": {
