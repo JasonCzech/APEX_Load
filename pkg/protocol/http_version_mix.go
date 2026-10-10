@@ -207,9 +207,21 @@ func (m *HTTPVersionMix) QUICFailureRatio() Ratio {
 	return NewRatio(m.QUICFailed, m.QUICAttempted)
 }
 
+// MaxHTTPVersionMixKeys bounds each count map. Producers use small enums;
+// a key beyond the bound, or longer than MaxHTTPVersionMixKeyBytes (an
+// archive that was not written by APEX Load), is counted as "other".
+const (
+	MaxHTTPVersionMixKeys     = 32
+	MaxHTTPVersionMixKeyBytes = 64
+	httpVersionMixOtherKey    = "other"
+)
+
 func increment(counts *map[string]int64, key string, by int64) {
 	if *counts == nil {
 		*counts = map[string]int64{}
+	}
+	if _, known := (*counts)[key]; !known && (len(key) > MaxHTTPVersionMixKeyBytes || len(*counts) >= MaxHTTPVersionMixKeys) {
+		key = httpVersionMixOtherKey
 	}
 	(*counts)[key] += by
 }

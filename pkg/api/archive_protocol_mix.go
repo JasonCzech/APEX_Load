@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -39,6 +40,19 @@ type RunArchiveProtocolMixBreach struct {
 type RunArchiveProtocolMixReason struct {
 	Reason string `json:"reason"`
 	Count  int64  `json:"count"`
+}
+
+// carryRemoteHTTPVersionMixLocked keeps a target's last run-to-date mix when a
+// batch carries none: a state-only or terminal publication, or an older
+// generator. The mix is cumulative, so a batch without one never means zero.
+// The caller holds the runner lock.
+func carryRemoteHTTPVersionMixLocked(test *ManagedTest, target string, batch *generatorrpc.MetricsBatch) {
+	if batch == nil || batch.HTTPVersionMix != nil {
+		return
+	}
+	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
+		batch.HTTPVersionMix = prior.HTTPVersionMix
+	}
 }
 
 // remoteHTTPVersionMix sums each generator's latest run-to-date HTTP version

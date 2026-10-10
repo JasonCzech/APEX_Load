@@ -690,7 +690,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
     {{range .}}<tr><td>{{.Label}}</td><td class="num">{{.Phases.Count}}</td><td class="num">{{f0 .Phases.AvgDNSMs}}</td><td class="num">{{f0 .Phases.AvgConnectMs}}</td><td class="num">{{f0 .Phases.AvgTLSMs}}</td><td class="num">{{f0 .Phases.AvgTTFBMs}}</td><td class="num">{{f0 .Phases.MaxTTFBMs}}</td></tr>{{end}}
   </tbody>
 </table>
-<p class="section-copy">HTTP/3 connect time includes the QUIC handshake, which carries TLS, so HTTP/3 has no separate TLS time.</p>
+{{if (index $.Report.NetworkPhases.ByHTTPVersion "3").Count}}<p class="section-copy">HTTP/3 connect time includes the QUIC handshake, which carries TLS, so HTTP/3 has no separate TLS time.</p>{{end}}
 {{end}}
 {{else}}<p class="muted">No network-phase timing was captured for this run.</p>{{end}}
 {{with .Report.NetworkPhases.VersionMix}}

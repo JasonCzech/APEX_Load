@@ -3,6 +3,7 @@ import type { ScriptActionDefinition } from '../types/scripts'
 import { httpCapturedVersionEvidence, HTTP_ACTION_VERSION_OPTIONS, httpActionVersionSettings, isHTTPActionVersion } from './httpActionVersionModel'
 import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
 import { http3PolicyIssues, type HTTP3ScriptContext } from './httpQUICModel'
+import './HTTPQUICSettingsFields.css'
 
 type Props = {
   action: ScriptActionDefinition

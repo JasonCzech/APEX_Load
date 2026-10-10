@@ -67,7 +67,7 @@ With the default policy, replay notes when a response advertised HTTP/3 that the
 }
 ```
 
-Requests with different policies share the virtual user's cookies, cache and connection budget.
+Requests with different policies share the virtual user's cookies, authentication and connection budget; cached responses are kept per policy.
 
 ## QUIC settings
 

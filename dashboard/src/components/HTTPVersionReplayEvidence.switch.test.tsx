@@ -25,6 +25,10 @@ describe('HTTP version evidence: switch to auto+h3', () => {
     expect(onSwitch).toHaveBeenCalledWith('script')
     expect(container.querySelector('[role="group"]')).toBeNull()
     expect(container.querySelector('[role="status"]')?.textContent).toBe('Switched the script default to auto+h3. The script is being validated again; replay it to exercise HTTP/3.')
+    // Another event's evidence in the same panel does not inherit the confirmation.
+    act(() => root.render(<HTTPVersionReplayEvidence evidence={{ ...advertised }} upgrade={{ scopes: ['request'], onSwitch }} />))
+    expect(container.querySelector('[role="status"]')).toBeNull()
+    expect(buttons()).toEqual(['Switch this request to auto+h3'])
   })
 
   it('offers nothing without an editable draft, an advertisement, or for HTTP/3 policies', () => {

@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestHTTPVersionFactsReadResultsAndArchivedEvidence(t *testing.T) {
 	result := &Result{HTTPVersionPolicy: "auto+h3", HTTPVersionNegotiated: "2", HTTPVersionSource: "wire", HTTPReceipt: map[string]any{
@@ -57,5 +61,21 @@ func TestHTTPVersionMixCountsMergesAndPublishesRatios(t *testing.T) {
 	}
 	if NewRatio(1, 0).Value != 0 {
 		t.Fatal("a ratio without a denominator is 0")
+	}
+}
+
+func TestHTTPVersionMixBoundsUnknownKeys(t *testing.T) {
+	var mix HTTPVersionMix
+	for i := 0; i < MaxHTTPVersionMixKeys+10; i++ {
+		mix.Add(HTTPVersionFacts{Negotiated: "2", Source: "wire", Selection: fmt.Sprintf("reason-%d", i)})
+	}
+	mix.Add(HTTPVersionFacts{Negotiated: "2", Source: "wire", Selection: strings.Repeat("x", MaxHTTPVersionMixKeyBytes+1)})
+	if len(mix.BySelection) != MaxHTTPVersionMixKeys+1 || mix.BySelection["other"] != 11 {
+		t.Fatalf("selection keys = %d, other = %d", len(mix.BySelection), mix.BySelection["other"])
+	}
+	// Known keys keep counting after the bound is reached.
+	mix.Add(HTTPVersionFacts{Negotiated: "2", Source: "wire", Selection: "reason-0"})
+	if mix.BySelection["reason-0"] != 2 {
+		t.Fatalf("known key = %d", mix.BySelection["reason-0"])
 	}
 }

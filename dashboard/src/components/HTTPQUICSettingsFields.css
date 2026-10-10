@@ -47,3 +47,11 @@
   background: var(--subtle-fill);
   color: var(--text-primary);
 }
+
+/* HTTP/3 conflicts reported at the version fields of both runtime editors. */
+.http3-policy-issue {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--danger-text);
+  font-weight: 600;
+}

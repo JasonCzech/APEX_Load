@@ -224,6 +224,16 @@ func TestNetworkPhasesSectionRendersTheVersionMixInEveryFormat(t *testing.T) {
 		}
 	}
 
+	if !strings.Contains(string(html), "HTTP/3 has no separate TLS time") {
+		t.Fatal("the HTTP/3 TLS note belongs with an HTTP/3 phase row")
+	}
+	tcpOnly := *report
+	tcpOnly.NetworkPhases.ByHTTPVersion = map[string]RunArchiveNetworkPhases{"2": report.NetworkPhases.ByHTTPVersion["2"]}
+	tcpData := buildRunArchiveReportRenderData(&tcpOnly, buildRunArchiveReportProfiles()[0], nil, consistencyMatrixManifest())
+	if tcpHTML, err := renderer.HTML(&tcpData); err != nil || strings.Contains(string(tcpHTML), "no separate TLS time") {
+		t.Fatalf("TCP-only phases carry the HTTP/3 note: %v", err)
+	}
+
 	var lines []string
 	renderer.PDF(&data, &lines)
 	pdf := strings.Join(lines, "\n")

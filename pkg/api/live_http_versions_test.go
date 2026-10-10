@@ -54,6 +54,11 @@ func TestDistributedLiveMetricsSumGeneratorMixesAndApplyTheDeclaredExpectation(t
 	if live == nil || live.HTTPVersions == nil || live.HTTPVersions.Actions != 5 || live.HTTPVersions.ByVersion["3"] != 4 || live.HTTPVersions.FallbackRatio.Denominator != 5 {
 		t.Fatalf("fleet mix = %+v", live)
 	}
+	// A later state-only batch from a target keeps that target's counts.
+	live, _, _ = backend.applyRemoteMetricsBatch(runner, run, "a", generatorrpc.MetricsBatch{TestID: run.ID, TimestampUnixMs: now.Add(time.Second).UnixMilli(), LifecycleState: "RUNNING"})
+	if live == nil || live.HTTPVersions == nil || live.HTTPVersions.Actions != 5 {
+		t.Fatalf("mix after a state-only batch = %+v", live)
+	}
 	if !runner.publishLiveMetrics(run, live, nil) {
 		t.Fatal("publication rejected")
 	}

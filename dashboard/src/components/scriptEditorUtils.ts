@@ -675,7 +675,8 @@ export function formatNetworkEntries(entries?: NetworkEntry[]): string {
     .map(entry => {
       const status = entry.status_code ? ` ${entry.status_code}` : ''
       const duration = typeof entry.duration_ms === 'number' ? ` ${entry.duration_ms.toFixed(1)} ms` : ''
-      const protocol = entry.browser_evidence ? ` · ${browserResourceProtocolShortLabel(entry.browser_evidence)}` : ''
+      // Named only when known: most evidence predates protocol capture.
+      const protocol = entry.browser_evidence?.protocol ? ` · ${browserResourceProtocolShortLabel(entry.browser_evidence)}` : ''
       return `${entry.method || 'GET'}${status} ${entry.url || ''}${duration}${protocol}`
     })
     .join('\n')

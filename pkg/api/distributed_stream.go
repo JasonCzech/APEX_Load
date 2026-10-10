@@ -1344,6 +1344,7 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 			batch.Telemetry.MissingMetricWindows = missing
 		}
 	}
+	carryRemoteHTTPVersionMixLocked(test, target, &batch)
 	test.remoteMetricsBatchesByTarget[target] = batch
 	// Each generator's stages are sampled where its batch is accepted:
 	// publications are throttled fleet-wide, so most batches are only stored.
@@ -1712,6 +1713,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				batch = prior
 			}
 		} else {
+			carryRemoteHTTPVersionMixLocked(test, target, &batch)
 			test.remoteMetricsBatchesByTarget[target] = batch
 			accepted = true
 			test.remoteMetricsAcceptedRevision++

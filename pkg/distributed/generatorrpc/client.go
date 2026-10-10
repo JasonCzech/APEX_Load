@@ -1730,8 +1730,9 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 }
 
 // maxHTTPVersionMixKeys bounds each count map a generator sends; the keys
-// are small enums, so a larger map is malformed.
-const maxHTTPVersionMixKeys = 32
+// are small enums, so a larger map is malformed. One more than the mix's own
+// bound allows its "other" key.
+const maxHTTPVersionMixKeys = protocol.MaxHTTPVersionMixKeys + 1
 
 // httpVersionMixFromProto validates a generator's mix: negative counts,
 // oversized maps or a breakdown larger than the action count discard it.
@@ -1761,7 +1762,7 @@ func httpVersionMixFromProto(in *pb.HTTPVersionMix) *protocol.HTTPVersionMix {
 		}
 		var sum int64
 		for key, value := range counts.in {
-			if value < 0 || len(key) == 0 || len(key) > 64 {
+			if value < 0 || len(key) == 0 || len(key) > protocol.MaxHTTPVersionMixKeyBytes {
 				return nil
 			}
 			sum += value

@@ -17,7 +17,10 @@ const SCOPE_LABELS: Record<HTTP3UpgradeScope, { button: string; done: string }> 
 }
 
 export function HTTPVersionReplayEvidence({ evidence, unavailable = false, upgrade }: { evidence?: ProtocolEvidence; unavailable?: boolean; upgrade?: HTTP3UpgradeOffer }) {
-  const [switched, setSwitched] = useState<HTTP3UpgradeScope | null>(null)
+  // Tied to the evidence it was offered for, so it never follows the panel
+  // to another event's evidence.
+  const [switchedFor, setSwitchedFor] = useState<{ evidence?: ProtocolEvidence; scope: HTTP3UpgradeScope } | null>(null)
+  const switched = switchedFor && switchedFor.evidence === evidence ? switchedFor.scope : null
   const receipt = unavailable ? null : httpReplayVersionEvidence(evidence)
   if (!receipt) return null
   const used = receipt.actual.startsWith('HTTP/') ? receipt.actual : 'another HTTP version'
@@ -34,7 +37,7 @@ export function HTTPVersionReplayEvidence({ evidence, unavailable = false, upgra
         ? <div className="http3-upgrade-offer" role="group" aria-label="Switch to auto+h3">
           <p>The origin advertises HTTP/3; this request used {used}. Switch to auto+h3?</p>
           <p className="form-hint">auto+h3 starts on TCP and uses HTTP/3 once the origin advertises it, falling back to TCP only when the request was not sent.</p>
-          {offer.scopes.map(scope => <button key={scope} type="button" className="btn btn-sm btn-secondary" onClick={() => { setSwitched(scope); offer.onSwitch(scope) }}>{SCOPE_LABELS[scope].button}</button>)}
+          {offer.scopes.map(scope => <button key={scope} type="button" className="btn btn-sm btn-secondary" onClick={() => { setSwitchedFor({ evidence, scope }); offer.onSwitch(scope) }}>{SCOPE_LABELS[scope].button}</button>)}
         </div>
         : <p>The target advertises HTTP/3 (Alt-Svc). This request used {used}, so HTTP/3 was not exercised.</p>)}
     {switched && <p role="status">Switched {SCOPE_LABELS[switched].done} to auto+h3. The script is being validated again; replay it to exercise HTTP/3.</p>}
