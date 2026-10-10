@@ -150,9 +150,10 @@ func TestRCAAutomaticAnalysisIsQueuedOnceWhenTheArchiveAttaches(t *testing.T) {
 	if again, _ := store.LatestRCAAnalyses(project, []string{"rca-run"}); again["rca-run"].Latest.ID != latest.ID {
 		t.Fatalf("a second attach queued another analysis: %+v", again["rca-run"].Latest)
 	}
-	// A request for the same inputs answers with the automatic analysis.
+	// A request for the same inputs answers with the queued analysis, now a
+	// requested one so it is not left behind other automatic analyses.
 	requested := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
-	if requested.AnalysisID != latest.ID || requested.Origin != storage.RCAOriginAutomatic {
+	if requested.AnalysisID != latest.ID || requested.Origin != storage.RCAOriginRequested {
 		t.Fatalf("request for identical inputs: %+v", requested)
 	}
 }
@@ -381,6 +382,10 @@ func TestRCAWindowLinksOpenTheRunsProviders(t *testing.T) {
 	// A window has no trace.
 	if reply := timeslotRequest(t, server, http.MethodPut, dtPath, map[string]any{"revision": 0, "window_template": "https://abc123.live.dynatrace.com/ui/{trace_id}"}); reply.Code != http.StatusBadRequest {
 		t.Fatalf("trace in a window template: %d %s", reply.Code, reply.Body.String())
+	}
+	// A run window names no entity either.
+	if reply := timeslotRequest(t, server, http.MethodPut, dtPath, map[string]any{"revision": 0, "window_template": "https://abc123.live.dynatrace.com/ui/entity/{entity_id}?from={from_utc}"}); reply.Code != http.StatusBadRequest {
+		t.Fatalf("window template with an entity: %d %s", reply.Code, reply.Body.String())
 	}
 	if reply := timeslotRequest(t, server, http.MethodPut, dtPath, map[string]any{"revision": 0, "window_template": "https://evil.example.com/?from={from_utc}"}); reply.Code != http.StatusBadRequest {
 		t.Fatalf("window template off the connection's hosts: %d %s", reply.Code, reply.Body.String())

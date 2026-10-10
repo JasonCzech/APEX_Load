@@ -25,7 +25,7 @@ import CommandCenterOverview, { type CommandCenterOverviewProps } from './Comman
 import { useTestApi } from '../hooks/api/useTestApi'
 import { useOptionalApi } from '../hooks/useApi'
 import type { RcaAnalysisResponse } from '../types/rca'
-import { normalizeRcaAssessment, rcaSummaryLine, rcaTone } from './rca/rcaModel'
+import { normalizeRcaAssessment, rcaSummaryLine } from './rca/rcaModel'
 import { rcaSummaryWithResponse } from './rca/useRootCauseSummary'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
@@ -1901,11 +1901,12 @@ function NotesIcon() {
   )
 }
 
-// useHistoricalRootCause reads an ended run's newest completed root-cause
-// analysis once, for the historical banner: its verdict, or that an
-// automatic analysis is expected. Nothing for a project that does not
-// present root cause, or without the API (tests that render the banner
-// alone).
+// useHistoricalRootCause reads an ended run's newest root-cause analysis
+// once, for the historical banner: its verdict or its state. The banner
+// shows only once the archive is ready, when an automatic analysis would
+// already be queued, so a run without one says so plainly. Nothing for a
+// project that does not present root cause, or without the API (tests that
+// render the banner alone).
 function useHistoricalRootCause(testId?: string) {
   const api = useOptionalApi()
   const [response, setResponse] = useState<RcaAnalysisResponse | null>(null)
@@ -1920,9 +1921,7 @@ function useHistoricalRootCause(testId?: string) {
   }, [api, testId])
   if (!response?.presented) return null
   const base = { state: response.state, presented: true, analysis_enabled: response.analysis_enabled !== false, auto_analyze: response.auto_analyze, hypothesis_count: 0, anomaly_count: 0 } as const
-  const line = rcaSummaryLine(response.state === 'completed' ? rcaSummaryWithResponse({ ...base, state: 'running', latest: undefined }, response) : base)
-  if (line && response.state === 'none' && response.auto_analyze) return { ...line, text: 'An automatic analysis runs once the archive settles', tone: rcaTone('') }
-  return line
+  return rcaSummaryLine(response.state === 'completed' ? rcaSummaryWithResponse({ ...base, state: 'running', latest: undefined }, response) : base)
 }
 
 function CommandCenterHistoricalBanner({

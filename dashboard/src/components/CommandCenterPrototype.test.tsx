@@ -2412,6 +2412,25 @@ describe('CommandCenterPrototype', () => {
     expect(openRootCause).toHaveBeenCalledWith('ended-run')
   })
 
+  it('says an archived run has no analysis rather than promising an automatic one', async () => {
+    // The banner shows once the archive is ready, when an automatic analysis
+    // would already be queued; a run archived before the project turned
+    // automatic analysis on never gets one.
+    const getRootCauseAssessment = vi.fn().mockResolvedValue({ state: 'none', presented: true, analysis_enabled: true, auto_analyze: true })
+    const ended = { id: 'ended-run', name: 'Ended', status: 'COMPLETE', total_vusers: 5, duration: '5m', created_at: '2026-06-08T13:00:00Z',
+      archive: { test_id: 'ended-run', schema_version: '1', archive_path: '/a', manifest_path: '/a/manifest.json', transaction_count: 10, resource_sample_count: 0, interval_summary_count: 0, created_at: '2026-06-08T13:00:00Z', completed_at: '2026-06-08T13:05:00Z' },
+      groups: [] } as unknown as TestSummary
+    await act(async () => {
+      root.render(
+        <ApiContext.Provider value={{ getRootCauseAssessment } as unknown as ApiServices}>
+          <CommandCenterPrototype testId="ended-run" initialTest={ended} history={[]} onOpenArchive={vi.fn()} onOpenRootCause={vi.fn()} />
+        </ApiContext.Provider>,
+      )
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('.command-history-root-cause')?.textContent).toBe('Root cause: No analysis yet')
+  })
+
   it('points historical runs without archive snapshots to the Results folder', async () => {
     const openResults = vi.fn()
     const failedTest: TestSummary = {

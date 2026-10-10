@@ -130,9 +130,12 @@ type CIRunResponse struct {
 	Error   string    `json:"error,omitempty"`
 
 	// Validity is the run's validity verdict and the project's CI validity
-	RootCause *CIRunRootCause `json:"root_cause,omitempty"`
 	// gate; controllers before the gate omit it.
 	Validity *CIRunValidity `json:"validity,omitempty"`
+
+	// RootCause is the run's root-cause analysis in brief, for projects that
+	// present root cause; controllers before it omit it.
+	RootCause *CIRunRootCause `json:"root_cause,omitempty"`
 
 	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
 	// application outcome; absent when no acceptance policy applied.

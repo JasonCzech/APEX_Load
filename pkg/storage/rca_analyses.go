@@ -296,7 +296,9 @@ func (s *SQLiteStore) CreateRCAAnalysis(project, test, inputDigest string, paylo
 }
 
 // CreateRCAAnalysisWithOrigin is CreateRCAAnalysis for an analysis of the
-// given origin. An existing analysis of the same inputs keeps its own origin.
+// given origin. An existing analysis of the same inputs keeps its own origin,
+// except that a request for the inputs of a still-queued automatic analysis
+// makes it a requested one, so it is claimed ahead of the automatic queue.
 func (s *SQLiteStore) CreateRCAAnalysisWithOrigin(project, test, inputDigest, origin string, payload []byte, now time.Time) (*RCAAnalysis, bool, error) {
 	project, test = strings.TrimSpace(project), strings.TrimSpace(test)
 	if project == "" || test == "" || !validRCADigest(inputDigest) || !validRCAPayload(payload) || (origin != RCAOriginRequested && origin != RCAOriginAutomatic) {
@@ -313,7 +315,17 @@ func (s *SQLiteStore) CreateRCAAnalysisWithOrigin(project, test, inputDigest, or
 	existing, err := scanRCAAnalysis(tx.QueryRow(`SELECT `+rcaAnalysisColumns+` FROM rca_analyses WHERE test_id = ? AND input_digest = ? AND state IN (?, ?, ?) ORDER BY revision DESC LIMIT 1`,
 		test, inputDigest, RCAStateQueued, RCAStateRunning, RCAStateCompleted))
 	if err == nil {
-		return existing, false, nil
+		if origin != RCAOriginRequested || existing.State != RCAStateQueued || existing.Origin != RCAOriginAutomatic {
+			return existing, false, nil
+		}
+		result, err := tx.Exec(`UPDATE rca_analyses SET origin = ? WHERE id = ? AND state = ? AND origin = ?`, RCAOriginRequested, existing.ID, RCAStateQueued, RCAOriginAutomatic)
+		if err != nil {
+			return nil, false, err
+		}
+		if n, err := result.RowsAffected(); err == nil && n == 1 {
+			existing.Origin = RCAOriginRequested
+		}
+		return existing, false, tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, err

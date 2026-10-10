@@ -17,6 +17,13 @@ func rcaFixture(t *testing.T) (*SQLiteStore, time.Time) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
+	return s, seedRCAFixture(t, s)
+}
+
+// seedRCAFixture adds the projects and runs the root-cause tests use, on
+// either backend.
+func seedRCAFixture(t *testing.T, s *SQLiteStore) time.Time {
+	t.Helper()
 	requireProjectFixtures(t, s, "rca-p", "rca-other")
 	now := time.Date(2026, 10, 5, 15, 0, 0, 0, time.UTC)
 	for _, run := range []*TestRecord{
@@ -27,7 +34,7 @@ func rcaFixture(t *testing.T) (*SQLiteStore, time.Time) {
 			t.Fatal(err)
 		}
 	}
-	return s, now
+	return now
 }
 
 var digestA, digestB = strings.Repeat("a", 64), strings.Repeat("b", 64)
@@ -356,6 +363,14 @@ func TestRCAMappingDecisionsHaveTheirOwnDefinitionBudget(t *testing.T) {
 
 func TestRCAClaimPrefersRequestsAndKeepsASlotFromAutomaticAnalyses(t *testing.T) {
 	s, now := rcaFixture(t)
+	exerciseRCAClaimPriority(t, s, now)
+}
+
+// exerciseRCAClaimPriority checks the claim order (expired leases, then
+// requests, then automatic analyses, one at a time) and a request's
+// promotion of a queued automatic analysis.
+func exerciseRCAClaimPriority(t *testing.T, s *SQLiteStore, now time.Time) {
+	t.Helper()
 	for _, run := range []string{"rca-run-2", "rca-run-3"} {
 		if err := s.SaveTest(&TestRecord{ID: run, ProjectID: "rca-p", Name: run, Status: "COMPLETE", StartTime: now}); err != nil {
 			t.Fatal(err)
@@ -401,6 +416,22 @@ func TestRCAClaimPrefersRequestsAndKeepsASlotFromAutomaticAnalyses(t *testing.T)
 	if err != nil || next == nil || next.ID != auto2.ID {
 		t.Fatalf("after completion claim = %+v, %v; want the second automatic analysis", next, err)
 	}
+	// A request for the inputs of a queued automatic analysis moves it ahead
+	// of the automatic queue: it is claimed while another automatic one runs.
+	auto3, _, err := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run-3", digestB, RCAOriginAutomatic, []byte(`{}`), now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if waiting, err := s.ClaimRCAAnalysis("worker", now.Add(2*time.Minute), time.Minute); err != nil || waiting != nil {
+		t.Fatalf("claim while an automatic analysis runs = %+v, %v; want none", waiting, err)
+	}
+	promoted, created, err := s.CreateRCAAnalysis("rca-p", "rca-run-3", digestB, []byte(`{}`), now.Add(2*time.Minute))
+	if err != nil || created || promoted.ID != auto3.ID || promoted.Origin != RCAOriginRequested {
+		t.Fatalf("request for a queued automatic analysis = %+v created=%v, %v", promoted, created, err)
+	}
+	if claimed, err := s.ClaimRCAAnalysis("worker", now.Add(2*time.Minute), time.Minute); err != nil || claimed == nil || claimed.ID != auto3.ID || claimed.Origin != RCAOriginRequested {
+		t.Fatalf("claim after the request = %+v, %v; want the promoted analysis", claimed, err)
+	}
 	// An identical automatic request keeps the existing analysis and its origin.
 	again, created, err := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run-3", digestA, RCAOriginAutomatic, []byte(`{}`), now.Add(3*time.Minute))
 	if err != nil || created || again.ID != requested.ID || again.Origin != RCAOriginRequested {
@@ -413,6 +444,13 @@ func TestRCAClaimPrefersRequestsAndKeepsASlotFromAutomaticAnalyses(t *testing.T)
 
 func TestLatestRCAAnalysesReturnsEachRunsNewestAndNewestCompleted(t *testing.T) {
 	s, now := rcaFixture(t)
+	exerciseLatestRCAAnalyses(t, s, now)
+}
+
+// exerciseLatestRCAAnalyses checks a batch read of runs' newest and newest
+// completed analyses.
+func exerciseLatestRCAAnalyses(t *testing.T, s *SQLiteStore, now time.Time) {
+	t.Helper()
 	if err := s.SaveTest(&TestRecord{ID: "rca-run-2", ProjectID: "rca-p", Name: "two", Status: "COMPLETE", StartTime: now}); err != nil {
 		t.Fatal(err)
 	}

@@ -67,8 +67,13 @@ func (s *Server) autoQueueRCAAnalysis(testID string) {
 	defer lease.Release()
 	analysis, created, err := s.queueRCAAnalysis(ctx, project, testID, record, rcaAnalysisRequest{}, storage.RCAOriginAutomatic)
 	switch {
-	case errors.Is(err, errRCAFinalizing), errors.Is(err, errRCADisabled):
-		slog.Debug("an automatic root-cause analysis waits for the archive to settle", "test_id", testID, "reason", err)
+	case errors.Is(err, errRCAFinalizing):
+		// The refresh that holds the archive attaches it again when it ends.
+		slog.Debug("an automatic root-cause analysis waits for the archive to settle", "test_id", testID)
+		return
+	case errors.Is(err, errRCADisabled):
+		// Analyses were turned off since the gate above was read.
+		slog.Debug("an automatic root-cause analysis was not queued: analyses are off for the project", "test_id", testID)
 		return
 	case err != nil:
 		slog.Warn("an automatic root-cause analysis was not queued", "test_id", testID, "error", err)

@@ -92,13 +92,8 @@ func rcaCompletedVerdict(store storage.RCAStore, analysis *storage.RCAAnalysis) 
 	if payload.Assessment == nil {
 		return nil, false
 	}
-	view := reportRootCauseFromV2(payload.Assessment, full.CompletedAt)
-	verdict := &rcaVerdict{Outcome: payload.Assessment.Outcome, Validity: payload.Assessment.Validity.Verdict,
+	verdict := &rcaVerdict{Outcome: payload.Assessment.Outcome, Validity: payload.Assessment.Validity.Verdict, Top: rcaSummaryTop(payload.Assessment),
 		HypothesisCount: len(payload.Assessment.Hypotheses), AnomalyCount: len(payload.Assessment.Anomalies)}
-	if len(view.Hypotheses) > 0 {
-		top := view.Hypotheses[0]
-		verdict.Top = &ReportRootCauseHypothesis{ID: top.ID, Rank: top.Rank, Title: top.Title, Confidence: top.Confidence, Explains: top.Explains}
-	}
 	// Keep only what the archive-changed check reads.
 	verdict.Payload = rcaAnalysisPayload{Inputs: payload.Inputs, ArchiveManifest: payload.ArchiveManifest}
 	if rcaVerdictCount.Add(1) > rcaVerdictCacheLimit {

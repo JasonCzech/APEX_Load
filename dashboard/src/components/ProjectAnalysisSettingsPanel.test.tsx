@@ -32,7 +32,8 @@ describe('ProjectAnalysisSettingsPanel', () => {
 
   it('saves the changed flags against the revision it read', async () => {
     mocks.request.mockResolvedValueOnce(response())
-    await act(async () => root.render(<ProjectAnalysisSettingsPanel projectId="p-1" projectName="Checkout" canEdit />))
+    const onSaved = vi.fn()
+    await act(async () => root.render(<ProjectAnalysisSettingsPanel projectId="p-1" projectName="Checkout" canEdit onSaved={onSaved} />))
     expect(mocks.request).toHaveBeenCalledWith('/projects/p-1/analysis-settings', expect.objectContaining({ signal: expect.anything() }))
     expect(container.textContent).toContain('Not changed yet')
     // Automatic analysis waits until analyses are computed.
@@ -47,6 +48,8 @@ describe('ProjectAnalysisSettingsPanel', () => {
     expect(mocks.request).toHaveBeenLastCalledWith('/projects/p-1/analysis-settings', { method: 'PUT', body: JSON.stringify({ expected_revision: 0, root_cause: saved.root_cause, business_keys: off.business_keys }) })
     expect(container.querySelector('[role="status"]')!.textContent).toBe('Saved as revision 1.')
     expect(container.textContent).toContain('Revision 1 by pat')
+    // The page's copy of the project takes the saved settings.
+    expect(onSaved).toHaveBeenCalledWith(saved)
   })
 
   it('explains a save that lost to a newer one', async () => {

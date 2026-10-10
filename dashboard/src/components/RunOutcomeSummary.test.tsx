@@ -89,6 +89,8 @@ it('states the run validity and root cause, and opens it with the cell action', 
   act(() => root.render(<RunOutcomeSummary report={{ ...base, root_cause_summary: { state: 'not_enabled', presented: false, analysis_enabled: false, hypothesis_count: 0, anomaly_count: 0 } } as RunArchiveReport} />))
   expect(container.querySelector('.run-outcome-root-cause')?.textContent).toContain('Suspect run')
   expect(container.querySelector('.run-outcome-root-cause')?.textContent).not.toContain('not enabled')
+  // The cell then holds validity alone and is named for it.
+  expect(container.querySelector('.run-outcome-root-cause dt')?.textContent).toBe('Run validity')
   act(() => root.render(<RunOutcomeSummary report={{ ...base, validity: undefined, root_cause_summary: { state: 'not_enabled', presented: false, analysis_enabled: false, hypothesis_count: 0, anomaly_count: 0 } } as unknown as RunArchiveReport} />))
   expect(container.querySelector('.run-outcome-root-cause')).toBeNull()
   // The exported report's preview has its own root-cause section.

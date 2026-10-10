@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -47,8 +48,8 @@ var kibanaFieldName = regexp.MustCompile(`^[A-Za-z0-9_@][A-Za-z0-9_.@-]{0,127}$`
 type ConnectionLinkSettings struct {
 	UIURL         string `json:"ui_url,omitempty"`
 	TraceTemplate string `json:"trace_template,omitempty"`
-	// WindowTemplate opens a time window (and optionally an entity) in the
-	// product, without a trace: {from_utc}, {to_utc} and {entity_id} only.
+	// WindowTemplate opens a time window of a run in the product, without a
+	// trace or an entity: {from_utc} and {to_utc} only.
 	WindowTemplate string `json:"window_template,omitempty"`
 }
 
@@ -187,9 +188,12 @@ func validateConnectionLinkSettings(target *connectionLinkTarget, settings Conne
 		}
 	}
 	if template := target.windowTemplate(settings); template != "" {
-		// A window link opens a time range; a run's windows have no trace.
-		if strings.Contains(template, "{"+deeplink.TraceID+"}") {
-			return errors.New("window_template cannot use {trace_id}")
+		// A window link opens a time range; a run's windows name no trace
+		// and no entity, so a template that needs one would never expand.
+		for _, name := range []string{deeplink.TraceID, deeplink.EntityID} {
+			if strings.Contains(template, "{"+name+"}") {
+				return fmt.Errorf("window_template cannot use {%s}", name)
+			}
 		}
 		if err := deeplink.Validate(template, target.allowedHosts(settings)); err != nil {
 			return err

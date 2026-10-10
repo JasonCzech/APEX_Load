@@ -500,17 +500,16 @@ without links and with `links_unavailable`.
   `ProviderDiagnostic.DeepLink`, validated against their connection's origin;
   Dynatrace ingestion applies the template target check.
 - **Window templates.** A connection can also hold a `window_template` that
-  opens a time window, not a trace: it may use only `{from_utc}`, `{to_utc}`
-  and `{entity_id}` (a window template with `{trace_id}` is refused) and is
-  validated like a trace template. ELK connections with a Kibana `ui_url`
-  default to Discover over the window, the trace default without its query;
+  opens a time window, not a trace: it may use only `{from_utc}` and
+  `{to_utc}` (a run window names no trace or entity, so `{trace_id}` and
+  `{entity_id}` are refused) and is validated like a trace template. ELK
+  connections with a Kibana `ui_url` default to Discover over the window, the
+  trace default without its query;
   Dynatrace connections have no default until a template is saved (use your
   tenant's timeframe parameters). `GET /api/v1/tests/{id}/archive/root-cause/links?from=&to=`
   (viewer) compiles them for one window of the run; the root-cause
-  investigation offers them as "Open this window in …". A template that
-  needs `{entity_id}` produces no window link, since a run window names no
-  entity. Templates are set through the API; the dashboard has no editor for
-  them yet.
+  investigation offers them as "Open this window in …". Templates are set
+  through the API; the dashboard has no editor for them yet.
 - **Budget.** Link settings are one definition per connection and do not count
   toward the project's 1000 mappings and comparisons. They outlive a deleted
   connection unused, since connection IDs are never reused.

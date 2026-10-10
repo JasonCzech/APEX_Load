@@ -10,6 +10,9 @@ interface Props {
   projectName?: string
   // Project administrators change the settings; others read them.
   canEdit: boolean
+  // onSaved receives the settings a save stored, so the page's copy of the
+  // project stays current.
+  onSaved?: (settings: ProjectAnalysisSettingsResponse['settings']) => void
 }
 
 type Flag = { group: 'root_cause'; key: keyof ProjectAnalysisGates['root_cause'] } | { group: 'business_keys'; key: keyof ProjectAnalysisGates['business_keys'] }
@@ -38,7 +41,7 @@ function settingsPath(projectId: string) {
 // project's root-cause and business-key opt-ins. A flag the deployment turns
 // on for the project is shown on and cannot be turned off here. Saves send
 // the revision that was read, so a newer save is never overwritten.
-export default function ProjectAnalysisSettingsPanel({ projectId, projectName, canEdit }: Props) {
+export default function ProjectAnalysisSettingsPanel({ projectId, projectName, canEdit, onSaved }: Props) {
   const [current, setCurrent] = useState<ProjectAnalysisSettingsResponse | null>(null)
   const [draft, setDraft] = useState<ProjectAnalysisGates | null>(null)
   const [loading, setLoading] = useState(true)
@@ -86,6 +89,7 @@ export default function ProjectAnalysisSettingsPanel({ projectId, projectName, c
       setCurrent(saved)
       setDraft({ root_cause: { ...saved.settings.root_cause }, business_keys: { ...saved.settings.business_keys } })
       setStatus(`Saved as revision ${saved.settings.revision}.`)
+      onSaved?.(saved.settings)
     } catch (err) {
       const conflict = (err as { status?: number })?.status === 409
       setError(conflict ? 'These settings changed since you opened them. Reload to see the newest revision, then make your change again.' : getErrorMessage(err, 'Unable to save the project’s analysis settings'))

@@ -581,6 +581,10 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if created {
 		status = http.StatusAccepted
 		s.recordAuditEvent(r, "rca.analysis.create", "success", "rca_analysis", analysis.ID, project, map[string]any{"test_id": test.ID, "revision": analysis.Revision, "enrich": request.Enrich, "origin": analysis.Origin})
+	}
+	// A new analysis, or a queued automatic one the request moved ahead of
+	// the automatic queue, can be claimed now.
+	if analysis.State == storage.RCAStateQueued {
 		s.wakeRCAWorker()
 	}
 	writeJSON(w, status, rcaAnalysisResponse(analysis, projectAnalysisGates(s.store, project)))

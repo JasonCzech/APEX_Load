@@ -6001,7 +6001,8 @@ export default function SettingsPage({
                   hidden={activeProjectSubsection !== 'analysis'}
                 >
                   {activeProjectSubsection === 'analysis' && (
-                    <ProjectAnalysisSettingsPanel key={selectedProject.id} projectId={selectedProject.id} projectName={selectedProject.name} canEdit={canManageProjects || canManageSystem} />
+                    <ProjectAnalysisSettingsPanel key={selectedProject.id} projectId={selectedProject.id} projectName={selectedProject.name} canEdit={canManageProjects || canManageSystem}
+                      onSaved={analysis => commitSettingsProject({ ...selectedProject, settings: { ...selectedProject.settings, analysis } })} />
                   )}
                 </section>
 

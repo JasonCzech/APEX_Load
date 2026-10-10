@@ -40,7 +40,7 @@ export default function RunOutcomeSummary({ report, showPopulations = true, show
       <div><dt>Acceptance assessment</dt><dd>{assessment || report.verdict?.status || 'Unknown'}</dd><dd>{computed?.assessment.explanation || report.verdict?.explanation || 'No acceptance assessment is available.'}</dd></div>
       <div><dt>Evidence coverage</dt><dd>{report.completeness?.score_pct === undefined ? 'Unknown' : `${report.completeness.score_pct}% of expected captured evidence`}</dd><dd>Archive coverage does not imply completion of the planned workload.</dd></div>
       {(rootCause || validity) && <div className="run-outcome-root-cause" data-tone={rootCause?.tone}>
-        <dt>Root cause</dt>
+        <dt>{rootCause ? 'Root cause' : 'Run validity'}</dt>
         {validity && <dd><span className={`rca-badge rca-badge-${rcaTone(validity)}`}>{rcaValidityLabel(validity)}</span></dd>}
         {rootCause && <dd role={rootCause.pending ? 'status' : undefined}>{rootCause.text}</dd>}
         {rootCause && onRootCause && rootCause.action !== 'none' && <dd><button type="button" className="btn btn-sm btn-secondary" onClick={() => onRootCause(rootCause.action)}>{rootCause.actionLabel}</button></dd>}

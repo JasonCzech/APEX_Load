@@ -950,7 +950,9 @@ returning v1.
   nothing; one that changed the evidence queues a new analysis. Requested
   analyses (`origin: requested`) are claimed before automatic ones, and at
   most one automatic analysis runs at a time, so a request always finds a
-  worker slot. An identical request answers with the automatic analysis.
+  worker slot. An identical request answers with the automatic analysis; one
+  still queued becomes a requested analysis, so it is claimed ahead of the
+  other automatic ones.
 - **Retention.** Analyses and evidence revisions are deleted with their run,
   their project, or the run's archive.
 - **Baselines.** `baseline_test_id` names an archived run in the same

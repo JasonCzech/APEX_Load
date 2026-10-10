@@ -39,13 +39,19 @@ export function rcaHypothesisFinding(h: RcaHypothesis, assessment: RcaAssessment
   }
 }
 
+// sameFinding says two findings record the same hypothesis: a generated
+// finding names its hypothesis and analysis in its root cause.
+const sameFinding = (a: ReportFinding, b: ReportFinding) => a.title === b.title && a.root_cause === b.root_cause
+
 // appendReportFinding adds a finding to a report audience's annotations,
 // keeping every other annotation as it stands; a concurrent save is read
-// again and retried, at most three times.
+// again and retried, at most three times. A save the server kept before it
+// refused (the verdict changed meanwhile) is not added twice.
 export async function appendReportFinding(testId: string, lens: string, finding: ReportFinding): Promise<ReportAnnotations> {
   const path = `/tests/${encodeURIComponent(testId)}/report/annotations?profile=${encodeURIComponent(lens)}`
   let latest = (await request<ReportAnnotationsResponse>(path)).annotations
   for (let attempt = 0; ; attempt += 1) {
+    if (attempt > 0 && (latest.findings || []).some(existing => sameFinding(existing, finding))) return latest
     const body: ReportAnnotationsInput = {
       expected_updated_at: latest.updated_at,
       title: latest.title,
