@@ -578,13 +578,27 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	// finalizeHTTPServerTelemetry on the error path under -race).
 	var traceMu sync.Mutex
 	var dnsStart, connStart, tlsStart time.Time
+	// Exact-3 attempt budget: every redirect hop the action may follow, plus
+	// one quic-go retry for the whole action.
+	var h3Cancel context.CancelCauseFunc
+	h3AttemptLimit := h.maxRedirects
+	if action.MaxRedirects != nil {
+		h3AttemptLimit = *action.MaxRedirects
+	}
+	h3AttemptLimit = max(h3AttemptLimit, 0) + 2
 	var traceDNSTime, traceConnectTime, traceTLSTime, traceTTFB time.Duration
 	// wroteHeaders records whether any hop's headers reached a connection, so a
 	// request that failed before sending does not claim its trace was sent.
 	wroteHeaders := false
 	startTime := result.StartTime
 	trace := &httptrace.ClientTrace{
-		GetConn: func(string) { h3Receipt.onGetConn() },
+		GetConn: func(string) {
+			if h3Receipt.onGetConn() > h3AttemptLimit && h3Cancel != nil {
+				// One logical action gets the hops its redirects allow plus a
+				// single library retry; more would multiply load on the target.
+				h3Cancel(fmt.Errorf("%w (%d)", ErrHTTP3AttemptBudget, h3AttemptLimit))
+			}
+		},
 		DNSStart: func(_ httptrace.DNSStartInfo) {
 			h3Receipt.onDNSStart()
 			traceMu.Lock()
@@ -623,6 +637,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	if h3Receipt != nil {
 		req = req.WithContext(h3transport.WithDialObserver(req.Context(), h3Receipt.onDial))
+		var budgetCtx context.Context
+		budgetCtx, h3Cancel = context.WithCancelCause(req.Context())
+		defer h3Cancel(nil)
+		req = req.WithContext(budgetCtx)
 	}
 	client := *h.client
 	if action.TimeoutMs > 0 {
@@ -700,6 +718,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			reused, rCount, rDur := applyTraceTelemetry()
 			markUnsentTraceContext()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
+			if cause := context.Cause(req.Context()); errors.Is(cause, ErrHTTP3AttemptBudget) {
+				err = cause
+			}
 			result.ErrorMessage = h.transportErrorMessage(err)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(err)
 			h3Receipt.fail(err)

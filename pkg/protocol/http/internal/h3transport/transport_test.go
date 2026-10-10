@@ -310,3 +310,80 @@ func TestInterleaveFamilies(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckAddressRefusesAddresses(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{})
+	transport := newTransport(t, fixture, func(o *Options) {
+		o.CheckAddress = func(netip.Addr) error { return errors.New("non-public address refused") }
+	})
+	if _, err := get(t, transport, context.Background(), fixture.URL("/echo")); certainty(err) != NotSent || !strings.Contains(err.Error(), "non-public address refused") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(fixture.Ledger.Attempts()) != 0 {
+		t.Fatal("a refused address was dialed")
+	}
+}
+
+func TestIdleCloseWaitsForOpenBodies(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{})
+	transport := newTransport(t, fixture, nil)
+	resp, err := get(t, transport, context.Background(), fixture.URL("/sse?n=3&interval_ms=150"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transport.ActiveRequests() != 1 {
+		t.Fatalf("active = %d while the stream is open", transport.ActiveRequests())
+	}
+	transport.CloseIdleConnections() // quic-go alone would close this stream's connection
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || !strings.Contains(string(body), "data:") {
+		t.Fatalf("stream cut short: %q %v", body, err)
+	}
+	_ = resp.Body.Close()
+	if transport.ActiveRequests() != 0 {
+		t.Fatalf("active = %d after the body closed", transport.ActiveRequests())
+	}
+	transport.CloseIdleConnections()
+	deadline := time.Now().Add(2 * time.Second)
+	for transport.OpenConnections() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if transport.OpenConnections() != 0 {
+		t.Fatal("an idle connection survived CloseIdleConnections")
+	}
+}
+
+func TestAcquireHoldsASlotForTheConnectionLifetime(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{})
+	var mu sync.Mutex
+	held := 0
+	transport := newTransport(t, fixture, func(o *Options) {
+		o.Acquire = func(context.Context, string) (func(), error) {
+			mu.Lock()
+			held++
+			mu.Unlock()
+			return func() { mu.Lock(); held--; mu.Unlock() }, nil
+		}
+	})
+	if _, err := get(t, transport, context.Background(), fixture.URL("/echo")); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	during := held
+	mu.Unlock()
+	if during != 1 {
+		t.Fatalf("slots held during the connection = %d", during)
+	}
+	_ = transport.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		after := held
+		mu.Unlock()
+		if after == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the slot was not released when the connection closed")
+}

@@ -22,7 +22,67 @@ type httpConnectionBudget struct {
 	idleLimit int
 	counts    map[string]int
 	owners    map[*httpConnectionOwner]struct{}
+	quic      []*quicBudgetMember
 	changed   chan struct{}
+}
+
+// quicBudgetMember is a QUIC transport counted in the same budget: its
+// connections take the same per-host slots as TCP sockets.
+type quicBudgetMember struct {
+	closeIdle func()
+	open      func() int64
+}
+
+func (budget *httpConnectionBudget) trackQUIC(member *quicBudgetMember) {
+	budget.mu.Lock()
+	budget.quic = append(budget.quic, member)
+	budget.mu.Unlock()
+}
+
+func (budget *httpConnectionBudget) quicMembers() []*quicBudgetMember {
+	budget.mu.Lock()
+	defer budget.mu.Unlock()
+	return append([]*quicBudgetMember(nil), budget.quic...)
+}
+
+// acquireQUIC takes a slot for one QUIC connection to address, evicting idle
+// connections of any version while the host is at its limit, as a TCP dial
+// does. The returned release frees the slot.
+func (budget *httpConnectionBudget) acquireQUIC(ctx context.Context, address string) (func(), error) {
+	key := strings.ToLower(strings.TrimSpace(address))
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		budget.mu.Lock()
+		if budget.counts[key] < budget.limit {
+			budget.counts[key]++
+			budget.mu.Unlock()
+			var once sync.Once
+			return func() {
+				once.Do(func() {
+					budget.mu.Lock()
+					if budget.counts[key] <= 1 {
+						delete(budget.counts, key)
+					} else {
+						budget.counts[key]--
+					}
+					budget.mu.Unlock()
+					budget.notify()
+				})
+			}, nil
+		}
+		budget.mu.Unlock()
+		budget.evictIdle()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-budget.changed:
+		case <-ticker.C:
+		}
+	}
 }
 
 type httpConnectionOwner struct {
@@ -67,6 +127,9 @@ func (budget *httpConnectionBudget) snapshotOwners() []*httpConnectionOwner {
 }
 
 func (budget *httpConnectionBudget) evictIdle() {
+	for _, member := range budget.quicMembers() {
+		member.closeIdle()
+	}
 	for _, owner := range budget.snapshotOwners() {
 		owner.mu.Lock()
 		// A freshly dialed HTTP/2 socket can enter Go's pool before its first
@@ -90,6 +153,22 @@ func (budget *httpConnectionBudget) trimIdle() {
 	for _, owner := range owners {
 		open += owner.open.Load()
 	}
+	members := budget.quicMembers()
+	for _, member := range members {
+		open += member.open()
+	}
+	// TCP sockets are trimmed least recently used first, as before; QUIC
+	// connections are closed only if the budget is still over its idle limit.
+	defer func() {
+		for _, member := range members {
+			if open <= int64(budget.idleLimit) {
+				return
+			}
+			before := member.open()
+			member.closeIdle()
+			open -= before - member.open()
+		}
+	}()
 	for _, owner := range owners {
 		if open <= int64(budget.idleLimit) {
 			return
@@ -342,6 +421,9 @@ func (body *connectionActivityBody) Close() error {
 func (budget *httpConnectionBudget) closeIdle() {
 	for _, owner := range budget.snapshotOwners() {
 		owner.transport.CloseIdleConnections()
+	}
+	for _, member := range budget.quicMembers() {
+		member.closeIdle()
 	}
 	budget.notify()
 }

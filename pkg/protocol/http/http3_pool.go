@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/netpolicy"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport"
 )
@@ -26,6 +27,9 @@ var (
 	// ErrHTTP3IntegratedAuth refuses an exact-3 request that would use NTLM or
 	// Negotiate, whose handshakes are bound to one TCP connection.
 	ErrHTTP3IntegratedAuth = errors.New("integrated authentication (NTLM or Negotiate) runs on TCP only; use auto+h3 or another auth type for this request")
+	// ErrHTTP3AttemptBudget ends an exact-3 action that used up its attempts:
+	// its redirect hops plus one library retry.
+	ErrHTTP3AttemptBudget = errors.New("attempt budget exhausted: the action used every HTTP attempt it allows")
 )
 
 // HTTP3FailureCertainty returns the transmission certainty of a failed
@@ -81,6 +85,18 @@ func (o *http3Owner) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) 
 		return nil, err
 	}
 	return transport.RoundTrip(req)
+}
+
+// openConnections reports open QUIC connections, without creating the
+// transport.
+func (o *http3Owner) openConnections() int64 {
+	o.mu.Lock()
+	transport := o.transport
+	o.mu.Unlock()
+	if transport == nil {
+		return 0
+	}
+	return int64(transport.OpenConnections())
 }
 
 func (o *http3Owner) CloseIdleConnections() {
@@ -192,7 +208,26 @@ func (h *HTTP) newHTTP3Pool(settings transportConfig, tlsConfig *tls.Config, con
 	if enabled, _ := config["dns_cache"].(bool); enabled {
 		options.Resolve = newCachedResolver(net.DefaultResolver.LookupIPAddr, time.Now)
 	}
+	if pacSource != "" && len(h.allowedTargetHosts) == 0 {
+		// As on TCP, a PAC DIRECT route reaches only public addresses unless
+		// an explicit target policy authorizes private ones.
+		options.CheckAddress = func(address netip.Addr) error {
+			if !netpolicy.IsPublicIP(net.IP(address.AsSlice())) {
+				return fmt.Errorf("PAC access to non-public address requires an explicit target policy")
+			}
+			return nil
+		}
+	}
+	if h.connections != nil {
+		// QUIC connections share the VUser's per-host connection budget with
+		// TCP sockets (max_conns_per_host, max_idle_conns).
+		options.Acquire = h.connections.acquireQUIC
+	}
 	h.http3 = newHTTP3Owner(options)
+	if h.connections != nil {
+		owner := h.http3
+		h.connections.trackQUIC(&quicBudgetMember{closeIdle: owner.CloseIdleConnections, open: owner.openConnections})
+	}
 	var transport stdhttp.RoundTripper = h.http3
 	transport = http3RouteRoundTripper{base: transport, proxy: baseline.Proxy, pac: pacSource, allowed: h.allowedTargetHosts}
 	client := &stdhttp.Client{Transport: transport, Jar: jar, Timeout: h.requestTimeout}

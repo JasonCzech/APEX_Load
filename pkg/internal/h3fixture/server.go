@@ -83,6 +83,8 @@ type Server struct {
 	altSvc       atomic.Value // string
 	rejectNext   atomic.Int64
 	fallbackNext atomic.Int64
+	sequenceMu   sync.Mutex
+	rejectQueue  []bool
 
 	tcp   *http.Server
 	main  *quicEndpoint
@@ -303,6 +305,17 @@ func (s *Server) serveConn(conn *quic.Conn, h3 *http3.Server) {
 }
 
 func (s *Server) refusal() (http3.ErrCode, bool) {
+	s.sequenceMu.Lock()
+	if len(s.rejectQueue) > 0 {
+		reject := s.rejectQueue[0]
+		s.rejectQueue = s.rejectQueue[1:]
+		s.sequenceMu.Unlock()
+		if reject {
+			return http3.ErrCodeRequestRejected, true
+		}
+		return 0, false
+	}
+	s.sequenceMu.Unlock()
 	if take(&s.rejectNext) {
 		return http3.ErrCodeRequestRejected, true
 	}
@@ -365,6 +378,15 @@ func (s *Server) SetAltSvc(value string) { s.altSvc.Store(value) }
 // RejectNextQUICRequests refuses the next n HTTP/3 request streams with
 // H3_REQUEST_REJECTED before reading them.
 func (s *Server) RejectNextQUICRequests(n int) { s.rejectNext.Store(int64(n)) }
+
+// RejectQUICSequence decides the next request streams in order: true resets
+// the stream with H3_REQUEST_REJECTED before any header is read, false
+// serves it. It takes precedence over RejectNextQUICRequests.
+func (s *Server) RejectQUICSequence(rejects ...bool) {
+	s.sequenceMu.Lock()
+	s.rejectQueue = append([]bool(nil), rejects...)
+	s.sequenceMu.Unlock()
+}
 
 // VersionFallbackNextQUICRequests refuses the next n HTTP/3 request streams
 // with H3_VERSION_FALLBACK before reading them.

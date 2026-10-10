@@ -36,7 +36,12 @@ func (r *http3Receipt) lock(update func()) {
 
 // Trace notifications. GetConn fires once per HTTP attempt, including
 // quic-go's own retry, so it counts attempts (D2).
-func (r *http3Receipt) onGetConn()      { r.lock(func() { r.attempts++ }) }
+// onGetConn counts an attempt and returns the action's attempts so far.
+func (r *http3Receipt) onGetConn() int {
+	attempts := 0
+	r.lock(func() { r.attempts++; attempts = r.attempts })
+	return attempts
+}
 func (r *http3Receipt) onDNSStart()     { r.lock(func() { r.resolved = true }) }
 func (r *http3Receipt) onConnectStart() { r.lock(func() { r.dialed = true }) }
 func (r *http3Receipt) onGotConn(reused bool) {

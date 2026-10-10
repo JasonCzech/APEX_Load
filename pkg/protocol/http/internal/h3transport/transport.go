@@ -14,6 +14,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -106,6 +107,13 @@ type Options struct {
 	SourceIP net.IP
 	// IPVersion restricts addresses to "ipv4" or "ipv6"; empty allows both.
 	IPVersion string
+	// CheckAddress vets every candidate address, literal or resolved, before
+	// it is dialed; a refused address is skipped. Nil allows all.
+	CheckAddress func(netip.Addr) error
+	// Acquire takes a slot in the VUser's connection budget for address
+	// ("host:port") before a dial, waiting while the budget is full. The
+	// returned release runs when the connection closes or the dial fails.
+	Acquire func(ctx context.Context, address string) (release func(), err error)
 }
 
 // Transport is an http.RoundTripper for exact HTTP/3.
@@ -119,6 +127,10 @@ type Transport struct {
 	closed  bool
 	sockets map[socketKey]*quic.Transport
 	conns   map[*quic.Conn]struct{}
+	// active counts requests whose response body is still open. quic-go
+	// treats a connection as unused once headers arrive, so closing idle
+	// connections waits until no body is in flight (SSE included).
+	active atomic.Int64
 }
 
 type socketKey struct {
@@ -177,6 +189,7 @@ func New(opts Options) (*Transport, error) {
 // the request's transmission certainty, except for the caller's own
 // cancellation or deadline, which is returned unchanged.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.active.Add(1)
 	// quic-go may report the write from another goroutine.
 	var written atomic.Bool
 	ctx := httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
@@ -184,8 +197,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	})
 	resp, err := t.h3.RoundTrip(req.WithContext(ctx))
 	if err == nil {
+		resp.Body = &activeBody{ReadCloser: resp.Body, done: func() { t.active.Add(-1) }}
 		return resp, nil
 	}
+	t.active.Add(-1)
 	if ctxErr := req.Context().Err(); ctxErr != nil {
 		return nil, err
 	}
@@ -232,8 +247,39 @@ func WithDialObserver(ctx context.Context, observe func(DialInfo)) context.Conte
 	return context.WithValue(ctx, dialObserverKey{}, observe)
 }
 
-// CloseIdleConnections closes connections no request is using.
-func (t *Transport) CloseIdleConnections() { t.h3.CloseIdleConnections() }
+// CloseIdleConnections closes connections no request is using. While any
+// response body is still open it closes nothing: quic-go would count that
+// connection as idle.
+func (t *Transport) CloseIdleConnections() {
+	if t.active.Load() > 0 {
+		return
+	}
+	t.h3.CloseIdleConnections()
+}
+
+// ActiveRequests reports requests whose response body is still open.
+func (t *Transport) ActiveRequests() int64 { return t.active.Load() }
+
+// activeBody ends a request's activity when its body reaches EOF or closes.
+type activeBody struct {
+	io.ReadCloser
+	once sync.Once
+	done func()
+}
+
+func (b *activeBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil {
+		b.once.Do(b.done)
+	}
+	return n, err
+}
+
+func (b *activeBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.done)
+	return err
+}
 
 // Close ends every connection with H3_NO_ERROR and releases the sockets.
 // It is safe to call more than once.
@@ -297,6 +343,22 @@ func (t *Transport) dial(ctx context.Context, addr string, tlsConfig *tls.Config
 	}
 	dialCtx, cancel := t.dialContext(ctx)
 	defer cancel()
+	release := func() {}
+	if t.opts.Acquire != nil {
+		if release, err = t.opts.Acquire(dialCtx, addr); err != nil {
+			return nil, err
+		}
+	}
+	conn, err := t.dialAddress(ctx, dialCtx, trace, host, port, tlsConfig, quicConfig)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	context.AfterFunc(conn.Context(), release)
+	return conn, nil
+}
+
+func (t *Transport) dialAddress(ctx, dialCtx context.Context, trace *httptrace.ClientTrace, host string, port int, tlsConfig *tls.Config, quicConfig *quic.Config) (*quic.Conn, error) {
 	addresses, err := t.resolve(dialCtx, trace, host)
 	if err != nil {
 		return nil, err
@@ -470,8 +532,15 @@ func (t *Transport) resolve(ctx context.Context, trace *httptrace.ClientTrace, h
 
 func (t *Transport) filterFamily(addresses []netip.Addr, host string) ([]netip.Addr, error) {
 	var kept []netip.Addr
+	var refused error
 	for _, address := range addresses {
 		address = address.Unmap()
+		if t.opts.CheckAddress != nil {
+			if err := t.opts.CheckAddress(address); err != nil {
+				refused = err
+				continue
+			}
+		}
 		switch t.opts.IPVersion {
 		case "ipv4":
 			if !address.Is4() {
@@ -488,6 +557,9 @@ func (t *Transport) filterFamily(addresses []netip.Addr, host string) ([]netip.A
 		kept = append(kept, address)
 	}
 	if len(kept) == 0 {
+		if refused != nil {
+			return nil, refused
+		}
 		return nil, fmt.Errorf("no usable address for %s", host)
 	}
 	return kept, nil
