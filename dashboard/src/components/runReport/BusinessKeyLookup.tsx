@@ -16,6 +16,9 @@ interface Props {
   projectId: string
   canLookup: boolean
   canApprove: boolean
+  // settingsHref opens the project's analysis settings, where business keys
+  // are turned on, for those who may change them.
+  settingsHref?: string
 }
 
 const mappingsPath = (projectId: string) => `/analysis/business-key-mappings?project_id=${encodeURIComponent(projectId)}`
@@ -97,7 +100,7 @@ function ApprovedMappings({ projectId, mappings, onChanged }: { projectId: strin
 // business-key values the operator types in. The values stay in this
 // component: they are sent once with the lookup and never stored, put in the
 // URL or kept in the browser.
-export default function BusinessKeyLookup({ testId, projectId, canLookup, canApprove }: Props) {
+export default function BusinessKeyLookup({ testId, projectId, canLookup, canApprove, settingsHref }: Props) {
   const [mappings, setMappings] = useState<BusinessKeyMappingDefinition[] | null>(null)
   const [enabled, setEnabled] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -151,7 +154,9 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
 
   // Someone who could use it learns the capability exists; others see nothing.
   if (!enabled) return canLookup
-    ? <p className="run-report-muted" role="note">Business key lookup is not enabled for this project. A system administrator enables it per project.</p>
+    ? <p className="run-report-muted" role="note">Business key lookup is not enabled for this project. {settingsHref
+      ? <>Turn it on in <a href={settingsHref}>Settings › Project › Analysis</a>.</>
+      : 'A project administrator turns it on in Settings › Project › Analysis.'}</p>
     : null
   return (
     <section className="run-report-panel business-key-lookup" aria-label="Business key lookup">

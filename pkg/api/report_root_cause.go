@@ -201,7 +201,7 @@ func (s *Server) attachRootCause(report *RunArchiveReport) {
 	testID := strings.TrimSpace(report.Manifest.TestID)
 	project := normalizeProjectID(report.Manifest.Provenance.ProjectID)
 	var notes []string
-	if rcaV2PresentEnabled(project) {
+	if rcaV2PresentEnabled(s.store, project) {
 		view, err := s.latestRootCauseV2(project, testID)
 		switch {
 		case view != nil:

@@ -520,6 +520,29 @@ queued for capacity fail at promotion. Use an `apexctl` that knows
 `run_invalid` before enabling the gate; an older one rejects the outcome as an
 invalid controller response and exits `3`.
 
+#### Root-cause summary
+
+For a project that presents root cause (see
+[Root-cause analysis service](ANALYSIS_WORKFLOWS.md#root-cause-analysis-service)),
+a completed CI run's response and `apexctl ci run`'s JSON result carry
+`root_cause`: the `state` of the run's newest analysis (`none`, `queued`,
+`running`, `completed`, `failed` or `cancelled`), and once one completed its
+`outcome`, `top_hypothesis`, `confidence`, `analysis_id` and a `report_url`
+that opens it; `auto_analyze` says the project analyzes every archived run, so
+a run without one yet reads `analysis pending`. It never changes the
+outcome or the exit code.
+
+The Check and the job summary add a `Root cause` row (the leading hypothesis
+with its confidence, `no cause supported`, `insufficient evidence`,
+`analysis pending`, `not analyzed`, or the analysis state), and the action's `root-cause` output holds the same line,
+beside a `validity` output with the verdict. An automatic analysis is queued
+when the run's archive is finalized and usually completes after the Check
+has; a completed Check is not edited afterwards, so it shows the state it
+saw. `apexctl ci run --wait-analysis 5m` (the action's `wait-analysis` input;
+at most `10m`, default no wait) polls after the run ends until the analysis
+completes or the wait passes, so the job summary and outputs carry the
+verdict; the wait never fails the job.
+
 #### Telemetry acceptance gate
 
 A run that pinned a project `telemetry_acceptance_policy` (see [Telemetry acceptance verdicts](guides/TELEMETRY_POLICY_RECEIPTS.md#telemetry-acceptance-verdicts)) has a `telemetry_verdict` beside the application outcome. It appears in the run response, in `apexctl ci run`'s JSON result and in the `telemetry-verdict` output. The Check lists it in its own section, the job summary shows it in its own rows, and the JUnit report has a separate `telemetry_acceptance` test case. The field holds the verdict (`pass`, `fail` or `inconclusive`), the policy revision, `mode`, every criterion with its evidence, and `enforced`.

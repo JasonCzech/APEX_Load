@@ -11405,6 +11405,104 @@ paths:
                         tcp_retransmits_per_sec:
                           type: number
                           format: double
+                    root_cause_summary:
+                      type: object
+                      properties:
+                        analysis_enabled:
+                          type: boolean
+                        analysis_id:
+                          type: string
+                        anomaly_count:
+                          type: integer
+                          format: int64
+                        archive_changed:
+                          type: boolean
+                        auto_analyze:
+                          type: boolean
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        hypothesis_count:
+                          type: integer
+                          format: int64
+                        latest:
+                          type: object
+                          properties:
+                            analysis_id:
+                              type: string
+                            created_at:
+                              type: string
+                              format: date-time
+                            origin:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            state:
+                              type: string
+                          nullable: true
+                        origin:
+                          type: string
+                        outcome:
+                          type: string
+                        presented:
+                          type: boolean
+                        revision:
+                          type: integer
+                          format: int64
+                        state:
+                          type: string
+                        top_hypothesis:
+                          type: object
+                          properties:
+                            chain:
+                              type: array
+                              items:
+                                type: string
+                            competing:
+                              type: array
+                              items:
+                                type: string
+                            confidence:
+                              type: string
+                            contradicting:
+                              type: array
+                              items:
+                                type: string
+                            detail:
+                              type: string
+                            evidence:
+                              type: array
+                              items:
+                                type: string
+                            explains:
+                              type: array
+                              items:
+                                type: string
+                            falsification:
+                              type: string
+                            id:
+                              type: string
+                            limitations:
+                              type: array
+                              items:
+                                type: string
+                            rank:
+                              type: integer
+                              format: int64
+                            reasons:
+                              type: array
+                              items:
+                                type: string
+                            severity:
+                              type: string
+                            title:
+                              type: string
+                          nullable: true
+                        validity:
+                          type: string
+                      nullable: true
                     root_cause_view:
                       type: object
                       properties:
@@ -45910,6 +46008,26 @@ paths:
                     type: string
                   results_present:
                     type: boolean
+                  root_cause:
+                    type: object
+                    properties:
+                      analysis_id:
+                        type: string
+                      auto_analyze:
+                        type: boolean
+                      confidence:
+                        type: string
+                      outcome:
+                        type: string
+                      report_url:
+                        type: string
+                      state:
+                        type: string
+                      top_hypothesis:
+                        type: string
+                    required:
+                      - state
+                    nullable: true
                   schema_version:
                     type: integer
                     format: int64
@@ -46245,6 +46363,26 @@ paths:
                     type: string
                   results_present:
                     type: boolean
+                  root_cause:
+                    type: object
+                    properties:
+                      analysis_id:
+                        type: string
+                      auto_analyze:
+                        type: boolean
+                      confidence:
+                        type: string
+                      outcome:
+                        type: string
+                      report_url:
+                        type: string
+                      state:
+                        type: string
+                      top_hypothesis:
+                        type: string
+                    required:
+                      - state
+                    nullable: true
                   schema_version:
                     type: integer
                     format: int64
@@ -46551,6 +46689,26 @@ paths:
                     type: string
                   results_present:
                     type: boolean
+                  root_cause:
+                    type: object
+                    properties:
+                      analysis_id:
+                        type: string
+                      auto_analyze:
+                        type: boolean
+                      confidence:
+                        type: string
+                      outcome:
+                        type: string
+                      report_url:
+                        type: string
+                      state:
+                        type: string
+                      top_hypothesis:
+                        type: string
+                    required:
+                      - state
+                    nullable: true
                   schema_version:
                     type: integer
                     format: int64
@@ -66620,6 +66778,34 @@ paths:
                 settings:
                   type: object
                   properties:
+                    analysis:
+                      type: object
+                      properties:
+                        business_keys:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                        revision:
+                          type: integer
+                          format: int64
+                        root_cause:
+                          type: object
+                          properties:
+                            auto_analyze:
+                              type: boolean
+                            auto_enrich:
+                              type: boolean
+                            enabled:
+                              type: boolean
+                            present:
+                              type: boolean
+                        updated_at:
+                          type: string
+                          format: date-time
+                        updated_by:
+                          type: string
+                      nullable: true
                     authoring:
                       type: object
                       properties:
@@ -66935,6 +67121,46 @@ paths:
                   settings:
                     type: object
                     properties:
+                      analysis:
+                        type: object
+                        properties:
+                          business_keys:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                            required:
+                              - enabled
+                          revision:
+                            type: integer
+                            format: int64
+                          root_cause:
+                            type: object
+                            properties:
+                              auto_analyze:
+                                type: boolean
+                              auto_enrich:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                              present:
+                                type: boolean
+                            required:
+                              - auto_analyze
+                              - auto_enrich
+                              - enabled
+                              - present
+                          updated_at:
+                            type: string
+                            format: date-time
+                          updated_by:
+                            type: string
+                        required:
+                          - business_keys
+                          - revision
+                          - root_cause
+                          - updated_at
+                        nullable: true
                       authoring:
                         type: object
                         properties:
@@ -67164,6 +67390,34 @@ paths:
                 settings:
                   type: object
                   properties:
+                    analysis:
+                      type: object
+                      properties:
+                        business_keys:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                        revision:
+                          type: integer
+                          format: int64
+                        root_cause:
+                          type: object
+                          properties:
+                            auto_analyze:
+                              type: boolean
+                            auto_enrich:
+                              type: boolean
+                            enabled:
+                              type: boolean
+                            present:
+                              type: boolean
+                        updated_at:
+                          type: string
+                          format: date-time
+                        updated_by:
+                          type: string
+                      nullable: true
                     authoring:
                       type: object
                       properties:
@@ -67353,6 +67607,46 @@ paths:
                   settings:
                     type: object
                     properties:
+                      analysis:
+                        type: object
+                        properties:
+                          business_keys:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                            required:
+                              - enabled
+                          revision:
+                            type: integer
+                            format: int64
+                          root_cause:
+                            type: object
+                            properties:
+                              auto_analyze:
+                                type: boolean
+                              auto_enrich:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                              present:
+                                type: boolean
+                            required:
+                              - auto_analyze
+                              - auto_enrich
+                              - enabled
+                              - present
+                          updated_at:
+                            type: string
+                            format: date-time
+                          updated_by:
+                            type: string
+                        required:
+                          - business_keys
+                          - revision
+                          - root_cause
+                          - updated_at
+                        nullable: true
                       authoring:
                         type: object
                         properties:
@@ -67910,6 +68204,368 @@ paths:
       tags:
         - Projects
       x-handler: handleProjectActivity
+  /api/v1/projects/{id}/analysis-settings:
+    get:
+      summary: Get Project Analysis Settings
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetProjectAnalysisSettings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  effective:
+                    type: object
+                    properties:
+                      business_keys:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                          - enabled
+                      root_cause:
+                        type: object
+                        properties:
+                          auto_analyze:
+                            type: boolean
+                          auto_enrich:
+                            type: boolean
+                          enabled:
+                            type: boolean
+                          present:
+                            type: boolean
+                        required:
+                          - auto_analyze
+                          - auto_enrich
+                          - enabled
+                          - present
+                    required:
+                      - business_keys
+                      - root_cause
+                  forced_by_env:
+                    type: object
+                    properties:
+                      business_keys:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                          - enabled
+                      root_cause:
+                        type: object
+                        properties:
+                          auto_analyze:
+                            type: boolean
+                          auto_enrich:
+                            type: boolean
+                          enabled:
+                            type: boolean
+                          present:
+                            type: boolean
+                        required:
+                          - auto_analyze
+                          - auto_enrich
+                          - enabled
+                          - present
+                    required:
+                      - business_keys
+                      - root_cause
+                  project_id:
+                    type: string
+                  settings:
+                    type: object
+                    properties:
+                      business_keys:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                          - enabled
+                      revision:
+                        type: integer
+                        format: int64
+                      root_cause:
+                        type: object
+                        properties:
+                          auto_analyze:
+                            type: boolean
+                          auto_enrich:
+                            type: boolean
+                          enabled:
+                            type: boolean
+                          present:
+                            type: boolean
+                        required:
+                          - auto_analyze
+                          - auto_enrich
+                          - enabled
+                          - present
+                      updated_at:
+                        type: string
+                        format: date-time
+                      updated_by:
+                        type: string
+                    required:
+                      - business_keys
+                      - revision
+                      - root_cause
+                      - updated_at
+                required:
+                  - effective
+                  - forced_by_env
+                  - project_id
+                  - settings
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetProjectAnalysisSettings
+    put:
+      summary: Update Project Analysis Settings
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleUpdateProjectAnalysisSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                business_keys:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                expected_revision:
+                  type: integer
+                  format: int64
+                  nullable: true
+                root_cause:
+                  type: object
+                  properties:
+                    auto_analyze:
+                      type: boolean
+                    auto_enrich:
+                      type: boolean
+                    enabled:
+                      type: boolean
+                    present:
+                      type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  effective:
+                    type: object
+                    properties:
+                      business_keys:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                          - enabled
+                      root_cause:
+                        type: object
+                        properties:
+                          auto_analyze:
+                            type: boolean
+                          auto_enrich:
+                            type: boolean
+                          enabled:
+                            type: boolean
+                          present:
+                            type: boolean
+                        required:
+                          - auto_analyze
+                          - auto_enrich
+                          - enabled
+                          - present
+                    required:
+                      - business_keys
+                      - root_cause
+                  forced_by_env:
+                    type: object
+                    properties:
+                      business_keys:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                          - enabled
+                      root_cause:
+                        type: object
+                        properties:
+                          auto_analyze:
+                            type: boolean
+                          auto_enrich:
+                            type: boolean
+                          enabled:
+                            type: boolean
+                          present:
+                            type: boolean
+                        required:
+                          - auto_analyze
+                          - auto_enrich
+                          - enabled
+                          - present
+                    required:
+                      - business_keys
+                      - root_cause
+                  project_id:
+                    type: string
+                  settings:
+                    type: object
+                    properties:
+                      business_keys:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                          - enabled
+                      revision:
+                        type: integer
+                        format: int64
+                      root_cause:
+                        type: object
+                        properties:
+                          auto_analyze:
+                            type: boolean
+                          auto_enrich:
+                            type: boolean
+                          enabled:
+                            type: boolean
+                          present:
+                            type: boolean
+                        required:
+                          - auto_analyze
+                          - auto_enrich
+                          - enabled
+                          - present
+                      updated_at:
+                        type: string
+                        format: date-time
+                      updated_by:
+                        type: string
+                    required:
+                      - business_keys
+                      - revision
+                      - root_cause
+                      - updated_at
+                required:
+                  - effective
+                  - forced_by_env
+                  - project_id
+                  - settings
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleUpdateProjectAnalysisSettings
   /api/v1/projects/{id}/entitlements/usage:
     get:
       summary: Get Project Entitlements Usage
@@ -73125,6 +73781,8 @@ paths:
                     type: string
                   effective_trace_template:
                     type: string
+                  effective_window_template:
+                    type: string
                   kind:
                     type: string
                   revision:
@@ -73136,6 +73794,8 @@ paths:
                       trace_template:
                         type: string
                       ui_url:
+                        type: string
+                      window_template:
                         type: string
                 required:
                   - connection_id
@@ -73224,6 +73884,8 @@ paths:
                   type: string
                 ui_url:
                   type: string
+                window_template:
+                  type: string
       responses:
         "200":
           description: OK
@@ -73236,6 +73898,8 @@ paths:
                     type: string
                   effective_trace_template:
                     type: string
+                  effective_window_template:
+                    type: string
                   kind:
                     type: string
                   revision:
@@ -73247,6 +73911,8 @@ paths:
                       trace_template:
                         type: string
                       ui_url:
+                        type: string
+                      window_template:
                         type: string
                 required:
                   - connection_id
@@ -79042,6 +79708,46 @@ paths:
                   settings:
                     type: object
                     properties:
+                      analysis:
+                        type: object
+                        properties:
+                          business_keys:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                            required:
+                              - enabled
+                          revision:
+                            type: integer
+                            format: int64
+                          root_cause:
+                            type: object
+                            properties:
+                              auto_analyze:
+                                type: boolean
+                              auto_enrich:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                              present:
+                                type: boolean
+                            required:
+                              - auto_analyze
+                              - auto_enrich
+                              - enabled
+                              - present
+                          updated_at:
+                            type: string
+                            format: date-time
+                          updated_by:
+                            type: string
+                        required:
+                          - business_keys
+                          - revision
+                          - root_cause
+                          - updated_at
+                        nullable: true
                       authoring:
                         type: object
                         properties:
@@ -377890,6 +378596,118 @@ paths:
                       - mem_process_mb
                       - net_recv_kbps
                       - net_sent_kbps
+                  root_cause_summary:
+                    type: object
+                    properties:
+                      analysis_enabled:
+                        type: boolean
+                      analysis_id:
+                        type: string
+                      anomaly_count:
+                        type: integer
+                        format: int64
+                      archive_changed:
+                        type: boolean
+                      auto_analyze:
+                        type: boolean
+                      completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      hypothesis_count:
+                        type: integer
+                        format: int64
+                      latest:
+                        type: object
+                        properties:
+                          analysis_id:
+                            type: string
+                          created_at:
+                            type: string
+                            format: date-time
+                          origin:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          state:
+                            type: string
+                        required:
+                          - analysis_id
+                          - created_at
+                          - revision
+                          - state
+                        nullable: true
+                      origin:
+                        type: string
+                      outcome:
+                        type: string
+                      presented:
+                        type: boolean
+                      revision:
+                        type: integer
+                        format: int64
+                      state:
+                        type: string
+                      top_hypothesis:
+                        type: object
+                        properties:
+                          chain:
+                            type: array
+                            items:
+                              type: string
+                          competing:
+                            type: array
+                            items:
+                              type: string
+                          confidence:
+                            type: string
+                          contradicting:
+                            type: array
+                            items:
+                              type: string
+                          detail:
+                            type: string
+                          evidence:
+                            type: array
+                            items:
+                              type: string
+                          explains:
+                            type: array
+                            items:
+                              type: string
+                          falsification:
+                            type: string
+                          id:
+                            type: string
+                          limitations:
+                            type: array
+                            items:
+                              type: string
+                          rank:
+                            type: integer
+                            format: int64
+                          reasons:
+                            type: array
+                            items:
+                              type: string
+                          severity:
+                            type: string
+                          title:
+                            type: string
+                        required:
+                          - rank
+                          - title
+                        nullable: true
+                      validity:
+                        type: string
+                    required:
+                      - analysis_enabled
+                      - anomaly_count
+                      - hypothesis_count
+                      - presented
+                      - state
+                    nullable: true
                   root_cause_view:
                     type: object
                     properties:
@@ -379046,18 +379864,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
@@ -379094,6 +379900,8 @@ paths:
                     description: 'Go type: rca.Assessment'
                     additionalProperties: true
                     nullable: true
+                  auto_analyze:
+                    type: boolean
                   completed_at:
                     type: string
                     format: date-time
@@ -379109,6 +379917,8 @@ paths:
                     description: 'Go type: rca.InputDigests'
                     additionalProperties: true
                     nullable: true
+                  origin:
+                    type: string
                   presented:
                     type: boolean
                   revision:
@@ -379279,6 +380089,8 @@ paths:
                     description: 'Go type: rca.Assessment'
                     additionalProperties: true
                     nullable: true
+                  auto_analyze:
+                    type: boolean
                   completed_at:
                     type: string
                     format: date-time
@@ -379294,6 +380106,8 @@ paths:
                     description: 'Go type: rca.InputDigests'
                     additionalProperties: true
                     nullable: true
+                  origin:
+                    type: string
                   presented:
                     type: boolean
                   revision:
@@ -379642,6 +380456,88 @@ paths:
       tags:
         - Tests
       x-handler: handleCheckRCANarration
+  /api/v1/tests/{id}/archive/root-cause/links:
+    get:
+      summary: Get RCA Window Links
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRCAWindowLinks
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  links:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        connection_id:
+                          type: string
+                        provider:
+                          type: string
+                        url:
+                          type: string
+                      required:
+                        - connection_id
+                        - provider
+                        - url
+                  links_unavailable:
+                    type: boolean
+                required:
+                  - links
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+            format: date-time
+      tags:
+        - Tests
+      x-handler: handleGetRCAWindowLinks
   /api/v1/tests/{id}/archive/root-cause/v2:
     get:
       summary: Get RCA Assessment V2
@@ -379666,6 +380562,8 @@ paths:
                     description: 'Go type: rca.Assessment'
                     additionalProperties: true
                     nullable: true
+                  auto_analyze:
+                    type: boolean
                   completed_at:
                     type: string
                     format: date-time
@@ -379681,6 +380579,8 @@ paths:
                     description: 'Go type: rca.InputDigests'
                     additionalProperties: true
                     nullable: true
+                  origin:
+                    type: string
                   presented:
                     type: boolean
                   revision:

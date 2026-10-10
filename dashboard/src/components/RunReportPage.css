@@ -473,6 +473,9 @@
   overflow-wrap: anywhere;
 }
 .run-report-timeline-legend i { width: 14px; border-top: 2px solid; flex-shrink: 0; }
+.run-report-timeline-overlays { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 4px 24px 10px 52px; font-size: 12px; }
+.run-report-timeline-overlays li { display: inline-flex; align-items: center; gap: 6px; }
+.run-report-timeline-overlays i { width: 14px; border-top: 3px solid; flex-shrink: 0; }
 .run-report-lane-label > button { align-self: flex-start; margin-top: 8px; }
 
 .run-report-timeline-lane {

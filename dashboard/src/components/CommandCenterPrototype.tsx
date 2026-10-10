@@ -23,6 +23,10 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import CommandCenterOverview, { type CommandCenterOverviewProps } from './CommandCenterOverview'
 import { useTestApi } from '../hooks/api/useTestApi'
+import { useOptionalApi } from '../hooks/useApi'
+import type { RcaAnalysisResponse } from '../types/rca'
+import { normalizeRcaAssessment, rcaSummaryLine } from './rca/rcaModel'
+import { rcaSummaryWithResponse } from './rca/useRootCauseSummary'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
@@ -114,6 +118,8 @@ interface CommandCenterPrototypeProps {
   onAcknowledgeThresholdAlert?: (key: string) => void
   onOpenExecution?: (testId: string) => void
   onOpenArchive?: (testId: string) => void
+  // onOpenRootCause opens the run's report at its root cause.
+  onOpenRootCause?: (testId: string) => void
   onOpenResults?: () => void
   prototypeMode?: boolean
   active?: boolean
@@ -489,6 +495,7 @@ export default function CommandCenterPrototype({
   onAcknowledgeThresholdAlert,
   onOpenExecution,
   onOpenArchive,
+  onOpenRootCause,
   onOpenResults,
   prototypeMode = false,
   active = true,
@@ -1625,6 +1632,8 @@ export default function CommandCenterPrototype({
           onCheckArchive={() => { void checkCommandCenterArchiveAgain() }}
           onOpenArchive={testId && (onOpenArchive || onOpenExecution) ? () => (onOpenArchive || onOpenExecution)?.(testId) : undefined}
           onOpenResults={onOpenResults}
+          testId={testId}
+          onOpenRootCause={testId && onOpenRootCause ? () => onOpenRootCause(testId) : undefined}
         />
       )}
       <ThresholdAlertStrip alerts={scopedThresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
@@ -1892,6 +1901,29 @@ function NotesIcon() {
   )
 }
 
+// useHistoricalRootCause reads an ended run's newest root-cause analysis
+// once, for the historical banner: its verdict or its state. The banner
+// shows only once the archive is ready, when an automatic analysis would
+// already be queued, so a run without one says so plainly. Nothing for a
+// project that does not present root cause, or without the API (tests that
+// render the banner alone).
+function useHistoricalRootCause(testId?: string) {
+  const api = useOptionalApi()
+  const [response, setResponse] = useState<RcaAnalysisResponse | null>(null)
+  useEffect(() => {
+    setResponse(null)
+    if (!api || !testId) return
+    const controller = new AbortController()
+    api.getRootCauseAssessment(testId, { signal: controller.signal })
+      .then(next => { if (!controller.signal.aborted) setResponse(next.assessment ? { ...next, assessment: normalizeRcaAssessment(next.assessment) } : next) })
+      .catch(() => { if (!controller.signal.aborted) setResponse(null) })
+    return () => controller.abort()
+  }, [api, testId])
+  if (!response?.presented) return null
+  const base = { state: response.state, presented: true, analysis_enabled: response.analysis_enabled !== false, auto_analyze: response.auto_analyze, hypothesis_count: 0, anomaly_count: 0 } as const
+  return rcaSummaryLine(response.state === 'completed' ? rcaSummaryWithResponse({ ...base, state: 'running', latest: undefined }, response) : base)
+}
+
 function CommandCenterHistoricalBanner({
   status,
   archiveReady,
@@ -1901,6 +1933,8 @@ function CommandCenterHistoricalBanner({
   onCheckArchive,
   onOpenArchive,
   onOpenResults,
+  testId,
+  onOpenRootCause,
 }: {
   status: TestStatus
   archiveReady: boolean
@@ -1910,7 +1944,10 @@ function CommandCenterHistoricalBanner({
   onCheckArchive?: () => void
   onOpenArchive?: () => void
   onOpenResults?: () => void
+  testId?: string
+  onOpenRootCause?: () => void
 }) {
+  const rootCause = useHistoricalRootCause(archiveReady ? testId : undefined)
   return (
     <section className="command-history-banner" aria-label="Historical run snapshot">
       <div>
@@ -1924,8 +1961,14 @@ function CommandCenterHistoricalBanner({
               : ' Historical results can be opened from the Results folder when no Command Center snapshot is available.'}
         </p>
         {archiveCheckError && <p className="command-history-retry-error" role="alert">{archiveCheckError}</p>}
+        {rootCause && <p className="command-history-root-cause" data-tone={rootCause.tone}><strong>Root cause:</strong> {rootCause.text}</p>}
       </div>
       <div className="command-history-actions">
+        {rootCause && rootCause.action !== 'none' && onOpenRootCause && (
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenRootCause}>
+            Open root cause
+          </button>
+        )}
         {archiveReady && onOpenArchive && (
           <button type="button" className="btn btn-sm btn-primary command-open-archive-action" onClick={onOpenArchive}>
             Open Results Archive

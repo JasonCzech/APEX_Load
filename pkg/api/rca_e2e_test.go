@@ -316,3 +316,61 @@ func TestRCAEndToEndStagedRun(t *testing.T) {
 		}
 	}
 }
+
+// TestRCAEndToEndAutomaticAnalysis: in a project that analyzes every
+// archived run, a real run's archive attach queues an automatic analysis
+// with no request, the worker completes it, the report's summary presents
+// it, and a later test note (an adjunct refresh that attaches the archive
+// again) queues nothing new.
+func TestRCAEndToEndAutomaticAnalysis(t *testing.T) {
+	h := newRCAE2E(t)
+	t.Setenv(envRCAAutoAnalyzeProjects, storage.DefaultProjectID)
+	run, _ := h.run(CreateTestRequest{Name: "RCA automatic analysis", VUsers: 2, Duration: "30s"}, nil)
+	project := storage.DefaultProjectID
+	var automatic *storage.RCAAnalysis
+	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline) && automatic == nil; time.Sleep(100 * time.Millisecond) {
+		analyses, err := h.store.LatestRCAAnalyses(project, []string{run.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		automatic = analyses[run.ID].Latest
+	}
+	if automatic == nil || automatic.Origin != storage.RCAOriginAutomatic || automatic.State != storage.RCAStateQueued {
+		t.Fatalf("automatic analysis after the archive attached: %+v", automatic)
+	}
+	if ran, err := h.server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+		t.Fatalf("worker ran=%t err=%v", ran, err)
+	}
+	var report RunArchiveReport
+	h.call(http.MethodGet, "/api/v1/tests/"+run.ID+"/archive/report?include_release_trend=false", nil, http.StatusOK, &report)
+	summary := report.RootCauseSummary
+	if summary == nil || summary.State != storage.RCAStateCompleted || summary.AnalysisID != automatic.ID || summary.Origin != storage.RCAOriginAutomatic || summary.Outcome == "" || summary.ArchiveChanged {
+		t.Fatalf("report summary %+v", summary)
+	}
+	t.Logf("automatic analysis %s: %s, validity %s, %d anomalies", automatic.ID, summary.Outcome, summary.Validity, summary.AnomalyCount)
+
+	// A note rewrites the archive's adjuncts and attaches it again; the
+	// evidence is unchanged, so no analysis is queued.
+	h.call(http.MethodPost, "/api/v1/tests/"+run.ID+"/notes", map[string]any{"body": "Checked the latency step."}, http.StatusCreated, nil)
+	refreshes := h.server.runner.archiveRefreshOutbox()
+	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+		if refreshes == nil {
+			break
+		}
+		if job, err := refreshes.GetArchiveRefreshJob(run.ID); err != nil || job == nil {
+			break
+		}
+	}
+	time.Sleep(2 * time.Second)
+	analyses, err := h.store.LatestRCAAnalyses(project, []string{run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest := analyses[run.ID].Latest; latest == nil || latest.ID != automatic.ID {
+		t.Fatalf("a note queued another analysis: %+v", latest)
+	}
+	h.call(http.MethodGet, "/api/v1/tests/"+run.ID+"/archive/report?include_release_trend=false", nil, http.StatusOK, &report)
+	if report.RootCauseSummary == nil || report.RootCauseSummary.ArchiveChanged {
+		t.Fatalf("a note marked the analysis as judging a changed archive: %+v", report.RootCauseSummary)
+	}
+}

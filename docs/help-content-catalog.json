@@ -105,6 +105,16 @@
     ]
   },
   {
+    "id": "root-cause",
+    "area": "user-guide",
+    "title": "Root-cause analysis",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Root-Cause Analysis"
+    ]
+  },
+  {
     "id": "browser-document-evidence",
     "area": "user-guide",
     "title": "Browser document evidence",

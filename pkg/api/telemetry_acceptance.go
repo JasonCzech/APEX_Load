@@ -684,6 +684,8 @@ func (tr *TestRunner) persistTelemetryLoss(test *ManagedTest, manifest *RunArchi
 func (s *Server) runArchiveAttached(testID string) {
 	s.autoQueueBrowserIntelligence(testID)
 	s.notifyRunTelemetryAcceptance(testID)
+	s.autoQueueRCAAnalysis(testID)
+	s.notifyRunValidity(testID)
 }
 
 // notifyRunTelemetryAcceptance reads a run's archive manifest and announces

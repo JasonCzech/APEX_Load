@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -47,6 +48,9 @@ var kibanaFieldName = regexp.MustCompile(`^[A-Za-z0-9_@][A-Za-z0-9_.@-]{0,127}$`
 type ConnectionLinkSettings struct {
 	UIURL         string `json:"ui_url,omitempty"`
 	TraceTemplate string `json:"trace_template,omitempty"`
+	// WindowTemplate opens a time window of a run in the product, without a
+	// trace or an entity: {from_utc} and {to_utc} only.
+	WindowTemplate string `json:"window_template,omitempty"`
 }
 
 // connectionLinkTarget is a connection's hosts and default trace template,
@@ -57,6 +61,9 @@ type connectionLinkTarget struct {
 	// host the project admin declares.
 	acceptsUIURL bool
 	defaultTrace func(ConnectionLinkSettings) string
+	// defaultWindow is the connection's window template when none is saved,
+	// or nil when the product has no default window view.
+	defaultWindow func(ConnectionLinkSettings) string
 }
 
 func connectionLinksDefinitionID(kind, connectionID string) string {
@@ -115,6 +122,14 @@ func (s *Server) resolveConnectionLinkTarget(project, kind, connectionID string)
 				return ""
 			}
 			return ui + "/app/discover#/?_g=(time:(from:'{from_utc}',to:'{to_utc}'))&_a=(query:(language:kuery,query:'" + query + "'))"
+		}, defaultWindow: func(settings ConnectionLinkSettings) string {
+			// The trace default's Discover view over the same time range,
+			// without the trace query.
+			ui := strings.TrimRight(settings.UIURL, "/")
+			if deeplink.HostOf(ui) == "" {
+				return ""
+			}
+			return ui + "/app/discover#/?_g=(time:(from:'{from_utc}',to:'{to_utc}'))"
 		}}, nil
 	}
 	return nil, errConnectionNotFound
@@ -142,8 +157,20 @@ func (t *connectionLinkTarget) traceTemplate(settings ConnectionLinkSettings) st
 	return t.defaultTrace(settings)
 }
 
-// validateConnectionLinkSettings checks the UI URL and the template in
-// effect, which is the connection's default when none is saved.
+// windowTemplate is the saved window template, or the connection's default
+// (none for products without a default window view).
+func (t *connectionLinkTarget) windowTemplate(settings ConnectionLinkSettings) string {
+	if strings.TrimSpace(settings.WindowTemplate) != "" {
+		return settings.WindowTemplate
+	}
+	if t.defaultWindow == nil {
+		return ""
+	}
+	return t.defaultWindow(settings)
+}
+
+// validateConnectionLinkSettings checks the UI URL and the templates in
+// effect, which are the connection's defaults when none is saved.
 func validateConnectionLinkSettings(target *connectionLinkTarget, settings ConnectionLinkSettings) error {
 	if raw := strings.TrimSpace(settings.UIURL); raw != "" {
 		if !target.acceptsUIURL {
@@ -156,6 +183,18 @@ func validateConnectionLinkSettings(target *connectionLinkTarget, settings Conne
 		}
 	}
 	if template := target.traceTemplate(settings); template != "" {
+		if err := deeplink.Validate(template, target.allowedHosts(settings)); err != nil {
+			return err
+		}
+	}
+	if template := target.windowTemplate(settings); template != "" {
+		// A window link opens a time range; a run's windows name no trace
+		// and no entity, so a template that needs one would never expand.
+		for _, name := range []string{deeplink.TraceID, deeplink.EntityID} {
+			if strings.Contains(template, "{"+name+"}") {
+				return fmt.Errorf("window_template cannot use {%s}", name)
+			}
+		}
 		if err := deeplink.Validate(template, target.allowedHosts(settings)); err != nil {
 			return err
 		}
@@ -198,6 +237,8 @@ type ConnectionLinksResponse struct {
 	Revision      int64                  `json:"revision"`
 	Settings      ConnectionLinkSettings `json:"settings"`
 	TraceTemplate string                 `json:"effective_trace_template,omitempty"`
+	// WindowTemplate is the window template in effect, if any.
+	WindowTemplate string `json:"effective_window_template,omitempty"`
 }
 
 // connectionLinksRequest is a PUT body; Revision is the one being replaced.
@@ -228,7 +269,7 @@ func (s *Server) handleConnectionLinks(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSONBody(w, r, &request) {
 			return
 		}
-		next := ConnectionLinkSettings{UIURL: strings.TrimSpace(request.UIURL), TraceTemplate: strings.TrimSpace(request.TraceTemplate)}
+		next := ConnectionLinkSettings{UIURL: strings.TrimSpace(request.UIURL), TraceTemplate: strings.TrimSpace(request.TraceTemplate), WindowTemplate: strings.TrimSpace(request.WindowTemplate)}
 		if err := validateConnectionLinkSettings(target, next); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -246,7 +287,7 @@ func (s *Server) handleConnectionLinks(w http.ResponseWriter, r *http.Request) {
 		s.recordAuditEvent(r, "connection_links.save", "success", "connection_links", saved.ID, project, map[string]any{"revision": saved.Revision, "kind": kind})
 		settings, revision = next, saved.Revision
 	}
-	writeJSON(w, http.StatusOK, ConnectionLinksResponse{Kind: kind, ConnectionID: connectionID, Revision: revision, Settings: settings, TraceTemplate: target.traceTemplate(settings)})
+	writeJSON(w, http.StatusOK, ConnectionLinksResponse{Kind: kind, ConnectionID: connectionID, Revision: revision, Settings: settings, TraceTemplate: target.traceTemplate(settings), WindowTemplate: target.windowTemplate(settings)})
 }
 
 // ExemplarLink opens one exemplar's trace in a provider.
@@ -281,11 +322,18 @@ type traceLinkTarget struct {
 	template               *deeplink.Template
 }
 
-// runTraceLinkTargets are the run's trace-capable connections: its legacy
+// runLinkConnection is one of a run's trace-capable connections with its
+// link settings.
+type runLinkConnection struct {
+	provider, connectionID string
+	target                 *connectionLinkTarget
+	settings               ConnectionLinkSettings
+}
+
+// runLinkConnections are the run's trace-capable connections: its legacy
 // ELK and Dynatrace captures and its trace-lookup monitor sources. A
-// connection that is gone, or whose saved template no longer fits its
-// hosts, has no links.
-func (s *Server) runTraceLinkTargets(test *ManagedTest) ([]traceLinkTarget, error) {
+// connection that is gone has none.
+func (s *Server) runLinkConnections(test *ManagedTest) ([]runLinkConnection, error) {
 	type ref struct{ provider, id string }
 	refs := map[ref]bool{}
 	if test.ELKCapture != nil && test.ELKCapture.ConnectionID != "" {
@@ -317,7 +365,7 @@ func (s *Server) runTraceLinkTargets(test *ManagedTest) ([]traceLinkTarget, erro
 		}
 		return ordered[i].id < ordered[j].id
 	})
-	var out []traceLinkTarget
+	var out []runLinkConnection
 	for _, r := range ordered {
 		kind := traceLinkConnectionKinds[r.provider]
 		target, err := s.resolveConnectionLinkTarget(test.ProjectID, kind, r.id)
@@ -331,15 +379,87 @@ func (s *Server) runTraceLinkTargets(test *ManagedTest) ([]traceLinkTarget, erro
 		if err != nil {
 			return nil, err
 		}
-		template := target.traceTemplate(settings)
-		if template == "" {
-			continue
-		}
-		if compiled, err := deeplink.Compile(template, target.allowedHosts(settings)); err == nil {
-			out = append(out, traceLinkTarget{provider: r.provider, connectionID: r.id, template: compiled})
-		}
+		out = append(out, runLinkConnection{provider: r.provider, connectionID: r.id, target: target, settings: settings})
 	}
 	return out, nil
+}
+
+// compileRunLinkTargets compiles one template of each of a run's
+// connections; a connection without that template, or whose saved template
+// no longer fits its hosts, has no links.
+func compileRunLinkTargets(connections []runLinkConnection, template func(runLinkConnection) string) []traceLinkTarget {
+	var out []traceLinkTarget
+	for _, connection := range connections {
+		raw := template(connection)
+		if raw == "" {
+			continue
+		}
+		if compiled, err := deeplink.Compile(raw, connection.target.allowedHosts(connection.settings)); err == nil {
+			out = append(out, traceLinkTarget{provider: connection.provider, connectionID: connection.connectionID, template: compiled})
+		}
+	}
+	return out
+}
+
+// runTraceLinkTargets are the run's trace link templates, compiled.
+func (s *Server) runTraceLinkTargets(test *ManagedTest) ([]traceLinkTarget, error) {
+	connections, err := s.runLinkConnections(test)
+	if err != nil {
+		return nil, err
+	}
+	return compileRunLinkTargets(connections, func(c runLinkConnection) string { return c.target.traceTemplate(c.settings) }), nil
+}
+
+// runWindowLinkTargets are the run's window link templates, compiled.
+func (s *Server) runWindowLinkTargets(test *ManagedTest) ([]traceLinkTarget, error) {
+	connections, err := s.runLinkConnections(test)
+	if err != nil {
+		return nil, err
+	}
+	return compileRunLinkTargets(connections, func(c runLinkConnection) string { return c.target.windowTemplate(c.settings) }), nil
+}
+
+// maxRCAWindowLinkSpan bounds the window a root-cause link opens.
+const maxRCAWindowLinkSpan = 7 * 24 * time.Hour
+
+// RCAWindowLinks are links that open one time window of a run in its trace
+// providers. LinksUnavailable means the link settings could not be read.
+type RCAWindowLinks struct {
+	Links            []ExemplarLink `json:"links"`
+	LinksUnavailable bool           `json:"links_unavailable,omitempty"`
+}
+
+// handleGetRCAWindowLinks returns links that open a time window of the run
+// (from and to, RFC 3339) in each of its trace providers that has a window
+// template.
+func (s *Server) handleGetRCAWindowLinks(w http.ResponseWriter, r *http.Request) {
+	test, ok := s.archiveDomainService().GetTestSummary(r.PathValue("id"))
+	if !ok || test == nil {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	query := r.URL.Query()
+	from, fromErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(query.Get("from")))
+	to, toErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(query.Get("to")))
+	if fromErr != nil || toErr != nil || !to.After(from) || to.Sub(from) > maxRCAWindowLinkSpan {
+		writeError(w, http.StatusBadRequest, "from and to must be RFC 3339 times, from before to, at most 7 days apart")
+		return
+	}
+	out := RCAWindowLinks{Links: []ExemplarLink{}}
+	targets, err := s.runWindowLinkTargets(test)
+	if err != nil {
+		slog.Warn("root-cause window links unavailable", "test_id", test.ID, "error", err)
+		out.LinksUnavailable = true
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	values := deeplink.Values{From: from, To: to}
+	for _, t := range targets {
+		if link, err := t.template.Expand(values); err == nil {
+			out.Links = append(out.Links, ExemplarLink{Provider: t.provider, ConnectionID: t.connectionID, URL: link})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleGetRunArchiveExemplars pages through a run's post-run exemplars,

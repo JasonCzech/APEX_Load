@@ -734,8 +734,8 @@ points and the mapping decisions frozen into the evidence revision.
   all kept and marked `ambiguous` (`graph_ambiguous_mappings`). An operator
   records a decision as an `rca_mapping` definition at
   `/api/v1/analysis/rca-mappings?project_id=…` (GET, POST; GET, PUT and
-  DELETE by ID; editor to write, viewer to read; gated by
-  `APEXLOAD_RCA_V2_PROJECTS`) with `{dependency, provider, entity_id,
+  DELETE by ID; editor to write, viewer to read; available where the project
+  computes root-cause analyses) with `{dependency, provider, entity_id,
   entity_name, decision}`, where `dependency` is the dependency label as the
   graph shows it and `decision` is `approved` or `rejected`. Approved
   decisions become explicit edges carrying the definition's ID and
@@ -853,12 +853,26 @@ starting values.
 
 ## Root-cause analysis service
 
-v2 root-cause analyses run as revisioned jobs over a run's archive.
-`APEXLOAD_RCA_V2_PROJECTS` lets a project compute them; saved analyses stay
-readable when the project leaves that list. `APEXLOAD_RCA_V2_PRESENT_PROJECTS`
-marks the projects whose Summary, Diagnostics and reports present v2 (each
-response carries `presented`); v1 routes, explain, AI root-cause and the v1
-MCP tools keep returning v1.
+v2 root-cause analyses run as revisioned jobs over a run's archive. Each
+project turns them on in **Settings › Project › Analysis** (`GET`/`PUT
+/api/v1/projects/{id}/analysis-settings`; project administrators change it,
+viewers read it, each save is a new revision and an audit event
+`project.analysis_settings.update`):
+
+| Setting | Effect | Deployment list that also turns it on |
+| --- | --- | --- |
+| Compute root-cause analyses (`root_cause.enabled`) | Editors can request analyses; saved ones stay readable when it is off | `APEXLOAD_RCA_V2_PROJECTS` |
+| Show root cause (`root_cause.present`) | Summary, Results, the dashboard, Command Center, Diagnostics and reports present v2 (each response carries `presented`) | `APEXLOAD_RCA_V2_PRESENT_PROJECTS` |
+| Analyze every archived run (`root_cause.auto_analyze`) | Queues an analysis when a run's archive is finalized; needs `enabled` | `APEXLOAD_RCA_AUTO_ANALYZE_PROJECTS` |
+| Capture provider evidence at archive time (`root_cause.auto_enrich`) | Freezes an enriched evidence revision at finalize | `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` |
+| Business-key lookups (`business_keys.enabled`) | See [Business keys](#business-keys) | `APEXLOAD_BUSINESS_KEY_PROJECTS` |
+
+A flag is on when the project sets it **or** the deployment's list names the
+project; the lists stay deployment-wide overrides, and the settings response
+says which flags they force (`forced_by_env`). Removing a project from a list
+leaves its own setting in force. The general project update never changes
+these settings. v1 routes, explain, AI root-cause and the v1 MCP tools keep
+returning v1.
 
 | Route | Access | Returns |
 | --- | --- | --- |
@@ -870,9 +884,13 @@ MCP tools keep returning v1.
 | `POST /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check` | Viewer | Whether a narrative `{narrative}` stays within the analysis's bundle (see Agents and critiques) |
 | `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques` | Viewer | The analysis's critiques, oldest first |
 | `POST /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques` | Editor | 201 with the stored critique; 422 with the check when the narrative fails it |
+| `GET /api/v1/tests/{id}/archive/root-cause/links?from=&to=` | Viewer | `{links: [{provider, connection_id, url}]}`: the window (RFC 3339, at most 7 days) opened in each of the run's trace providers that has a window template (see [Deep links](OBSERVABILITY_INTEGRATIONS.md#deep-links)) |
+| `GET /api/v1/projects/{id}/analysis-settings` | Viewer | The project's analysis settings, the flags its deployment lists force on, and the gates in effect |
+| `PUT /api/v1/projects/{id}/analysis-settings` | Project admin | Body `{expected_revision, root_cause, business_keys}`; 409 when the settings changed since that revision |
 
 - **Stored size.** An assessment larger than the 2 MiB stored limit is cut,
-  not failed. The least load-bearing parts go first: validity windows,
+  not failed. The least load-bearing parts go first: the coverage rows'
+  source lists, validity windows,
   spikes, capacity results, the graph's unused and weakest edges and uncited
   nodes, anomalies no hypothesis cites, and then the lowest-ranked
   hypotheses. A kept hypothesis's anomalies and nodes stay. The cut is
@@ -909,8 +927,8 @@ MCP tools keep returning v1.
   `imported_dataset_changed` and is not read. A POST captures a revision when
   the run has none, when the archive, the mapping decisions or the associated
   datasets changed since the latest, or when `enrich` is true.
-  `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` captures an enriched revision at archive
-  finalize. Provider evidence pulls (topology and diagnostics) arrive with the
+  A project that captures provider evidence at archive time (`auto_enrich`)
+  gets an enriched revision at archive finalize. Provider evidence pulls (topology and diagnostics) arrive with the
   per-run graph and signatures (WP3.7–WP3.8); until then enrichment records
   the same inventory.
 - **Jobs** run on the execution leader, at most two at a time per controller,
@@ -923,6 +941,18 @@ MCP tools keep returning v1.
   one outcome. A job that panics fails instead of being retried.
   Cancellation stops the running job, on another controller once its next
   renewal finds the analysis cancelled, and discards its result.
+- **Automatic analysis.** For projects that analyze every archived run, the
+  controller queues an analysis (`origin: automatic`) once the run's archive
+  is attached: after the catalog commit, so every sidecar and the final
+  manifest are durable. An archive still being refreshed is skipped; the
+  refresh attaches it again. A later attach of the same evidence (a note, a
+  recovered publication) finds the analysis of identical inputs and queues
+  nothing; one that changed the evidence queues a new analysis. Requested
+  analyses (`origin: requested`) are claimed before automatic ones, and at
+  most one automatic analysis runs at a time, so a request always finds a
+  worker slot. An identical request answers with the automatic analysis; one
+  still queued becomes a requested analysis, so it is claimed ahead of the
+  other automatic ones.
 - **Retention.** Analyses and evidence revisions are deleted with their run,
   their project, or the run's archive.
 - **Baselines.** `baseline_test_id` names an archived run in the same
@@ -930,22 +960,54 @@ MCP tools keep returning v1.
   coverage. Unless it is `unqualified`, onset detection compares each load
   level with the baseline's same level.
 - **Investigation.** Where a project presents v2, the run report's
-  Diagnostics area leads with a Root cause panel, linked from Summary:
-  outcome, acceptance, validity, the ranked hypotheses with their confidence
-  reasons, evidence chain, contradicting evidence, competing hypotheses and
-  the check that would disprove each, then anomalies, coverage and
-  limitations. Editors can re-analyze; a comparison baseline open in the
+  Diagnostics area leads with a Root cause panel: the analysis (automatic or
+  requested, its revision), the run's validity, the series judged, a
+  sentence saying how to read the outcome, and the ranked hypotheses with
+  their confidence reasons, evidence chain, contradicting evidence,
+  competing hypotheses and the check that would disprove each. With no
+  hypothesis open, the panel draws the run's largest changes (the anomalies
+  furthest from their own spread, whether or not a hypothesis explains them)
+  on its timeline with its suspect and invalid spans and load steps, so "no
+  supported hypothesis" still shows what moved; each change can be focused.
+  Coverage names each monitor source that left a gap, with links to the
+  run's archived monitor evidence and, for project administrators, the
+  project's monitor sources. While a newer analysis is queued or running the
+  panel says so. Editors can re-analyze; a comparison baseline open in the
   report is sent and named. Investigating a hypothesis opens one timeline
   (anomaly windows, onset uncertainty bands, the archived load-phase
   events, suspect and invalid spans, throughput and p95 drawn at interval
   starts) with the symptom's transaction population, exemplars with trace
-  links, the cause evidence and the matching error patterns. A run whose
-  archived phase events mark no load level (one that held a single level
-  archives only its stop) shows load steps inferred from the detection
-  levels, marked as inferred, beside any archived pause, resume or stop. When
-  the run's archive changed after the analysis read it, as late monitoring
-  evidence does, the panel and the report say so. The report URL carries `analysis`, `rev`,
-  `hypothesis` and `window`, so a shared link reopens the same view.
+  links, links that open the window in the run's trace providers, the cause
+  evidence and the matching error patterns (each links to its row). A run
+  whose archived phase events mark no load level (one that held a single
+  level archives only its stop) shows load steps inferred from the
+  detection levels, marked as inferred, beside any archived pause, resume or
+  stop. When the run's archive changed after the analysis read it, as late
+  monitoring evidence does, the panel and the report say so. The report URL
+  carries `analysis`, `rev`, `hypothesis` and `window` (and `focus` for a
+  part of the panel), so a shared link, which the panel copies, reopens the
+  same view.
+- **Hand-offs.** An editor can record a hypothesis as a finding of the
+  current report audience (generated evidence an analyst adopts; the
+  generated section is never edited), add it to the run timeline's
+  annotations at its earliest symptom onset, or open a test note drafted
+  from it with its link.
+- **Where it shows.** Every archive report response, single and batch,
+  carries `root_cause_summary`: whether the project presents root cause, the
+  state of the run's newest analysis and the verdict of its newest completed
+  one. From it the Summary's Run outcome shows a Root cause cell (validity
+  beside the leading hypothesis, "no cause supported" or the analysis
+  state, kept current while an analysis runs, with an action that opens it),
+  the Results list and the dashboard's recent runs show validity and the
+  leading hypothesis, the dashboard flags invalid and suspect runs and found
+  causes for attention and counts invalid and suspect runs in Release
+  quality, and the Command Center's banner for an ended run states the root
+  cause. The Performance timeline marks the analysis's anomalies, suspect
+  and invalid spans and load steps on every lane, and a mark opens its
+  hypothesis. Error patterns name the hypotheses they overlap. Baseline
+  Comparison and the compare bar analyze the root cause against the chosen
+  baseline. Summary validity reasons also appear among the evidence
+  limitations to review before acceptance.
 - **Reports.** The report section `rca` renders the generated root cause in
   the dashboard's report preview, HTML, PDF, Word, CSV and the analysis ZIP
   from one model (`root_cause_view` on the report JSON): the latest
@@ -953,6 +1015,20 @@ MCP tools keep returning v1.
   summary, with a note when v2 is presented but no analysis completed. It
   is separate from the Findings section, which holds analyst-curated or
   derived findings, and never carries run annotations.
+- **Notifications.** `rca_analysis_completed` announces a completed analysis
+  of a project that presents root cause, once per analysis: its outcome as
+  the status, the reports' one-line summary, the leading hypotheses and the
+  report route. `run_validity` announces a suspect or invalid run once per
+  run and verdict, from the archive-attached hook. Grafana annotations tag
+  `rca:<outcome>` and `validity:<verdict>`; see
+  [Notification events](OBSERVABILITY_INTEGRATIONS.md#load-phase-events-and-grafana-annotations).
+- **CI.** A CI run's response carries `root_cause` (state, outcome, leading
+  hypothesis, confidence, report URL) for presenting projects; it never
+  changes the outcome. The GitHub Check and the job summary add a Root cause
+  row, and the action outputs `validity` and `root-cause`. An automatic
+  analysis usually completes after the Check does; `apexctl ci run
+  --wait-analysis` waits for it (see
+  [Root-cause summary](CICD_INTEGRATION.md#root-cause-summary)).
 - **Evidence excerpts.** Each analysis stores, beside its assessment, one
   excerpt per anomaly evidence reference: the judged series' points from
   three intervals before the onset's earliest time to one interval after the
@@ -979,20 +1055,25 @@ MCP tools keep returning v1.
 - **Clients.** `apexctl rca analyze --id RUN [--enrich] [--baseline-id RUN]`,
   `apexctl rca status --id RUN --analysis-id ID`, `apexctl rca show --id RUN`
   and `apexctl rca bundle --id RUN --analysis-id ID`, and `apexctl rca eval`
-  for the evaluation corpus; MCP tools
+  for the evaluation corpus; `--wait DURATION` (at most 10m) on `analyze`,
+  `status` and `show` polls until the analysis ends (`show`: until an
+  automatic analysis completes); MCP tools
   `run_rca_analyze`, `run_rca_status`, `run_rca_assessment`,
   `run_rca_bundle`, `run_rca_check_narration`, `run_rca_critiques` and
   `run_rca_critique_add`.
 
 Schema release 40 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
-and `rca_analyses`; release 42 (`rca-critiques`) adds `rca_critiques`.
+and `rca_analyses`; release 42 (`rca-critiques`) adds `rca_critiques`;
+release 55 (`rca-analysis-origin`) adds `rca_analyses.origin`. The project
+analysis settings ride the project's settings JSON and need no release.
 
 ## Business keys
 
 A business key is a value a script extracts that also appears in the system
 under test's logs: an order ID, a billing account number (BAN). A business
 key lookup finds a run's requests and the matching log entries for values an
-operator types in. Projects opt in with `APEXLOAD_BUSINESS_KEY_PROJECTS`.
+operator types in. Projects opt in under Settings › Project › Analysis, or
+the deployment names them in `APEXLOAD_BUSINESS_KEY_PROJECTS`.
 
 - **Approved mappings.** A project admin approves a mapping from an
   extraction name to a log field of one of the project's Elasticsearch or

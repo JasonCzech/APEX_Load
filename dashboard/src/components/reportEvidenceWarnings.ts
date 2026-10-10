@@ -15,5 +15,12 @@ export function reportEvidenceWarnings(report: RunArchiveReport): string[] {
   if (report.overview?.transactions !== undefined && report.overview.transactions < 100) {
     warnings.push(`Only ${report.overview.transactions} archive records were captured. This small sample does not establish representative performance.`)
   }
+  // A run its load generators or telemetry could not carry is not
+  // acceptance evidence, whatever its numbers say.
+  const validity = report.validity
+  if (validity && (validity.verdict === 'suspect' || validity.verdict === 'invalid')) {
+    const reasons = (validity.reasons || []).slice(0, 3)
+    warnings.push(`Run validity is ${validity.verdict}${reasons.length ? `: ${reasons.join('; ')}` : ''}. Symptoms may come from the load generators rather than the system under test.`)
+  }
   return [...new Set(warnings)]
 }

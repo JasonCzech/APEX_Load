@@ -242,6 +242,7 @@
 
 .rca-timeline-markers [data-role='symptom'] .rca-marker { background: var(--danger); }
 .rca-timeline-markers [data-role='cause'] .rca-marker { background: var(--warning); }
+.rca-timeline-markers [data-role='anomaly'] .rca-marker { background: var(--accent); }
 
 .rca-summary-line {
   display: flex;
@@ -274,4 +275,41 @@
 .rca-critiques li p {
   margin: 4px 0 10px;
   color: var(--text-secondary);
+}
+
+.rca-explanation {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.rca-overview {
+  margin: 1rem 0;
+}
+
+.rca-hypothesis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.rca-coverage-sources {
+  margin: 0.25rem 0 0.25rem 1.25rem;
+}
+
+.run-outcome-root-cause dd + dd {
+  margin-top: 0.25rem;
+}
+
+.rca-pattern-explained {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.rca-revealed {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  transition: outline-color 0.3s ease;
 }

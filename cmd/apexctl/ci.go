@@ -129,6 +129,7 @@ type ciArgs struct {
 	requireSLA               bool
 	requireResults           bool
 	timeout                  time.Duration
+	waitAnalysis             time.Duration
 	abortOnCancel            bool
 	publishCheck             bool
 	jsonPath                 string
@@ -231,6 +232,7 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.BoolVar(&args.requireSLA, "require-sla", args.requireSLA, "require an evaluated SLA")
 	fs.BoolVar(&args.requireResults, "require-results", args.requireResults, "require transactions")
 	fs.Var(durationValue{value: &args.timeout}, "timeout", "CI run timeout")
+	fs.Var(durationValue{value: &args.waitAnalysis}, "wait-analysis", "after the run ends, wait up to this long for its root-cause analysis (0 does not wait; at most 10m)")
 	fs.BoolVar(&args.abortOnCancel, "abort-on-cancel", args.abortOnCancel, "abort a remote run after cancellation")
 	fs.BoolVar(&args.publishCheck, "publish-check", args.publishCheck, "publish a controller-owned GitHub Check")
 	fs.StringVar(&args.jsonPath, "json", args.jsonPath, "JSON evidence path")
@@ -267,6 +269,9 @@ func validateCIArgs(args ciArgs) error {
 	}
 	if args.rampUp > args.duration {
 		return fmt.Errorf("--ramp-up cannot exceed --duration")
+	}
+	if args.waitAnalysis < 0 || args.waitAnalysis > maxCIWaitAnalysis {
+		return fmt.Errorf("--wait-analysis must be between 0 and %s", maxCIWaitAnalysis)
 	}
 	if err := validateCISLAThresholds(args); err != nil {
 		return err
@@ -456,6 +461,10 @@ type CIResult struct {
 	// Validity is the controller's run validity verdict and the project's
 	// CI validity gate.
 	Validity *CIRunValidity `json:"validity,omitempty"`
+
+	// RootCause is the run's root-cause analysis in brief, for projects that
+	// present root cause; it never changes the outcome.
+	RootCause *CIRunRootCause `json:"root_cause,omitempty"`
 
 	// TelemetryVerdict is the controller's telemetry acceptance verdict,
 	// separate from the application outcome.
@@ -706,6 +715,9 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			classifyCIResult(&result)
 			if checkErr := enforceRequiredCICheck(args, created, &result); checkErr != nil {
 				return result, checkErr
+			}
+			if args.waitAnalysis > 0 {
+				result.RootCause = waitForCIRootCause(ctx, auth, client, created, args.waitAnalysis)
 			}
 			return result, nil
 		}
@@ -1622,6 +1634,47 @@ func deterministicCITestID(projectID, idempotencyKey string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-run:"+strings.TrimSpace(projectID)+":"+strings.TrimSpace(idempotencyKey))).String()
 }
 
+// maxCIWaitAnalysis bounds --wait-analysis: an analysis runs inside the
+// engine's two-minute budget once a worker claims it, so ten minutes covers
+// a queue several analyses deep.
+const maxCIWaitAnalysis = 10 * time.Minute
+
+// ciValidityVerdict is a run's validity verdict, or empty without one.
+func ciValidityVerdict(validity *CIRunValidity) string {
+	if validity == nil {
+		return ""
+	}
+	return validity.Verdict
+}
+
+// waitForCIRootCause polls a finished CI run until its root-cause analysis
+// settles or wait passes, and returns the newest root-cause block. The run's
+// outcome is already decided; a poll that fails or the overall deadline only
+// end the wait.
+func waitForCIRootCause(ctx context.Context, auth *ciAuthSession, client *ApiClient, response *CIRunResponse, wait time.Duration) *CIRunRootCause {
+	rootCause := response.RootCause.clone()
+	if !rootCause.pending() {
+		return rootCause
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	for rootCause.pending() {
+		select {
+		case <-waitCtx.Done():
+			return rootCause
+		case <-time.After(ciPollInterval):
+		}
+		latest, err := retryControllerCIRequest(waitCtx, auth, client, func() (*CIRunResponse, error) {
+			return client.GetCIRun(waitCtx, response.TestID)
+		})
+		if err != nil || latest == nil {
+			return rootCause
+		}
+		rootCause = latest.RootCause.clone()
+	}
+	return rootCause
+}
+
 func ciResultFromResponse(response *CIRunResponse) CIResult {
 	if response == nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeExecutionError, Status: "UNKNOWN"}
@@ -1635,7 +1688,7 @@ func ciResultFromResponse(response *CIRunResponse) CIResult {
 		SLAEvaluated: response.SLAEvaluated, SLABreached: response.SLABreached, SLADetails: append([]string(nil), response.SLADetails...),
 		Transactions: transactions, Errors: errorsCount, TPS: tps,
 		DurationMS: durationMS, ReportURL: response.ReportURL, CheckURL: response.CheckURL, Message: response.Error,
-		Validity: response.Validity.clone(), TelemetryVerdict: response.TelemetryVerdict.clone(),
+		Validity: response.Validity.clone(), TelemetryVerdict: response.TelemetryVerdict.clone(), RootCause: response.RootCause.clone(),
 	}
 }
 
@@ -1826,11 +1879,12 @@ func writeCIOutputs(path string, args ciArgs, result CIResult) error {
 		"transactions": strconv.FormatInt(result.Transactions, 10), "errors": strconv.FormatInt(result.Errors, 10),
 		"tps": strconv.FormatFloat(result.TPS, 'f', -1, 64), "duration-ms": strconv.FormatInt(result.DurationMS, 10),
 		"report-url": result.ReportURL, "check-url": result.CheckURL, "telemetry-verdict": telemetryVerdictOutcome(result.TelemetryVerdict),
+		"validity": ciValidityVerdict(result.Validity), "root-cause": result.RootCause.text(),
 		"json-path": absoluteOutputPath(args.jsonPath), "junit-path": absoluteOutputPath(args.junitPath),
 		"apexload-evidence-complete": "true",
 	}
 	var builder strings.Builder
-	for _, key := range []string{"outcome", "test-id", "status", "sla-evaluated", "sla-breached", "transactions", "errors", "tps", "duration-ms", "report-url", "check-url", "telemetry-verdict", "json-path", "junit-path", "apexload-evidence-complete"} {
+	for _, key := range []string{"outcome", "test-id", "status", "sla-evaluated", "sla-breached", "transactions", "errors", "tps", "duration-ms", "report-url", "check-url", "telemetry-verdict", "validity", "root-cause", "json-path", "junit-path", "apexload-evidence-complete"} {
 		appendGitHubOutput(&builder, key, values[key])
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
@@ -1854,6 +1908,9 @@ func writeCISummary(path string, result CIResult) error {
 	}
 	if telemetry := result.TelemetryVerdict; telemetry != nil {
 		text += fmt.Sprintf("| Telemetry verdict | %s |\n| Telemetry policy mode | %s |\n", markdownCell(telemetry.Outcome), markdownCell(telemetryVerdictModeLabel(telemetry)))
+	}
+	if rootCause := result.RootCause.text(); rootCause != "" {
+		text += fmt.Sprintf("| Root cause | %s |\n", markdownCell(rootCause))
 	}
 	if result.ReportURL != "" {
 		reportURL := strings.ReplaceAll(strings.ReplaceAll(result.ReportURL, "\r", ""), "\n", "")

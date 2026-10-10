@@ -4097,6 +4097,44 @@ export interface operations {
               "net_sent_kbps"?: number;
               "tcp_retransmits_per_sec"?: number;
             };
+            "root_cause_summary"?: ({
+              "analysis_enabled"?: boolean;
+              "analysis_id"?: string;
+              "anomaly_count"?: number;
+              "archive_changed"?: boolean;
+              "auto_analyze"?: boolean;
+              "completed_at"?: (string) | null;
+              "hypothesis_count"?: number;
+              "latest"?: ({
+                "analysis_id"?: string;
+                "created_at"?: string;
+                "origin"?: string;
+                "revision"?: number;
+                "state"?: string;
+              }) | null;
+              "origin"?: string;
+              "outcome"?: string;
+              "presented"?: boolean;
+              "revision"?: number;
+              "state"?: string;
+              "top_hypothesis"?: ({
+                "chain"?: Array<string>;
+                "competing"?: Array<string>;
+                "confidence"?: string;
+                "contradicting"?: Array<string>;
+                "detail"?: string;
+                "evidence"?: Array<string>;
+                "explains"?: Array<string>;
+                "falsification"?: string;
+                "id"?: string;
+                "limitations"?: Array<string>;
+                "rank"?: number;
+                "reasons"?: Array<string>;
+                "severity"?: string;
+                "title"?: string;
+              }) | null;
+              "validity"?: string;
+            }) | null;
             "root_cause_view"?: ({
               "acceptance"?: string;
               "analysis_id"?: string;
@@ -7531,6 +7569,15 @@ export interface operations {
             "outcome": string;
             "report_url": string;
             "results_present": boolean;
+            "root_cause"?: ({
+              "analysis_id"?: string;
+              "auto_analyze"?: boolean;
+              "confidence"?: string;
+              "outcome"?: string;
+              "report_url"?: string;
+              "state": string;
+              "top_hypothesis"?: string;
+            }) | null;
             "schema_version": number;
             "sla_breached": boolean;
             "sla_details"?: Array<string>;
@@ -24709,10 +24756,12 @@ export interface operations {
             "analysis_id"?: string;
             "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
+            "auto_analyze"?: boolean;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
             "error"?: string;
             "inputs"?: (Record<string, unknown>) | null;
+            "origin"?: string;
             "presented": boolean;
             "revision"?: number;
             "state": string;
@@ -27390,11 +27439,13 @@ export interface operations {
           "application/json": {
             "connection_id": string;
             "effective_trace_template"?: string;
+            "effective_window_template"?: string;
             "kind": string;
             "revision": number;
             "settings": {
               "trace_template"?: string;
               "ui_url"?: string;
+              "window_template"?: string;
             };
           };
         };
@@ -27453,6 +27504,7 @@ export interface operations {
           "revision"?: number;
           "trace_template"?: string;
           "ui_url"?: string;
+          "window_template"?: string;
         };
       };
     };
@@ -27462,11 +27514,13 @@ export interface operations {
           "application/json": {
             "connection_id": string;
             "effective_trace_template"?: string;
+            "effective_window_template"?: string;
             "kind": string;
             "revision": number;
             "settings": {
               "trace_template"?: string;
               "ui_url"?: string;
+              "window_template"?: string;
             };
           };
         };
@@ -30354,6 +30408,15 @@ export interface operations {
             "outcome": string;
             "report_url": string;
             "results_present": boolean;
+            "root_cause"?: ({
+              "analysis_id"?: string;
+              "auto_analyze"?: boolean;
+              "confidence"?: string;
+              "outcome"?: string;
+              "report_url"?: string;
+              "state": string;
+              "top_hypothesis"?: string;
+            }) | null;
             "schema_version": number;
             "sla_breached": boolean;
             "sla_details"?: Array<string>;
@@ -32839,6 +32902,20 @@ export interface operations {
           "domain_id"?: (string) | null;
           "name"?: string;
           "settings"?: {
+            "analysis"?: ({
+              "business_keys"?: {
+                "enabled"?: boolean;
+              };
+              "revision"?: number;
+              "root_cause"?: {
+                "auto_analyze"?: boolean;
+                "auto_enrich"?: boolean;
+                "enabled"?: boolean;
+                "present"?: boolean;
+              };
+              "updated_at"?: string;
+              "updated_by"?: string;
+            }) | null;
             "authoring"?: ({
               "require_scenario_save_if_match"?: boolean;
               "require_script_save_if_match"?: boolean;
@@ -33340,16 +33417,6 @@ export interface operations {
         };
       };
       "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -58223,6 +58290,15 @@ export interface operations {
             "outcome": string;
             "report_url": string;
             "results_present": boolean;
+            "root_cause"?: ({
+              "analysis_id"?: string;
+              "auto_analyze"?: boolean;
+              "confidence"?: string;
+              "outcome"?: string;
+              "report_url"?: string;
+              "state": string;
+              "top_hypothesis"?: string;
+            }) | null;
             "schema_version": number;
             "sla_breached": boolean;
             "sla_details"?: Array<string>;
@@ -63141,6 +63217,20 @@ export interface operations {
             "id": string;
             "name": string;
             "settings"?: {
+              "analysis"?: ({
+                "business_keys": {
+                  "enabled": boolean;
+                };
+                "revision": number;
+                "root_cause": {
+                  "auto_analyze": boolean;
+                  "auto_enrich": boolean;
+                  "enabled": boolean;
+                  "present": boolean;
+                };
+                "updated_at": string;
+                "updated_by"?: string;
+              }) | null;
               "authoring"?: ({
                 "require_scenario_save_if_match"?: boolean;
                 "require_script_save_if_match"?: boolean;
@@ -63219,6 +63309,82 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetProjectAnalysisSettings": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "effective": {
+              "business_keys": {
+                "enabled": boolean;
+              };
+              "root_cause": {
+                "auto_analyze": boolean;
+                "auto_enrich": boolean;
+                "enabled": boolean;
+                "present": boolean;
+              };
+            };
+            "forced_by_env": {
+              "business_keys": {
+                "enabled": boolean;
+              };
+              "root_cause": {
+                "auto_analyze": boolean;
+                "auto_enrich": boolean;
+                "enabled": boolean;
+                "present": boolean;
+              };
+            };
+            "project_id": string;
+            "settings": {
+              "business_keys": {
+                "enabled": boolean;
+              };
+              "revision": number;
+              "root_cause": {
+                "auto_analyze": boolean;
+                "auto_enrich": boolean;
+                "enabled": boolean;
+                "present": boolean;
+              };
+              "updated_at": string;
+              "updated_by"?: string;
+            };
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -63523,10 +63689,12 @@ export interface operations {
             "analysis_id"?: string;
             "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
+            "auto_analyze"?: boolean;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
             "error"?: string;
             "inputs"?: (Record<string, unknown>) | null;
+            "origin"?: string;
             "presented": boolean;
             "revision"?: number;
             "state": string;
@@ -63563,10 +63731,12 @@ export interface operations {
             "analysis_id"?: string;
             "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
+            "auto_analyze"?: boolean;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
             "error"?: string;
             "inputs"?: (Record<string, unknown>) | null;
+            "origin"?: string;
             "presented": boolean;
             "revision"?: number;
             "state": string;
@@ -63638,6 +63808,55 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRCAWindowLinks": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "from"?: string;
+        "to"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "links": Array<{
+              "connection_id": string;
+              "provider": string;
+              "url": string;
+            }>;
+            "links_unavailable"?: boolean;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -72833,6 +73052,44 @@ export interface operations {
               "net_sent_kbps": number;
               "tcp_retransmits_per_sec"?: number;
             };
+            "root_cause_summary"?: ({
+              "analysis_enabled": boolean;
+              "analysis_id"?: string;
+              "anomaly_count": number;
+              "archive_changed"?: boolean;
+              "auto_analyze"?: boolean;
+              "completed_at"?: (string) | null;
+              "hypothesis_count": number;
+              "latest"?: ({
+                "analysis_id": string;
+                "created_at": string;
+                "origin"?: string;
+                "revision": number;
+                "state": string;
+              }) | null;
+              "origin"?: string;
+              "outcome"?: string;
+              "presented": boolean;
+              "revision"?: number;
+              "state": string;
+              "top_hypothesis"?: ({
+                "chain"?: Array<string>;
+                "competing"?: Array<string>;
+                "confidence"?: string;
+                "contradicting"?: Array<string>;
+                "detail"?: string;
+                "evidence"?: Array<string>;
+                "explains"?: Array<string>;
+                "falsification"?: string;
+                "id"?: string;
+                "limitations"?: Array<string>;
+                "rank": number;
+                "reasons"?: Array<string>;
+                "severity"?: string;
+                "title": string;
+              }) | null;
+              "validity"?: string;
+            }) | null;
             "root_cause_view"?: ({
               "acceptance"?: string;
               "analysis_id"?: string;
@@ -160796,6 +161053,20 @@ export interface operations {
           "domain_id"?: (string) | null;
           "name"?: string;
           "settings"?: {
+            "analysis"?: ({
+              "business_keys"?: {
+                "enabled"?: boolean;
+              };
+              "revision"?: number;
+              "root_cause"?: {
+                "auto_analyze"?: boolean;
+                "auto_enrich"?: boolean;
+                "enabled"?: boolean;
+                "present"?: boolean;
+              };
+              "updated_at"?: string;
+              "updated_by"?: string;
+            }) | null;
             "authoring"?: ({
               "require_scenario_save_if_match"?: boolean;
               "require_script_save_if_match"?: boolean;
@@ -160877,6 +161148,20 @@ export interface operations {
             "id": string;
             "name": string;
             "settings"?: {
+              "analysis"?: ({
+                "business_keys": {
+                  "enabled": boolean;
+                };
+                "revision": number;
+                "root_cause": {
+                  "auto_analyze": boolean;
+                  "auto_enrich": boolean;
+                  "enabled": boolean;
+                  "present": boolean;
+                };
+                "updated_at": string;
+                "updated_by"?: string;
+              }) | null;
               "authoring"?: ({
                 "require_scenario_save_if_match"?: boolean;
                 "require_script_save_if_match"?: boolean;
@@ -160947,6 +161232,122 @@ export interface operations {
             };
             "updated_at": string;
           }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateProjectAnalysisSettings": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "business_keys"?: {
+            "enabled"?: boolean;
+          };
+          "expected_revision"?: (number) | null;
+          "root_cause"?: {
+            "auto_analyze"?: boolean;
+            "auto_enrich"?: boolean;
+            "enabled"?: boolean;
+            "present"?: boolean;
+          };
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "effective": {
+              "business_keys": {
+                "enabled": boolean;
+              };
+              "root_cause": {
+                "auto_analyze": boolean;
+                "auto_enrich": boolean;
+                "enabled": boolean;
+                "present": boolean;
+              };
+            };
+            "forced_by_env": {
+              "business_keys": {
+                "enabled": boolean;
+              };
+              "root_cause": {
+                "auto_analyze": boolean;
+                "auto_enrich": boolean;
+                "enabled": boolean;
+                "present": boolean;
+              };
+            };
+            "project_id": string;
+            "settings": {
+              "business_keys": {
+                "enabled": boolean;
+              };
+              "revision": number;
+              "root_cause": {
+                "auto_analyze": boolean;
+                "auto_enrich": boolean;
+                "enabled": boolean;
+                "present": boolean;
+              };
+              "updated_at": string;
+              "updated_by"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -161117,6 +161518,20 @@ export interface operations {
             "id": string;
             "name": string;
             "settings"?: {
+              "analysis"?: ({
+                "business_keys": {
+                  "enabled": boolean;
+                };
+                "revision": number;
+                "root_cause": {
+                  "auto_analyze": boolean;
+                  "auto_enrich": boolean;
+                  "enabled": boolean;
+                  "present": boolean;
+                };
+                "updated_at": string;
+                "updated_by"?: string;
+              }) | null;
               "authoring"?: ({
                 "require_scenario_save_if_match"?: boolean;
                 "require_script_save_if_match"?: boolean;
@@ -173956,6 +174371,10 @@ export interface paths {
   "/api/v1/projects/{id}/activity": {
     "get": operations["handleProjectActivity"];
   };
+  "/api/v1/projects/{id}/analysis-settings": {
+    "get": operations["handleGetProjectAnalysisSettings"];
+    "put": operations["handleUpdateProjectAnalysisSettings"];
+  };
   "/api/v1/projects/{id}/entitlements/usage": {
     "get": operations["handleGetProjectEntitlementsUsage"];
   };
@@ -174891,6 +175310,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check": {
     "post": operations["handleCheckRCANarration"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/links": {
+    "get": operations["handleGetRCAWindowLinks"];
   };
   "/api/v1/tests/{id}/archive/root-cause/v2": {
     "get": operations["handleGetRCAAssessmentV2"];

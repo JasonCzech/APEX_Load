@@ -1,4 +1,4 @@
-import type { RcaAnalysisResponse, RcaAssessment, ReportRootCause } from '../../types/rca'
+import type { RcaAnalysisResponse, RcaAssessment, ReportRootCause, ReportRootCauseSummary } from '../../types/rca'
 
 // A completed assessment for tests: Checkout's p95 rose at 12:03:20 after the
 // cart service's CPU rose at 12:02:30, right after a load step to 20 VUsers.
@@ -89,5 +89,15 @@ export function rcaTestReportView(overrides: Partial<ReportRootCause> = {}): Rep
     ],
     limitations: ['Validity caps confidence: run validity is unknown, so confidence is at most medium'],
     ...overrides,
+  }
+}
+
+// rcaTestSummary is the report's root-cause summary for the assessment
+// above, as the controller's rootCauseSummaries builds it.
+export function rcaTestSummary(overrides: Partial<ReportRootCauseSummary> = {}): ReportRootCauseSummary {
+  return {
+    state: 'completed', presented: true, analysis_enabled: true, analysis_id: 'rca-1', revision: 2, origin: 'automatic', outcome: 'supported', validity: 'unknown',
+    top_hypothesis: { id: 'hypothesis-cpu', rank: 1, title: 'Resource pressure', confidence: 'medium', explains: ['Checkout · p95 latency'] },
+    hypothesis_count: 2, anomaly_count: 2, completed_at: '2026-10-05T12:10:05Z', ...overrides,
   }
 }

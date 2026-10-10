@@ -742,8 +742,9 @@ A run report gives you:
   changed.
 - **Release trend** — how this run's key transactions compare across releases of the
   same application, so regressions surface early.
-- **Root-cause analysis** — a deterministic breakdown of where time and errors
-  concentrated, with optional governed AI assistance where policy allows it.
+- **Root-cause analysis** — the run's validity, where its series changed, and
+  the ranked likely causes, generated from the archived evidence; see
+  [Root-Cause Analysis](#root-cause-analysis).
 
 ### Interpret The Outcome
 
@@ -802,6 +803,69 @@ Pin a run as a **comparison baseline** for its release so future runs are measur
 against a known-good reference. A baseline plus the release trend is what turns "the
 API feels slower" into "checkout p95 moved from 420 ms to 890 ms between 4.2 and 4.3".
 
+## Root-Cause Analysis
+
+Root-cause analysis reads a run's archive and its monitor evidence and answers
+three questions: could the load generators and telemetry carry the reported load
+(**run validity**), which series changed and when (**anomalies**, judged against
+the run's own steady load levels and, when you choose one, a baseline run), and
+which known failure patterns explain the symptoms (**hypotheses**, ranked, each
+with its confidence, the evidence that contradicts it and the check that would
+disprove it). Everything it shows is generated; your own findings and notes stay
+separate.
+
+A project administrator turns it on under
+[Settings → Project analysis](#/settings?setting=analysis): computing analyses,
+showing them in summaries and reports, analyzing every archived run
+automatically, and capturing provider evidence at archive time. A deployment
+can also turn these on for a project; the settings page marks those flags.
+
+**Where you see it.** The run report's Summary has a **Root cause** cell in Run
+outcome: the run's validity, then the leading hypothesis, "no cause supported"
+with the number of changes, "too little evidence", or the analysis state while
+one is queued or running. Its button opens the leading hypothesis, the run's
+largest changes, or the analysis in **Diagnostics**. Results rows and the
+dashboard's recent runs show validity and the leading hypothesis; the dashboard
+flags invalid and suspect runs and found causes, and counts invalid and suspect
+runs in Release quality. A finished run's Command Center banner states the root
+cause too. A suspect or invalid run also appears among the evidence limitations
+to review before acceptance.
+
+**Reading the Root cause panel.** The panel says whether the analysis was
+automatic or requested, the run's validity, how many series it judged, and a
+sentence on how to read the outcome:
+
+- **Supported hypotheses** — open one with **Investigate** to see its symptoms
+  and causes on the run's timeline (with onset uncertainty, load steps and
+  suspect spans), the symptom's transaction statistics, exemplars with trace
+  links, links that open the same window in your APM or log tools, the cause
+  series and the matching error patterns.
+- **No supported hypothesis** — the panel still draws the run's largest changes
+  on the timeline; focus one to look closer. Check **Evidence coverage** for
+  what could not be judged: a monitor source that left a gap links to its
+  archived evidence.
+- **Insufficient evidence** — too few series were measured. Coverage lists what
+  is missing; turning on trace context, binding monitor sources or running
+  longer at each load level usually helps.
+
+The same marks appear on the **Performance** timeline, where selecting one
+opens its hypothesis, and error patterns name the hypotheses they overlap.
+
+**Acting on a hypothesis.** Editors can **Re-analyze** (optionally capturing
+evidence afresh, or against the baseline open in **Compare**; **Baseline
+Comparison** offers the same), **Record as finding** (adds it to the current
+audience's report findings with where it came from), **Annotate timeline** (adds
+a run annotation at its earliest symptom) or **Add test note** (opens a note
+drafted from it with its link). **Copy link** copies a link that reopens the
+same analysis, hypothesis and window for anyone with access to the project.
+
+**Notifications and CI.** Notification routes can subscribe to *Root-cause
+analysis completed* and *Run validity suspect or invalid*. CI runs report the
+root cause beside validity; see
+[Root-cause summary](CICD_INTEGRATION.md#root-cause-summary). The engine, its
+rules and its limits are described in
+[Root-cause analysis service](ANALYSIS_WORKFLOWS.md#root-cause-analysis-service).
+
 ## Repository And Shared Assets
 
 The **Repository** page is where you manage the structural hierarchy — applications,
@@ -824,6 +888,7 @@ capabilities; a help link does not grant permission.
 | Project limits and usage | [Project limits & quotas](#/settings?setting=limits), [Usage accounting](#/settings?setting=usage) |
 | Generator connections and capacity | [Kubernetes clusters](#/settings?setting=clusters), [Generator pools](#/settings?setting=pools), [Standing allocations](#/settings?setting=allocations) |
 | Alert thresholds and stop policy | [Alert & stop policies](#/settings?setting=thresholds) |
+| Root-cause analysis and business-key lookups for a project | [Project analysis](#/settings?setting=analysis) |
 | Schedule behavior and notification delivery | [Schedule defaults](#/settings?setting=scheduling), [Notification routes](#/settings?setting=notifications) |
 | Archive and recording retention | [Archive & HAR retention](#/settings?setting=retention) |
 | Shared input rows | [Repository → Shared data pools](#/repository?setting=test-data) |

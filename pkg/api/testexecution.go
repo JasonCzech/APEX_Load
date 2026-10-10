@@ -6034,6 +6034,11 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	test.executionCtx = nil
 	releasePassiveOperationTokenLocked(test)
 	clearDistributedRunSecretSnapshotsLocked(test)
+	// A local run's archive is published before the run is terminal in
+	// memory, so finalization cannot attach it; it is attached here, and the
+	// archive-attached hook (root-cause analysis, browser findings, telemetry
+	// and validity announcements) runs for it now.
+	announceArchive := archiveRecord != nil && !sameAttachedArchive(test.Archive, archiveRecord)
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
@@ -6042,6 +6047,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	compactTerminalManagedTestLocked(test)
 	tr.mu.Unlock()
+	if announceArchive {
+		tr.notifyArchiveAttached(test.ID)
+	}
 	tr.recordLocalArchiveFailure(test)
 	if finalStatus == "FAILED" {
 		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {

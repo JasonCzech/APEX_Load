@@ -55,7 +55,9 @@ export interface DashboardAttentionItem {
   title: string
   detail: string
   testId?: string
-  destination?: 'monitoring' | 'evidence'
+  destination?: 'monitoring' | 'evidence' | 'root-cause'
+  // rootCause names the analysis and hypothesis a root-cause item opens.
+  rootCause?: { analysis?: string; hypothesis?: string }
 }
 
 export function pendingRunDetail(test: TestSummary): string {
@@ -99,6 +101,25 @@ export function buildDashboardAttention(
       items.push({ id: `acceptance-failed:${test.id}`, tone: 'danger', title: `${test.name} acceptance failed`, detail: reports[test.id]?.verdict?.explanation || 'Review the recorded acceptance assessment.', testId: test.id })
     } else if (test.status === 'FAILED' || test.status === 'ABORTED') {
       items.push({ id: `execution-${test.status.toLowerCase()}:${test.id}`, tone: test.status === 'FAILED' ? 'danger' : 'warning', title: `${test.name} ${test.status.toLowerCase()}`, detail: `Execution ended ${new Date(test.ended_at || test.created_at).toLocaleString()}`, testId: test.id })
+    }
+  }
+  // A run its generators or telemetry could not carry, and a run whose
+  // cause was found, are worth a look; each opens the run's root cause.
+  for (const test of completed) {
+    const report = reports[test.id]
+    const validity = report?.validity?.verdict
+    const summary = report?.root_cause_summary
+    const presented = summary?.presented === true
+    if (validity === 'invalid' || validity === 'suspect') {
+      items.push({ id: `rca-${validity}:${test.id}`, tone: validity === 'invalid' ? 'danger' : 'warning', title: `${test.name} run ${validity}`,
+        detail: report?.validity?.reasons?.[0] || 'The load generators or telemetry could not carry the reported load.', testId: test.id,
+        ...(presented ? { destination: 'root-cause' as const, rootCause: { analysis: summary?.analysis_id } } : {}) })
+    }
+    if (presented && summary?.outcome === 'supported' && summary.top_hypothesis) {
+      const top = summary.top_hypothesis
+      items.push({ id: `rca-cause:${test.id}:${summary.analysis_id || ''}`, tone: 'info', title: `${test.name}: ${top.title}`,
+        detail: `Leading root-cause hypothesis${top.confidence ? ` (${top.confidence} confidence)` : ''}${top.explains?.length ? ` for ${top.explains[0]}` : ''}`,
+        testId: test.id, destination: 'root-cause', rootCause: { analysis: summary.analysis_id, hypothesis: top.id } })
     }
   }
   const missingArchiveIds = completed.filter(test => !test.archive).map(test => test.id).sort()

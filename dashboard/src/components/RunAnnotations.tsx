@@ -20,7 +20,9 @@ function annotationTime(timestamp: string, startedAt?: string) {
 }
 interface Annotation { id: string; timestamp: string; label: string; text?: string; created_by: string; deleted_at?: string }
 interface AnnotationSet { revision: number; annotations: Annotation[] }
-export default function RunAnnotations({ testId, startedAt, canEdit, onAnnotationsChange }: { testId: string; startedAt?: string; canEdit: boolean; onAnnotationsChange?: (annotations: TimelineAnnotation[]) => void }) {
+// reloadKey reloads the notes when it changes, as after one is added from a
+// root-cause hypothesis.
+export default function RunAnnotations({ testId, startedAt, canEdit, onAnnotationsChange, reloadKey = 0 }: { testId: string; startedAt?: string; canEdit: boolean; onAnnotationsChange?: (annotations: TimelineAnnotation[]) => void; reloadKey?: number }) {
   const [set, setAnnotations] = useState<AnnotationSet | null>(null)
   const [label, setLabel] = useState('')
   const [text, setText] = useState('')
@@ -37,7 +39,7 @@ export default function RunAnnotations({ testId, startedAt, canEdit, onAnnotatio
     const abort = new AbortController(); setAnnotations(null); setError('')
     request<AnnotationSet>(path, { signal: abort.signal }).then(value => { if (!abort.signal.aborted) setAnnotations(value) }).catch(reason => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Annotation load failed') })
     return () => abort.abort()
-  }, [path, revision])
+  }, [path, revision, reloadKey])
   const mutate = async (id?: string) => {
     if (!set) return
     const target = id ? set.annotations.find(a => a.id === id) : undefined

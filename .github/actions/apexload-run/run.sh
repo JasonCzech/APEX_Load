@@ -66,6 +66,8 @@ write_fallback() {
   emit_output duration-ms 0
   emit_output report-url ""
   emit_output check-url ""
+  emit_output validity ""
+  emit_output root-cause ""
   emit_output json-path "$json_path"
   emit_output junit-path "$junit_path"
   if [[ "$include_summary" == true ]]; then
@@ -233,6 +235,7 @@ cmd=("$apexctl" ci run
 [[ -n "${APEXLOAD_INPUT_MAX_ERROR_COUNT:-}" ]] && cmd+=(--max-error-count "$APEXLOAD_INPUT_MAX_ERROR_COUNT")
 [[ -n "${APEXLOAD_INPUT_IDEMPOTENCY_KEY:-}" ]] && cmd+=(--idempotency-key "$APEXLOAD_INPUT_IDEMPOTENCY_KEY")
 [[ -n "${APEXLOAD_INPUT_TELEMETRY_INCONCLUSIVE:-}" ]] && cmd+=(--telemetry-inconclusive "$APEXLOAD_INPUT_TELEMETRY_INCONCLUSIVE")
+[[ -n "${APEXLOAD_INPUT_WAIT_ANALYSIS:-}" ]] && cmd+=(--wait-analysis "$APEXLOAD_INPUT_WAIT_ANALYSIS")
 
 "${cmd[@]}"
 apexctl_exit=$?

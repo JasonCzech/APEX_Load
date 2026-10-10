@@ -12,6 +12,7 @@ import {
   rcaSeriesLabel,
   rcaTimelineRows,
   rcaValidityLabel,
+  type RcaAnomalyRole,
   type RcaHypothesisAnomaly,
   type RcaPhaseMarker,
   type RcaWindow,
@@ -31,6 +32,11 @@ interface Props {
 }
 
 const clock = (value: number) => new Date(value).toISOString().slice(11, 19)
+
+// A symptom is the hypothesis's effect, a cause what its chain cites, and a
+// change one of the run's anomalies that no selected hypothesis cites.
+const roleColor: Record<RcaAnomalyRole, string> = { symptom: 'var(--danger)', cause: 'var(--warning)', anomaly: 'var(--accent)' }
+const roleLabel: Record<RcaAnomalyRole, string> = { symptom: 'Symptom', cause: 'Cause', anomaly: 'Change' }
 
 // RcaTimeline draws one hypothesis on the run's timeline: its symptom and
 // cause anomaly windows, each onset's uncertainty band, the load phases and
@@ -65,10 +71,10 @@ export default function RcaTimeline({ history, anomalies, phases, phasesInferred
               const onset = Date.parse(anomaly.onset)
               return [
                 <ReferenceArea key={`${anomaly.id}-window`} yAxisId="tps" x1={onset} x2={w.end} ifOverflow="hidden"
-                  fill={role === 'symptom' ? 'var(--danger)' : 'var(--warning)'} fillOpacity={0.14} />,
+                  fill={roleColor[role]} fillOpacity={0.14} />,
                 anomaly.onset_uncertainty_ns > 0 && <ReferenceArea key={`${anomaly.id}-band`} yAxisId="tps" x1={w.start} x2={onset + anomaly.onset_uncertainty_ns / 1e6} ifOverflow="hidden"
                   fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.35} strokeDasharray="2 3" />,
-                <ReferenceLine key={`${anomaly.id}-onset`} yAxisId="tps" x={onset} ifOverflow="hidden" stroke={role === 'symptom' ? 'var(--danger)' : 'var(--warning)'} strokeWidth={1.5} />,
+                <ReferenceLine key={`${anomaly.id}-onset`} yAxisId="tps" x={onset} ifOverflow="hidden" stroke={roleColor[role]} strokeWidth={1.5} />,
               ]
             })}
             {concerns.map(c => <ReferenceArea key={`validity-${c.start}`} yAxisId="tps" x1={c.start} x2={c.end} ifOverflow="hidden" fill="var(--text-muted)" fillOpacity={0.18} stroke="var(--text-muted)" strokeDasharray="1 3" />)}
@@ -84,7 +90,7 @@ export default function RcaTimeline({ history, anomalies, phases, phasesInferred
           {anomalies.map(({ anomaly, role }) => (
             <li key={anomaly.id} data-role={role}>
               <span className="rca-marker" aria-hidden="true" />
-              <strong>{role === 'symptom' ? 'Symptom' : 'Cause'}:</strong> {rcaSeriesLabel(anomaly.series)} {anomaly.direction === 'decrease' ? 'fell' : 'rose'} {formatRcaEffect(anomaly)} from {formatRcaTime(anomaly.onset)}
+              <strong>{roleLabel[role]}:</strong> {rcaSeriesLabel(anomaly.series)} {anomaly.direction === 'decrease' ? 'fell' : 'rose'} {formatRcaEffect(anomaly)} from {formatRcaTime(anomaly.onset)}
               {anomaly.onset_uncertainty_ns > 0 && <> ± {formatRcaDuration(anomaly.onset_uncertainty_ns)}</>}
               {anomaly.recovered ? <> and recovered by {formatRcaTime(anomaly.end)}</> : <> and had not recovered by {formatRcaTime(anomaly.end)}</>}
             </li>

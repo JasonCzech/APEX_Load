@@ -111,6 +111,7 @@ describe('settingsSectionLayout', () => {
       'catalog',
       'limits',
       'github',
+      'analysis',
       'redaction',
       'secrets',
       'analysis-policies',

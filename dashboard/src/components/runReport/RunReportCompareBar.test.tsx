@@ -82,4 +82,18 @@ describe('RunReportCompareBar', () => {
     expect(container.querySelector('[role="status"]')).toBeNull()
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Pin baseline')?.disabled).toBe(false)
   })
+
+  it('analyzes the root cause against the selected baseline and says what happened', async () => {
+    const onAnalyzeRootCause = vi.fn().mockResolvedValueOnce('Analysis revision 3 is queued.').mockRejectedValueOnce(new Error('The analysis could not be started; the Root cause panel says why.'))
+    const render = (compareId: string) => root.render(<RunReportCompareBar compareId={compareId} deltas={{}} onCompareChange={vi.fn()} onPinBaseline={vi.fn()} onAnalyzeRootCause={onAnalyzeRootCause} />)
+    await act(async () => render(''))
+    const analyze = () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Analyze root cause against this baseline') as HTMLButtonElement | undefined
+    expect(analyze()).toBeUndefined()
+    await act(async () => render('run-0'))
+    await act(async () => analyze()!.click())
+    expect(onAnalyzeRootCause).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Analysis revision 3 is queued.')
+    await act(async () => analyze()!.click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The analysis could not be started; the Root cause panel says why.')
+  })
 })

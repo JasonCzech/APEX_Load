@@ -21,6 +21,7 @@ import {
   transactionChartSeriesPresentation,
 } from '../transactionChartSeries'
 import { buildBreachWindows } from './runReportModel'
+import { timelineOverlayBands, type TimelineOverlay, type TimelineOverlayBand } from './timelineOverlays'
 import { initialTimelineZoomState, timelineZoomReducer } from './timelineZoomModel'
 import {
   DEFAULT_TIMELINE_GRAPHS,
@@ -55,6 +56,10 @@ function annotationMarkers(annotations: TimelineAnnotation[] | undefined, data: 
 interface Props {
   data: MetricsHistoryPoint[]
   annotations?: TimelineAnnotation[]
+  // overlays are another analysis's spans and instants (root cause) drawn on
+  // every lane; onOverlaySelect opens one.
+  overlays?: TimelineOverlay[]
+  onOverlaySelect?: (overlay: TimelineOverlay) => void
   goalConfig?: GoalConfig
   loading?: boolean
   error?: string
@@ -64,6 +69,8 @@ interface Props {
 }
 
 const seriesColor = (index: number) => `var(--chart-${(index % 6) + 1})`
+
+const OVERLAY_COLORS: Record<TimelineOverlay['tone'], string> = { danger: 'var(--danger)', warning: 'var(--warning)', accent: 'var(--accent)', muted: 'var(--text-muted)' }
 
 function LaneChart({
   lane,
@@ -77,9 +84,11 @@ function LaneChart({
   runId,
   baselineId,
   annotations,
+  overlayBands = [],
 }: {
   lane: TimelineGraph
   annotations?: TimelineAnnotation[]
+  overlayBands?: TimelineOverlayBand[]
   data: MetricsHistoryPoint[]
   metricKeys: Set<string>
   goalConfig?: GoalConfig
@@ -181,6 +190,20 @@ function LaneChart({
                       strokeOpacity={0}
                     />
                   ))}
+                {overlayBands.map(({ overlay, x1, x2 }) => x2 !== undefined && x2 !== x1 ? (
+                  <ReferenceArea
+                    key={`overlay-${overlay.id}`}
+                    x1={x1}
+                    x2={x2}
+                    fill={OVERLAY_COLORS[overlay.tone]}
+                    fillOpacity={overlay.kind === 'validity' ? 0.12 : 0.1}
+                    stroke={OVERLAY_COLORS[overlay.tone]}
+                    strokeOpacity={0.35}
+                    strokeDasharray={overlay.kind === 'validity' ? '1 3' : undefined}
+                  />
+                ) : (
+                  <ReferenceLine key={`overlay-${overlay.id}`} x={x1} stroke={OVERLAY_COLORS[overlay.tone]} strokeDasharray={overlay.kind === 'phase' ? '5 4' : undefined} />
+                ))}
                 {annotationMarkers(annotations, data).map((marker) => (
                   <ReferenceLine
                     key={`annotation-${marker.id}`}
@@ -245,7 +268,7 @@ function LaneChart({
   )
 }
 
-export default function SynchronizedTimeline({ data, annotations, goalConfig, loading, error, showBaseline, runId, baselineId }: Props) {
+export default function SynchronizedTimeline({ data, annotations, overlays, onOverlaySelect, goalConfig, loading, error, showBaseline, runId, baselineId }: Props) {
   const controlsId = useId()
   const [zoomState, dispatchZoom] = useReducer(timelineZoomReducer, initialTimelineZoomState)
   const [visibleLanes, setVisibleLanes] = useState(() => new Set(DEFAULT_TIMELINE_GRAPHS))
@@ -263,6 +286,7 @@ export default function SynchronizedTimeline({ data, annotations, goalConfig, lo
     () => buildBreachWindows(visibleData, goalConfig?.p95_latency_ms, goalConfig?.max_error_pct),
     [goalConfig?.max_error_pct, goalConfig?.p95_latency_ms, visibleData],
   )
+  const overlayBands = useMemo(() => timelineOverlayBands(overlays, visibleData), [overlays, visibleData])
   const transactionNames = useMemo(() => transactionChartSeriesNames(data), [data])
   const selectedTransactions = useMemo(
     () => transactionNames.filter((name) => visibleTransactions.has(name)),
@@ -574,12 +598,25 @@ export default function SynchronizedTimeline({ data, annotations, goalConfig, lo
             runId={runId}
             baselineId={baselineId}
             annotations={annotations}
+            overlayBands={overlayBands}
           />
         ))}
         {visibleLanes.size === 0 && (
           <p className="run-report-muted">No graphs selected. Open Graphs to choose what to display.</p>
         )}
       </div>
+      {overlayBands.length > 0 && (
+        <ul className="run-report-timeline-overlays" aria-label="Root-cause markers">
+          {overlayBands.map(({ overlay }) => (
+            <li key={overlay.id} data-kind={overlay.kind}>
+              <i style={{ borderColor: OVERLAY_COLORS[overlay.tone], borderTopStyle: overlay.kind === 'phase' ? 'dashed' : 'solid' }} aria-hidden="true" />
+              {onOverlaySelect && overlay.ref
+                ? <button type="button" className="btn btn-sm btn-ghost" onClick={() => onOverlaySelect(overlay)}>{overlay.label}</button>
+                : <span>{overlay.label}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }

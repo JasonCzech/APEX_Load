@@ -2040,8 +2040,12 @@ func (tr *TestRunner) persistAndAttachRunArchiveUnderFence(test *ManagedTest, ar
 	if tr.tests[test.ID] != test {
 		return
 	}
+	announce := !sameAttachedArchive(test.Archive, archiveRecord)
 	test.Archive = archiveRecord
 	tr.archives[test.ID] = archiveRecord
+	if announce {
+		tr.notifyArchiveAttached(test.ID)
+	}
 }
 
 const distributedFailureCleanupTimeout = time.Second

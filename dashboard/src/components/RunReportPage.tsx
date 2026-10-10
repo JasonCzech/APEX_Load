@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isReportLens, type ReportLens } from '../appRouting'
 import { useApi } from '../hooks/useApi'
-import type { ReportAnnotations, RunArchiveReport, TestSummary } from '../types'
+import type { ReportAnnotations, RunArchiveErrorPattern, RunArchiveReport, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
@@ -30,10 +30,15 @@ import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
-import RootCausePanel from './rca/RootCausePanel'
+import RootCausePanel, { type RcaHypothesisActions } from './rca/RootCausePanel'
 import BusinessKeyLookup from './runReport/BusinessKeyLookup'
-import { formatRcaWindow, rcaHypothesisWindow } from './rca/rcaModel'
+import { formatRcaWindow, rcaHypothesisWindow, rcaPatternHypotheses, rcaSignatureLabel, rcaTimelineOverlays, type RcaSummaryAction } from './rca/rcaModel'
+import { useRcaPhases } from './rca/useRcaPhases'
+import type { TimelineOverlay } from './runReport/timelineOverlays'
 import { useRootCauseAnalysis } from './rca/useRootCauseAnalysis'
+import { rcaSummaryWithLatest, useRootCauseSummary } from './rca/useRootCauseSummary'
+import { appendReportFinding, createRunAnnotation, rcaHypothesisAnnotation, rcaHypothesisFinding, rcaHypothesisNoteDraft } from './rca/rcaActions'
+import { settingsHref } from './settingsNavigation'
 import RunReportExportActions from './runReport/RunReportExportActions'
 import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
 import RunReportConfluencePublish from './runReport/RunReportConfluencePublish'
@@ -75,7 +80,7 @@ interface Props {
   initialRootCause?: RootCauseRouteState
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
-  onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; population?: MetricPopulation } & RootCauseRouteState) => void
+  onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; population?: MetricPopulation; focus?: ReportFocus } & RootCauseRouteState) => void
 }
 
 // runHasBrowserArea: the Browser area appears for runs with browser groups or
@@ -142,6 +147,21 @@ export default function RunReportPage({
   const { archiveSummaryHistory, archiveSummaryError, archiveSummariesLoading } = useExecutionArchiveSummaryHistory(archivedTest)
   const { archiveResourceHistory, archiveResourceError, archiveResourcesLoading } = useExecutionArchiveResourceHistory(archivedTest)
   const rootCause = useRootCauseAnalysis(testId, initialRootCause?.analysis, Boolean(archivedTest?.archive))
+  // The run's root cause in brief, kept current while its newest analysis
+  // (an automatic one, say) is queued or running; the panel reloads once it
+  // ends.
+  // An analysis started or finished in Diagnostics since the report loaded
+  // reaches the Summary too.
+  const reportRootCauseSummary = archiveModel.archiveReport?.root_cause_summary
+  const rootCauseSummaryInput = useMemo(() => rcaSummaryWithLatest(reportRootCauseSummary, rootCause.response), [reportRootCauseSummary, rootCause.response])
+  const liveRootCause = useRootCauseSummary(testId, rootCauseSummaryInput, rootCause.reload)
+  const [annotationReload, setAnnotationReload] = useState(0)
+  // The Performance timeline marks the analysis's anomalies, the spans the
+  // run was not valid and its load steps.
+  const rcaAssessment = rootCause.response?.presented ? rootCause.response.assessment : undefined
+  const rcaPhases = useRcaPhases(testId, archiveModel.archiveReport, rcaAssessment?.detection, Boolean(rcaAssessment) && area === 'Performance')
+  const timelineOverlays = useMemo(() => (rcaAssessment ? rcaTimelineOverlays(rcaAssessment, rcaPhases.phases) : undefined), [rcaAssessment, rcaPhases.phases])
+  const [noteDraft, setNoteDraft] = useState('')
 
   const [annotations, setAnnotations] = useState<ReportAnnotations | null>(null)
   const [annotationsLoading, setAnnotationsLoading] = useState(false)
@@ -474,10 +494,12 @@ export default function RunReportPage({
   }
 
   // Archive-tab deep links (load impact, action summary, transaction
-  // drill-down) open and scroll to their content once the report renders.
+  // drill-down) and root-cause links open and scroll to their content once
+  // the report, and for root cause its analysis, renders.
   const focusReport = archiveModel.archiveReport
+  const focusAnalysis = rootCause.response?.analysis_id || rootCause.response?.state || ''
   useEffect(() => {
-    const key = `${testId}:${initialFocus || ''}`
+    const key = `${testId}:${initialFocus || ''}:${initialRootCause?.analysis || ''}`
     if (!initialFocus || !focusReport || focusHandledRef.current === key) return
     const target = document.querySelector<HTMLElement>(`[data-report-focus="${initialFocus}"]`)
     if (!target) return
@@ -487,7 +509,7 @@ export default function RunReportPage({
     const heading = target.querySelector<HTMLElement>('summary, h2, h3')
     if (heading && heading.tagName !== 'SUMMARY' && !heading.hasAttribute('tabindex')) heading.tabIndex = -1
     heading?.focus()
-  }, [area, initialFocus, focusReport, testId])
+  }, [area, initialFocus, initialRootCause?.analysis, focusAnalysis, focusReport, testId])
   // A Browser link to a run without a Browser area falls back to Summary once
   // the report that decides it has loaded (or cannot).
   const browserDecided = Boolean(archiveModel.archiveReport || archiveModel.archiveError || (test && !test.archive))
@@ -510,8 +532,11 @@ export default function RunReportPage({
 
   const report = archiveModel.archiveReport
   const comparison = report && baselineReport ? reportComparisonQualification(report, baselineReport, test, baselineTest, population) : null
+  // Error patterns name the root-cause hypotheses they overlap.
+  const errorPatternHypotheses = rcaAssessment ? (pattern: RunArchiveErrorPattern) => rcaPatternHypotheses(rcaAssessment, pattern).map(h => ({ id: h.id, rank: h.rank, title: rcaSignatureLabel(h.signature) })) : undefined
+  const openHypothesis = (id: string) => selectTimelineOverlay({ id, kind: 'anomaly', start: 0, label: '', tone: 'danger', ref: `hypothesis:${id}` })
   const renderEvidence = (view: React.ComponentProps<typeof TestExecutionArchive>['view']) => <TestExecutionArchive
-    {...archiveModel} test={test} view={view} hideReportExports
+    {...archiveModel} test={test} view={view} hideReportExports errorPatternHypotheses={errorPatternHypotheses} onOpenHypothesis={openHypothesis}
     loadImpactData={timelineHistory} loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
     loadImpactError={archiveSummaryError || archiveResourceError}
   />
@@ -522,21 +547,83 @@ export default function RunReportPage({
   }
   // Root-cause state lives in the route, so a shared link reopens the same
   // analysis, hypothesis and window.
-  const navigateRootCause = (next: RootCauseRouteState) => {
+  const navigateRootCause = (next: RootCauseRouteState & { focus?: ReportFocus }) => {
     onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: 'diagnostics', ...next })
   }
-  // Summary states the report's generated root cause (the same model the
-  // exported reports render) when it is a presented v2 analysis.
-  const rootCauseView = report?.root_cause_view?.source === 'v2' ? report.root_cause_view : undefined
-  const investigateRootCause = () => {
-    if (!rootCauseView) return
-    const top = rootCauseView.hypotheses[0]
-    // The interactive copy of the same analysis gives the hypothesis's window.
-    const assessment = rootCause.response?.analysis_id === rootCauseView.analysis_id ? rootCause.response?.assessment : undefined
-    const hypothesis = top?.id ? assessment?.hypotheses.find(h => h.id === top.id) : undefined
-    const span = hypothesis && assessment ? rcaHypothesisWindow(hypothesis, assessment.anomalies) : null
-    navigateRootCause({ analysis: rootCauseView.analysis_id, rev: rootCauseView.revision ? String(rootCauseView.revision) : undefined, hypothesis: top?.id, window: span ? formatRcaWindow(span) : undefined })
+  // The Summary's root-cause cell opens the leading hypothesis, the run's
+  // largest changes when no cause is supported, or the analysis.
+  const openRootCause = (action: RcaSummaryAction) => {
+    const summary = liveRootCause
+    if (!summary?.analysis_id) {
+      navigateRootCause({ analysis: undefined, rev: undefined, hypothesis: undefined, window: undefined, focus: 'root-cause' })
+      return
+    }
+    const pinned = { analysis: summary.analysis_id, rev: summary.revision ? String(summary.revision) : undefined }
+    const topID = summary.top_hypothesis?.id
+    if (action === 'investigate' && topID) {
+      // The interactive copy of the same analysis gives the hypothesis's window.
+      const assessment = rootCause.response?.analysis_id === summary.analysis_id ? rootCause.response?.assessment : undefined
+      const hypothesis = assessment?.hypotheses.find(h => h.id === topID)
+      const span = hypothesis && assessment ? rcaHypothesisWindow(hypothesis, assessment.anomalies) : null
+      navigateRootCause({ ...pinned, hypothesis: topID, window: span ? formatRcaWindow(span) : undefined })
+      return
+    }
+    navigateRootCause({ ...pinned, hypothesis: undefined, window: undefined, focus: action === 'review' ? 'rca-changes' : 'root-cause' })
   }
+  // An editor analyzes the root cause against a comparison baseline; the
+  // analysis opens in Diagnostics, where a refusal is explained too.
+  const rootCauseOpen = Boolean(rootCause.response?.presented && rootCause.response.analysis_enabled !== false)
+  const analyzeAgainstBaseline = canPublishConfluence && rootCauseOpen ? async (baselineId: string): Promise<string> => {
+    const next = await rootCause.request({ baseline_test_id: baselineId })
+    if (!next?.analysis_id) {
+      navigateRootCause({ focus: 'root-cause' })
+      throw new Error('The analysis could not be started; the Root cause panel says why.')
+    }
+    navigateRootCause({ analysis: next.analysis_id, rev: next.revision ? String(next.revision) : undefined, hypothesis: undefined, window: undefined, focus: 'root-cause' })
+    return `Analysis revision ${next.revision} is ${next.state}.`
+  } : undefined
+  // A root-cause mark on the Performance timeline opens its hypothesis, or
+  // its window among the run's largest changes.
+  const selectTimelineOverlay = (overlay: TimelineOverlay) => {
+    const pinned = rootCause.response?.analysis_id ? { analysis: rootCause.response.analysis_id, rev: rootCause.response.revision ? String(rootCause.response.revision) : undefined } : {}
+    if (overlay.ref?.startsWith('hypothesis:')) {
+      const id = overlay.ref.slice('hypothesis:'.length)
+      const hypothesis = rcaAssessment?.hypotheses.find(h => h.id === id)
+      const span = hypothesis && rcaAssessment ? rcaHypothesisWindow(hypothesis, rcaAssessment.anomalies) : null
+      navigateRootCause({ ...pinned, hypothesis: id, window: span ? formatRcaWindow(span) : undefined })
+    } else if (overlay.ref?.startsWith('window:')) {
+      navigateRootCause({ ...pinned, hypothesis: undefined, window: overlay.ref.slice('window:'.length), focus: 'rca-changes' })
+    }
+  }
+  // Report links that keep the project, application and release in scope.
+  const scope = workspaceScopeForAppView(parseAppViewFromHash(window.location.hash))
+  const monitorEvidenceHref = viewToLocationHash(scopeAppViewToWorkspace({ page: 'report', testId, section: 'evidence', focus: 'monitor-evidence' }, scope))
+  const monitorSourcesHref = canManageProject ? viewToLocationHash(scopeAppViewToWorkspace({ page: 'monitoring', category: 'telemetry' }, scope)) : undefined
+  const hypothesisLink = (hypothesisID: string) => {
+    const relative = viewToLocationHash(scopeAppViewToWorkspace({ page: 'report', testId, section: 'diagnostics', analysis: rootCause.response?.analysis_id, hypothesis: hypothesisID }, scope))
+    return /^https?:$/.test(window.location.protocol) ? `${window.location.origin}${window.location.pathname}${relative}` : relative
+  }
+  // An editor hands a hypothesis to the report's findings, the run's
+  // timeline notes or a test note.
+  const hypothesisActions: RcaHypothesisActions | undefined = canPublishConfluence ? {
+    recordFinding: async (hypothesis, assessment) => {
+      const analysisID = rootCause.response?.analysis_id || assessment.analysis_id
+      const saved = await appendReportFinding(testId, activeLens, rcaHypothesisFinding(hypothesis, assessment, analysisID, rootCause.response?.revision))
+      if (activeLensRef.current === activeLens && testIDRef.current === testId) setAnnotations(saved)
+      return `Added to the ${REPORT_LENS_LABELS[activeLens]} report's findings.`
+    },
+    annotate: async (hypothesis, assessment) => {
+      const note = rcaHypothesisAnnotation(hypothesis, assessment)
+      if (!note) throw new Error('This hypothesis has no onset to place on the timeline.')
+      await createRunAnnotation(testId, note)
+      setAnnotationReload(value => value + 1)
+      return 'Added to the run timeline annotations.'
+    },
+    addNote: (hypothesis, assessment) => {
+      setNoteDraft(rcaHypothesisNoteDraft(hypothesis, assessment, hypothesisLink(hypothesis.id)))
+      setShowNotes(true)
+    },
+  } : undefined
   const hasBrowserEvidence = runHasBrowserArea(test, report)
   // A Browser link keeps its tab (and so a focusable, selected tab) while
   // the report that decides it loads.
@@ -588,7 +675,7 @@ export default function RunReportPage({
       </section>}
       {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions} optionsLoading={baselineOptionsLoading}
         deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
-        onCompareChange={setCompare} onPinBaseline={pinBaseline} />}
+        onCompareChange={setCompare} onPinBaseline={pinBaseline} onAnalyzeRootCause={analyzeAgainstBaseline && effectiveCompareId ? () => analyzeAgainstBaseline(effectiveCompareId) : undefined} />}
       {effectiveCompareId && !showCompare && <p className="run-report-muted">Comparing with {baselineTest?.name || effectiveCompareId}. Open Compare to change or clear the baseline.{baselineError ? ` ${baselineError}` : ''}</p>}
       {area !== 'Comparison' && effectiveCompareId && comparison && <section className="run-report-panel" role="note" aria-label="Comparison qualification">
         <h3>Comparison qualification</h3><p>{comparison.summary}</p>
@@ -600,7 +687,7 @@ export default function RunReportPage({
       <OrchestrationReturn testId={testId} />
       <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
-      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} />
+      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} reloadKey={annotationReload} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={area === name ? `result-panel-${name}` : undefined} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
         onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline Comparison' : name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
@@ -612,14 +699,13 @@ export default function RunReportPage({
           <button type="button" className="btn btn-secondary" onClick={archiveModel.retryArchiveReport} disabled={archiveModel.archiveLoading}>Retry report</button>
           <button type="button" className="btn btn-ghost" onClick={() => setArea('Execution')}>View execution details</button>
         </section>}
-        {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} />}</div>}
+        {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} onAnalyzeRootCause={analyzeAgainstBaseline} />}</div>}
         {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
-          {report && <RunOutcomeSummary report={report} showPopulations={false} />}
+          {report && <RunOutcomeSummary report={report} showPopulations={false} rootCauseSummary={liveRootCause} onRootCause={openRootCause} />}
           <ReleaseReadinessSummary report={report} findings={annotations?.findings} />
           {/* KPI values wait for the report: "—" would read as a measured gap. */}
           {report && <RunReportKpiScorecard kpis={kpis} />}
           <section className="run-report-panel"><h2>Findings and next steps</h2>
-            {rootCauseView && <p className="rca-summary-line"><span><strong>Root cause:</strong> {rootCauseView.summary}</span><button type="button" className="btn btn-secondary" onClick={investigateRootCause}>Investigate root cause</button></p>}
             {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured across all populations.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>
@@ -629,7 +715,7 @@ export default function RunReportPage({
         {area === 'Performance' && hasArchive && <>
           {/* KPI values wait for the report: "—" would read as a measured gap. */}
           {report && <RunReportKpiScorecard kpis={kpis} />}
-          <SynchronizedTimeline key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} annotations={timelineAnnotations} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
+          <SynchronizedTimeline key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} annotations={timelineAnnotations} overlays={timelineOverlays} onOverlaySelect={selectTimelineOverlay} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
           {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
             <TransactionResponseTimeSLATable
@@ -654,8 +740,10 @@ export default function RunReportPage({
         </>}
         {area === 'Diagnostics' && hasArchive && <>
           <RootCausePanel testId={testId} model={rootCause} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading || archiveResourcesLoading}
-            canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause} />
-          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} />
+            canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause}
+            liveSummary={liveRootCause} onCopyLink={/^https?:$/.test(window.location.protocol) ? () => void copyReportLink() : undefined}
+            settingsHref={canManageProject ? settingsHref('analysis') : undefined} monitorEvidenceHref={monitorEvidenceHref} monitorSourcesHref={monitorSourcesHref} hypothesisActions={hypothesisActions} />
+          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} settingsHref={canManageProject ? settingsHref('analysis') : undefined} />
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           <div data-report-focus="transaction-drilldown">{renderEvidence('transactions')}</div>
@@ -670,7 +758,7 @@ export default function RunReportPage({
           {report && <section className="run-outcome-summary"><h2>Metric populations</h2><RunMetricPopulations report={report} /></section>}
           {renderEvidence('report-metadata')}
           <details><summary>Raw evidence downloads</summary><button className="btn btn-secondary" onClick={() => void archiveModel.onDownloadArchive()}>Download evidence bundle</button>{renderEvidence('report-assets')}</details>
-          <details><summary>Archived intervals</summary>{renderEvidence('report-summary-timeline')}</details>
+          <details data-report-focus="monitor-evidence"><summary>Archived intervals and monitor evidence</summary>{renderEvidence('report-summary-timeline')}</details>
         </>}
         {area === 'Execution' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading} historyError={archiveSummaryError} />}
         {!hasArchive && area === 'Summary' && <>
@@ -685,7 +773,7 @@ export default function RunReportPage({
         {!hasArchive && area === 'Diagnostics' && <><RetainedRunDiagnostics test={test} /><RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly /></>}
         {!hasArchive && area === 'Evidence' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly />}
       </section>
-      {showNotes && <TestNotesDialog testId={testId} testName={test.name} onClose={() => setShowNotes(false)} />}
+      {showNotes && <TestNotesDialog testId={testId} testName={test.name} initialDraft={noteDraft || undefined} onClose={() => { setShowNotes(false); setNoteDraft('') }} />}
       {showComposer && <ReportComposer comparisonId={initialComparisonId} testId={testId} testName={test.name} profile={activeLens} onClose={() => setShowComposer(false)} />}
     </div>
   )
