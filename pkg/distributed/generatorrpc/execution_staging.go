@@ -1033,6 +1033,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			return nil, err
 		}
 	}
+	if err := http3StagingError(&script); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
 	var instance protocol.Protocol
 	var getErr error
 	if javaHost == nil {
@@ -1459,12 +1462,32 @@ func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan
 
 // Engine capabilities are advertised by this generator binary, not by each
 // protocol plugin. Only external runtime capabilities need plugin validation.
+// http3StagingError refuses HTTP/3 work this generator process cannot run.
+// HTTP/3 support comes from the operator flag and the build, not from the
+// http protocol instance, so it is not a protocol runtime capability.
+func http3StagingError(script *dsl.Script) error {
+	exact, upgrade := dsl.ScriptHTTP3Policies(script)
+	if !exact && !upgrade {
+		return nil
+	}
+	if err := http3ExecutionError(); err != nil {
+		return err
+	}
+	if upgrade {
+		return http3UpgradeExecutionError()
+	}
+	return nil
+}
+
 func requiredProtocolRuntimeFeature(script *dsl.Script) string {
 	required := requiredRuntimeFeature(script)
 	external := []string{}
 	for _, feature := range strings.Split(required, "+") {
 		switch feature {
-		case "", dsl.FeatureParallelLoopControlV1, dsl.FeaturePropertyAnalyticsV1, dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1:
+		case "", dsl.FeatureParallelLoopControlV1, dsl.FeaturePropertyAnalyticsV1, dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1,
+			// Process-level: checked by http3StagingError, not by the
+			// protocol instance's runtime capabilities.
+			dsl.FeatureNativeHTTP3V1, dsl.FeatureHTTP3UpgradeV1:
 		default:
 			external = append(external, feature)
 		}

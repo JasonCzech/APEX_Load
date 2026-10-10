@@ -346,3 +346,45 @@ func TestHTTP3CapabilityAdvertisementAndRequirement(t *testing.T) {
 		t.Fatalf("an HTTP/2 script required %q", got)
 	}
 }
+
+// HTTP/3 support is a generator-process capability: staging admits HTTP/3
+// work when this process can run it and names the flag when it cannot.
+func TestStagingAdmitsHTTP3WorkOnlyWhenTheGeneratorCanRunIt(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	previous, previousUpgrade := http3ExecutionError, http3UpgradeExecutionError
+	t.Cleanup(func() { http3ExecutionError, http3UpgradeExecutionError = previous, previousUpgrade })
+	service := newIsolatedService(t, 10, WithExecution())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = service.Shutdown(ctx)
+	})
+	stage := func(testID, version string) error {
+		script := `{"name":"h3","protocol":"http","config":{"base_url":"https://127.0.0.1:1","http":{"version":"` + version + `"}},"actions":[{"name":"home","type":"GET","target":"/"}]}`
+		ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{TestId: testID, GroupName: "g", ScriptId: testID, ScriptContent: []byte(script), VuserCount: 1, PrepareOnly: true})
+		if err != nil {
+			return err
+		}
+		if !ack.GetAccepted() {
+			return status.Error(codes.FailedPrecondition, ack.GetErrorMessage())
+		}
+		return nil
+	}
+	t.Setenv(httpprotocol.EnvHTTP3, "true")
+	if err := stage("exact", "3"); err != nil {
+		t.Fatalf("exact HTTP/3 work was refused on a capable generator: %v", err)
+	}
+	if err := stage("upgrade", "auto+h3"); err != nil {
+		t.Fatalf("auto+h3 work was refused on a capable generator: %v", err)
+	}
+	http3UpgradeExecutionError = func() error { return httpprotocol.ErrHTTP3NotEnabled }
+	if err := stage("upgrade-off", "auto+h3"); err == nil {
+		t.Fatal("auto+h3 work was staged on a generator that cannot upgrade")
+	}
+	http3UpgradeExecutionError = previousUpgrade
+	t.Setenv(httpprotocol.EnvHTTP3, "")
+	if err := stage("exact-off", "3"); err == nil || !strings.Contains(err.Error(), httpprotocol.EnvHTTP3) {
+		t.Fatalf("exact HTTP/3 work on a disabled generator: %v", err)
+	}
+}
