@@ -254,7 +254,7 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 	if ex.URL == "" {
 		return nil, nil, errors.New("curl sample did not include a URL")
 	}
-	applyCurlHTTPVersion(&ex, versionFlag, diagnostics, location)
+	applyCurlHTTPVersion(&ex, versionFlag, curlTransportFactsFrom(tokens[1:]), diagnostics, location)
 	if len(dataParts) > 0 {
 		if dataAsQuery {
 			ex.URL = addCurlQueryData(ex.URL, dataParts)
@@ -563,6 +563,51 @@ var curlHTTPVersionFlags = map[string]bool{
 	"--http2-prior-knowledge": true, "--http3": true, "--http3-only": true,
 }
 
+// curlTransportFacts are the source options that decide whether exact
+// HTTP/3 is representable: a proxy route, and the TLS maximum.
+type curlTransportFacts struct {
+	proxy  bool
+	tlsMax string
+}
+
+func curlTransportFactsFrom(tokens []string) curlTransportFacts {
+	var facts curlTransportFacts
+	for index, token := range tokens {
+		name, value, inline := strings.Cut(token, "=")
+		switch {
+		case name == "-x" || name == "--proxy" || name == "--preproxy" || strings.HasPrefix(name, "--socks"):
+			facts.proxy = true
+		case strings.HasPrefix(token, "-x") && len(token) > 2:
+			facts.proxy = true
+		case name == "--tls-max":
+			if !inline && index+1 < len(tokens) {
+				value = tokens[index+1]
+			}
+			facts.tlsMax = strings.TrimSpace(value)
+		}
+	}
+	return facts
+}
+
+// HTTP/3 review codes for cURL sources.
+const (
+	// curlHTTP3RaceNotModeled: --http3 races HTTP/3 against TCP; native replay
+	// does not model the race. The finding proposes auto+h3 as an explicit,
+	// approximate rewrite the author can accept.
+	curlHTTP3RaceNotModeled = "curl_http3_race_not_modeled"
+	// http3RequiresHTTPS: --http3-only on an http:// URL, which curl refuses.
+	http3RequiresHTTPS = "http3_requires_https"
+	// http3WithProxy: --http3-only through a proxy; HTTP/3 has no proxy route.
+	http3WithProxy = "http3_with_proxy"
+	// http3RequiresTLS13: --http3-only with a TLS maximum below 1.3.
+	http3RequiresTLS13 = "http3_requires_tls13"
+)
+
+// HTTPVersionRewriteProposalKey records an explicit, approximate policy the
+// author may accept for a gated source version; accepting it is an edit, and
+// the gate stays until then.
+const HTTPVersionRewriteProposalKey = "http_version_rewrite_proposal"
+
 // applyCurlHTTPVersion maps the last curl version option to a replay policy,
 // or keeps a review gate when the runtime cannot reproduce it:
 //
@@ -572,8 +617,12 @@ var curlHTTPVersionFlags = map[string]bool{
 //	--http2 on https://       automatic negotiation, as curl's ALPN offer
 //	--http2 on http://        gated: curl sends Upgrade: h2c, which is not modeled
 //	--http1.0, -0             gated: HTTP/1.0 is not a native replay version
-//	--http3, --http3-only     gated until native HTTP/3 replay ships
-func applyCurlHTTPVersion(ex *exchange, flag string, diagnostics *diag.Collector, location string) {
+//	--http3-only on https://  exact HTTP/3 (3); gated through a proxy, with a
+//	                          TLS maximum below 1.3, or on http://
+//	--http3 on https://       gated: the HTTP/3-versus-TCP race is not modeled;
+//	                          auto+h3 is proposed as an approximate rewrite
+//	--http3 on http://        no effect, as in curl (HTTP/3 is HTTPS only)
+func applyCurlHTTPVersion(ex *exchange, flag string, facts curlTransportFacts, diagnostics *diag.Collector, location string) {
 	if flag == "" {
 		return
 	}
@@ -601,9 +650,32 @@ func applyCurlHTTPVersion(ex *exchange, flag string, diagnostics *diag.Collector
 	case "--http1.0", "-0":
 		diagnostics.Add(diag.Warning, "cURL HTTP version", location, flag+" requests HTTP/1.0, which native replay does not support; choose HTTP/1.1 before replay")
 		markCurlReview(ex, "curl_http10_not_supported")
-	case "--http3", "--http3-only":
-		diagnostics.Add(diag.Warning, "cURL HTTP version", location, flag+" requests HTTP/3, which native replay does not support yet; review before replay")
-		markCurlReview(ex, "curl_http3_not_supported")
+	case "--http3-only":
+		switch {
+		case cleartext:
+			diagnostics.Add(diag.Warning, "cURL HTTP version", location, "--http3-only on an http:// URL cannot run: HTTP/3 serves only https origins; correct the URL or the option before replay")
+			markCurlReview(ex, http3RequiresHTTPS)
+		case facts.proxy:
+			diagnostics.Add(diag.Warning, "cURL HTTP version", location, "--http3-only requires HTTP/3, which no proxy route carries; remove the proxy or choose another HTTP version before replay")
+			markCurlReview(ex, http3WithProxy)
+		case facts.tlsMax != "" && facts.tlsMax != "1.3" && !strings.EqualFold(facts.tlsMax, "default"):
+			diagnostics.Add(diag.Warning, "cURL HTTP version", location, "--http3-only requires TLS 1.3, but --tls-max is lower; correct one of them before replay")
+			markCurlReview(ex, http3RequiresTLS13)
+		default:
+			ex.HTTPVersion = httpprotocol.VersionHTTP3
+			diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http3-only maps to exact HTTP/3 (3), which fails rather than falls back; it runs where HTTP/3 execution is enabled")
+		}
+	case "--http3":
+		if cleartext {
+			diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http3 has no effect on an http:// URL (HTTP/3 serves only https origins); the request uses automatic negotiation")
+			return
+		}
+		diagnostics.Add(diag.Warning, "cURL HTTP version", location, "--http3 races HTTP/3 against TCP, which native replay does not model; accept the approximate rewrite to auto+h3 (TCP until the origin advertises HTTP/3) or choose another HTTP version before replay")
+		markCurlReview(ex, curlHTTP3RaceNotModeled)
+		if ex.Metadata == nil {
+			ex.Metadata = make(map[string]any)
+		}
+		ex.Metadata[HTTPVersionRewriteProposalKey] = map[string]any{"version": 1, "policy": httpprotocol.VersionAutoH3, "reason_code": curlHTTP3RaceNotModeled, "approximate": true}
 	}
 }
 
@@ -634,7 +706,8 @@ func curlFlagLikelyTakesValue(token string) bool {
 		return false
 	}
 	switch token {
-	case "--connect-timeout", "--max-time", "--retry", "--retry-delay", "--proxy", "--cacert", "--cert", "--key", "--resolve", "--interface", "--limit-rate", "--request-target", "--output", "-o", "--write-out", "-w":
+	case "--connect-timeout", "--max-time", "--retry", "--retry-delay", "--proxy", "--cacert", "--cert", "--key", "--resolve", "--interface", "--limit-rate", "--request-target", "--output", "-o", "--write-out", "-w",
+		"--tls-max", "--preproxy", "--socks4", "--socks4a", "--socks5", "--socks5-hostname", "--proxy-user":
 		return true
 	default:
 		return len(token) == 2 && token != "-L" && token != "-I" && token != "-k" && token != "-s" && token != "-v"

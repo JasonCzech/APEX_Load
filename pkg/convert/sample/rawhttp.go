@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 const (
@@ -143,7 +144,13 @@ func parseRawRequest(content, baseURL string) (exchange, error) {
 	}
 	metadata := map[string]any{}
 	if len(parts) >= 3 {
-		metadata["http_version"] = parts[2]
+		if httpprotocol.NormalizeVersion(parts[2]) == httpprotocol.VersionHTTP3 {
+			// HTTP/3 has no text request line: the line describes a logical
+			// request, so it stays an observation for review, never a policy.
+			metadata[rawHTTP3RequestLineKey] = parts[2]
+		} else {
+			metadata["http_version"] = parts[2]
+		}
 	}
 	if parts[1] == "*" || (!strings.HasPrefix(parts[1], "/") && !isAbsoluteRawHTTPURL(parts[1])) {
 		metadata["raw_request_target"] = parts[1]
@@ -485,3 +492,7 @@ func stringMapValue(values map[string]any, key string) string {
 	}
 	return ""
 }
+
+// rawHTTP3RequestLineKey keeps a raw request line's HTTP/3 version as an
+// observation: the author converts the logical request explicitly.
+const rawHTTP3RequestLineKey = "raw_http3_request_line"

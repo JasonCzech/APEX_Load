@@ -151,8 +151,8 @@ func sampleWireFidelityFindings(ex exchange, format string) []importreview.Findi
 	if normalizedFormat != "raw_http" {
 		return importreview.NormalizeFindings(findings)
 	}
-	if version := strings.TrimSpace(ex.HTTPVersion); version != "" &&
-		httpprotocol.NormalizeVersion(version) != httpprotocol.VersionHTTP11 {
+	if version := strings.TrimSpace(ex.HTTPVersion); (version != "" &&
+		httpprotocol.NormalizeVersion(version) != httpprotocol.VersionHTTP11) || ex.Metadata[rawHTTP3RequestLineKey] != nil {
 		// Preserve the established sample-specific finding for clients that
 		// key off it. Shared request finalization adds the generic durable
 		// version-fidelity reason independently when the source mode cannot be

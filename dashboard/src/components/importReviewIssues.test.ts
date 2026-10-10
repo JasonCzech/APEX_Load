@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScriptDefinition } from '../types/scripts'
-import { draftImportFindings, groupImportFindings, issueRepairOptions } from './importReviewIssues'
+import { draftImportFindings, findingCategory, groupImportFindings, issueRepairOptions, issueTitle } from './importReviewIssues'
 const script = { name: 'Review', version: '1', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [] } as ScriptDefinition
 
 describe('import issue queue', () => {
@@ -88,3 +88,18 @@ it('retains runtime evidence and summarizes changed paths without exposing value
   const mapping = { id: 'assertion', function: 'web_reg_find', source_file: 'Action.c', start_line: 2, end_line: 2, status: 'contributor' }
   expect(reviewSectionFindings([warnings], { mappings: [mapping, { ...mapping, id: 'request', function: 'web_url', source_file: 'Other.c' }] })[0].source_mapping_id).toBe('assertion')
  })
+
+describe('HTTP/3 import review codes', () => {
+  it('titles and files them under transport and runtime', () => {
+    for (const [code, title] of [
+      ['curl_http3_race_not_modeled', 'Choose an HTTP version for curl --http3'],
+      ['http3_requires_https', 'Use an https:// URL for HTTP/3'],
+      ['http3_with_proxy', 'Remove the proxy or choose another HTTP version'],
+      ['http3_requires_tls13', 'Allow TLS 1.3 or choose another HTTP version'],
+      ['http3_draft_token', 'Choose final HTTP/3 for a draft capture'],
+    ]) {
+      expect(issueTitle(code)).toBe(title)
+      expect(findingCategory(code)).toBe('runtime')
+    }
+  })
+})

@@ -41,7 +41,7 @@ export function findingCategory(code: string): IssueCategory {
   if (/^(missing_producer|conditional_producer):/.test(code)) return 'values'
   if (code === 'restored_body_required') return 'bodies'
   if (/secret|credential|proxy_password/.test(code)) return 'credentials'
-  if (/tls|ssl|runtime|allocation/.test(code)) return 'runtime'
+  if (/tls|ssl|runtime|allocation|http3|http_version/.test(code)) return 'runtime'
   return 'review'
 }
 // Titles for the LoadRunner web parity review codes (pkg/convert/enterprisearchive,
@@ -71,11 +71,20 @@ const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
   recorded_async_conversation: 'Review recorded background conversation',
   javascript_web_script_unsupported: 'Fix the JavaScript or re-record the script in C',
 }
+// HTTP/3 import review codes (pkg/convert/requestimport, pkg/convert/sample).
+const HTTP3_ISSUE_TITLES: Record<string, string> = {
+  curl_http3_race_not_modeled: 'Choose an HTTP version for curl --http3',
+  http3_requires_https: 'Use an https:// URL for HTTP/3',
+  http3_with_proxy: 'Remove the proxy or choose another HTTP version',
+  http3_requires_tls13: 'Allow TLS 1.3 or choose another HTTP version',
+  http3_draft_token: 'Choose final HTTP/3 for a draft capture',
+  raw_http_version_review_required: 'Choose the HTTP version for a raw request',
+}
 
 export function issueTitle(code: string): string {
   if (code.startsWith('missing_producer:')) return `Missing value: ${code.slice(17)}`
   if (code.startsWith('conditional_producer:')) return `Check producer order: ${code.slice(21)}`
-  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
+  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES, ...HTTP3_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
 }
 export function groupImportFindings(findings: ImportFinding[], script: ScriptDefinition): ImportIssue[] {
   const actions = new Map(importActionEntries(script).map(entry => [entry.path, entry.action]))
