@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { LEGACY_FLAT_FORM_FIELDS } from './components/scenarioAuthoringDraftV2'
+
 // Adapter retirement (AUTH-3). Each retired seam lists the names that must not
 // come back in application code: once a seam's callers resolve through its
 // canonical owner, reintroducing the adapter (or a caller of it) fails here.
@@ -67,6 +69,18 @@ const OWNED_CALLERS: { path: string; owner: RegExp }[] = [
 describe('adapter retirement', () => {
   it('scans the application sources', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(100)
+  })
+
+  // Structural: some mirror names (the error flags, the browser fields) are
+  // legitimate elsewhere, so the form's own members are checked by name.
+  it('keeps every version 2 mirror field off the scenario form', () => {
+    const source = sources['./components/TestHub.tsx'] ?? ''
+    const start = source.indexOf('export interface ScenarioFormState {')
+    expect(start).toBeGreaterThan(-1)
+    const body = source.slice(start, source.indexOf('\n}\n', start))
+    const members = LEGACY_FLAT_FORM_FIELDS.filter(name => new RegExp(`^\\s*${name}\\??\\s*:`, 'm').test(body))
+    expect(members).toEqual([])
+    expect(LEGACY_FLAT_FORM_FIELDS.length).toBe(34)
   })
 
   it('resolves each retired copy\'s callers through its owner', () => {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/harsynth"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -115,5 +116,52 @@ func TestBrowserHAREntryFromParquetAndAnUnservableNativeHAR(t *testing.T) {
 	found, err = findRunArchiveBrowserHAREntry(context.Background(), filepath.Dir(path), manifest, syntheticCoveredGeneration+"-request-8")
 	if err != nil || found.Fidelity != "native" || found.Artifact != "" || len(found.Entry) != 0 {
 		t.Fatalf("unservable native HAR %+v %v", found, err)
+	}
+}
+
+// A request the synthetic HAR leaves out says why, never "not found"; an
+// entry names native HARs that may hold it; and a second concurrent archive
+// scan is refused while one runs.
+func TestBrowserHAREntryOmissionsCoverageAndAdmission(t *testing.T) {
+	raw, omitted, err := syntheticHAREntryJSON(harsynth.Entry{ActionName: "Blob", Network: protocol.NetworkEntry{URL: "blob:opaque", Method: "GET", StatusCode: 200}}, true)
+	if err != nil || raw != nil || omitted == "" {
+		t.Fatalf("an omitted entry: %s %q %v", raw, omitted, err)
+	}
+
+	server, _, _ := harDownloadFixture(t)
+	path := "/api/v1/tests/har-download-run/archive/browser/har-entry?request_id=" + syntheticUncoveredGeneration + "-request-7"
+	browserResourceReadPermit <- struct{}{}
+	reply := harDownloadRequest(t, server, path, "har-editor", harEditor)
+	<-browserResourceReadPermit
+	if reply.Code != http.StatusServiceUnavailable || reply.Header().Get("Retry-After") == "" {
+		t.Fatalf("a scan while another runs: %d %s", reply.Code, reply.Body.String())
+	}
+
+	// A retained request whose URL has no host is one the synthetic HAR
+	// leaves out.
+	at := time.Date(2026, 10, 7, 12, 0, 5, 0, time.UTC)
+	blob, err := json.Marshal(TransactionEvent{Timestamp: at, TestID: "run-1", ActionName: "Blob", PageURL: "https://shop.example/", NetworkEntries: []protocol.NetworkEntry{
+		{BrowserEvidence: syntheticEvidence(syntheticUncoveredGeneration, syntheticUncoveredGeneration+"-request-9", at), URL: "blob:opaque", Method: "GET", StatusCode: 200, ResourceType: "fetch"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []any
+	for _, row := range append(syntheticArchiveRows(t), blob) {
+		fixtures = append(fixtures, resourcePhysicalProjectionFixture{Projection: string(protocol.BrowserResourceArchiveProjection(row))})
+	}
+	file := resourcePhysicalWrite(t, new(resourcePhysicalProjectionFixture), fixtures)
+	manifest := syntheticArchiveManifest()
+	manifest.TransactionsParquetFile = filepath.Base(file)
+	left, err := findRunArchiveBrowserHAREntry(context.Background(), filepath.Dir(file), manifest, syntheticUncoveredGeneration+"-request-9")
+	if err != nil || left.Fidelity != "omitted" || left.OmittedReason == "" || len(left.Entry) != 0 {
+		t.Fatalf("an omitted request: %+v %v", left, err)
+	}
+	unnamed := manifest.BrowserHARArtifacts[0]
+	unnamed.EvidenceGeneration = ""
+	manifest.BrowserHARArtifacts = append(manifest.BrowserHARArtifacts, unnamed)
+	found, err := findRunArchiveBrowserHAREntry(context.Background(), filepath.Dir(file), manifest, syntheticUncoveredGeneration+"-request-7")
+	if err != nil || found.Fidelity != harsynth.Fidelity || found.NativeHARCoverageUnknown != 1 {
+		t.Fatalf("coverage unknown: %+v %v", found, err)
 	}
 }

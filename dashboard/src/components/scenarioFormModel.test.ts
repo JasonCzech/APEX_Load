@@ -67,6 +67,15 @@ describe('seededScenarioRuntime', () => {
     })
   })
 
+  it('keeps the scenario\'s browser settings when the seed\'s runtime sets none', () => {
+    const current = { browser_config: { device_profile: 'iphone_15', orientation: 'portrait', headless: true } }
+    expect(seededScenarioRuntime(current as never, { runtime_settings: { pacing: { type: 'none' } } as never })).toEqual({
+      pacing: { type: 'none' }, browser_config: { device_profile: 'iphone_15', orientation: 'portrait', headless: true },
+    })
+    // A seed that brings its own browser settings replaces them.
+    expect(seededScenarioRuntime(current as never, { runtime_settings: { browser_config: { device_profile: 'desktop' } } as never })).toEqual({ browser_config: { device_profile: 'desktop' } })
+  })
+
   it('lets the seed\'s own values replace them', () => {
     const current = { iterations: 7, log_level: 'debug', error_handling: { continue_on_error: false } }
     const seeded = seededScenarioRuntime(current as never, {

@@ -51,9 +51,10 @@ test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'wait' })
 
 // BI-4: the run report's Browser area compares documents and leads from a
 // finding to its document's resources and one request's HAR entry. The run,
-// its archive, policy pin, HAR list and the HAR entry API are real; the
-// report's document summary, the findings result and the resource page are
-// bounded transport fixtures, as in the HAR and resource inspector workflows.
+// its archive and policy pin are real, and the real HAR entry API answers 404
+// for a request the archive does not hold; the report's document summary,
+// the findings result, the resource page and the HAR entry shown are bounded
+// transport fixtures, as in the HAR and resource inspector workflows.
 test('the Browser area leads from a finding to its document resources and HAR entry, and exports its sections', async ({ page, target, trackRun }) => {
   test.setTimeout(180_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
@@ -96,7 +97,7 @@ test('the Browser area leads from a finding to its document resources and HAR en
   await expect(page.getByRole('region', { name: 'Browser baseline', exact: true })).toContainText('has not been run for this run')
 
   await findings.getByRole('button', { name: `Inspect the resources of document …${DOCUMENT_ID.slice(-8)}`, exact: true }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'Showing the retained resources of document' })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: `the retained resources of document …${DOCUMENT_ID.slice(-8)}` })).toBeVisible()
   const inspector = page.getByRole('region', { name: 'Retained archive resource inspector', exact: true })
   await expect(inspector).toBeVisible()
   await expect.poll(() => resourceQueries.at(-1)).toBe(DOCUMENT_ID)

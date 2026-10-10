@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../hooks/apiClient'
 import BrowserHAREntryView from './BrowserHAREntryView'
 
 const read = vi.hoisted(() => vi.fn())
@@ -32,6 +33,23 @@ it('names the native HAR that holds a request and offers to download it', async 
   expect(container.textContent).toContain('browser_har_x.har')
   await click('Download that HAR')
   expect(onDownload).toHaveBeenCalledWith('browser_har_x.har')
+})
+
+it('says why the synthetic HAR leaves a request out, and when native HARs may hold it', async () => {
+  read.mockResolvedValue({ request_id: 'r-4', fidelity: 'omitted', omitted_reason: 'invalid_url', native_har_coverage_unknown: 2 })
+  await act(async () => root.render(<BrowserHAREntryView testID="run-1" requestID="r-4" />))
+  await click("Show this request's HAR entry")
+  expect(container.textContent).toContain('The synthetic HAR leaves this request out (invalid url)')
+  expect(container.textContent).toContain('2 native HARs that name no browser context')
+  expect(container.querySelector('pre[aria-label="HAR entry"]')).toBeNull()
+})
+
+it('says a 503 is a busy controller and offers a retry', async () => {
+  read.mockRejectedValueOnce(new ApiError('internal server error', 503))
+  await act(async () => root.render(<BrowserHAREntryView testID="run-1" requestID="r-5" />))
+  await click("Show this request's HAR entry")
+  expect(container.textContent).toContain('The controller is reading another browser archive, or ran out of time reading this one.')
+  expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Retry')).toBe(true)
 })
 
 it('keeps the server text behind details and offers a retry on failure', async () => {

@@ -56,6 +56,14 @@ describe('BrowserFindingsPanel', () => {
     container.remove()
   })
 
+  it('offers no evaluation for a run that pinned no browser policy', async () => {
+    mocks.request.mockResolvedValue({ run_id: 'run-1', status: 'not_evaluated' })
+    act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate browserPolicyPinned={false} />))
+    await flush()
+    expect(container.textContent).toContain('It pinned no browser policy, so the run report cannot evaluate it')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Evaluate with the pinned policy')).toBe(false)
+  })
+
   it('shows the qualified score, its components and the findings by state', async () => {
     mocks.request.mockResolvedValue(ready)
     act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate={false} />))

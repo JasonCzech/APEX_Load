@@ -70,7 +70,13 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 		results.Failures = append(results.Failures, message)
 		t.Error(message)
 	}
+	results.TargetBytes = target
 	defer func() {
+		// A run that stopped before it was measured is a failure, never a
+		// pending candidate.
+		if t.Failed() && len(results.Failures) == 0 {
+			results.Failures = append(results.Failures, "the run stopped before it was measured")
+		}
 		if dir := strings.TrimSpace(os.Getenv("APEXLOAD_ANALYTICS_BENCHMARK_OUT")); dir != "" {
 			writeAnalyticsReferenceAcceptance(t, dir, results)
 		}
@@ -271,6 +277,14 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 			results.NotMeasured = append(results.NotMeasured, fmt.Sprintf("cancellation (the heavy query was refused with %d before it could be cancelled)", got.code))
 		case got.elapsed < 500:
 			results.NotMeasured = append(results.NotMeasured, "cancellation (the heavy query finished before it was cancelled)")
+		case got.code == 200:
+			// It answered in full. Within a small margin of the cancel that is
+			// a race with it; later, the cancellation was ignored.
+			if late := time.Since(cancelled); late > 100*time.Millisecond {
+				fail("a cancelled heavy query answered in full %.0f ms after it was cancelled", float64(late.Microseconds())/1000)
+			} else {
+				results.NotMeasured = append(results.NotMeasured, "cancellation (the heavy query completed as it was cancelled)")
+			}
 		default:
 			results.CancelReturnMs = float64(time.Since(cancelled).Microseconds()) / 1000
 		}

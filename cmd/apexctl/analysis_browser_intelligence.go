@@ -26,9 +26,11 @@ claim.`
 
 const analysisHAREntryUsage = `Usage:
   apexctl analysis har-entry --run ID --request-id ID [--api URL] [--api-key KEY|--bearer-token TOKEN]
-Prints one retained browser request as a synthetic HAR entry, or names the
-native HAR that holds it when its browser context recorded one. Needs the HAR
-download permission (editor).`
+Prints one retained browser request as a synthetic HAR entry, names the
+native HAR that holds it when its browser context recorded one, or says why
+the synthetic HAR leaves it out (fidelity "omitted"). Needs the HAR download
+permission (editor). A 503 (another browser archive read in progress, or out
+of time) can be retried.`
 
 const analysisPoliciesUsage = `Usage:
   apexctl analysis policies list --project ID --kind KIND

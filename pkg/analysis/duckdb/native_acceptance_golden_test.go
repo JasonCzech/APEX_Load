@@ -20,8 +20,10 @@ import (
 
 // Analytical acceptance goldens (NA-6, B8) for the mapping layouts, decimal
 // values, schema drift across the files of one import and conflicting files.
-// Each expected value comes from DuckDB's own SQL over the source files, an
-// oracle independent of the normalization and series code under test.
+// Expected series values come from DuckDB's own SQL over the source files, an
+// oracle independent of the normalization and series code under test; the
+// counts, the conflicting-file aggregates and the DECIMAL beyond a double's
+// precision are fixed expectations derived from the fixtures.
 
 // nativeAcceptanceFile writes another Parquet fixture file beside the
 // engine's input.

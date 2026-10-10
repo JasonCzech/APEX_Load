@@ -58,8 +58,11 @@ type analyticsReferenceResults struct {
 	Host        analyticsReferenceHost   `json:"host"`
 	Files       []analyticsReferenceFile `json:"files"`
 	FixtureSQL  string                   `json:"fixture_sql"`
-	TotalBytes  int64                    `json:"total_bytes"`
-	TotalRows   int64                    `json:"total_rows"`
+	// TargetBytes is the fixture size requested; the F4 profile names it, so
+	// runs of one workload share a subject whatever the files compress to.
+	TargetBytes int64 `json:"target_bytes"`
+	TotalBytes  int64 `json:"total_bytes"`
+	TotalRows   int64 `json:"total_rows"`
 	// Import: upload and normalization wall time, and what normalization
 	// accepted and rejected.
 	UploadMs    float64 `json:"upload_ms"`
@@ -134,14 +137,18 @@ func writeAnalyticsReferenceAcceptance(t *testing.T, dir string, results analyti
 		}
 		return value
 	}
-	notes := fmt.Sprintf("%.2f GiB, %d files, %d rows: normalize %.0f s; query cold %.0f ms, P95 %.0f ms; pruned %d/%d; cancel %s; peak RSS %s; %s.",
-		float64(results.TotalBytes)/(1<<30), len(results.Files), results.TotalRows, results.NormalizeMs/1000, results.ColdQueryMs, results.RepeatedQueries.P95Ms,
-		results.PrunedObjects, results.TotalObjects, measured("cancellation", results.CancelReturnMs > 0, fmt.Sprintf("%.0f ms", results.CancelReturnMs)), measured("peak RSS", results.PeakCombinedRSSBytes > 0, fmt.Sprintf("%d MiB", results.PeakCombinedRSSBytes>>20)), host)
+	notes := fmt.Sprintf("%.2f GiB, %d files, %d rows: normalize %s; query cold %s, P95 %s; pruned %s; cancel %s; peak RSS %s; %s.",
+		float64(results.TotalBytes)/(1<<30), len(results.Files), results.TotalRows,
+		measured("normalization", results.NormalizeMs > 0, fmt.Sprintf("%.0f s", results.NormalizeMs/1000)),
+		measured("cold query", results.ColdQueryMs > 0, fmt.Sprintf("%.0f ms", results.ColdQueryMs)),
+		measured("repeated queries", results.RepeatedQueries.Samples > 0, fmt.Sprintf("%.0f ms", results.RepeatedQueries.P95Ms)),
+		measured("pruning", results.TotalObjects > 0, fmt.Sprintf("%d/%d", results.PrunedObjects, results.TotalObjects)),
+		measured("cancellation", results.CancelReturnMs > 0, fmt.Sprintf("%.0f ms", results.CancelReturnMs)), measured("peak RSS", results.PeakCombinedRSSBytes > 0, fmt.Sprintf("%d MiB", results.PeakCombinedRSSBytes>>20)), host)
 	if len(notes) > 256 {
 		t.Errorf("acceptance notes exceed the 256 bytes a record accepts: %q", notes)
 	}
 	requests := []map[string]any{{
-		"requirement_id": "NA-6", "feature": "analytics-reference", "profile": fmt.Sprintf("%dmib-partitioned", results.TotalBytes>>20),
+		"requirement_id": "NA-6", "feature": "analytics-reference", "profile": fmt.Sprintf("%dmib-partitioned", results.TargetBytes>>20),
 		"platform": results.Host.OS + "-" + results.Host.Arch, "commit_sha": commit, "suite": "pkg/api TestNativeAnalyticsReferenceBenchmark", "result": status,
 		"artifacts": []map[string]string{{"name": "analytics-reference.json", "sha256": hex.EncodeToString(sum[:])}},
 		"notes":     notes,
@@ -160,7 +167,7 @@ func writeAnalyticsReferenceAcceptance(t *testing.T, dir string, results analyti
 // F4 shape.
 func TestAnalyticsReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	results := analyticsReferenceResults{Schema: "apexload.analytics_reference.v1", Host: analyticsReferenceHost{OS: "darwin", Arch: "arm64", CPUs: 12},
-		Files: []analyticsReferenceFile{{Name: "day-00.parquet", Bytes: 1 << 30, Rows: 1e8}}, TotalBytes: 1 << 30, TotalRows: 1e8,
+		Files: []analyticsReferenceFile{{Name: "day-00.parquet", Bytes: 1 << 30, Rows: 1e8}}, TargetBytes: 1 << 30, TotalBytes: 1 << 30, TotalRows: 1e8,
 		RepeatedQueries: analyticsReferenceTiming{Samples: 20, P50Ms: 900, P95Ms: 1200, MaxMs: 1300}, ColdQueryMs: 9999, NormalizeMs: 999999, CancelReturnMs: 99,
 		TotalObjects: 9999, PrunedObjects: 9998, PeakControllerRSSBytes: 99999 << 20, PeakWorkerRSSBytes: 99999 << 20, PeakCombinedRSSBytes: 199998 << 20}
 	read := func(dir string) (status, notes string) {
@@ -217,6 +224,12 @@ func TestAnalyticsReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	writeAnalyticsReferenceAcceptance(t, dir, stopped)
 	if status, notes := read(dir); status != "failed" || !strings.Contains(notes, "cancel n/m") || !strings.Contains(notes, "peak RSS n/m") {
 		t.Fatalf("values never taken in the notes: %s %q", status, notes)
+	}
+	// A run that stopped before its import or queries says so for each.
+	early := analyticsReferenceResults{Schema: results.Schema, Host: results.Host, TargetBytes: 1 << 30, Failures: []string{"the run stopped before it was measured"}}
+	writeAnalyticsReferenceAcceptance(t, dir, early)
+	if status, notes := read(dir); status != "failed" || !strings.Contains(notes, "normalize n/m; query cold n/m, P95 n/m; pruned n/m") {
+		t.Fatalf("a run that stopped early: %s %q", status, notes)
 	}
 	slow := results
 	slow.RepeatedQueries.P95Ms = analyticsReferenceP95TargetMs + 1

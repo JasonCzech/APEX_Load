@@ -2,7 +2,7 @@
 
 Status: Wave 5 (A8), 2026-10-09. This is the AUTH-3 seam inventory of the [feature completion specification](../FEATURE_COMPLETION_SPEC.md#auth-3-adapter-retirement-inventory). For each seam it records the decision, the canonical owner that now resolves its values, the callers that were moved, and the tests that prove parity.
 
-Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. That ratchet fails when application code names a retired adapter or one of its mirror fields again, when a division by a ramp duration (a variable, a member or a parsed field named for the ramp) appears outside the projections that own one, or when a caller of a retired copy stops importing its owner. Tests are not scanned, so they can still name an old value to prove it is refused or translated.
+Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. That ratchet fails when application code names a retired adapter again, when the scenario form declares any of the 34 version 2 mirror fields as a member again (some, such as the error flags, are legitimate names elsewhere), when a division by a ramp duration (a variable, a member or a parsed field named for the ramp) appears outside the projections that own one, or when a caller of a retired copy stops importing its owner. Tests are not scanned, so they can still name an old value to prove it is refused or translated.
 
 ## Retired seams
 
@@ -39,7 +39,7 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
 ### TestHub flat `ScenarioFormState` mirrors and `scenarioFormModel` runtime reconstruction
 
 - **Decision:** retired. The scenario form keeps only canonical values: `runtime_settings` (the stored override), `goal_config` and `assignment`. Every editor writes those directly.
-- **Fields removed:** 27 mirror fields, which the save used to compose back into the canonical values:
+- **Fields removed:** 34 mirror fields, which the save used to compose back into the canonical values:
   - runtime pacing, think time, iterations, logging and auto-transaction fields;
   - the `continue_on_error` and `snapshot_on_error` flags;
   - the four browser fields;

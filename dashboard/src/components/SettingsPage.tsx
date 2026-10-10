@@ -6008,7 +6008,9 @@ export default function SettingsPage({
                   aria-labelledby="settings-projects-tab-analysis-policies"
                   hidden={activeProjectSubsection !== 'analysis-policies'}
                 >
-                  {activeProjectSubsection === 'analysis-policies' && <AnalysisPoliciesPanel key={selectedProject.id} projectId={selectedProject.id} canEdit={canManageScripts || canManageProjects || canManageSystem} />}
+                  {/* Kept mounted (hidden) like the secrets panel, so a policy
+                      draft and its unsaved-work guard survive a tab switch. */}
+                  <AnalysisPoliciesPanel key={selectedProject.id} projectId={selectedProject.id} canEdit={canManageScripts || canManageProjects || canManageSystem} />
                 </section>
 
                 {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && activeProjectSubsection !== 'analysis-policies' && (

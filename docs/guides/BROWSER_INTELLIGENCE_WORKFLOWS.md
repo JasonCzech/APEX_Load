@@ -4,14 +4,14 @@ Status: implemented (Wave 5, E6). This guide covers BI-4 of the [feature complet
 
 ## The Browser area of a run report
 
-A run with browser groups or browser document evidence has a **Browser** area in its run report (`#/report/{id}?section=browser`). It reads the finalized archive. On an HA controller, a panel says the archive is not available yet until it is published, and offers to check again. The area holds:
+A run with browser groups, browser document evidence or a pinned browser policy (a project default is pinned at Start) has a **Browser** area in its run report (`#/report/{id}?section=browser`). It reads the finalized archive. On an HA controller, a panel says the archive is not available yet until it is published, and offers to check again. The area holds:
 
 - **Device, engine and group comparison.** For each engine, device profile and scenario group, it shows each document metric's p75 over final qualified main-frame navigation documents, with how many documents it counts.
   - The p75 is computed as the controller computes it: the upper bound of the bucket holding it, capped by the observed maximum.
   - Documents record no page, so the scenario group stands in for one.
   - One engine, device and group that ran under more than one runtime cohort (for example, different network shaping) gets one row per cohort.
   - Child-frame and back-forward cache tuples are counted and left out.
-- **Browser findings and the qualified score** under the run's pinned browser policy. An editor can evaluate the run on demand.
+- **Browser findings and the qualified score** under the run's pinned browser policy. For a run that pinned a browser policy, the area offers editors an on-demand evaluation under it; anyone who can view a run may also request an evaluation, under the pinned policy or a named revision, through the API or `apexctl`. An evaluation under a named revision is read from that evaluation and never replaces the run's findings shown here.
 - **Browser baseline.** The baseline comparison of the run's latest root-cause analysis (anomalies, qualification and exclusions). Without an analysis, the area links to root-cause analysis.
 - **Interaction patterns and heatmaps.**
 - **Journey risk.**
@@ -24,8 +24,10 @@ The live execution page shows the same comparison over the documents published s
 1. A finding lists its worst documents. Selecting one opens the retained resource inspector filtered to that document's requests (the `document_id` filter).
 2. Each request's details offer **Show this request's HAR entry** to users who may download HARs (editors and project administrators). It reads `GET /api/v1/tests/{id}/archive/browser/har-entry?request_id=…`:
    - **Synthetic entry.** The request is returned as a synthetic HAR 1.2 entry, scrubbed and bounded exactly as the downloadable synthetic HAR is, with its `_apexload.request_id`.
-   - **Native HAR.** A request whose browser context recorded a native HAR is not in the synthetic HAR. The response names that native HAR instead, and the inspector offers to download it.
+   - **Native HAR.** A request whose browser context recorded a native HAR is not in the synthetic HAR. The response names that native HAR instead, and the inspector offers to download it. Native HARs recorded before they named their browser context cannot be matched to a request; when the archive has any, the response counts them, since the request may be in one.
+   - **Left out.** A request the synthetic HAR leaves out (for example a URL with no host) says why, as a downloaded synthetic HAR does.
    - **Unknown request.** A request identity the archive does not hold answers 404.
+   - **Busy.** The read scans the archive and shares the resource inspector's one scan at a time and its time limit: while another scan runs, or when it runs out of time, it answers 503 and can be retried.
 
 ## Editing browser and journey policies
 

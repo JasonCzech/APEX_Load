@@ -60,7 +60,8 @@ type telemetryReferenceResults struct {
 	TargetRate     int     `json:"target_rate"`
 	ServedRequests int64   `json:"served_requests"`
 	// AcceptedRecords is the archive's samples of the script's request;
-	// AcceptedRate is it over the run's duration.
+	// AcceptedRate is their rate from the first archived sample (the ramp
+	// included) to the last; the run's start lead and drain are left out.
 	AcceptedRecords int64   `json:"accepted_records"`
 	AcceptedRate    float64 `json:"accepted_rate"`
 	// UnreportedLoss is served requests minus archived samples. A request a
@@ -329,11 +330,12 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	results.ServedRequests = served.Load() - servedBefore
 	// The archive path: every served request is an archived sample of the
 	// script's request (the archive also holds each iteration's transaction
-	// row), exactly once.
-	results.AcceptedRecords = telemetryReferenceArchivedRequests(t, record, manifest, "Ping")
+	// row), exactly once, but those aborted in flight at the stop.
+	var first, last time.Time
+	results.AcceptedRecords, first, last = telemetryReferenceArchivedRequests(t, record, manifest, "Ping")
 	results.UnreportedLoss = results.ServedRequests - results.AcceptedRecords
-	if manifest.Provenance.StartedAt != nil && manifest.CompletedAt.After(*manifest.Provenance.StartedAt) {
-		results.AcceptedRate = float64(results.AcceptedRecords) / manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt).Seconds()
+	if results.AcceptedRecords > 1 && last.After(first) {
+		results.AcceptedRate = float64(results.AcceptedRecords-1) / last.Sub(first).Seconds()
 	}
 	// The live telemetry path: the run's live totals (successes and recorded
 	// errors), plus the results its dropped-results counter reports, account
@@ -446,8 +448,8 @@ func telemetryReferenceInt(value *int64) any {
 }
 
 // telemetryReferenceArchivedRequests counts the archive's samples of one
-// action (not transaction rows).
-func telemetryReferenceArchivedRequests(t *testing.T, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, action string) int64 {
+// action (not transaction rows) and returns the first and last sample times.
+func telemetryReferenceArchivedRequests(t *testing.T, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, action string) (int64, time.Time, time.Time) {
 	t.Helper()
 	lease, err := acquireArchiveMaterialized(context.Background(), record)
 	if err != nil {
@@ -464,6 +466,7 @@ func telemetryReferenceArchivedRequests(t *testing.T, record *storage.RunArchive
 	}
 	defer file.Close()
 	var count int64
+	var first, last time.Time
 	visit := func(raw []byte) error {
 		var event TransactionEvent
 		if err := json.Unmarshal(raw, &event); err != nil {
@@ -471,6 +474,12 @@ func telemetryReferenceArchivedRequests(t *testing.T, record *storage.RunArchive
 		}
 		if !event.BusinessTransaction && event.ActionName == action {
 			count++
+			if first.IsZero() || event.Timestamp.Before(first) {
+				first = event.Timestamp
+			}
+			if event.Timestamp.After(last) {
+				last = event.Timestamp
+			}
 		}
 		return nil
 	}
@@ -482,21 +491,19 @@ func telemetryReferenceArchivedRequests(t *testing.T, record *storage.RunArchive
 	if err != nil {
 		t.Fatal(err)
 	}
-	return count
+	return count, first, last
 }
 
 // telemetryReferenceDashboard opens the run's live page in headless
 // Chromium, which reports its render evidence while it is in the
-// foreground. Without an installed Chromium the browser-render stage is not
-// measured (a failure under APEXLOAD_BROWSER_TESTS=require).
+// foreground. Without one there is no render evidence, which fails the run
+// (render evidence is required); the cause is noted here, and the render gate
+// records the one failure.
 func telemetryReferenceDashboard(t *testing.T, url string, results *telemetryReferenceResults) func() {
 	t.Helper()
 	unavailable := func(err error) func() {
-		if os.Getenv("APEXLOAD_BROWSER_TESTS") == "require" {
-			t.Errorf("the foreground dashboard could not start: %v", err)
-			results.Failures = append(results.Failures, "the foreground dashboard could not start")
-		}
-		results.NotMeasured = append(results.NotMeasured, "browser render (no Chromium for the foreground dashboard)")
+		t.Logf("the foreground dashboard could not start: %v", err)
+		results.NotMeasured = append(results.NotMeasured, "browser render (the foreground dashboard could not start)")
 		return func() {}
 	}
 	pw, err := playwright.Run()
@@ -557,7 +564,12 @@ func writeTelemetryReferenceAcceptance(t *testing.T, dir string, results telemet
 		}
 		return "n/a"
 	}
-	live := "n/m"
+	// Nothing archived means nothing measured: the rate and the archive's
+	// loss read n/m, never zero.
+	rate, archive, live := "n/m", "n/m", "n/m"
+	if results.AcceptedRecords > 0 {
+		rate, archive = fmt.Sprintf("%.0f/s", results.AcceptedRate), fmt.Sprint(results.UnreportedLoss)
+	}
 	if results.LiveUnreportedLoss != nil {
 		live = fmt.Sprint(*results.LiveUnreportedLoss)
 	}
@@ -565,14 +577,14 @@ func writeTelemetryReferenceAcceptance(t *testing.T, dir string, results telemet
 	if len(results.Classifications) > 0 {
 		classified = "; " + strings.Join(results.Classifications, ", ")
 	}
-	notes := fmt.Sprintf("%d gens in-process, %.0f/s for %.0f s; P99 ms age %s gen %s transport %s fanout %s render %s; unreported loss archive %d live %s%s; %d failures.",
-		results.Generators, results.AcceptedRate, results.DurationS, p99(telemetryStageSampleAge), p99(telemetryStageGeneratorProcessing), p99(telemetryStageTransport),
-		p99(telemetryStageControllerFanout), p99(telemetryStageBrowserRender), results.UnreportedLoss, live, classified, len(results.Failures))
+	notes := fmt.Sprintf("%d gens in-process, %s for %.0f s; P99 ms age %s gen %s transport %s fanout %s render %s; unreported loss archive %s live %s%s; %d failures.",
+		results.Generators, rate, results.DurationS, p99(telemetryStageSampleAge), p99(telemetryStageGeneratorProcessing), p99(telemetryStageTransport),
+		p99(telemetryStageControllerFanout), p99(telemetryStageBrowserRender), archive, live, classified, len(results.Failures))
 	if len(notes) > 256 {
 		t.Errorf("acceptance notes exceed the 256 bytes a record accepts: %q", notes)
 	}
 	requests := []map[string]any{{
-		"requirement_id": "TEL-4", "feature": "telemetry-reference", "profile": fmt.Sprintf("%dps-%dgen", results.TargetRate, results.Generators),
+		"requirement_id": "TEL-4", "feature": "telemetry-reference", "profile": fmt.Sprintf("%dps-%dgen-%ds", results.TargetRate, results.Generators, int(results.DurationS)),
 		"platform": results.Host.OS + "-" + results.Host.Arch, "commit_sha": commit, "suite": "pkg/api TestTelemetryReferenceWorkload", "result": status,
 		"artifacts": []map[string]string{{"name": "telemetry-reference.json", "sha256": hex.EncodeToString(sum[:])}},
 		"notes":     notes,
@@ -650,7 +662,7 @@ func TestTelemetryReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	stopped := telemetryReferenceResults{Schema: results.Schema, Generators: 2, TargetRate: 2000, Failures: []string{}}
 	stopped.Host = results.Host
 	writeTelemetryReferenceAcceptance(t, dir, stopped)
-	if status, _ := read(dir); status != "failed" {
-		t.Fatalf("a run that stopped before it was measured was %s", status)
+	if status, notes := read(dir); status != "failed" || !strings.Contains(notes, "n/m for") || !strings.Contains(notes, "archive n/m live n/m") {
+		t.Fatalf("a run that stopped before it was measured: %s %q", status, notes)
 	}
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../../hooks/apiClient'
+import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../../hooks/NavigationGuardProvider'
 import { analysisPoliciesApi, type AnalysisPolicyRecord, type EditableAnalysisPolicyKind } from '../../hooks/api/analysisPoliciesApi'
 import { formatDateTime } from '../../utils/dateTime'
 import { getErrorMessage } from '../../utils/errorUtils'
@@ -16,9 +17,11 @@ const KIND_LABELS: Record<EditableAnalysisPolicyKind, { plural: string; singular
   journey_policy: { plural: 'Journey policies', singular: 'journey policy' },
 }
 
+// opened is the draft as it was opened: an edit that differs from it is
+// unsaved work.
 type Editing =
-  | { kind: 'browser_policy'; id: string | null; revision: number; draft: BrowserPolicyDraft }
-  | { kind: 'journey_policy'; id: string | null; revision: number; draft: JourneyPolicyDraft }
+  | { kind: 'browser_policy'; id: string | null; revision: number; draft: BrowserPolicyDraft; opened: string }
+  | { kind: 'journey_policy'; id: string | null; revision: number; draft: JourneyPolicyDraft; opened: string }
 
 function isDefault(policy: AnalysisPolicyRecord): boolean {
   return Boolean(policy.definition && typeof policy.definition === 'object' && (policy.definition as { apply_by_default?: boolean }).apply_by_default)
@@ -41,6 +44,11 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   const [conflict, setConflict] = useState(false)
   const [busy, setBusy] = useState(false)
   const [revisionView, setRevisionView] = useState<{ policy: AnalysisPolicyRecord; revision: string; record: AnalysisPolicyRecord | null; error: string } | null>(null)
+  // Unsaved edits are guarded: leaving Settings, another project or another
+  // policy asks before discarding them.
+  const dirty = Boolean(editing && JSON.stringify(editing.draft) !== editing.opened)
+  useUnsavedWorkGuard('analysis-policy-editor', 'Unsaved policy edits', dirty, () => { setEditing(null); setSaveError(''); setConflict(false) })
+  const { runGuarded } = useNavigationGuardRunner()
 
   useEffect(() => {
     if (!projectId) return
@@ -54,15 +62,23 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
 
   const startNew = () => {
     setSaveError(''); setConflict(false); setRevisionView(null)
-    setEditing(kind === 'browser_policy'
-      ? { kind, id: null, revision: 0, draft: defaultBrowserPolicyDraft() }
-      : { kind, id: null, revision: 0, draft: defaultJourneyPolicyDraft() })
+    if (kind === 'browser_policy') {
+      const draft = defaultBrowserPolicyDraft()
+      setEditing({ kind, id: null, revision: 0, draft, opened: JSON.stringify(draft) })
+    } else {
+      const draft = defaultJourneyPolicyDraft()
+      setEditing({ kind, id: null, revision: 0, draft, opened: JSON.stringify(draft) })
+    }
   }
   const startEdit = (policy: AnalysisPolicyRecord) => {
     setSaveError(''); setConflict(false); setRevisionView(null)
-    setEditing(policy.kind === 'browser_policy'
-      ? { kind: 'browser_policy', id: policy.id, revision: policy.revision, draft: browserDraftFromDefinition(policy.name, policy.definition) }
-      : { kind: 'journey_policy', id: policy.id, revision: policy.revision, draft: journeyDraftFromDefinition(policy.name, policy.definition) })
+    if (policy.kind === 'browser_policy') {
+      const draft = browserDraftFromDefinition(policy.name, policy.definition)
+      setEditing({ kind: 'browser_policy', id: policy.id, revision: policy.revision, draft, opened: JSON.stringify(draft) })
+    } else {
+      const draft = journeyDraftFromDefinition(policy.name, policy.definition)
+      setEditing({ kind: 'journey_policy', id: policy.id, revision: policy.revision, draft, opened: JSON.stringify(draft) })
+    }
   }
 
   const reloadCurrent = useCallback(async () => {
@@ -139,8 +155,8 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   return <section className="settings-subsection analysis-policies" aria-label="Browser and journey policies">
     <p>Browser policies score a run's document metrics and set how the root-cause browser baseline compares them; journey policies define the journeys whose attempts are accounted. The default policy of each kind is pinned when a run starts, and findings keep the revision they were evaluated under: editing a policy never rewrites a finished run's results.</p>
     <div className="settings-inline-actions" role="group" aria-label="Policy kind">
-      {(Object.keys(KIND_LABELS) as EditableAnalysisPolicyKind[]).map(value => <button key={value} type="button" className={`btn btn-sm ${kind === value ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={kind === value} onClick={() => { setKind(value); setEditing(null); setRevisionView(null); setPolicies(null); setDeleteError('') }}>{KIND_LABELS[value].plural}</button>)}
-      {canEdit && !editing && <button type="button" className="btn btn-sm btn-secondary" onClick={startNew}>New {KIND_LABELS[kind].singular}</button>}
+      {(Object.keys(KIND_LABELS) as EditableAnalysisPolicyKind[]).map(value => <button key={value} type="button" className={`btn btn-sm ${kind === value ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={kind === value} onClick={() => runGuarded(() => { setKind(value); setEditing(null); setRevisionView(null); setPolicies(null); setDeleteError('') })}>{KIND_LABELS[value].plural}</button>)}
+      {canEdit && !editing && <button type="button" className="btn btn-sm btn-secondary" onClick={() => runGuarded(startNew)}>New {KIND_LABELS[kind].singular}</button>}
     </div>
     {!canEdit && <p className="run-report-muted">Your role in this project can view policies but not change them.</p>}
     {deleteError && <Notice tone="error" title="The policy was not deleted">{deleteError}</Notice>}
@@ -154,8 +170,8 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
         <td>{policy.revision}</td>
         <td>{isDefault(policy) ? 'Pinned at Start' : '—'}</td>
         <td>
-          {canEdit && <button type="button" className="btn btn-ghost btn-sm" onClick={() => startEdit(policy)}>Edit</button>}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setEditing(null); setRevisionView({ policy, revision: String(policy.revision), record: null, error: '' }) }}>View a revision</button>
+          {canEdit && <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => startEdit(policy))}>Edit</button>}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => { setEditing(null); setRevisionView({ policy, revision: String(policy.revision), record: null, error: '' }) })}>View a revision</button>
           {canEdit && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void remove(policy)}>Delete</button>}
         </td>
       </tr>)}</tbody>

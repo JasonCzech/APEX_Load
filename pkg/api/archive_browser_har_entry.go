@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/harsynth"
@@ -20,11 +22,16 @@ import (
 type BrowserHAREntryResponse struct {
 	RequestID        string `json:"request_id"`
 	SourceGeneration string `json:"source_generation,omitempty"`
-	// Fidelity is synthetic (Entry is set) or native (Artifact names the
-	// native HAR that holds the request).
-	Fidelity string          `json:"fidelity"`
-	Artifact string          `json:"artifact,omitempty"`
-	Entry    json.RawMessage `json:"entry,omitempty"`
+	// Fidelity is synthetic (Entry is set), native (Artifact names the
+	// native HAR that holds the request) or omitted (the synthetic HAR leaves
+	// the request out, for OmittedReason, as a downloaded one does).
+	Fidelity      string          `json:"fidelity"`
+	Artifact      string          `json:"artifact,omitempty"`
+	Entry         json.RawMessage `json:"entry,omitempty"`
+	OmittedReason string          `json:"omitted_reason,omitempty"`
+	// NativeHARCoverageUnknown counts the archive's native HARs that name no
+	// browser context: a synthetic entry's request may be in one of them.
+	NativeHARCoverageUnknown int `json:"native_har_coverage_unknown,omitempty"`
 	// HeadersOmitted is true when the archive keeps no headers (a Parquet
 	// transactions file), as the synthetic HAR states.
 	HeadersOmitted bool `json:"headers_omitted,omitempty"`
@@ -34,9 +41,10 @@ var errBrowserHAREntryFound = errors.New("browser HAR entry found")
 
 // handleGetRunArchiveBrowserHAREntry returns the HAR entry of the retained
 // browser request with request_id. It needs the HAR download permission:
-// an entry carries what the synthetic HAR carries.
+// an entry carries what the synthetic HAR carries. Its archive scan shares
+// the browser resource reader's one admitted scan and route deadline.
 //
-// OpenAPI-Responses: 400, 404, 500
+// OpenAPI-Responses: 400, 404, 500, 503
 func (s *Server) handleGetRunArchiveBrowserHAREntry(w http.ResponseWriter, r *http.Request) {
 	// An entry carries request and response detail: never cached.
 	w.Header().Set("Cache-Control", "no-store")
@@ -61,6 +69,13 @@ func (s *Server) handleGetRunArchiveBrowserHAREntry(w http.ResponseWriter, r *ht
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
+		// Running out of time fetching the archive is retryable, as the scan's
+		// own deadline is.
+		if ctx.Err() != nil {
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusServiceUnavailable, "the browser request could not be read in time; retry")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
@@ -70,10 +85,21 @@ func (s *Server) handleGetRunArchiveBrowserHAREntry(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	select {
+	case browserResourceReadPermit <- struct{}{}:
+		defer func() { <-browserResourceReadPermit }()
+	default:
+		w.Header().Set("Retry-After", "2")
+		writeError(w, http.StatusServiceUnavailable, "another browser archive read is in progress; retry shortly")
+		return
+	}
 	response, err := findRunArchiveBrowserHAREntry(ctx, record.ArchivePath, manifest, requestID)
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, response)
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
+		w.Header().Set("Retry-After", "2")
+		writeError(w, http.StatusServiceUnavailable, "the browser request could not be read in time; retry")
 	case errors.Is(err, errSyntheticHARSourceUnavailable):
 		writeError(w, http.StatusNotFound, "this archive has no transactions to read browser requests from")
 	case errors.Is(err, errBrowserHAREntryNotFound):
@@ -103,7 +129,7 @@ func findRunArchiveBrowserHAREntry(ctx context.Context, archivePath string, mani
 		return nil, err
 	}
 	defer file.Close()
-	covered, _ := nativeHARCoveredGenerations(manifest)
+	covered, unknown := nativeHARCoveredGenerations(manifest)
 	headers := format != "parquet"
 	var response *BrowserHAREntryResponse
 	visit := func(raw []byte) error {
@@ -127,7 +153,7 @@ func findRunArchiveBrowserHAREntry(ctx context.Context, archivePath string, mani
 			if evidence == nil || evidence.RequestID != requestID {
 				continue
 			}
-			found := &BrowserHAREntryResponse{RequestID: requestID, SourceGeneration: evidence.SourceGeneration}
+			found := &BrowserHAREntryResponse{RequestID: requestID, SourceGeneration: evidence.SourceGeneration, NativeHARCoverageUnknown: unknown}
 			if covered[evidence.SourceGeneration] {
 				found.Fidelity = "native"
 				for _, har := range manifest.BrowserHARArtifacts {
@@ -146,11 +172,15 @@ func findRunArchiveBrowserHAREntry(ctx context.Context, archivePath string, mani
 			if !headers {
 				entry.RequestHeaders, entry.ResponseHeaders = nil, nil
 			}
-			raw, err := syntheticHAREntryJSON(harsynth.Entry{RecordTime: event.Timestamp, ActionName: event.ActionName, PageURL: pageURL, BrowserEngine: engine, Network: entry}, headers)
+			raw, omitted, err := syntheticHAREntryJSON(harsynth.Entry{RecordTime: event.Timestamp, ActionName: event.ActionName, PageURL: pageURL, BrowserEngine: engine, Network: entry}, headers)
 			if err != nil {
 				return err
 			}
-			found.Fidelity, found.Entry, found.HeadersOmitted = harsynth.Fidelity, raw, !headers
+			if omitted != "" {
+				found.Fidelity, found.OmittedReason = "omitted", omitted
+			} else {
+				found.Fidelity, found.Entry, found.HeadersOmitted = harsynth.Fidelity, raw, !headers
+			}
 			response = found
 			return errBrowserHAREntryFound
 		}
@@ -172,8 +202,8 @@ func findRunArchiveBrowserHAREntry(ctx context.Context, archivePath string, mani
 
 // syntheticHAREntryJSON writes one entry through the synthetic HAR writer
 // (the same scrubbing and fields as a downloaded synthetic HAR) and returns
-// that entry.
-func syntheticHAREntryJSON(entry harsynth.Entry, headers bool) (json.RawMessage, error) {
+// that entry, or the reason the writer left it out.
+func syntheticHAREntryJSON(entry harsynth.Entry, headers bool) (json.RawMessage, string, error) {
 	meta := harsynth.Metadata{CaptureMode: harsynth.CaptureRetainedNetworkEntries}
 	if !headers {
 		meta.ExtraOmittedFields = []string{"request.headers", "response.headers"}
@@ -181,10 +211,11 @@ func syntheticHAREntryJSON(entry harsynth.Entry, headers bool) (json.RawMessage,
 	var out bytes.Buffer
 	writer := harsynth.NewWriter(&out, meta)
 	if err := writer.Add(entry); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if _, err := writer.Close(); err != nil {
-		return nil, err
+	summary, err := writer.Close()
+	if err != nil {
+		return nil, "", err
 	}
 	var document struct {
 		Log struct {
@@ -192,10 +223,15 @@ func syntheticHAREntryJSON(entry harsynth.Entry, headers bool) (json.RawMessage,
 		} `json:"log"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &document); err != nil {
-		return nil, fmt.Errorf("decode synthetic HAR entry: %w", err)
+		return nil, "", fmt.Errorf("decode synthetic HAR entry: %w", err)
 	}
 	if len(document.Log.Entries) != 1 {
-		return nil, errBrowserHAREntryNotFound
+		for _, reason := range slices.Sorted(maps.Keys(summary.Omitted)) {
+			if summary.Omitted[reason] > 0 {
+				return nil, reason, nil
+			}
+		}
+		return nil, "", errBrowserHAREntryNotFound
 	}
-	return document.Log.Entries[0], nil
+	return document.Log.Entries[0], "", nil
 }

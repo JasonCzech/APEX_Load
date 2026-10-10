@@ -495,6 +495,13 @@ describe('RunReportPage', () => {
     mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'telemetry_policy', id: 't' }] } }, overview: {} } as unknown as RunArchiveReport
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
     expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    // A journey policy, which any protocol may pin, is not a reason for one.
+    mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'journey_policy', id: 'j' }] } }, overview: {} } as unknown as RunArchiveReport
+    await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
+    expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    // A Browser link to such a run falls back to Summary, a selected tab.
+    await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="browser" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Summary')
     mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'browser_policy', id: 'p' }] } }, overview: {} } as unknown as RunArchiveReport
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
     expect(container.querySelector('#result-tab-Browser')).not.toBeNull()

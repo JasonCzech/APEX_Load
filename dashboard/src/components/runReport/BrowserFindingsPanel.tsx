@@ -17,7 +17,9 @@ function findingTitle(finding: BrowserFinding): string {
 // qualified score, and lets an editor evaluate the run on demand. With
 // onInspectDocument, a finding's worst documents open that document's
 // retained resources (finding → document → resources → HAR entry).
-export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, onInspectDocument }: { testId: string; projectId: string; canEvaluate: boolean; onInspectDocument?: (documentId: string) => void }) {
+export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, browserPolicyPinned, onInspectDocument }: { testId: string; projectId: string; canEvaluate: boolean; browserPolicyPinned?: boolean; onInspectDocument?: (documentId: string) => void }) {
+  // An evaluation needs the run's pinned browser policy; unknown is allowed.
+  const evaluable = canEvaluate && browserPolicyPinned !== false
   const [state, setState] = useState<RunBrowserFindings | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -66,8 +68,10 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, o
       ? 'A browser evaluation is queued or running.'
       : state.status === 'failed'
         ? `The browser evaluation failed: ${state.failure || 'no reason recorded'}.`
-        : `This run has no browser evaluation. A run that pins a browser policy and captures document evidence is queued for evaluation when its archive is finalized${canEvaluate ? '; evaluate it here if none was queued' : ''}.`}</p>}
-    {canEvaluate && !loading && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
+        : browserPolicyPinned === false
+          ? 'This run has no browser evaluation. It pinned no browser policy, so the run report cannot evaluate it. An evaluation under a named policy revision (API or apexctl) is read from that evaluation and does not appear here.'
+          : `This run has no browser evaluation. A run that pins a browser policy and captures document evidence is queued for evaluation when its archive is finalized${evaluable ? '; evaluate it here if none was queued' : ''}.`}</p>}
+    {evaluable && !loading && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
     {result && <>
       <p>
         <strong>{result.score.score !== undefined ? `Score ${result.score.score.toFixed(1)}/100 (${result.score.severity.replace(/_/g, ' ')})` : browserScoreUnscoredText(result.score.unscored_reason)}</strong>{' '}

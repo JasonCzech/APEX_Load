@@ -1164,7 +1164,7 @@ a response limit: `journeys`, `browser-findings`, `interactions`, `har-entry`,
 | `delete-panel --id ID --revision N` | Deletes a definition at revision N. |
 | `run-query --id RUN --file query.json` | Runs a native archive query of one run (and its `comparison_run_id`). |
 | `interactions --run RUN` | A finalized run's interaction patterns and heatmaps. |
-| `har-entry --run RUN --request-id ID` | One retained browser request as a synthetic HAR entry, or the native HAR that holds it (HAR download permission). |
+| `har-entry --run RUN --request-id ID` | One retained browser request as a synthetic HAR entry, the native HAR that holds it, or why the synthetic HAR leaves it out (fidelity `omitted`); HAR download permission. A 503 (another browser archive read, or out of time) can be retried. |
 | `policies list\|get\|save\|delete --project P …` | Lists, reads (a past `--revision`), saves (an existing one at the `--revision` it was read at) or deletes analysis policies. |
 
 The `list`, `create`, `upload`, `map`, `commit`, `query`, `compare`,

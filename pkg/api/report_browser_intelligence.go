@@ -224,9 +224,12 @@ func (d *runArchiveHTMLReportData) BrowserFindingsView() reportBrowserFindingsVi
 		case "pending":
 			return reportBrowserFindingsView{Summary: "A browser evaluation of this run is queued or running."}
 		case "failed":
-			return reportBrowserFindingsView{Summary: "The run's browser evaluation failed: " + response.Failure}
+			// The job's failure text can carry store or object-store detail;
+			// an export says only that it failed (the run report shows the
+			// job to those who may see it).
+			return reportBrowserFindingsView{Summary: "The run's browser evaluation failed. Its findings were not produced; evaluate the run again."}
 		default:
-			return reportBrowserFindingsView{Summary: "This run has no browser evaluation. A run that pins a browser policy and captures document evidence is evaluated when its archive is finalized; an editor can evaluate any run."}
+			return reportBrowserFindingsView{Summary: "This run has no browser evaluation. A run that pins a browser policy and captures document evidence is evaluated when its archive is finalized; the run report offers editors an evaluation under the run's pinned browser policy. An evaluation under a named policy revision (API or apexctl) is read from that evaluation and never becomes the run's findings."}
 		}
 	}
 	result := response.Result

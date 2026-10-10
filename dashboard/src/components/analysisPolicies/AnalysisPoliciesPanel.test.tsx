@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../hooks/apiClient'
+import { NavigationGuardRegisterContext, NavigationGuardRunnerContext, type NavigationGuard } from '../../hooks/NavigationGuardProvider'
 import AnalysisPoliciesPanel from './AnalysisPoliciesPanel'
 
 const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() }))
@@ -83,6 +84,30 @@ describe('AnalysisPoliciesPanel (BI-4)', () => {
     await click('Delete')
     expect(container.textContent).not.toContain('The policy changed since the list was loaded')
     expect(container.textContent).toContain('analysis policy limit reached')
+  })
+
+  it('guards unsaved edits: leaving, another policy or another kind asks first', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    const guarded = vi.fn()
+    await act(async () => root.render(
+      <NavigationGuardRegisterContext.Provider value={(guard, dirty) => { registration = { guard, dirty }; return () => undefined }}>
+        <NavigationGuardRunnerContext.Provider value={{ runGuarded: (proceed: () => void) => { guarded(); if (!registration?.dirty) proceed() } } as never}>
+          <AnalysisPoliciesPanel projectId="p1" canEdit />
+        </NavigationGuardRunnerContext.Provider>
+      </NavigationGuardRegisterContext.Provider>,
+    ))
+    await flush()
+    await click('Edit')
+    expect(registration?.dirty).toBe(false)
+    await type(input('LCP weight'), '7')
+    expect(registration?.dirty).toBe(true)
+    // Switching kind goes through the guard, which keeps the edit while dirty.
+    await click('Journey policies')
+    expect(guarded).toHaveBeenCalled()
+    expect(container.querySelector('form.analysis-policy-editor')).not.toBeNull()
+    // Discarding from the guard closes the editor.
+    await act(async () => { registration?.guard.discard() })
+    expect(container.querySelector('form.analysis-policy-editor')).toBeNull()
   })
 
   it('creates a journey policy and refuses a draft the controller would refuse, before sending it', async () => {

@@ -643,9 +643,10 @@ type RunArchiveReport struct {
 	TelemetryAcceptance *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
 	// BrowserIntelligence holds the browser findings, interaction patterns
 	// and journey accounting a report renders (the browser baseline is in
-	// the root-cause section). Like the release trend it is attached at the
-	// storage-aware layer ((*Server).attachBrowserIntelligenceForProfile).
-	BrowserIntelligence *ReportBrowserIntelligence `json:"browser_intelligence,omitempty"`
+	// the root-cause section). It is attached only for an export that
+	// renders it ((*Server).attachBrowserIntelligenceForProfile), never to the
+	// JSON report, so it is not part of the JSON contract.
+	BrowserIntelligence *ReportBrowserIntelligence `json:"-"`
 }
 
 // RunArchiveLoadLevelSummary preserves the evidence collected while one

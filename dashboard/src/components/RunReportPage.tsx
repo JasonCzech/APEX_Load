@@ -78,6 +78,14 @@ interface Props {
   onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; population?: MetricPopulation } & RootCauseRouteState) => void
 }
 
+// runHasBrowserArea: the Browser area appears for runs with browser groups or
+// document evidence, and for runs that pinned a browser policy (journey risk,
+// which any protocol may pin, is on the Performance area).
+function runHasBrowserArea(test: TestSummary, report: RunArchiveReport | null): boolean {
+  return Boolean(test.groups?.some(group => group.protocol === 'browser') || report?.browser_documents || report?.browser_document_evidence !== undefined || report?.overview?.browser
+    || report?.manifest?.provenance?.policy_pins?.some(pin => pin.kind === 'browser_policy'))
+}
+
 function archiveReadyTest(test: TestSummary | null, status: string): TestSummary | null {
   if (!test || !isCompletedTestStatus(status)) return null
   return { ...test, status: status as TestSummary['status'] }
@@ -480,6 +488,13 @@ export default function RunReportPage({
     if (heading && heading.tagName !== 'SUMMARY' && !heading.hasAttribute('tabindex')) heading.tabIndex = -1
     heading?.focus()
   }, [area, initialFocus, focusReport, testId])
+  // A Browser link to a run without a Browser area falls back to Summary once
+  // the report that decides it has loaded (or cannot).
+  const browserDecided = Boolean(archiveModel.archiveReport || archiveModel.archiveError || (test && !test.archive))
+  const browserAvailable = test ? runHasBrowserArea(test, archiveModel.archiveReport) : false
+  useEffect(() => {
+    if (area === 'Browser' && browserDecided && !browserAvailable) setAreaState('Summary')
+  }, [area, browserDecided, browserAvailable])
 
   if (testError) {
     return <div className="page run-report-page"><p className="run-report-error" role="alert">{testError}</p></div>
@@ -522,11 +537,10 @@ export default function RunReportPage({
     const span = hypothesis && assessment ? rcaHypothesisWindow(hypothesis, assessment.anomalies) : null
     navigateRootCause({ analysis: rootCauseView.analysis_id, rev: rootCauseView.revision ? String(rootCauseView.revision) : undefined, hypothesis: top?.id, window: span ? formatRcaWindow(span) : undefined })
   }
-  // The Browser area appears for runs with browser groups or document
-  // evidence, and for runs that pinned a browser or journey policy.
-  const hasBrowserEvidence = Boolean(test.groups?.some(group => group.protocol === 'browser') || report?.browser_documents || report?.browser_document_evidence !== undefined || report?.overview?.browser
-    || report?.manifest?.provenance?.policy_pins?.some(pin => pin.kind === 'browser_policy' || pin.kind === 'journey_policy'))
-  const areas = (['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Browser', 'Evidence', 'Execution'] as const).filter(name => name !== 'Browser' || hasBrowserEvidence)
+  const hasBrowserEvidence = runHasBrowserArea(test, report)
+  // A Browser link keeps its tab (and so a focusable, selected tab) while
+  // the report that decides it loads.
+  const areas = (['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Browser', 'Evidence', 'Execution'] as const).filter(name => name !== 'Browser' || hasBrowserEvidence || (area === 'Browser' && !browserDecided))
   const facts = executionFacts(test, report, manifestModel.manifest)
   const failed = resolvedStatus === 'FAILED'
   const hasArchive = Boolean(test.archive)
@@ -648,8 +662,8 @@ export default function RunReportPage({
           <details><summary>Browser evidence</summary>{hasBrowserEvidence && <p>Browser findings, the baseline comparison, interaction patterns and the resource drill-down are under <button type="button" className="btn btn-ghost btn-sm" onClick={() => setArea('Browser')}>Browser</button>.</p>}{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
           <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
         </>}
-        {area === 'Browser' && hasArchive && <BrowserIntelligenceView testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence}
-          baseline={rootCause.response?.assessment?.browser_baseline} onOpenDiagnostics={() => setArea('Diagnostics')} hasArchive={hasArchive} test={test} report={report} />}
+        {area === 'Browser' && hasArchive && !archiveModel.archiveError && <BrowserIntelligenceView testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence}
+          rootCause={rootCause} onOpenDiagnostics={() => setArea('Diagnostics')} hasArchive={hasArchive} test={test} report={report} />}
         {!hasArchive && area === 'Browser' && <p>Browser intelligence reads the run's archive. Check archive availability above.</p>}
         {area === 'Evidence' && hasArchive && <>
           {renderEvidence('report-completeness')}

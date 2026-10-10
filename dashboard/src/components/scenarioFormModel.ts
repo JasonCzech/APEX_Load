@@ -209,9 +209,9 @@ export function seededScenarioRuntime(current: RuntimeSettingsOverride | undefin
 }
 
 // carryAuthoredRuntime keeps the current iterations, log level, auto
-// transactions and error-handling flags that a seed's runtime_settings leaves
-// unset (a template never resets a continue-on-error opt-out), where runtime
-// authors them.
+// transactions, error-handling flags and browser settings that a seed's
+// runtime_settings leaves unset (a template never resets a continue-on-error
+// opt-out or a scenario's device profile), where runtime authors them.
 function carryAuthoredRuntime(runtime: RuntimeSettingsOverride, current: RuntimeSettingsOverride) {
   const iterations = current.run_logic?.iterations ?? current.iterations
   if (iterations !== undefined && runtime.run_logic?.iterations === undefined && runtime.iterations === undefined) {
@@ -231,6 +231,10 @@ function carryAuthoredRuntime(runtime: RuntimeSettingsOverride, current: Runtime
   for (const flag of ['continue_on_error', 'snapshot_on_error'] as const) {
     const value = current.error_handling?.[flag]
     if (value !== undefined && runtime.error_handling?.[flag] === undefined) runtime.error_handling = { ...(runtime.error_handling ?? {}), [flag]: value }
+  }
+  if (runtime.browser_config === undefined && runtime.browser === undefined) {
+    if (current.browser_config !== undefined) runtime.browser_config = structuredClone(current.browser_config)
+    else if (current.browser !== undefined) runtime.browser = structuredClone(current.browser)
   }
 }
 

@@ -225,12 +225,19 @@ func TestBrowserActualKeyboardTargetsAfterTheGesture(t *testing.T) {
 			if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); err != nil {
 				t.Fatal(err)
 			}
+			// A control fill on a field that stays times the gesture on this
+			// host; a removed target must not add the read timeout to it.
 			began := time.Now()
+			if result, err := b.Execute(ctx, &protocol.Action{Name: "control", Type: "browser_fill", Selector: "#q", Value: "x"}); err != nil || !result.Success {
+				t.Fatalf("control fill %v %+v", err, result)
+			}
+			control := time.Since(began)
+			began = time.Now()
 			if result, err := b.Execute(ctx, &protocol.Action{Name: "gone", Type: "browser_fill", Selector: "#gone", Value: "x"}); err != nil || !result.Success {
 				t.Fatalf("fill %v %+v", err, result)
 			}
-			if elapsed := time.Since(began); elapsed > 1500*time.Millisecond {
-				t.Fatalf("a removed target stalled the gesture for %s", elapsed)
+			if elapsed := time.Since(began); elapsed > control+interactionReadTimeout/2 {
+				t.Fatalf("a removed target stalled the gesture for %s (a fill that keeps its target took %s)", elapsed, control)
 			}
 			if result, err := b.Execute(ctx, &protocol.Action{Name: "scroll", Type: "browser_scroll", Params: map[string]any{"delta_y": 300}}); err != nil || !result.Success {
 				t.Fatalf("scroll %v %+v", err, result)
@@ -290,30 +297,35 @@ func testInteractionRouteIsRuntimeRedacted(t *testing.T, engine string) {
 	}
 }
 
-// A touch session's gestures are dispatched as synthetic events, which the
-// observer ignores: they are recorded without points, saying so.
+// A touch session's gestures are dispatched as synthetic events in every
+// engine, which the observer ignores: they are recorded without points,
+// saying so.
 func TestBrowserActualTouchGesturesSaySyntheticDispatch(t *testing.T) {
-	server, _ := interactionFixtureServer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
-	b := &Browser{}
-	if err := b.Init(ctx, map[string]any{"base_url": server.URL, "browser_engine": "chromium", "browser_headless": true, "browser_capture_interactions": true, "browser_touch_mode": true}); err != nil {
-		requireBrowserRuntime(t, "chromium", err)
-	}
-	t.Cleanup(func() { _ = b.Teardown(context.Background()) })
-	if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); err != nil {
-		t.Fatal(err)
-	}
-	if result, err := b.Execute(ctx, &protocol.Action{Name: "tap", Type: "browser_click", Selector: "#go"}); err != nil || !result.Success {
-		t.Fatalf("tap %v %+v", err, result)
-	}
-	taken := b.TakeBrowserInteractionEvidence()
-	if len(taken) != 1 || len(taken[0].Interactions) != 1 {
-		t.Fatalf("interactions %+v", taken)
-	}
-	tap := taken[0].Interactions[0]
-	if tap.Kind != "tap" || len(tap.Points) != 0 || tap.UnavailableReason != protocol.InteractionUnavailableSyntheticDispatch || !tap.Valid() {
-		t.Fatalf("tap %+v", tap)
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) {
+			server, _ := interactionFixtureServer(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			t.Cleanup(cancel)
+			b := &Browser{}
+			if err := b.Init(ctx, map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true, "browser_capture_interactions": true, "browser_touch_mode": true}); err != nil {
+				requireBrowserRuntime(t, engine, err)
+			}
+			t.Cleanup(func() { _ = b.Teardown(context.Background()) })
+			if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := b.Execute(ctx, &protocol.Action{Name: "tap", Type: "browser_click", Selector: "#go"}); err != nil || !result.Success {
+				t.Fatalf("tap %v %+v", err, result)
+			}
+			taken := b.TakeBrowserInteractionEvidence()
+			if len(taken) != 1 || len(taken[0].Interactions) != 1 {
+				t.Fatalf("interactions %+v", taken)
+			}
+			tap := taken[0].Interactions[0]
+			if tap.Kind != "tap" || len(tap.Points) != 0 || tap.UnavailableReason != protocol.InteractionUnavailableSyntheticDispatch || !tap.Valid() {
+				t.Fatalf("tap %+v", tap)
+			}
+		})
 	}
 }
 
