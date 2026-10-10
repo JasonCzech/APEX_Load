@@ -149,3 +149,51 @@ func TestValidateHTTP3ShapingFollowsRuntimeActivity(t *testing.T) {
 		t.Fatalf("profile issues = %v", issues)
 	}
 }
+
+func TestValidateHTTP3ConfigAuthOnlyWhenAnExactRequestInheritsIt(t *testing.T) {
+	ownAuth := Action{Name: "own", Type: "GET", Target: "/own", HTTPVersion: leafVersion(t, "3"), Auth: &AuthConfig{Type: "bearer", Token: "{{secret.token}}"}}
+	tcpLeaf := Action{Name: "tcp", Type: "GET", Target: "/tcp"}
+	script := http3Script("2", ownAuth, tcpLeaf)
+	script.Config.HTTP.Auth = AuthConfig{Type: "ntlm", Username: "u", Password: "p"}
+	if issues := http3Issues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v; the only exact-3 request sets its own auth", issues)
+	}
+	inherits := Action{Name: "inherits", Type: "GET", Target: "/x", HTTPVersion: leafVersion(t, "3")}
+	script.Actions = append(script.Actions, inherits)
+	if issues := http3Issues(script); len(issues) != 1 || !strings.Contains(issues[0], "config.http.auth.type ntlm") {
+		t.Fatalf("issues = %v", issues)
+	}
+}
+
+func TestHTTP3UseIgnoresWebSocketSteps(t *testing.T) {
+	ws := Action{Name: "socket", Type: "ws_connect", Target: "wss://app.example.test/socket"}
+	plain := Action{Name: "plain", Type: "GET", Target: "/", HTTPVersion: leafVersion(t, "1.1")}
+	if ScriptUsesHTTP3(http3Script("3", ws, plain)) {
+		t.Fatal("a WebSocket step inheriting 3 counted as HTTP/3 work")
+	}
+}
+
+func TestValidateHTTP3ConfigAuthFollowsItsHostScope(t *testing.T) {
+	leaf := Action{Name: "public", Type: "GET", Target: "https://public.example.test/", HTTPVersion: leafVersion(t, "3")}
+	script := http3Script("", leaf)
+	script.Config.HTTP.Auth = AuthConfig{Type: "ntlm", Username: "u", Password: "p", Hosts: []string{"intranet.example.test"}}
+	if issues := http3Issues(script); len(issues) != 0 {
+		t.Fatalf("NTLM scoped to another host blocked exact 3: %v", issues)
+	}
+	for _, hosts := range [][]string{{"public.example.test"}, {"PUBLIC.example.test:443"}, nil} {
+		script.Config.HTTP.Auth.Hosts = hosts
+		if issues := http3Issues(script); len(issues) != 1 || !strings.Contains(issues[0], "config.http.auth.type ntlm") {
+			t.Fatalf("hosts %v: issues = %v", hosts, issues)
+		}
+	}
+	script.Config.HTTP.Auth.Hosts = []string{"public.example.test:8443"}
+	if issues := http3Issues(script); len(issues) != 0 {
+		t.Fatalf("a scope on another port blocked exact 3: %v", issues)
+	}
+	// A relative target takes the base URL's host.
+	relative := http3Script("", Action{Name: "rel", Type: "GET", Target: "/x", HTTPVersion: leafVersion(t, "3")})
+	relative.Config.HTTP.Auth = AuthConfig{Type: "negotiate", Hosts: []string{"app.example.test"}}
+	if issues := http3Issues(relative); len(issues) != 1 {
+		t.Fatalf("relative target issues = %v", issues)
+	}
+}

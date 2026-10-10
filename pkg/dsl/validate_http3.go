@@ -30,6 +30,9 @@ func validateHTTP3PolicyIssues(script *Script) []string {
 	httpCfg := script.Config.HTTP
 	var issues []string
 	exact, quic := false, httpprotocol.VersionUsesQUIC(inherited)
+	// configAuth is set when an exact-3 request inherits config.http.auth
+	// and its host is within the auth's host scope.
+	configAuth := false
 	if inherited == httpprotocol.VersionHTTP3 {
 		exact = true
 		issues = append(issues, http3TargetIssues("config.base_url", script.Config.BaseURL, "")...)
@@ -49,7 +52,10 @@ func validateHTTP3PolicyIssues(script *Script) []string {
 			base = "" // config.base_url was checked once above
 		}
 		issues = append(issues, http3TargetIssues(label+".target", leaf.target, base)...)
-		if leaf.action.Auth != nil && integratedHTTPAuth(leaf.action.Auth.Type) {
+		switch {
+		case leaf.action.Auth == nil:
+			configAuth = configAuth || authHostScopeCovers(httpCfg.Auth.Hosts, leaf.target, script.Config.BaseURL)
+		case integratedHTTPAuth(leaf.action.Auth.Type):
 			issues = append(issues, fmt.Sprintf("%s.auth.type %s cannot run over HTTP/3: integrated authentication stays on TCP; use auto+h3 or another auth type", label, strings.TrimSpace(leaf.action.Auth.Type)))
 		}
 	})
@@ -60,7 +66,7 @@ func validateHTTP3PolicyIssues(script *Script) []string {
 		if mode := strings.TrimSpace(httpCfg.ProxyMode); (mode == "" || mode == "custom") && strings.TrimSpace(httpCfg.Proxy.URL) != "" {
 			issues = append(issues, "config.http.proxy.url cannot be used with http_version 3: a proxied route stays on TCP (http3_proxy_unsupported); use auto+h3 or remove the proxy")
 		}
-		if integratedHTTPAuth(httpCfg.Auth.Type) {
+		if configAuth && integratedHTTPAuth(httpCfg.Auth.Type) {
 			issues = append(issues, fmt.Sprintf("config.http.auth.type %s cannot run over HTTP/3: integrated authentication stays on TCP; use auto+h3 or another auth type", strings.TrimSpace(httpCfg.Auth.Type)))
 		}
 	}
@@ -68,6 +74,24 @@ func validateHTTP3PolicyIssues(script *Script) []string {
 		issues = append(issues, http3ShapingIssues(script.Config.WebRuntime)...)
 	}
 	return issues
+}
+
+// authHostScopeCovers reports whether script-level auth applies to a
+// request, using the runtime's host-scope matching. A target whose host
+// cannot be resolved before execution is left to the runtime check.
+func authHostScopeCovers(hosts []string, target, base string) bool {
+	if len(hosts) == 0 {
+		return true
+	}
+	raw := strings.TrimSpace(target)
+	if !strings.Contains(raw, "://") {
+		raw = strings.TrimSpace(base)
+	}
+	if strings.Contains(raw, "{{") {
+		return false
+	}
+	allowed, err := httpprotocol.AuthHostScopeAllows(hosts, raw)
+	return err == nil && allowed
 }
 
 func integratedHTTPAuth(authType string) bool {
@@ -158,7 +182,9 @@ func walkHTTP3RequestLeaves(script *Script, visit func(label string, leaf http3L
 			}
 			continue
 		}
-		if isEngineActionType(current.action.Type) || CanonicalActionType(current.action.Type) == "http_oauth2_token" {
+		// Engine actions (control containers, cookies, rendezvous...), token
+		// fetches and WebSocket steps never use the request version policy.
+		if isEngineActionType(current.action.Type) || CanonicalActionType(current.action.Type) == "http_oauth2_token" || isWebSocketStepType(current.action.Type) {
 			continue
 		}
 		visit(label, http3Leaf{action: current.action, target: current.action.Target})

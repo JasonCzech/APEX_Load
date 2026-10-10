@@ -107,3 +107,14 @@ func authHostScopesAllow(scopes []authHostScope, target string) bool {
 	}
 	return false
 }
+
+// AuthHostScopeAllows reports whether script-level auth scoped to hosts
+// applies to target, using the runtime's own matching. It lets validation
+// decide before execution exactly as a request would at run time.
+func AuthHostScopeAllows(hosts []string, target string) (bool, error) {
+	scopes, err := parseAuthHostScopes(hosts)
+	if err != nil {
+		return false, err
+	}
+	return authHostScopesAllow(scopes, target), nil
+}
