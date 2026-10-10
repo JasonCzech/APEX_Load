@@ -285,3 +285,65 @@ func TestExactHTTP3ManyIterationsLeakNothing(t *testing.T) {
 		t.Fatalf("teardown left connections=%d sockets=%d", transport.OpenConnections(), transport.OpenSockets())
 	}
 }
+
+func TestHTTP3AliasStreamingAndTraceContext(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{})
+	t.Setenv(EnvHTTP3, "true")
+	instance, err := protocol.Get("http/3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliased := instance.(*HTTP)
+	if err := aliased.Init(context.Background(), map[string]any{"tls_insecure_skip_verify": true}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = aliased.Teardown(context.Background()) })
+	inherited := run(t, aliased, h3Get(t, fixture.URL("/echo"), ""))
+	if !inherited.Success || inherited.HTTPVersionPolicy != "3" || inherited.HTTPVersionNegotiated != "3" {
+		t.Fatalf("alias default: %q %q %s", inherited.HTTPVersionPolicy, inherited.HTTPVersionNegotiated, inherited.ErrorMessage)
+	}
+	// An explicit config beats the alias, as for http/1.1 and http/2.
+	instance, _ = protocol.Get("http/3")
+	configured := instance.(*HTTP)
+	if err := configured.Init(context.Background(), map[string]any{"tls_insecure_skip_verify": true, "http_version": "2"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = configured.Teardown(context.Background()) })
+	if r := run(t, configured, h3Get(t, fixture.URL("/echo"), "")); r.HTTPVersionPolicy != "2" || r.HTTPVersionNegotiated != "2" {
+		t.Fatalf("config over alias: %q %q", r.HTTPVersionPolicy, r.HTTPVersionNegotiated)
+	}
+	// Server-sent events stream over HTTP/3 until the collection ends.
+	sse := h3Get(t, fixture.URL("/sse?n=3&interval_ms=50"), "")
+	sse.Params = map[string]any{"stream": true}
+	stream := run(t, aliased, sse)
+	if !stream.Success || stream.HTTPVersionNegotiated != "3" {
+		t.Fatalf("sse: %s %v", stream.ErrorMessage, stream.ProtocolEvidence)
+	}
+	// Generated trace context reaches the target over HTTP/3.
+	echo := run(t, aliased, h3Get(t, fixture.URL("/echo"), ""))
+	var body struct {
+		Headers map[string][]string `json:"headers"`
+	}
+	if err := json.Unmarshal([]byte(echo.ResponseBody), &body); err != nil || len(body.Headers["traceparent"]) != 1 {
+		t.Fatalf("traceparent over HTTP/3: %v %v", body.Headers["traceparent"], err)
+	}
+}
+
+func TestHTTP3CarriesRunCorrelationToApprovedOrigins(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{})
+	h := http3Session(t, map[string]any{
+		"apexload_run_correlation_id":      "run-123",
+		"apexload_run_correlation_origins": []string{fixture.URL("")},
+	})
+	echo := run(t, h, h3Get(t, fixture.URL("/echo"), "3"))
+	var body struct {
+		Proto   string              `json:"proto"`
+		Headers map[string][]string `json:"headers"`
+	}
+	if err := json.Unmarshal([]byte(echo.ResponseBody), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Proto != "HTTP/3.0" || strings.Join(body.Headers[strings.ToLower(ManagedRunHeader)], ",") != "run-123" {
+		t.Fatalf("proto=%s run header=%v", body.Proto, body.Headers[strings.ToLower(ManagedRunHeader)])
+	}
+}

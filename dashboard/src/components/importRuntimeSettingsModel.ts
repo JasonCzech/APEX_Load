@@ -156,7 +156,7 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
  }
  // Importers without parity show actual settings, never invented mapping evidence.
  const known = new Set(Object.values(groups).flat().map(r => r.path).filter(Boolean))
- const defaults = ['Think time', 'Pacing', 'Error handling', ...(['http', 'http/1.1', 'http/2', 'browser', 'soap', 'java_http'].includes(script.protocol) ? ['HTTP'] : []), ...(script.protocol === 'kafka' ? ['Kafka'] : []), ...(script.protocol?.startsWith('jms') ? ['JMS'] : [])]
+ const defaults = ['Think time', 'Pacing', 'Error handling', ...(['http', 'http/1.1', 'http/2', 'http/3', 'browser', 'soap', 'java_http'].includes(script.protocol) ? ['HTTP'] : []), ...(script.protocol === 'kafka' ? ['Kafka'] : []), ...(script.protocol?.startsWith('jms') ? ['JMS'] : [])]
  const current = importRuntimeFields.filter(f => !known.has(f.path) && (readSetting(script, f.path) !== undefined || defaults.includes(f.category)) && settingIsRelevant(script, f.path))
  groups['Additional APEX settings'] = current.map(f => ({ id: f.path, category: f.category, label: f.label, path: f.path, imported: 'No source mapping reported', note: draftRuntimeSettingNote(f.path, f.label), field: f }))
  return groups
@@ -164,7 +164,7 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
 
 function settingIsRelevant(script: ScriptDefinition, path: string): boolean {
  const nativeReplayPolicies = ['http_errors_as_warnings', 'fail_noncritical_resources', 'resource_timeout_as_warning', 'legacy_html_checks', 'dns_cache', 'challenge_delay_ms']
- if (nativeReplayPolicies.some(key => path === `config.http.${key}`) && !['http', 'http/1.1', 'http/2', 'soap', 'java_http'].includes(script.protocol)) return false
+ if (nativeReplayPolicies.some(key => path === `config.http.${key}`) && !['http', 'http/1.1', 'http/2', 'http/3', 'soap', 'java_http'].includes(script.protocol)) return false
  const think = script.config?.think_time?.type || 'fixed'
  const pacing = script.config?.pacing?.type || 'none'
  const pacingModes: Record<string, string[]> = { delay_ms: ['fixed_delay'], interval_ms: ['fixed_interval'], min_delay_ms: ['random_delay'], max_delay_ms: ['random_delay'], min_interval_ms: ['random_interval'], max_interval_ms: ['random_interval'], tps: ['tps'] }

@@ -203,7 +203,7 @@ func rcSections(files map[string]string, rc *RuntimeConfig) map[string]map[strin
 	return nil
 }
 func runtimeSourceOperationsAbsentMatching(files map[string]string, protocol, firstName, secondName string) (stream, sync bool) {
-	if protocol != "http" && protocol != "http/1.1" && protocol != "http/2" && protocol != "soap" {
+	if protocol != "http" && protocol != "http/1.1" && protocol != "http/2" && protocol != "http/3" && protocol != "soap" {
 		return false, false
 	}
 	seen, complete, hasStream, hasSync := false, true, false, false

@@ -135,7 +135,7 @@ whose first token is the directory name — a mention elsewhere in the fence
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
-Bundled and compiled into the standard binaries via `pkg/protocol/builtin`: HTTP (http/1.1, http/2),
+Bundled and compiled into the standard binaries via `pkg/protocol/builtin`: HTTP (http/1.1, http/2, http/3),
 SOAP (+ WSDL import), Java-over-HTTP (`java_http`, bounded codec MVP), Java Vuser sidecar bridge
 (`java_vuser`, external-runner; governed and disabled unless runner config enables it), WebSocket,
 gRPC, JMS Solace, JMS IBM MQ, JMS Azure Service Bus (real adapter opt-in via

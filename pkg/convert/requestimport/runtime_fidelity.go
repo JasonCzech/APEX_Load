@@ -1629,7 +1629,7 @@ func runtimeSurfaceSource(ref dslwalk.SurfaceRef, fallback SourceRef, sourceProf
 
 func isHTTPFamilyProtocol(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", string(ProtocolHTTP), "http/1.1", "http/2", string(ProtocolSOAP), string(ProtocolJavaHTTP):
+	case "", string(ProtocolHTTP), "http/1.1", "http/2", "http/3", string(ProtocolSOAP), string(ProtocolJavaHTTP):
 		return true
 	default:
 		return false

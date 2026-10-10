@@ -31,6 +31,7 @@ import (
 func init() {
 	protocol.Register("http/1.1", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP11} })
 	protocol.Register("http/2", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP2} })
+	protocol.Register("http/3", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP3} })
 	protocol.Register("http", func() protocol.Protocol {
 		return &HTTP{}
 	})

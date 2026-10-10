@@ -58,6 +58,7 @@ export function inheritedHTTPActionVersion(protocol = 'http', scriptVersion?: un
   switch (protocol.trim().toLowerCase()) {
     case 'http/1.1': return '1.1'
     case 'http/2': return '2'
+    case 'http/3': return '3'
     default: return 'auto'
   }
 }

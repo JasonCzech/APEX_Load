@@ -487,7 +487,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     missing: missingVariables,
     blocking: blockingVariables,
     // HTTP replay sends a missing variable as its placeholder text and warns, as LoadRunner does.
-    placeholders: ['http', 'http/1.1', 'http/2'].includes(script.protocol?.trim() || ''),
+    placeholders: ['http', 'http/1.1', 'http/2', 'http/3'].includes(script.protocol?.trim() || ''),
     secrets: requiredSecrets,
     loopDepth: 0,
     foreachVars: new Set<string>(),

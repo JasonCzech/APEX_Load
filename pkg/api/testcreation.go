@@ -3057,7 +3057,7 @@ func validateSuccessfulMessageDetailFeature(script *dsl.Script, projectQuotas []
 		return nil
 	}
 	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
-	case "http", "http/1.1", "http/2", "soap", "java_http":
+	case "http", "http/1.1", "http/2", "http/3", "soap", "java_http":
 	default:
 		return fmt.Errorf("successful message detail capture supports native http protocol only (including SOAP and Java-over-HTTP)")
 	}

@@ -84,7 +84,7 @@ func parseRuntimeHTTPCompatibility(rc *RuntimeConfig, sections map[string]map[st
 
 func nativeHTTPCompatibilityProtocol(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "http", "http/1.1", "http/2", "soap", "java_http":
+	case "http", "http/1.1", "http/2", "http/3", "soap", "java_http":
 		return true
 	}
 	return false

@@ -44,6 +44,10 @@ describe('HTTP/3 policies', () => {
     for (const raw of ['AUTO+H3', 'auto+h2', 'h3-29']) expect(inheritedHTTPActionVersion('http', raw)).toBeNull()
     expect(scriptHTTPVersionSettings('http', '3')).toMatchObject({ selection: '3', valid: true, effectiveLabel: 'HTTP/3 required (no fallback)' })
     expect(scriptHTTPVersionSettings('http/2', 'auto+h3')).toMatchObject({ selection: 'auto+h3', valid: true })
+    // The http/3 protocol alias supplies exact HTTP/3 like http/2 supplies 2.
+    expect(inheritedHTTPActionVersion('http/3')).toBe('3')
+    expect(scriptHTTPVersionSettings('http/3')).toMatchObject({ selection: '', valid: true, defaultLabel: 'Protocol default (HTTP/3 required (no fallback))' })
+    expect(inheritedHTTPActionVersion('http/3', '2')).toBe('2')
   })
 
   it('names the execution requirement only for the HTTP/3 policies', () => {

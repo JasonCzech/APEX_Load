@@ -689,7 +689,7 @@ export function ScriptRuntimeSettingsView({
     </button>
     {runtimeSectionIsActive('errors') && (
       <div className="section-body">
-        {['http', 'http/1.1', 'http/2', 'soap', 'java_http'].includes(script.protocol) && <MessageDetailFields value={script.config.results?.message_detail} onChange={value => updateField('config.results', { ...script.config.results, message_detail: value })} />}
+        {['http', 'http/1.1', 'http/2', 'http/3', 'soap', 'java_http'].includes(script.protocol) && <MessageDetailFields value={script.config.results?.message_detail} onChange={value => updateField('config.results', { ...script.config.results, message_detail: value })} />}
         <PropertyAnalyticsFields value={script.config.results?.property_analytics} onChange={value => updateField('config.results', { ...script.config.results, property_analytics: value })} />
         <div className="form-grid">
           <div className="runtime-checkbox-list">

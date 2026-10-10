@@ -674,7 +674,7 @@ func canonicalCapacityProtocol(group TestGroup) string {
 		protocol = strings.ToLower(strings.TrimSpace(group.script.Protocol))
 	}
 	switch protocol {
-	case "https", "http/1.1", "http/2", "web_http", "web":
+	case "https", "http/1.1", "http/2", "http/3", "web_http", "web":
 		return "http"
 	case "java-http", "java_http", "java over http", "java-over-http":
 		return "java_http"

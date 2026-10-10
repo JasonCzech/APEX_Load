@@ -42,3 +42,21 @@ func TestScriptUsesHTTP3FollowsPrecedence(t *testing.T) {
 		t.Fatal("a browser or nil script was reported as using native HTTP/3")
 	}
 }
+
+func TestHTTP3AliasIsAnHTTPProtocolDefaultingToExact3(t *testing.T) {
+	script := &Script{Version: "1", Name: "alias", Protocol: "http/3", Config: ScriptConfig{BaseURL: "https://app.example.test"},
+		Actions: []Action{{Name: "home", Type: "GET", Target: "/"}}}
+	if ProtocolFamily("http/3") != "http" || InheritedHTTPVersion(script) != "3" {
+		t.Fatalf("family=%q inherited=%q", ProtocolFamily("http/3"), InheritedHTTPVersion(script))
+	}
+	if exact, upgrade := ScriptHTTP3Policies(script); !exact || upgrade {
+		t.Fatalf("policies exact=%v upgrade=%v", exact, upgrade)
+	}
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v", issues)
+	}
+	script.Config.BaseURL = "http://app.example.test"
+	if issues := http3Issues(script); len(issues) != 1 {
+		t.Fatalf("an http:// base under the http/3 alias: %v", issues)
+	}
+}

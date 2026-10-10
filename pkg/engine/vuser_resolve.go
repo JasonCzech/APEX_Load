@@ -33,7 +33,7 @@ func validateMessageDetailRuntimeSupport(script *dsl.Script) error {
 	case "", "off", "errors":
 		return nil
 	case "sampled", "adaptive":
-		if p := strings.ToLower(strings.TrimSpace(script.Protocol)); p != "http" && p != "http/1.1" && p != "http/2" && p != "soap" && p != "java_http" {
+		if p := strings.ToLower(strings.TrimSpace(script.Protocol)); p != "http" && p != "http/1.1" && p != "http/2" && p != "http/3" && p != "soap" && p != "java_http" {
 			return fmt.Errorf("message detail mode %q currently requires the http protocol", mode)
 		}
 		return nil
@@ -754,7 +754,7 @@ func scriptUsesHTTPDefaultHeaders(script *dsl.Script) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
-	case "", "http", "http/1.1", "http/2", "soap", "java_http":
+	case "", "http", "http/1.1", "http/2", "http/3", "soap", "java_http":
 		return true
 	default:
 		return false

@@ -1174,6 +1174,7 @@ function assertionOptions(protocol: string): Array<[string, string]> {
     case 'http':
     case 'http/1.1':
     case 'http/2':
+    case 'http/3':
       return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['body_not_contains', 'Body Excludes'], ...HTTP_TEXT_ASSERTIONS, ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals'], ['aura_actions_success', 'Aura actions succeed']]
     default:
       return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['body_not_contains', 'Body Excludes'], ...HTTP_TEXT_ASSERTIONS, ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]

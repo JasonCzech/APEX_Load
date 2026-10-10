@@ -113,7 +113,7 @@ export interface RuntimeReviewSummary {
 export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtocolCapabilities {
   const normalized = protocol.trim().toLowerCase()
   const browser = normalized === 'browser'
-  const http = normalized === 'http' || normalized === 'http/1.1' || normalized === 'http/2'
+  const http = normalized === 'http' || normalized === 'http/1.1' || normalized === 'http/2' || normalized === 'http/3'
   const javaHttp = normalized === 'java_http'
   const javaVuser = normalized === 'java_vuser'
   const soap = normalized === 'soap'

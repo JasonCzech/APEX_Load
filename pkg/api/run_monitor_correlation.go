@@ -107,7 +107,7 @@ func (tr *TestRunner) validateRunMonitorCorrelation(id string) error {
 			continue
 		}
 		switch group.Script.Protocol {
-		case "http", "http/1.1", "http/2", "soap":
+		case "http", "http/1.1", "http/2", "http/3", "soap":
 		default:
 			continue
 		}
