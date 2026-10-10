@@ -849,6 +849,9 @@ type HTTPConfig struct {
 	TLSTimeoutMs     int `json:"tls_timeout_ms,omitempty"`     // default: 10000
 	IdleTimeoutMs    int `json:"idle_timeout_ms,omitempty"`    // default: 90000
 
+	// QUIC tunes the connections opened by the HTTP/3 policies (auto+h3, 3).
+	QUIC *HTTPQUICConfig `json:"quic,omitempty"`
+
 	// TLS / SSL
 	TLS TLSConfig `json:"tls,omitempty"`
 

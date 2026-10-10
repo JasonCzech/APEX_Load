@@ -772,6 +772,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -4522,6 +4523,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -4919,6 +4927,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -5304,6 +5313,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -6135,6 +6145,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -6868,6 +6879,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -12258,6 +12270,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -13151,6 +13164,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -13861,6 +13875,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -14536,6 +14551,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -15093,6 +15109,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -15727,6 +15744,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -16377,6 +16395,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -17205,6 +17224,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -17767,6 +17787,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -19449,6 +19470,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -19809,6 +19837,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -20532,6 +20561,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -20892,6 +20928,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -21698,6 +21735,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -22772,6 +22810,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -23598,6 +23637,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -25509,6 +25549,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -26149,6 +26190,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -27096,6 +27138,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -28230,6 +28279,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -28952,6 +29002,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -33909,6 +33960,7 @@ export interface operations {
               "page_timeout_ms"?: number;
               "proxy"?: Record<string, unknown>;
               "proxy_mode"?: string;
+              "quic"?: (Record<string, unknown>) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -34287,6 +34339,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -36155,6 +36208,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -37172,6 +37226,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -37420,6 +37475,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -38143,6 +38205,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -38503,6 +38572,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -39237,6 +39307,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -40369,6 +40446,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -41237,6 +41315,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -41498,6 +41577,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -42643,6 +42729,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -45405,6 +45492,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -48351,6 +48445,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -49017,6 +49112,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -49605,6 +49701,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -50271,6 +50368,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -52638,6 +52736,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -52899,6 +52998,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -53417,6 +53523,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -54250,6 +54357,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -56168,6 +56276,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -65891,6 +66000,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -67811,6 +67921,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -68716,6 +68827,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -74234,6 +74346,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -74594,6 +74713,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -75057,6 +75177,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -75848,6 +75969,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -76562,6 +76684,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -79880,6 +80003,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -82642,6 +82766,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -83265,6 +83396,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -83574,6 +83712,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -83869,6 +84014,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -84164,6 +84316,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -84722,6 +84881,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -85234,6 +85394,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -85763,6 +85924,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -88161,6 +88323,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -88875,6 +89038,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -100997,6 +101161,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -103759,6 +103924,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -104713,6 +104885,7 @@ export interface operations {
               "page_timeout_ms"?: number;
               "proxy"?: Record<string, unknown>;
               "proxy_mode"?: string;
+              "quic"?: (Record<string, unknown>) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -106772,6 +106945,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -107714,6 +107888,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -108437,6 +108612,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -109229,6 +109405,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -110200,6 +110377,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -110910,6 +111088,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -111585,6 +111764,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -112142,6 +112322,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -114224,6 +114405,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -114938,6 +115120,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -115645,6 +115828,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -118145,6 +118329,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -120096,6 +120281,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -122047,6 +122233,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -123998,6 +124185,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -125949,6 +126137,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -126561,6 +126750,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -127369,6 +127559,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -128965,6 +129156,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -131727,6 +131919,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -134671,6 +134870,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -136358,6 +136558,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -136684,6 +136885,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -137322,6 +137524,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -139212,6 +139415,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -139844,6 +140048,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -141299,6 +141504,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -142831,6 +143037,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -144385,6 +144592,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -145940,6 +146148,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -147494,6 +147703,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -154027,6 +154237,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -156789,6 +157000,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -157627,6 +157845,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -158348,6 +158567,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -162267,6 +162487,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -162515,6 +162736,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -163237,6 +163465,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -163597,6 +163832,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -164451,6 +164687,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -165581,6 +165824,7 @@ export interface operations {
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "quic"?: (Record<string, unknown>) | null;
                   "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
                   "resource_timeout_as_warning"?: (boolean) | null;
@@ -169768,6 +170012,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;
@@ -170069,6 +170320,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -170870,6 +171128,13 @@ export interface operations {
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "quic"?: ({
+                  "alt_svc_cache"?: string;
+                  "broken_ttl_ms"?: (number) | null;
+                  "handshake_timeout_ms"?: number;
+                  "keep_alive_ms"?: number;
+                  "max_idle_timeout_ms"?: number;
+                }) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -171998,6 +172263,7 @@ export interface operations {
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "quic"?: (Record<string, unknown>) | null;
                 "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
                 "resource_timeout_as_warning"?: (boolean) | null;
@@ -172246,6 +172512,13 @@ export interface operations {
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
               "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
               "resource_timeout_as_warning"?: (boolean) | null;

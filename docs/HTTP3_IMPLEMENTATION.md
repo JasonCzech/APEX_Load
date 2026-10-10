@@ -9,7 +9,7 @@ This file is the in-repo companion to the HTTP/3 delivery specification (24 work
 | Wave | Scope | Status |
 | --- | --- | --- |
 | 0 | Fixture, quic-go contract tests, Alt-Svc observation, browser protocol evidence and QUIC setting, cURL TCP versions, DevWeb disclosure | Complete (see deviations) |
-| 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | In progress (WP1.1 done) |
+| 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | In progress (WP1.1, WP1.2 done) |
 | 2 | Exact HTTP/3 (`3`) preview | Not started |
 | 3 | `auto+h3` upgrade pilot | Not started |
 | 4 | Recording and import mapping | Not started |
@@ -85,6 +85,32 @@ Decision: each VUser lazily creates one `quic.Transport` and UDP socket per loca
 - Timing: quic-go emits `GotFirstResponseByte` and `WroteHeaders` (D1). The specification's QUIC `ttfb_boundary: headers` is unnecessary; `first_byte` applies to both transports.
 - Dial cancellation coupling (D2) is new; the transport work package must implement the detached dial.
 
+## QUIC settings and operator controls (WP1.2)
+
+Scripts tune QUIC with `config.http.quic`; every field is optional, and the defaults are D4. Values outside the ranges, and any other key in the block, are validation errors naming the field, at the script, scenario and group layers.
+
+| Field | Range | Default |
+| --- | --- | --- |
+| `handshake_timeout_ms` | 1000–60000 | 5000 |
+| `max_idle_timeout_ms` | 1000–600000 | 30000 |
+| `keep_alive_ms` | 0 to the max idle timeout | 0 (no PINGs) |
+| `alt_svc_cache` | `per_vuser`, `per_iteration` | `per_vuser` |
+| `broken_ttl_ms` | 0–600000 | 300000 |
+
+Receive windows, the response header limit and packet sizing size memory per connection, so they are installation settings on the controller and generators. They are defined and validated now; the transport reads them at startup from WP2.1, and an invalid value then fails startup naming its variable.
+
+| Variable | Range | Default |
+| --- | --- | --- |
+| `APEXLOAD_QUIC_INITIAL_STREAM_RECEIVE_WINDOW` | 16 KiB–1 GiB, at most the stream maximum | 512 KiB |
+| `APEXLOAD_QUIC_MAX_STREAM_RECEIVE_WINDOW` | 16 KiB–1 GiB | 6 MiB |
+| `APEXLOAD_QUIC_INITIAL_CONNECTION_RECEIVE_WINDOW` | 16 KiB–1 GiB, at most the connection maximum | 768 KiB |
+| `APEXLOAD_QUIC_MAX_CONNECTION_RECEIVE_WINDOW` | 16 KiB–1 GiB | 15 MiB |
+| `APEXLOAD_QUIC_MAX_RESPONSE_HEADER_BYTES` | 4 KiB–10 MiB | 64 KiB, the TCP transport's limit |
+| `APEXLOAD_QUIC_INITIAL_PACKET_SIZE` | 1200–1452 | 1280 |
+| `APEXLOAD_QUIC_DISABLE_PATH_MTU_DISCOVERY` | `true`, `false` | `false` |
+
+The window and packet defaults are quic-go v0.63.0's. Stream budgets stay governed by `max_conns_per_host` and the server's stream limit.
+
 ## Wave 0 delivery notes
 
 | WP | Delivered | Deviation from the specification |
@@ -101,3 +127,4 @@ Decision: each VUser lazily creates one `quic.Transport` and UDP socket per loca
 | WP | Delivered | Deviation from the specification |
 | --- | --- | --- |
 | WP1.1 | `auto+h3` and `3` at every level (script, request, `http_sequence` children, runtime-settings overrides) in the DSL, JSON schema, OpenAPI and dashboard types; `NormalizeVersion` maps `HTTP/3`, `HTTP/3.0` and `h3` to `3` while draft tokens stay unsupported; one precedence (request, group, scenario, script, alias) shared with the existing policies; save-time rejection of exact `3` with an `http://` URL, a TLS maximum below 1.3, a custom proxy or integrated auth, and of either policy with network shaping; HTTP/1.1-only `Expect` rule skipped for exact `3`; the runtime refuses any request that resolves to an HTTP/3 policy before sending, while overrides to other policies still run | The `http/3` protocol alias waits until every dispatch path recognizes it (Wave 2). The post-resolution URL check lands with the transport (WP2.1), because this runtime refuses all HTTP/3 requests before resolution matters. The two policies are already offered in the existing version selects so a stored policy displays correctly; the QUIC panel and capability-aware messages remain WP5.2 |
+| WP1.2 | `config.http.quic` with the five fields in the DSL, JSON schema, OpenAPI and dashboard types; range validation shared by save and session start; unknown keys kept through JSON clones so group and scenario overrides report them too; the block layers with the `http` section, which overrides replace whole; session parsing into `QUICSettings`; the seven operator variables with bounds and defaults | The operator limits are parsed and validated but consumed only once the transport exists (WP2.1), which is also where startup reads them. Authoring controls for the five fields are WP5.2 |

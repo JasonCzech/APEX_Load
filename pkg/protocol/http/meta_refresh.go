@@ -223,6 +223,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		authType:                   h.authType,
 		authHeader:                 h.authHeader,
 		httpVersion:                h.httpVersion,
+		quicSettings:               h.quicSettings,
 		maxRedirects:               h.maxRedirects,
 		requestTimeout:             h.requestTimeout,
 		pageTimeout:                h.pageTimeout,

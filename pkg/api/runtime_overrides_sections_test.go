@@ -687,3 +687,25 @@ func TestMaskManagedTestIncludesHistoryWindowWhenRequested(t *testing.T) {
 		t.Fatalf("history window = %#v, want latest point after since", masked.History)
 	}
 }
+
+func TestRuntimeOverridesLayerTheQUICBlockWithTheHTTPSection(t *testing.T) {
+	scenario := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Version: "auto+h3", QUIC: &dsl.HTTPQUICConfig{KeepAliveMs: 5000}}}
+	group := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Version: "3", QUIC: &dsl.HTTPQUICConfig{HandshakeTimeoutMs: 2000}}}
+	merged := mergeRuntimeSettings(scenario, group)
+	if merged.HTTP.Version != "3" || merged.HTTP.QUIC == nil || merged.HTTP.QUIC.HandshakeTimeoutMs != 2000 || merged.HTTP.QUIC.KeepAliveMs != 0 {
+		t.Fatalf("group http section did not replace the scenario's, quic included: %#v %#v", merged.HTTP, merged.HTTP.QUIC)
+	}
+	script := &dsl.Script{Name: "q", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://app.example.test", HTTP: dsl.HTTPConfig{QUIC: &dsl.HTTPQUICConfig{MaxIdleTimeoutMs: 90000}}}}
+	if err := applyRuntimeOverrides(script, &RuntimeSettingsOverride{Iterations: new(int)}); err != nil {
+		t.Fatal(err)
+	}
+	if script.Config.HTTP.QUIC == nil || script.Config.HTTP.QUIC.MaxIdleTimeoutMs != 90000 {
+		t.Fatalf("an override without an http section dropped the script's quic block: %#v", script.Config.HTTP.QUIC)
+	}
+	if err := applyRuntimeOverrides(script, merged); err != nil {
+		t.Fatal(err)
+	}
+	if script.Config.HTTP.Version != "3" || script.Config.HTTP.QUIC.HandshakeTimeoutMs != 2000 || script.Config.HTTP.QUIC.MaxIdleTimeoutMs != 0 {
+		t.Fatalf("applied http section = %#v %#v", script.Config.HTTP, script.Config.HTTP.QUIC)
+	}
+}

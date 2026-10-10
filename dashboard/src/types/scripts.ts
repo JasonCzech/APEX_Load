@@ -343,6 +343,16 @@ export interface LogConfig {
   redact_run_evidence?: boolean
 }
 
+/** config.http.quic. Unset fields take the runtime defaults (5 s handshake,
+ * 30 s idle, no keep-alive, per-VUser Alt-Svc cache, 5 min broken TTL). */
+export interface HTTPQUICConfig {
+  handshake_timeout_ms?: number
+  max_idle_timeout_ms?: number
+  keep_alive_ms?: number
+  alt_svc_cache?: '' | 'per_vuser' | 'per_iteration'
+  broken_ttl_ms?: number
+}
+
 export interface HTTPConfig {
   receive_buffer_bytes?: number
   max_meta_refresh?: number
@@ -365,6 +375,8 @@ export interface HTTPConfig {
   tls_timeout_ms?: number
   idle_timeout_ms?: number
   version?: string
+  /** Tunes the QUIC connections opened by the HTTP/3 policies (auto+h3, 3). */
+  quic?: HTTPQUICConfig
   max_conns_per_host?: number
   max_idle_conns?: number
   keep_alive?: boolean

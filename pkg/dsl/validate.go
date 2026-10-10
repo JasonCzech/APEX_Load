@@ -2180,6 +2180,7 @@ func validateWebRuntimeIssues(script *Script) []string {
 	if err := httpprotocol.ValidateVersion(httpCfg.Version); err != nil {
 		issues = append(issues, fmt.Sprintf("config.http.version: %v", err))
 	}
+	issues = append(issues, validateHTTPQUICConfigIssues(httpCfg.QUIC)...)
 	if httpCfg.MaxConnsPerHost < 0 || httpCfg.MaxConnsPerHost > httpprotocol.MaxConfiguredConnsPerHost {
 		issues = append(issues, fmt.Sprintf("config.http.max_conns_per_host must be between 0 and %d", httpprotocol.MaxConfiguredConnsPerHost))
 	}

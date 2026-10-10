@@ -2255,6 +2255,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -12512,6 +12516,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -13581,6 +13604,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -14608,6 +14635,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -16732,6 +16763,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -18664,6 +18699,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -51168,6 +51207,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -83605,6 +83663,10 @@ paths:
                           additionalProperties: true
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -84640,6 +84702,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -90452,6 +90518,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -96471,6 +96541,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -102491,6 +102565,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -108523,6 +108601,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -114555,6 +114637,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -120587,6 +120673,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -126619,6 +126709,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -142733,6 +142827,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -143827,6 +143926,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -144476,6 +144580,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -146450,6 +146573,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -147438,6 +147580,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -149616,6 +149763,25 @@ paths:
                                     type: string
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                properties:
+                                  alt_svc_cache:
+                                    type: string
+                                  broken_ttl_ms:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  handshake_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  keep_alive_ms:
+                                    type: integer
+                                    format: int64
+                                  max_idle_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -150604,6 +150770,11 @@ paths:
                                       additionalProperties: true
                                     proxy_mode:
                                       type: string
+                                    quic:
+                                      type: object
+                                      description: 'Go type: HTTPQUICConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     receive_buffer_bytes:
                                       type: integer
                                       format: int64
@@ -151972,6 +152143,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -153128,6 +153303,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -153777,6 +153957,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -155751,6 +155950,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -156739,6 +156957,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -158815,6 +159038,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -159803,6 +160045,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -162687,6 +162934,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -163675,6 +163941,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -165395,6 +165666,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -168939,6 +169214,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -170800,6 +171079,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -172870,6 +173153,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -174542,6 +174829,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -176403,6 +176694,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -177916,6 +178211,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -178565,6 +178865,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -195048,6 +195367,25 @@ paths:
                                   type: string
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              properties:
+                                alt_svc_cache:
+                                  type: string
+                                broken_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                handshake_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                keep_alive_ms:
+                                  type: integer
+                                  format: int64
+                                max_idle_timeout_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -198117,6 +198455,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -201212,6 +201554,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -203153,6 +203499,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -205258,6 +205608,25 @@ paths:
                                   type: string
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              properties:
+                                alt_svc_cache:
+                                  type: string
+                                broken_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                handshake_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                keep_alive_ms:
+                                  type: integer
+                                  format: int64
+                                max_idle_timeout_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -208325,6 +208694,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -211348,6 +211721,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -213493,6 +213870,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -217755,6 +218136,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -222694,6 +223079,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -224837,6 +225226,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -229856,6 +230249,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -233598,6 +233995,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -235555,6 +235956,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -237603,6 +238008,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -239570,6 +239979,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -241461,6 +241874,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -245435,6 +245852,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -247764,6 +248185,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -251723,6 +252148,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -253626,6 +254055,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -255781,6 +256214,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -257968,6 +258405,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -261980,6 +262421,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -264826,6 +265271,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -266614,6 +267064,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -268831,6 +269285,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -270589,6 +271048,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -272773,6 +273237,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -275822,6 +276290,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -278226,6 +278698,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -281758,6 +282234,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -283686,6 +284166,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -285539,6 +286023,11 @@ paths:
                                       additionalProperties: true
                                     proxy_mode:
                                       type: string
+                                    quic:
+                                      type: object
+                                      description: 'Go type: HTTPQUICConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     receive_buffer_bytes:
                                       type: integer
                                       format: int64
@@ -287119,6 +287608,11 @@ paths:
                                       additionalProperties: true
                                     proxy_mode:
                                       type: string
+                                    quic:
+                                      type: object
+                                      description: 'Go type: HTTPQUICConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     receive_buffer_bytes:
                                       type: integer
                                       format: int64
@@ -289148,6 +289642,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -291076,6 +291574,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -292929,6 +293431,11 @@ paths:
                                       additionalProperties: true
                                     proxy_mode:
                                       type: string
+                                    quic:
+                                      type: object
+                                      description: 'Go type: HTTPQUICConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     receive_buffer_bytes:
                                       type: integer
                                       format: int64
@@ -294509,6 +295016,11 @@ paths:
                                       additionalProperties: true
                                     proxy_mode:
                                       type: string
+                                    quic:
+                                      type: object
+                                      description: 'Go type: HTTPQUICConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     receive_buffer_bytes:
                                       type: integer
                                       format: int64
@@ -296575,6 +297087,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -298453,6 +298969,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -300469,6 +300989,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -302191,6 +302715,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -303913,6 +304442,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -306038,6 +306571,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -310054,6 +310591,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -311965,6 +312506,10 @@ paths:
                               additionalProperties: true
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -313837,6 +314382,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -315757,6 +316306,10 @@ paths:
                                     additionalProperties: true
                                   proxy_mode:
                                     type: string
+                                  quic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   receive_buffer_bytes:
                                     type: integer
                                     format: int64
@@ -317897,6 +318450,25 @@ paths:
                                   type: string
                             proxy_mode:
                               type: string
+                            quic:
+                              type: object
+                              properties:
+                                alt_svc_cache:
+                                  type: string
+                                broken_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                handshake_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                keep_alive_ms:
+                                  type: integer
+                                  format: int64
+                                max_idle_timeout_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             receive_buffer_bytes:
                               type: integer
                               format: int64
@@ -329213,6 +329785,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -329892,6 +330469,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -333387,6 +333983,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -342565,6 +343166,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -346497,6 +347117,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -355675,6 +356300,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -361546,6 +362190,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -364254,6 +364902,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -389634,6 +390286,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -398812,6 +399469,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -402688,6 +403364,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -411866,6 +412547,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -414213,6 +414913,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -415011,6 +415730,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -415767,6 +416505,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -416523,6 +417280,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -417345,6 +418121,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -418088,6 +418883,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -421419,6 +422233,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -430597,6 +431416,25 @@ paths:
                                 type: string
                           proxy_mode:
                             type: string
+                          quic:
+                            type: object
+                            properties:
+                              alt_svc_cache:
+                                type: string
+                              broken_ttl_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              handshake_timeout_ms:
+                                type: integer
+                                format: int64
+                              keep_alive_ms:
+                                type: integer
+                                format: int64
+                              max_idle_timeout_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           receive_buffer_bytes:
                             type: integer
                             format: int64
@@ -432612,6 +433450,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -434102,6 +434944,10 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -435678,6 +436524,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -452754,6 +453605,11 @@ paths:
                                 additionalProperties: true
                               proxy_mode:
                                 type: string
+                              quic:
+                                type: object
+                                description: 'Go type: HTTPQUICConfig'
+                                additionalProperties: true
+                                nullable: true
                               receive_buffer_bytes:
                                 type: integer
                                 format: int64
@@ -453433,6 +454289,25 @@ paths:
                               type: string
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          properties:
+                            alt_svc_cache:
+                              type: string
+                            broken_ttl_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            handshake_timeout_ms:
+                              type: integer
+                              format: int64
+                            keep_alive_ms:
+                              type: integer
+                              format: int64
+                            max_idle_timeout_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64
@@ -454825,6 +455700,11 @@ paths:
                                   additionalProperties: true
                                 proxy_mode:
                                   type: string
+                                quic:
+                                  type: object
+                                  description: 'Go type: HTTPQUICConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 receive_buffer_bytes:
                                   type: integer
                                   format: int64
@@ -456302,6 +457182,10 @@ paths:
                           additionalProperties: true
                         proxy_mode:
                           type: string
+                        quic:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         receive_buffer_bytes:
                           type: integer
                           format: int64

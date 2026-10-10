@@ -52,7 +52,9 @@ func TestValidateHTTP3RejectsWhatExactHTTP3CannotHonor(t *testing.T) {
 		{"tls maximum below 1.3", func(s *Script) { s.Config.HTTP.TLS.MaxVersion = "1.2" }, "config.http.tls.max_version must be 1.3 or unset"},
 		{"custom proxy", func(s *Script) { s.Config.HTTP.Proxy.URL = "http://proxy.corp:8080" }, "http3_proxy_unsupported"},
 		{"integrated auth", func(s *Script) { s.Config.HTTP.Auth = AuthConfig{Type: "ntlm", Username: "u", Password: "p"} }, "config.http.auth.type ntlm cannot run over HTTP/3"},
-		{"network shaping", func(s *Script) { s.Config.WebRuntime.NetworkSimulation = NetworkSimulationConfig{Mode: "preset", Preset: "dsl"} }, "config.web_runtime.network_simulation cannot be combined"},
+		{"network shaping", func(s *Script) {
+			s.Config.WebRuntime.NetworkSimulation = NetworkSimulationConfig{Mode: "preset", Preset: "dsl"}
+		}, "config.web_runtime.network_simulation cannot be combined"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

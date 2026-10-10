@@ -64,8 +64,9 @@ type HTTP struct {
 	runCorrelation             runCorrelationPolicy
 	authType                   string
 	authHeader                 string // pre-computed Authorization header value
-	httpVersion                string // empty = automatic; "1.1"/"2" = exact
-	maxRedirects               int    // <=0 = no follow, unset/default = 10
+	httpVersion                string // empty = automatic; "1.1"/"2" = exact; "3"/"auto+h3" = HTTP/3 policies
+	quicSettings               QUICSettings
+	maxRedirects               int // <=0 = no follow, unset/default = 10
 	requestTimeout             time.Duration
 	pageTimeout                time.Duration
 	htmlParseMode              string
@@ -182,6 +183,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.traceparentEnabled = parseTraceparentEnabled(config)
 	h.traceparentSampled = parseTraceparentSampled(config)
 	transportSettings := parseTransportConfig(config)
+	if h.quicSettings, err = parseQUICSettings(config); err != nil {
+		return err
+	}
 	h.requestTimeout = transportSettings.requestTimeout
 	h.pageTimeout = boundedHTTPTimeout(config, "page_timeout_ms")
 	h.htmlParseMode = strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "html_parse_mode")))

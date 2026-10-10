@@ -1405,3 +1405,20 @@ func TestBuildProtoConfigBrowserQUIC(t *testing.T) {
 		t.Fatal("an unset QUIC mode must stay unset so the runtime default applies")
 	}
 }
+
+func TestBuildProtoConfigForwardsQUICSettings(t *testing.T) {
+	zero := 0
+	script := &dsl.Script{Name: "quic", Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{
+		Version: "auto+h3",
+		QUIC:    &dsl.HTTPQUICConfig{HandshakeTimeoutMs: 2000, AltSvcCache: "per_iteration", BrokenTTLMs: &zero},
+	}}}
+	cfg := buildProtoConfig(script)
+	if cfg["http_version"] != "auto+h3" || cfg["http_quic_handshake_timeout_ms"] != float64(2000) || cfg["http_quic_alt_svc_cache"] != "per_iteration" || cfg["http_quic_broken_ttl_ms"] != float64(0) {
+		t.Fatalf("cfg = %v", cfg)
+	}
+	for _, key := range []string{"http_quic_max_idle_timeout_ms", "http_quic_keep_alive_ms"} {
+		if _, present := cfg[key]; present {
+			t.Fatalf("unset %s was forwarded", key)
+		}
+	}
+}

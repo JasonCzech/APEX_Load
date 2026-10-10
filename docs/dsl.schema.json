@@ -8068,6 +8068,9 @@
         "proxy_mode": {
           "type": "string"
         },
+        "quic": {
+          "$ref": "#/$defs/HTTPQUICConfig"
+        },
         "receive_buffer_bytes": {
           "maximum": 1048576,
           "minimum": 0,
@@ -8103,6 +8106,40 @@
             "3"
           ],
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "HTTPQUICConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "alt_svc_cache": {
+          "enum": [
+            "",
+            "per_vuser",
+            "per_iteration"
+          ],
+          "type": "string"
+        },
+        "broken_ttl_ms": {
+          "maximum": 600000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "handshake_timeout_ms": {
+          "maximum": 60000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "keep_alive_ms": {
+          "maximum": 600000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_idle_timeout_ms": {
+          "maximum": 600000,
+          "minimum": 1000,
+          "type": "integer"
         }
       },
       "type": "object"

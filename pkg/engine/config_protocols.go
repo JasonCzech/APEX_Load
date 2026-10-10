@@ -65,6 +65,11 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	} else if version := dsl.InheritedHTTPVersion(script); version != "" {
 		cfg["http_version"] = version
 	}
+	if quic := httpCfg.QUIC; quic != nil {
+		for key, value := range httpprotocol.QUICSettingsConfig(quic.HandshakeTimeoutMs, quic.MaxIdleTimeoutMs, quic.KeepAliveMs, quic.AltSvcCache, quic.BrokenTTLMs) {
+			cfg[key] = value
+		}
+	}
 	if httpCfg.MaxRedirects != nil {
 		cfg["max_redirects"] = float64(*httpCfg.MaxRedirects)
 	}
