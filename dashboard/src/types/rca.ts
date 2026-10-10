@@ -7,6 +7,7 @@ export type RcaOutcome = 'supported' | 'insufficient_evidence' | 'no_supported_h
 export type RcaConfidence = 'high' | 'medium' | 'low'
 export type RcaValidityVerdict = 'valid' | 'suspect' | 'invalid' | 'unknown'
 export type RcaAnalysisState = 'none' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type RcaOrigin = 'requested' | 'automatic'
 
 export interface RcaInputDigests {
   archive: string
@@ -69,6 +70,19 @@ export interface RcaCoverage {
   evidence: string
   status: 'complete' | 'partial' | 'missing'
   detail?: string
+  // sources name the monitor sources behind the monitor_sources row,
+  // incomplete ones first.
+  sources?: RcaCoverageSource[]
+}
+
+// RcaCoverageSource is one monitor source's outcome for the run: id is the
+// project's monitor source, reason why its coverage is incomplete.
+export interface RcaCoverageSource {
+  id: string
+  pack?: string
+  state?: string
+  reason?: string
+  required?: boolean
 }
 
 export interface RcaLimitation {
@@ -241,6 +255,11 @@ export interface RcaAnalysisResponse {
   // analysis_enabled says whether the project computes new analyses; saved
   // ones stay readable when it does not.
   analysis_enabled?: boolean
+  // auto_analyze says whether the project analyzes every archived run.
+  auto_analyze?: boolean
+  // origin is requested (asked for) or automatic (queued when the run's
+  // archive was finalized).
+  origin?: RcaOrigin
   // archive_changed says the run's archive changed after the analysis read
   // it; evidence archived since is not in the analysis.
   archive_changed?: boolean
@@ -355,4 +374,64 @@ export interface ExemplarPage {
   total: number
   capture_truncated?: boolean
   links_unavailable?: boolean
+}
+
+// ReportRootCauseSummary is a run's root cause in brief (Go
+// ReportRootCauseSummary), carried by every archive report response, single
+// or batch: whether the project presents root cause, the state of the run's
+// newest analysis and the verdict of its newest completed one.
+export interface ReportRootCauseSummary {
+  // not_enabled, none, or the newest analysis's state.
+  state: 'not_enabled' | RcaAnalysisState
+  presented: boolean
+  analysis_enabled: boolean
+  auto_analyze?: boolean
+  // The verdict fields describe the newest completed analysis.
+  analysis_id?: string
+  revision?: number
+  origin?: RcaOrigin
+  outcome?: RcaOutcome
+  validity?: RcaValidityVerdict
+  top_hypothesis?: ReportRootCauseHypothesis
+  hypothesis_count: number
+  anomaly_count: number
+  completed_at?: string
+  archive_changed?: boolean
+  // latest is the newest analysis when it is not the completed one.
+  latest?: { analysis_id: string; revision: number; state: RcaAnalysisState; origin?: RcaOrigin; created_at: string }
+}
+
+// RcaWindowLink opens a time window of the run in one of its providers.
+export interface RcaWindowLink {
+  provider: string
+  connection_id: string
+  url: string
+}
+
+export interface RcaWindowLinks {
+  links: RcaWindowLink[]
+  links_unavailable?: boolean
+}
+
+// ProjectAnalysisGates are a project's analysis gates (Go AnalysisGates).
+export interface ProjectAnalysisGates {
+  root_cause: { enabled: boolean; present: boolean; auto_analyze: boolean; auto_enrich: boolean }
+  business_keys: { enabled: boolean }
+}
+
+// ProjectAnalysisSettings are what a project set, stamped per save.
+export interface ProjectAnalysisSettings extends ProjectAnalysisGates {
+  revision: number
+  updated_at?: string
+  updated_by?: string
+}
+
+// ProjectAnalysisSettingsResponse is GET/PUT
+// /projects/{id}/analysis-settings: the project's own settings, the flags the
+// deployment forces on, and the gates in effect.
+export interface ProjectAnalysisSettingsResponse {
+  project_id: string
+  settings: ProjectAnalysisSettings
+  forced_by_env: ProjectAnalysisGates
+  effective: ProjectAnalysisGates
 }

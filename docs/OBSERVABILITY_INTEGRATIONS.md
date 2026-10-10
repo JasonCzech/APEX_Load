@@ -499,6 +499,18 @@ without links and with `links_unavailable`.
   Historical AppDynamics snapshot and current Dynatrace problem links remain on
   `ProviderDiagnostic.DeepLink`, validated against their connection's origin;
   Dynatrace ingestion applies the template target check.
+- **Window templates.** A connection can also hold a `window_template` that
+  opens a time window, not a trace: it may use only `{from_utc}`, `{to_utc}`
+  and `{entity_id}` (a window template with `{trace_id}` is refused) and is
+  validated like a trace template. ELK connections with a Kibana `ui_url`
+  default to Discover over the window, the trace default without its query;
+  Dynatrace connections have no default until a template is saved (use your
+  tenant's timeframe parameters). `GET /api/v1/tests/{id}/archive/root-cause/links?from=&to=`
+  (viewer) compiles them for one window of the run; the root-cause
+  investigation offers them as "Open this window in …". A template that
+  needs `{entity_id}` produces no window link, since a run window names no
+  entity. Templates are set through the API; the dashboard has no editor for
+  them yet.
 - **Budget.** Link settings are one definition per connection and do not count
   toward the project's 1000 mappings and comparisons. They outlive a deleted
   connection unused, since connection IDs are never reused.
@@ -718,7 +730,24 @@ APEX Load sends lifecycle and telemetry-health notifications to Dynatrace throug
 
 #### Events
 
-Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `telemetry_acceptance`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector. A `telemetry_acceptance` event is an `ERROR_EVENT` when the verdict failed (severity `danger`) and a `CUSTOM_ALERT` when it was inconclusive (severity `warning`).
+Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `telemetry_acceptance`, `rca_analysis_completed`, `run_validity`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector. A `telemetry_acceptance` event is an `ERROR_EVENT` when the verdict failed (severity `danger`) and a `CUSTOM_ALERT` when it was inconclusive (severity `warning`). A `run_validity` event is an `ERROR_EVENT` for an invalid run and a `CUSTOM_ALERT` for a suspect one; `rca_analysis_completed` is `CUSTOM_INFO`.
+
+#### Root-cause events
+
+- `rca_analysis_completed`: a root-cause analysis completed for a project
+  that presents root cause, sent once per analysis. Status is the outcome
+  (`supported`, `no_supported_hypothesis`, `insufficient_evidence`); severity
+  is `danger` for an invalid run, `warning` for a suspect run or a supported
+  cause, otherwise `info`; the summary is the reports' one-line root cause;
+  conditions name the analysis, its origin, the run's validity, the report
+  route and up to three hypotheses.
+- `run_validity`: a run whose load generators or telemetry could not carry
+  the load it reports, sent once per run and verdict (`suspect` or
+  `invalid`) with its reasons, after the run's archive is attached. It is
+  sent whether or not the project presents root cause, because validity is
+  judged for every archived run.
+
+Webhooks set to *All events* receive both.
 
 ### Load-phase events and Grafana annotations
 
@@ -740,7 +769,8 @@ systems can tell a load step from an incident:
   given (for example `https://grafana.example.com/api/annotations`) with a
   service-account token sent as `Authorization: Bearer`. Every annotation is
   tagged `apexload`, `run:<test id>` and `event:<type>`, plus `phase:<kind>` for
-  load phases, so dashboards can overlay a run by tag. Like Dynatrace, the
+  load phases, `rca:<outcome>` for a completed root-cause analysis and
+  `validity:<verdict>` for run validity, so dashboards can overlay a run by tag. Like Dynatrace, the
   token is write-only.
 - **Archive:** after finalization, `phase_events.jsonl`
   (`apexload.phase_event.v1`) holds each phase event with every sink's outcome

@@ -31,6 +31,9 @@ function helpTarget(view: AppView, scriptsSubView?: string): HelpTarget | undefi
     return userGuide(view.mode === 'import' || scriptsSubView?.endsWith('import') ? 'imports' : 'authoring')
   }
   if (view.page === 'settings' && view.setting === 'clusters') return adminGuide('clusters')
+  // A report's Diagnostics section leads with the root-cause panel.
+  if (view.page === 'report' && view.section === 'diagnostics') return userGuide('root-cause')
+  if (view.page === 'settings' && view.setting === 'analysis') return userGuide('root-cause')
   return PAGE_HELP[view.page]
 }
 

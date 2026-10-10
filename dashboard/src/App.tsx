@@ -3487,6 +3487,7 @@ function AppShell({
                   onSelectTest={openRun}
                   onOpenTestArchive={openCompletedRun}
                   onOpenAnalysisReport={runReportEnabled ? (id, context) => setGuardedView({page: "report", testId: id, lens: "engineer", section: "performance", ...context, ...(activeProject?.id ? {projectId: activeProject.id} : {})}) : undefined}
+                  onOpenRootCause={runReportEnabled ? (id, rootCause) => setGuardedView({page: "report", testId: id, section: "diagnostics", ...(rootCause.analysis ? {analysis: rootCause.analysis} : {}), ...(rootCause.hypothesis ? {hypothesis: rootCause.hypothesis} : {focus: "root-cause"}), ...(activeProject?.id ? {projectId: activeProject.id} : {})}) : undefined}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onNavigate={handleNavigate}
                   snapshotAudience={snapshotAudience}
@@ -3529,6 +3530,7 @@ function AppShell({
                     navigateToTest(id, "overview");
                   }}
                   onOpenArchive={openCompletedRun}
+                  onOpenRootCause={runReportEnabled ? id => setGuardedView({page: "report", testId: id, section: "diagnostics", focus: "root-cause", ...(activeProject?.id ? {projectId: activeProject.id} : {})}) : undefined}
                   onOpenResults={() => handleNavigate("results")}
                 />
                 </div>

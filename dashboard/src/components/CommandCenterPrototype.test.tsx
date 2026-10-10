@@ -17,6 +17,9 @@ import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
 import type { MetricsHistoryPoint, TestSummary, TransactionEvent, TxMetrics } from '../types'
+import { ApiContext } from '../hooks/apiContext'
+import type { ApiServices } from '../hooks/ApiProvider'
+import { rcaTestResponse } from './rca/rcaTestFixture'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -2387,6 +2390,26 @@ describe('CommandCenterPrototype', () => {
 
     expect(openArchive).toHaveBeenCalledWith('completed-run-1')
     expect(openExecution).not.toHaveBeenCalled()
+  })
+
+  it('states an ended run\'s root cause and opens it from the historical banner', async () => {
+    const openRootCause = vi.fn()
+    const getRootCauseAssessment = vi.fn().mockResolvedValue({ ...rcaTestResponse(), origin: 'automatic' })
+    const ended = { id: 'ended-run', name: 'Ended', status: 'COMPLETE', total_vusers: 5, duration: '5m', created_at: '2026-06-08T13:00:00Z',
+      archive: { test_id: 'ended-run', schema_version: '1', archive_path: '/a', manifest_path: '/a/manifest.json', transaction_count: 10, resource_sample_count: 0, interval_summary_count: 0, created_at: '2026-06-08T13:00:00Z', completed_at: '2026-06-08T13:05:00Z' },
+      groups: [] } as unknown as TestSummary
+    await act(async () => {
+      root.render(
+        <ApiContext.Provider value={{ getRootCauseAssessment } as unknown as ApiServices}>
+          <CommandCenterPrototype testId="ended-run" initialTest={ended} history={[]} onOpenArchive={vi.fn()} onOpenRootCause={openRootCause} />
+        </ApiContext.Provider>,
+      )
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(getRootCauseAssessment).toHaveBeenCalledWith('ended-run', expect.objectContaining({ signal: expect.anything() }))
+    expect(container.querySelector('.command-history-root-cause')?.textContent).toBe('Root cause: #1 Resource pressure (medium confidence)')
+    await click(buttonNamed('Open root cause'))
+    expect(openRootCause).toHaveBeenCalledWith('ended-run')
   })
 
   it('points historical runs without archive snapshots to the Results folder', async () => {

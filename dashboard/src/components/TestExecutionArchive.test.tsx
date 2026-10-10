@@ -1553,6 +1553,23 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).not.toContain('Peak successful transaction TPS')
 
+    // Each pattern row is a link target, and names the root-cause hypotheses
+    // it overlaps.
+    const row = container.querySelector('tr[id^="error-pattern-"]')
+    expect(row).not.toBeNull()
+    const onOpenHypothesis = vi.fn()
+    await act(async () => {
+      root.render(<TestExecutionArchive view="report-error-patterns" hasArchive test={test} archiveError="" archiveLoading={false} archiveReport={archiveReport}
+        errorPatternHypotheses={() => [{ id: 'h-1', rank: 1, title: 'Pool exhaustion' }]} onOpenHypothesis={onOpenHypothesis}
+        onDownloadBrowserDiagnostics={vi.fn()} onDownloadArchiveArtifact={vi.fn()} archiveActionEntries={[]} archiveSOAPOperationEntries={[]} selectedArchiveAction="" onSelectedArchiveActionChange={vi.fn()}
+        selectedArchiveSOAPOperation="" onSelectedArchiveSOAPOperationChange={vi.fn()} archiveGroups={[]} selectedArchiveGroup="" onSelectedArchiveGroupChange={vi.fn()} archiveErrorsOnly={false}
+        onArchiveErrorsOnlyChange={vi.fn()} archiveTransactionsLoading={false} archiveTransactionsTotal={0} archivePageStart={0} archivePageEnd={0} archiveTransactionsOffset={0} archivePageSize={50}
+        onPageSizeChange={vi.fn()} onPreviousPage={vi.fn()} onNextPage={vi.fn()} archiveTransactions={[]} expandedArchiveEvent={null} onExpandedArchiveEventChange={vi.fn()} />)
+    })
+    const tag = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Explained by #1 Pool exhaustion') as HTMLButtonElement
+    await act(async () => tag.click())
+    expect(onOpenHypothesis).toHaveBeenCalledWith('h-1')
+
     await renderArchiveView('report-assets')
 
     expect(container.textContent).toContain('Download Report')

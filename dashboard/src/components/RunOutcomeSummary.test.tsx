@@ -64,3 +64,35 @@ it('ignores computed outcomes when the manifest cannot establish their execution
  }
  act(() => root.unmount())
 })
+
+it('states the run validity and root cause, and opens it with the cell action', () => {
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  const base = {
+    manifest: { termination_reason: 'duration_reached', completed_at: '2026-09-06T00:05:00Z', provenance: { duration: '5m', started_at: '2026-09-06T00:00:00Z' } },
+    overview: { transactions: 506 }, completeness: { score_pct: 100 }, verdict: { status: 'Pass', explanation: '' },
+    validity: { rules_version: 'validity.v1', verdict: 'suspect', reasons: ['gen-1 CPU at or above 85% for 3 intervals'], windows: [], limitations: [] },
+    root_cause_summary: { state: 'completed', presented: true, analysis_enabled: true, analysis_id: 'a-1', outcome: 'supported', top_hypothesis: { rank: 1, title: 'Pool exhaustion', confidence: 'high' }, hypothesis_count: 1, anomaly_count: 3 },
+  } as unknown as RunArchiveReport
+  const opened: string[] = []
+  act(() => root.render(<RunOutcomeSummary report={base} onRootCause={action => opened.push(action)} />))
+  const cell = container.querySelector('.run-outcome-root-cause')
+  expect(cell?.textContent).toContain('Suspect run')
+  expect(cell?.textContent).toContain('#1 Pool exhaustion (high confidence)')
+  act(() => (Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Investigate root cause') as HTMLButtonElement).click())
+  expect(opened).toEqual(['investigate'])
+  // A newer copy of the summary wins over the report's.
+  act(() => root.render(<RunOutcomeSummary report={base} rootCauseSummary={{ state: 'running', presented: true, analysis_enabled: true, hypothesis_count: 0, anomaly_count: 0 }} />))
+  expect(container.querySelector('.run-outcome-root-cause')?.textContent).toContain('Analysis running')
+  expect(container.querySelector('.run-outcome-root-cause button')).toBeNull()
+  // A project without root cause shows only the judged validity.
+  act(() => root.render(<RunOutcomeSummary report={{ ...base, root_cause_summary: { state: 'not_enabled', presented: false, analysis_enabled: false, hypothesis_count: 0, anomaly_count: 0 } } as RunArchiveReport} />))
+  expect(container.querySelector('.run-outcome-root-cause')?.textContent).toContain('Suspect run')
+  expect(container.querySelector('.run-outcome-root-cause')?.textContent).not.toContain('not enabled')
+  act(() => root.render(<RunOutcomeSummary report={{ ...base, validity: undefined, root_cause_summary: { state: 'not_enabled', presented: false, analysis_enabled: false, hypothesis_count: 0, anomaly_count: 0 } } as unknown as RunArchiveReport} />))
+  expect(container.querySelector('.run-outcome-root-cause')).toBeNull()
+  // The exported report's preview has its own root-cause section.
+  act(() => root.render(<RunOutcomeSummary report={base} showRootCause={false} />))
+  expect(container.querySelector('.run-outcome-root-cause')).toBeNull()
+  act(() => root.unmount())
+})

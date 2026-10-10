@@ -18,4 +18,9 @@ describe('report evidence qualifications', () => {
   const value = report(); value.manifest.termination_reason = ''; value.overview.transactions = 9; value.overview.peak_active_vusers = 1
   expect(reportEvidenceWarnings(value)).toEqual(expect.arrayContaining([expect.stringContaining('termination'),expect.stringContaining('Only 9'),expect.stringContaining('1 of 10')]))
  })
+ it('warns that a suspect or invalid run is not acceptance evidence', () => {
+  const warnings = reportEvidenceWarnings(report({ validity: { rules_version: 'validity.v1', verdict: 'invalid', reasons: ['gen-1 was OOM-killed'], windows: [], limitations: [] } }))
+  expect(warnings).toEqual([expect.stringContaining('Run validity is invalid: gen-1 was OOM-killed')])
+  expect(reportEvidenceWarnings(report({ validity: { rules_version: 'validity.v1', verdict: 'valid', reasons: [], windows: [], limitations: [] } }))).toEqual([])
+ })
 })

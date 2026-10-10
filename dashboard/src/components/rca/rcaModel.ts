@@ -1,14 +1,17 @@
 import type { MetricsHistoryPoint, RunArchiveActionStats, RunArchiveErrorPattern, RunArchiveReport } from '../../types'
+import type { TimelineOverlay } from '../runReport/timelineOverlays'
 import type {
   RcaAnomaly,
   RcaAssessment,
   RcaConfidence,
   RcaHypothesis,
   RcaLoadLevel,
+  RcaOrigin,
   RcaOutcome,
   RcaValidityVerdict,
   RcaValidityWindow,
   ReportRootCause,
+  ReportRootCauseSummary,
 } from '../../types/rca'
 
 const list = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
@@ -87,8 +90,10 @@ export const RCA_VALIDITY_LABELS: Record<RcaValidityVerdict, string> = {
 export const rcaOutcomeLabel = (outcome: string) => RCA_OUTCOME_LABELS[outcome as RcaOutcome] || humanize(outcome)
 export const rcaValidityLabel = (verdict: string) => RCA_VALIDITY_LABELS[verdict as RcaValidityVerdict] || humanize(verdict)
 
+export type RcaTone = 'success' | 'warning' | 'danger' | 'info'
+
 // rcaTone maps a verdict, confidence or coverage status to a badge tone.
-export function rcaTone(value: string): 'success' | 'warning' | 'danger' | 'info' {
+export function rcaTone(value: string): RcaTone {
   switch (value) {
     case 'valid':
     case 'high':
@@ -239,9 +244,13 @@ export function rcaAnomalyWindow(a: RcaAnomaly): RcaWindow {
   return { start: onset - uncertainty, end: Math.max(Number.isFinite(end) ? end : onset, onset + uncertainty) }
 }
 
+// An anomaly's role on a timeline: a hypothesis's symptom or cause, or one
+// of the run's changes that no selected hypothesis cites.
+export type RcaAnomalyRole = 'symptom' | 'cause' | 'anomaly'
+
 export interface RcaHypothesisAnomaly {
   anomaly: RcaAnomaly
-  role: 'symptom' | 'cause'
+  role: RcaAnomalyRole
 }
 
 // rcaHypothesisAnomalies lists a hypothesis's symptoms and then the causes its
@@ -406,4 +415,157 @@ export function formatRcaDuration(ns: number): string {
   const seconds = ns / 1e9
   if (!Number.isFinite(seconds) || seconds <= 0) return '0 s'
   return seconds >= 120 ? `${Math.round(seconds / 60)} min` : `${Math.round(seconds)} s`
+}
+
+export const rcaOriginLabel = (origin?: RcaOrigin | string) => (origin === 'automatic' ? 'Automatic' : 'Requested')
+
+// What the root-cause line on a summary surface invites: investigating the
+// leading hypothesis, reviewing the changes when none is supported, or
+// opening the analysis; none when there is nothing to open.
+export type RcaSummaryAction = 'investigate' | 'review' | 'open' | 'none'
+
+export interface RcaSummaryLine {
+  text: string
+  tone: RcaTone
+  action: RcaSummaryAction
+  actionLabel: string
+  // pending says an analysis is queued or running.
+  pending: boolean
+}
+
+const RCA_ACTION_LABELS: Record<RcaSummaryAction, string> = {
+  investigate: 'Investigate root cause',
+  review: 'Review changes',
+  open: 'Open root cause',
+  none: '',
+}
+
+const plural = (count: number, one: string, many: string) => `${count.toLocaleString()} ${count === 1 ? one : many}`
+
+// rcaSummaryLine is the one line every surface that lists or headlines runs
+// shows for a run's root cause: the leading hypothesis, that no cause is
+// supported, that evidence was too thin, or the state of the analysis.
+// Validity is shown beside it, from the report's own verdict.
+export function rcaSummaryLine(summary?: ReportRootCauseSummary | null): RcaSummaryLine | null {
+  if (!summary) return null
+  const line = (text: string, tone: RcaTone, action: RcaSummaryAction, pending = false): RcaSummaryLine => ({ text, tone, action, actionLabel: RCA_ACTION_LABELS[action], pending })
+  if (summary.state === 'not_enabled') return line('Root-cause analysis is not enabled for this project', 'info', 'none')
+  const latest = summary.latest
+  const pending = summary.state === 'queued' || summary.state === 'running'
+  let verdict: RcaSummaryLine | null = null
+  if (summary.outcome === 'supported' && summary.top_hypothesis) {
+    const top = summary.top_hypothesis
+    verdict = line(`#${top.rank || 1} ${top.title}${top.confidence ? ` (${top.confidence} confidence)` : ''}`, 'warning', 'investigate')
+  } else if (summary.outcome === 'no_supported_hypothesis') {
+    verdict = line(`No cause supported · ${plural(summary.anomaly_count || 0, 'change', 'changes')} detected`, 'info', 'review')
+  } else if (summary.outcome === 'insufficient_evidence') {
+    verdict = line('Too little evidence to judge a cause', 'warning', 'open')
+  }
+  if (verdict) {
+    const notes: string[] = []
+    if (latest && (latest.state === 'queued' || latest.state === 'running')) notes.push(`re-analysis ${latest.state}`)
+    else if (latest?.state === 'failed') notes.push('latest analysis failed')
+    if (summary.archive_changed) notes.push('archive changed since')
+    return { ...verdict, text: [verdict.text, ...notes].join(' · '), pending }
+  }
+  switch (summary.state) {
+    case 'queued':
+      return line('Analysis queued', 'info', 'open', true)
+    case 'running':
+      return line('Analysis running', 'info', 'open', true)
+    case 'failed':
+      return line('Analysis failed', 'danger', 'open')
+    case 'cancelled':
+      return line('Analysis cancelled', 'info', 'open')
+    default:
+      return line('No analysis yet', 'info', 'open')
+  }
+}
+
+// rcaLargestChanges are an assessment's strongest anomalies by peak z, the
+// effect measured against each series' own spread, so changes in different
+// units compare; earlier onsets first among equals.
+export function rcaLargestChanges(assessment: RcaAssessment, limit = 5): RcaAnomaly[] {
+  return [...assessment.anomalies]
+    .sort((a, b) => Math.abs(b.peak_z || 0) - Math.abs(a.peak_z || 0) || Date.parse(a.onset) - Date.parse(b.onset))
+    .slice(0, Math.max(0, limit))
+}
+
+// rcaPatternHypotheses are the hypotheses an error pattern overlaps: a
+// symptom of the hypothesis is a transaction or action the pattern names,
+// and the hypothesis's span touches the pattern's first to latest sighting.
+// A pattern that names no action is not attributed to any hypothesis.
+export function rcaPatternHypotheses(assessment: RcaAssessment, pattern: RunArchiveErrorPattern): RcaHypothesis[] {
+  if (!pattern.actions?.length) return []
+  const first = Date.parse(pattern.first_seen)
+  const latest = Date.parse(pattern.latest_seen)
+  const byId = new Map(assessment.anomalies.map(a => [a.id, a]))
+  return assessment.hypotheses.filter(h => {
+    const names = h.symptoms.flatMap(id => {
+      const anomaly = byId.get(id)
+      const population = anomaly ? rcaSeriesPopulation(anomaly.series) : null
+      return population ? [population.name] : []
+    })
+    if (!names.some(name => pattern.actions?.includes(name))) return false
+    const span = rcaHypothesisWindow(h, assessment.anomalies)
+    if (!span) return false
+    return !(Number.isFinite(first) && first > span.end) && !(Number.isFinite(latest) && latest < span.start)
+  })
+}
+
+// rcaTimelineOverlays are an assessment's marks for the run timeline: every
+// anomaly a hypothesis cites (its symptoms and causes, under the
+// highest-ranked hypothesis citing it), the largest anomalies no hypothesis
+// cites, the spans the run was not valid and its load steps. Each anomaly's
+// ref opens its hypothesis ("hypothesis:<id>") or its window
+// ("window:<start>~<end>").
+export function rcaTimelineOverlays(assessment: RcaAssessment, phases: RcaPhaseMarker[] = [], uncitedLimit = 5): TimelineOverlay[] {
+  const out: TimelineOverlay[] = []
+  const cited = new Set<string>()
+  for (const h of [...assessment.hypotheses].sort((a, b) => a.rank - b.rank)) {
+    for (const { anomaly, role } of rcaHypothesisAnomalies(h, assessment.anomalies)) {
+      if (cited.has(anomaly.id)) continue
+      cited.add(anomaly.id)
+      const w = rcaAnomalyWindow(anomaly)
+      out.push({ id: `anomaly-${anomaly.id}`, kind: 'anomaly', start: Date.parse(anomaly.onset), end: w.end, tone: role === 'symptom' ? 'danger' : 'warning',
+        label: `${role === 'symptom' ? 'Symptom' : 'Cause'}: ${rcaSeriesLabel(anomaly.series)} ${formatRcaEffect(anomaly)} (#${h.rank} ${rcaSignatureLabel(h.signature)})`, ref: `hypothesis:${h.id}` })
+    }
+  }
+  const uncited = rcaLargestChanges({ ...assessment, anomalies: assessment.anomalies.filter(a => !cited.has(a.id)) }, uncitedLimit)
+  for (const anomaly of uncited) {
+    const w = rcaAnomalyWindow(anomaly)
+    out.push({ id: `anomaly-${anomaly.id}`, kind: 'anomaly', start: Date.parse(anomaly.onset), end: w.end, tone: 'accent',
+      label: `Change: ${rcaSeriesLabel(anomaly.series)} ${formatRcaEffect(anomaly)}`, ref: `window:${formatRcaWindow(w)}` })
+  }
+  for (const concern of rcaValidityConcerns(assessment.validity.windows)) {
+    const start = Date.parse(concern.start)
+    const end = Date.parse(concern.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    out.push({ id: `validity-${concern.start}`, kind: 'validity', start, end, tone: 'muted', label: `${rcaValidityLabel(concern.verdict)} ${formatRcaTime(start)} to ${formatRcaTime(end)}` })
+  }
+  phases.forEach((phase, i) => out.push({ id: `phase-${i}-${phase.at}`, kind: 'phase', start: phase.at, tone: 'muted', label: phase.label }))
+  return out.filter(overlay => Number.isFinite(overlay.start))
+}
+
+// rcaErrorPatternAnchor is the element ID of an error pattern's row in the
+// report's error-pattern table: a short stable hash of its signature
+// (FNV-1a), so the root-cause panel can scroll to it.
+export function rcaErrorPatternAnchor(signature: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < signature.length; i += 1) {
+    hash ^= signature.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return `error-pattern-${hash.toString(16).padStart(8, '0')}`
+}
+
+// rcaRevealElement scrolls an element of the page into view and marks it
+// for a moment, for links within one report section.
+export function rcaRevealElement(id: string): boolean {
+  const element = typeof document === 'undefined' ? null : document.getElementById(id)
+  if (!element) return false
+  element.scrollIntoView?.({ block: 'center' })
+  element.classList.add('rca-revealed')
+  window.setTimeout(() => element.classList.remove('rca-revealed'), 2000)
+  return true
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -451,5 +452,55 @@ func TestRCAReportLinkMatchesTheDashboardRoute(t *testing.T) {
 	link := rcaReportLink("run-1", "analysis-1", "hypothesis-1")
 	if !regexp.MustCompile(`^#/report/run-1\?section=diagnostics&analysis=analysis-1&hypothesis=hypothesis-1$`).MatchString(link) {
 		t.Fatalf("link %s", link)
+	}
+}
+
+// TestLocalRunAnnouncesItsAttachedArchiveOnce: a local run's archive is
+// published before the run is terminal in memory, so finalization cannot
+// attach it; the completion path attaches it and runs the archive-attached
+// hook (automatic root-cause analysis among its consumers) exactly once.
+func TestLocalRunAnnouncesItsAttachedArchiveOnce(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(target.Close)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 1})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+		_ = store.Close()
+	})
+	announced := make(chan string, 4)
+	server.runner.archiveAttachedHook = func(testID string) { announced <- testID }
+	server.runner.StoreScript(&dsl.Script{ID: "attach-hook", Name: "Attach hook", Protocol: "http", Version: "1.0.0",
+		Config: dsl.ScriptConfig{BaseURL: target.URL}, Actions: []dsl.Action{{Name: "home", Type: "request", Method: "GET", Target: "/"}}})
+	run, err := server.runner.CreateTest(CreateTestRequest{Name: "Attach hook", ScriptID: "attach-hook", VUsers: 1, Duration: "1s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.runner.StartTest(run.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitForTestStatusWithin(t, server.runner, run.ID, time.Minute, "COMPLETE")
+	select {
+	case id := <-announced:
+		if id != run.ID {
+			t.Fatalf("announced %s, want %s", id, run.ID)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the completed run's archive was never announced")
+	}
+	select {
+	case id := <-announced:
+		t.Fatalf("the archive was announced twice (%s)", id)
+	case <-time.After(time.Second):
+	}
+	if current, ok := server.runner.GetTestSummary(run.ID); !ok || current.Archive == nil {
+		t.Fatalf("the completed run has no attached archive: %+v", current)
 	}
 }

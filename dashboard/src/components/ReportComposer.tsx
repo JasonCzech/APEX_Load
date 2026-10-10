@@ -414,7 +414,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
               </label>
             </header>
 
-            <RunOutcomeSummary report={report} />
+            <RunOutcomeSummary report={report} showRootCause={false} />
             <section className="report-metrics">
               <Metric label="Acceptance" value={reportAcceptance(report).status} tone={reportAcceptance(report).failed ? 'danger' : reportAcceptance(report).conditional ? 'warn' : 'ok'} />
               <Metric label="Archive records" value={formatInt(overview?.transactions)} />

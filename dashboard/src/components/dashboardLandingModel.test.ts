@@ -68,3 +68,31 @@ describe('dashboard attention priorities', () => {
     expect(buildDashboardAttention([], [], [], {}, null)).toEqual([])
   })
 })
+
+describe('dashboard root-cause attention', () => {
+  const summary = (changes: Record<string, unknown> = {}) => ({ state: 'completed', presented: true, analysis_enabled: true, analysis_id: 'a-1', outcome: 'supported',
+    top_hypothesis: { id: 'h-1', rank: 1, title: 'Pool exhaustion', confidence: 'high', explains: ['Checkout · p95 latency'] }, hypothesis_count: 1, anomaly_count: 2, ...changes })
+  const withRootCause = (changes: Record<string, unknown>) => ({ ...report('Pass'), ...changes } as unknown as RunArchiveReport)
+
+  it('flags invalid and suspect runs and found causes, opening the root cause', () => {
+    const reports = {
+      broken: withRootCause({ validity: { verdict: 'invalid', reasons: ['generator-1 was OOM-killed'] }, root_cause_summary: summary({ outcome: 'insufficient_evidence', top_hypothesis: undefined }) }),
+      shaky: withRootCause({ validity: { verdict: 'suspect', reasons: [] }, root_cause_summary: summary({ state: 'not_enabled', presented: false }) }),
+      found: withRootCause({ validity: { verdict: 'valid' }, root_cause_summary: summary() }),
+    }
+    const items = buildDashboardAttention([], [], [run('broken', { name: 'Broken' }), run('shaky', { name: 'Shaky' }), run('found', { name: 'Found' })], reports)
+    const byId = Object.fromEntries(items.map(item => [item.id, item]))
+    expect(byId['rca-invalid:broken']).toMatchObject({ tone: 'danger', title: 'Broken run invalid', detail: 'generator-1 was OOM-killed', destination: 'root-cause', rootCause: { analysis: 'a-1' } })
+    // Without root cause presented, a suspect run still opens the run.
+    expect(byId['rca-suspect:shaky']).toMatchObject({ tone: 'warning', testId: 'shaky' })
+    expect(byId['rca-suspect:shaky'].destination).toBeUndefined()
+    expect(byId['rca-cause:found:a-1']).toMatchObject({ tone: 'info', title: 'Found: Pool exhaustion', destination: 'root-cause', rootCause: { analysis: 'a-1', hypothesis: 'h-1' } })
+    expect(byId['rca-cause:found:a-1'].detail).toContain('high confidence')
+    expect(items.some(item => item.id.startsWith('rca-cause:broken'))).toBe(false)
+  })
+
+  it('says nothing about valid runs or projects that do not present root cause', () => {
+    const quiet = withRootCause({ validity: { verdict: 'unknown' }, root_cause_summary: summary({ state: 'not_enabled', presented: false }) })
+    expect(buildDashboardAttention([], [], [run('quiet')], { quiet }).filter(item => item.id.startsWith('rca-'))).toEqual([])
+  })
+})

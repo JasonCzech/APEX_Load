@@ -378,6 +378,9 @@ export interface RepositoryCategory {
 }
 
 export interface ProjectSettings {
+  // analysis holds the project's analysis opt-ins; it changes only through
+  // PUT /projects/{id}/analysis-settings.
+  analysis?: import('./types/rca').ProjectAnalysisSettings
   redaction_rules?: RedactionRule[]
   max_concurrent_tests?: number
   max_vusers?: number
@@ -1775,6 +1778,12 @@ export interface RunArchiveReport {
   // root_cause_view is the generated root cause every report format renders:
   // v2 where the project presents it and an analysis completed, else v1.
   root_cause_view?: import('./types/rca').ReportRootCause
+  // root_cause_summary is the run's root cause in brief, on every report
+  // response including batches.
+  root_cause_summary?: import('./types/rca').ReportRootCauseSummary
+  // validity says whether the run's load generators and telemetry could
+  // carry the load it reports (validity.v1).
+  validity?: import('./types/rca').RcaValidity
 }
 
 export interface RunArchiveLoadLevelSummary {

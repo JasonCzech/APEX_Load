@@ -48,8 +48,12 @@ const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
 // Activity filters and page travel in the URL so a reload or link keeps them.
 // Content inside a report section that an old archive-tab link pointed at;
 // the report opens and scrolls to it.
-export type ReportFocus = 'action-summary' | 'load-impact' | 'transaction-drilldown'
-const REPORT_FOCUS: readonly ReportFocus[] = ['action-summary', 'load-impact', 'transaction-drilldown']
+// ReportFocus names the report content a link opens and scrolls to: an
+// archive view, the archived monitor evidence, or a part of the Diagnostics
+// root-cause panel (the panel, its largest changes, its evidence coverage or
+// its limitations).
+export type ReportFocus = 'action-summary' | 'load-impact' | 'transaction-drilldown' | 'monitor-evidence' | 'root-cause' | 'rca-changes' | 'rca-coverage' | 'rca-limitations'
+const REPORT_FOCUS: readonly ReportFocus[] = ['action-summary', 'load-impact', 'transaction-drilldown', 'monitor-evidence', 'root-cause', 'rca-changes', 'rca-coverage', 'rca-limitations']
 
 // Command Center's analysis tools are part of the address so a reload or a
 // shared link reopens the same view (operations is the default).

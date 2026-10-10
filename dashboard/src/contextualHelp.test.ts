@@ -12,6 +12,7 @@ const cases: [AppView, string, string, string?][] = [
   [{ page: 'results' }, 'user-guide', 'results'], [{ page: 'report', testId: 'run' }, 'user-guide', 'results'],
   [{ page: 'repository' }, 'user-guide', 'shared-assets', 'repository-and-shared-assets'], [{ page: 'settings' }, 'user-guide', 'shared-assets', 'settings-reference'],
   [{ page: 'settings', setting: 'clusters' }, 'admin-guide', 'clusters'],
+  [{ page: 'report', testId: 'run', section: 'diagnostics' }, 'user-guide', 'root-cause'], [{ page: 'settings', setting: 'analysis' }, 'user-guide', 'root-cause'],
   [{ page: 'access' }, 'admin-guide', 'administration', 'the-access-console'],
 ]
 

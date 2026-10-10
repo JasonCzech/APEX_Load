@@ -65,6 +65,7 @@ import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
 import ProjectTelemetryEvidenceCard from './ProjectTelemetryEvidenceCard'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
+import ProjectAnalysisSettingsPanel from './ProjectAnalysisSettingsPanel'
 import { listAllFleetPools } from './fleetCatalogModel'
 import {
   formatAccessOperation,
@@ -167,6 +168,8 @@ const NOTIFICATION_EVENTS = [
   'browser_finding',
   'browser_finding_resolved',
   'telemetry_acceptance',
+  'rca_analysis_completed',
+  'run_validity',
   'load_phase',
   'fleet_alert',
   'fleet_alert_acknowledged',
@@ -174,9 +177,15 @@ const NOTIFICATION_EVENTS = [
   'fleet_degraded',
 ] as const
 
+// Events whose words do not title well by themselves.
+const NOTIFICATION_EVENT_LABELS: Partial<Record<typeof NOTIFICATION_EVENTS[number], string>> = {
+  rca_analysis_completed: 'Root-cause analysis completed',
+  run_validity: 'Run validity suspect or invalid',
+}
+
 const NOTIFICATION_EVENT_OPTIONS = NOTIFICATION_EVENTS.map((eventType) => ({
   value: eventType,
-  label: eventType
+  label: NOTIFICATION_EVENT_LABELS[eventType] || eventType
     .split('_')
     .map(part => part ? `${part[0].toUpperCase()}${part.slice(1)}` : '')
     .join(' '),
@@ -1204,6 +1213,7 @@ export default function SettingsPage({
     catalog: `${projects.length} project${projects.length === 1 ? '' : 's'}`,
     limits: selectedProject ? selectedProject.name : 'Select project',
     github: projectDraftGitHubEnabled ? 'Enabled' : 'Disabled',
+    analysis: selectedProject?.settings?.analysis?.revision ? `Revision ${selectedProject.settings.analysis.revision}` : 'Not set',
     redaction: `${customRuleCount} rule${customRuleCount === 1 ? '' : 's'}`,
     secrets: `${projectSecretCount} configured`,
   }), [customRuleCount, projectDraftGitHubEnabled, projectSecretCount, projects.length, selectedProject])
@@ -5984,6 +5994,18 @@ export default function SettingsPage({
                 </section>
 
                 <section
+                  id="settings-projects-panel-analysis"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-projects-tab-analysis"
+                  hidden={activeProjectSubsection !== 'analysis'}
+                >
+                  {activeProjectSubsection === 'analysis' && (
+                    <ProjectAnalysisSettingsPanel key={selectedProject.id} projectId={selectedProject.id} projectName={selectedProject.name} canEdit={canManageProjects || canManageSystem} />
+                  )}
+                </section>
+
+                <section
                   id="settings-projects-panel-secrets"
                   className="settings-subpanel"
                   role="tabpanel"
@@ -5999,7 +6021,7 @@ export default function SettingsPage({
                   />
                 </section>
 
-                {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && (
+                {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && activeProjectSubsection !== 'analysis' && (
                   <div className="settings-subsection settings-subsection-actions">
                     {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
                     {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}

@@ -15,11 +15,14 @@ interface Props {
   testId: string
   testName?: string
   onClose: () => void
+  // initialDraft opens a new note holding this text, as from a root-cause
+  // hypothesis.
+  initialDraft?: string
 }
 
 type NoteMode = 'preview' | 'edit' | 'new'
 
-export default function TestNotesDialog({ testId, testName, onClose }: Props) {
+export default function TestNotesDialog({ testId, testName, onClose, initialDraft }: Props) {
   const api = useTestApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -69,8 +72,8 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
         const loaded = sortNotes(response.notes || [])
         setNotes(loaded)
         setSelectedId(loaded[0]?.id || '')
-        setMode(loaded.length > 0 ? 'preview' : 'new')
-        setDraftBody('')
+        setMode(loaded.length > 0 && !initialDraft ? 'preview' : 'new')
+        setDraftBody(initialDraft || '')
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(getErrorMessage(err, 'Unable to load test notes'))
@@ -81,7 +84,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
     return () => {
       cancelled = true
     }
-  }, [api, testId])
+  }, [api, initialDraft, testId])
 
   useEffect(() => {
     if (mode === 'edit' || mode === 'new') {

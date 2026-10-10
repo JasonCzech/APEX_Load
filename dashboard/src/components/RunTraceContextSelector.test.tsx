@@ -62,6 +62,13 @@ describe('RunTraceContextSelector', () => {
     expect(container.querySelector('textarea')).toBeNull()
   })
 
+  it('says root-cause exemplars need trace context until it is on', () => {
+    render(undefined)
+    expect(container.textContent).toContain('Root-cause exemplars and their trace links need W3C trace context')
+    render({ enabled: true, origins: ['https://shop.example.com'] })
+    expect(container.textContent).not.toContain('Root-cause exemplars')
+  })
+
   it('keeps typed text while reporting parsed origins', () => {
     const onChange = render({ enabled: true, origins: [] })
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
