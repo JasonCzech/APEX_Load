@@ -288,15 +288,16 @@ Delivery progress, 2026-10-09 (Wave 5, E6): the workflows are described in the [
 
   Diagnostics' browser evidence points to it. The live execution page shows the comparison over the documents published so far.
 - **Drill-down:** finding → document → resources → HAR entry. A finding's worst document opens the inspector filtered to that document. A request opens its HAR entry through `GET /api/v1/tests/{id}/archive/browser/har-entry?request_id=` (HAR download permission): a synthetic HAR 1.2 entry scrubbed and bounded as the downloadable synthetic HAR is, or, for a context that recorded a native HAR, that HAR's name.
-- **Policy editor:** **Settings → Workspaces → Browser & journey policies** lists, creates, edits and deletes a project's browser and journey policies. It presents the revision it read; a 409 offers the current revision; and any past revision can be shown read-only. Viewers read them. Run pins and finding revisions are unchanged by edits.
+- **Policy editor:** **Settings → Workspaces → Browser & journey policies** lists, creates, edits and deletes a project's browser and journey policies. It presents the revision it read; a save refused because the policy's revision moved offers the current revision (other refusals, such as a second default, show their reason); and any past revision can be shown read-only. The list, in the editor and `apexctl`, reads every page. Viewers read them. Run pins and finding revisions are unchanged by edits.
 - **Saved panels:** the project panel editor offers the **Archived browser documents** population (`document_*` metrics at p50–p99), which reads one measurement tuple.
-- **Reports:** the engineer profile adds Browser Findings, Interaction Patterns and Heatmaps, and Journey Risk sections (HTML, PDF, CSV and DOCX through HTML). Their results are read at export, and a section without a result says why. The browser baseline is reported in the root-cause section, with its analysis.
+- **Reports:** the engineer profile adds Browser Findings, Interaction Patterns and Heatmaps, and Journey Risk sections (HTML, PDF, CSV and DOCX through HTML). Their results are read at export, and a section without a result says why. The browser baseline is reported in the root-cause section, with its analysis, for projects that present root-cause v2 (`APEXLOAD_RCA_V2_PRESENT_PROJECTS`); the v1 root-cause section has no baseline, while the Browser area shows it for every project.
 - **CLI and MCP:** `apexctl analysis interactions`, `har-entry` and `policies list|get|save|delete` (a save of an existing policy needs the revision it was read at), and MCP tools for findings, interactions, journeys, the HAR entry and the policies.
 
 Deviations:
 - Pages are compared by scenario group, because documents record no page or route.
 - The comparison shows p75 and its document count only.
-- Findings, interaction patterns and journeys read the finalized archive, so the live page shows only the comparison.
+- Findings, the browser baseline, interaction patterns and journeys read the finalized archive, so the live page shows only the comparison.
+- A run pins its project's default policy of each kind at Start; the plan's choice of a different policy revision for one run is not offered, in the dashboard or the API.
 - A saved panel reads one tuple, so the comparison table offers no "save as panel"; panels are authored in the panel editor.
 - The report sections are in the engineer profile only.
 - The drill-down workflow test runs a real HTTP run (its archive, policy pin, HAR list and HAR-entry API are real), but its document summary, findings result and resource page are transport fixtures; no live browser run proves the drill-down end to end.
@@ -306,13 +307,15 @@ Delivery progress, 2026-10-09 (Wave 5, E7): [BROWSER_INTELLIGENCE_ACCEPTANCE.md]
   - Chromium: CLS equals the page's largest session window, and LCP and FCP equal their entries.
   - WebKit: it has no Layout Instability API, so CLS is unavailable as `unsupported` and the score is unscored; its LCP and FCP equal their entries.
   - Both engines: the repeated publications are counted once, three synthetic taps are one scripted repetition, the checkout journey is one failed attempt, and no target traffic was added.
-- **Matrix:** the Browser area and policy editor workflow now also runs in the local-auth profile (E6 had left it out). Its drill-down test also exports the engineer CSV and checks that the four browser intelligence sections say why their results are missing.
+- **Matrix:** the Browser area and policy editor workflow now also runs in the local-auth profile (E6 had left it out). Its drill-down test also exports the engineer CSV and checks that the three browser intelligence sections say why their results are missing.
 - **F4:** the opt-in "browser intelligence acceptance" suite writes the golden's results and one BI-4 acceptance request per engine for an unchanged tree. A request is `pending` when the engine's golden held and `failed` when it did not.
 
 Deviations:
 - Baseline regressions are accepted by unit tests over seeded series; no two real runs are compared.
 - The golden drives the browser runtime directly, not the engine, so it writes the iteration-end row the engine would record.
 - INP is not part of the golden.
+- Layout-mismatch and exclusion rules are accepted by unit tests only; the golden page exercises neither.
+- The plan's rule that baseline intelligence is not released before BE qualification passes is a release step: nothing in the product or CI enforces it.
 - The blank document a browser context starts with records an unavailable FCP. It carries no value, and findings count it as an unavailable final observation.
 - No acceptance record is published; an operator posts the requests.
 
@@ -391,32 +394,34 @@ Complete the final published malformed-counter API regressions and refreshed API
 
 The under-two-second pipeline figure remains a design target. Certify a declared reference workload, not universal density: on a 4 vCPU/16 GiB controller with two declared generator hosts and a foreground dashboard, exercise 2,000 accepted observations/s, one-second publications, collector traffic and concurrent admitted analytics. Proposed release targets are P99 qualified capture→visible-render age ≤2,000 ms and zero unreported accepted-record loss. Record stage P50/P95/P99, CPU/RSS, queue/byte volumes, clock uncertainty and coverage. A slow browser/unsupported clock is classified separately; overloaded/fault trials must surface degraded/incomplete status and recover without control-plane failure. Density/host upgrades need new evidence.
 
-Delivery progress, 2026-10-09 (Wave 5, C8): [TELEMETRY_ACCEPTANCE.md](qa/TELEMETRY_ACCEPTANCE.md), generated and checked by `docs/qa/telemetry_acceptance_test.go`, maps every fault in the matrix to the Go, dashboard and end-to-end tests that accept it. Its Go tests run together under the race detector as the opt-in "telemetry fault matrix" suite, registered in `scripts/run-optin-suites.sh` and [TEST_PROGRAM.md](qa/TEST_PROGRAM.md); a test missing from the suite's selection fails the inventory.
+Delivery progress, 2026-10-09 (Wave 5, C8): [TELEMETRY_ACCEPTANCE.md](qa/TELEMETRY_ACCEPTANCE.md), generated and checked by `docs/qa/telemetry_acceptance_test.go`, maps every fault in the matrix to the Go, dashboard and end-to-end tests that accept it. Its Go tests run together under the race detector (which needs a CGO-enabled toolchain) as the opt-in "telemetry fault matrix" suite, registered in `scripts/run-optin-suites.sh` and [TEST_PROGRAM.md](qa/TEST_PROGRAM.md); a test missing from the suite's selection fails the inventory.
 
 The opt-in `TestTelemetryReferenceWorkload` runs the reference workload in one process:
 - two declared generators (real generator services over in-memory gRPC), each running half of 2,000 accepted observations a second for 60 s against a local target, publishing every second;
 - a foreground dashboard: headless Chromium on the run's live page, reporting its render evidence;
 - archive analyses of an earlier run, read every second.
 
-It records each stage's P50/P95/P99, coverage, loss accounting against the target's own count of served requests, CPU and RSS. With a commit it writes one TEL-4 F4 request, `pending` without failures and `failed` otherwise.
+It records each stage's P50/P95/P99, coverage, CPU, and peak RSS sampled for the process, its child processes (the browser and its driver) and both together. Loss is accounted per path against the target's own count of served requests: the archive's samples, and separately the run's live totals (successes and recorded errors) plus its dropped-results counter, must account for every served request but those aborted in flight at the stop (at most one per VUser). Lost publications and dropped subscriber batches are counted in publications, and a dropped batch is also a lost sequence: each lost publication may account for at most the largest window one generator's group published, and a shortfall within that is reported loss of unknown size, classified `live_publications_lost`. A path holding more results than were served (duplicates) also fails. A run also fails without browser-render evidence (the suite requires the browser), and an unqualified clock or a slow browser is classified apart. With a commit it writes one TEL-4 F4 request, `pending` without failures and `failed` otherwise, including a run that stopped before it was measured.
 
 A local run (darwin-arm64, 10 CPUs) **failed the target**:
-- **Loss:** 123,146 requests served and 123,146 archived at 1,887 a second, with zero unreported loss; every loss counter was exact at 0, except the WebSocket drops, which are controller-wide.
+- **Loss:** 123,146 requests served and 123,146 archived at 1,887 a second, with zero unreported archive loss (the live path was not yet accounted); every loss counter was exact at 0, except the WebSocket drops, which are controller-wide.
 - **Stage P50/P95/P99:**
   - generator processing: 502 / 503 / 506 ms;
   - transport: 8 / 17 / 5,181 ms;
   - controller fan-out: 10 / 16 / 990 ms;
   - sample age: 525 / 1,512 / 5,199 ms, above the 2,000 ms target;
   - browser render: 141 / 239 / 307 ms.
-- **Capture to visible render:** at most 5.5 s.
+- **Sample-age and browser-render maxima:** 5.5 s together. This leaves out delivery from the controller's publication to the browser's receipt, so it does not bound capture to visible render.
 - **Analyses:** 94 concurrent analyses, none failed.
 - **Coverage:** 61 of 65 s observed; under the default budgets, 13 s degraded, 46 s breached and none healthy.
+
+After the review's per-path loss accounting, 20-second local runs show the archive path exact (for example 43,059 served and 43,059 archived) while the run's live totals are short by 1,900 to 5,900, with no recorded errors and every live loss counter exact at 0. A whole live window can go missing, and the final window is counted again by each terminal publication. The reference workload therefore fails on the live path. This is a defect in the live run totals that the harness exposes, not fixed in C8.
 
 Deviations:
 - The transport and sample-age P99s come from one or two publications per run, and they persist without the concurrent analyses; a generator's final publication is suspected and is not yet explained.
 - Generator processing sits at the generator's half-second aggregation window, so the default budgets read the run as breached.
-- The workload runs in one process: transport is in-memory gRPC, and CPU and RSS cover the controller, both generators and the target together. It is not the 4 vCPU / 16 GiB reference controller.
-- Collector traffic, an overload trial and native (DuckDB) analytics are not exercised.
+- The workload runs in one process: transport is in-memory gRPC, and CPU and the process's RSS cover the controller, both generators and the target together. It is not the 4 vCPU / 16 GiB reference controller.
+- Collector traffic, an overload trial and native (DuckDB) analytics are not exercised, and queue and byte volumes are not recorded.
 - No test changes the cadence or policy within a run (each run has one policy segment).
 - Exports are covered by the archive's export redaction, not by a telemetry-specific sanitization test.
 - No acceptance record is published.
@@ -510,16 +515,17 @@ Delivery progress, 2026-10-09 (Wave 5, B8): [ANALYTICS_ACCEPTANCE.md](qa/ANALYTI
   - upload 6.9 s and normalization 93 s;
   - selected window (one hour of one day): cold 2.8 s, P95 2.9 s over 20 repeats, with 119 of 120 objects pruned;
   - cancellation returned in 26 ms;
-  - peak RSS: controller 187 MiB, worker 784 MiB (2 GiB memory and 8 GiB spill limits);
+  - peak RSS (the process's and its children's high-water marks; the review replaced them with sampling over the import and queries, including the two together): controller 187 MiB, worker 784 MiB (2 GiB memory and 8 GiB spill limits);
   - the full-range query reached the series endpoint's one-minute bound (422).
 
 Deviations:
 - Measurements are doubles: a DECIMAL beyond about 15 significant digits is rounded to the nearest double (12345678901234567.89 becomes 1.2345678901234568e16), not refused.
 - A file whose schema drifted (a mapped column missing) fails the import closed, with the fixed stored message; the message names neither the file nor the column.
 - Conflicting files keep every observation (two values at one instant average), and identical content chunked differently is not refused at commit; normalization still fails closed on it.
+- Partition values are not read: sources are read with `hive_partitioning=false`, so a partition value that disagrees with a column (the plan's partition conflict) is neither resolved nor tested.
 - The selected-window time is about 2.5 s at 64 MiB and at 1 GiB: it is dominated by starting a worker per query, not by scanning.
-- The benchmark does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention.
-- The platform lanes are CI evidence that this repository cannot produce locally; no acceptance record is published, and the 10 GB waiver stands.
+- The benchmark does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention, and it neither checks nor records scratch capacity.
+- The platform lanes are CI evidence that this repository cannot produce locally. They run the native checks only: NA-5's install and uninstall checks and pinned artifact hashes are not produced. No acceptance record is published, and the 10 GB waiver stands.
 
 ## 10. Authoring cleanup completion
 
@@ -603,15 +609,18 @@ Delivery progress, 2026-10-09 (Wave 5, A8): every seam above has a decision, an 
 - **Import launchers:** importers are opened by launcher descriptor. An import route names its launcher, so a reload reopens it. The old `#/scripts?mode=import` address still opens the LoadRunner archive importer, and an unknown launcher opens the create options; ten unreachable alias sub-views were removed.
 - **Debug start request:** `CompatibleDebugStartRequest` is gone. The request is the generated body, with only the script typed by the DSL.
 - **Scenario form:** TestHub's form keeps only the canonical runtime override, goal config and assignment. Its 27 mirror fields and the save-time reconstruction were removed, and a stored override's conflicting legacy aliases are dropped where the canonical section is authored.
-  - A corpus of stored scenarios projects into the same save, estimate, timeline and preview as before, except two corrections: a think-time section saved without `ignore` no longer gains `ignore: false`, and an unchanged save no longer re-normalizes a stored section.
+  - A corpus of stored scenarios projects into the same save and estimate as before, except two corrections: a think-time section saved without `ignore` no longer gains `ignore: false`, and an unchanged save no longer re-normalizes a stored section. Its load preview was re-recorded with the shared run projection below; the timeline is unchanged.
+  - A starter template, workload shape or adapted model that replaces the runtime defaults keeps the authored iterations, log level, auto transactions and error-handling flags it does not set itself, as the form's fields did.
   - Version 2 browser checkpoints are read once into the canonical values; new checkpoints are version 3.
-- **Load previews:** stage peak and stage-level semantics are shared (`workloadStages`), following the controller's stage schedule: the next stage applies at a stage's end, and a ramp starts from the group's level. The execution page's queued-run preview and the create dialog's chart use the shared run projection, which now draws group start offsets.
+- **Load previews:** stage peak and stage-level semantics are shared (`workloadStages`), following the controller's stage schedule: the next stage applies at a stage's end, and a ramp starts from the group's level. The execution page's queued-run preview and the create dialog's chart use the shared run projection, which now draws group start offsets; a group that is still ramping up at the scenario deadline ramps down from the level it reached.
+- **Script routes:** the address written while the recorder, the create options or an unsaved draft is open reopens the create options, never the archive importer.
 
 Deviations:
 - TestHub keeps a form as its editing view (its groups, name and other scalar fields), now holding only canonical values; it does not hold a `ScenarioDraft` itself.
 - The wizard's model chart keeps its own chart builder (series metadata, TPS stages, draft placeholders); it shares stage semantics but draws neither baselines nor start offsets.
 - A queued run's summary carries no traffic profile, so its preview draws profile-mapped groups from their ramps.
 - `NewTestPage`'s group edit draft remains a run-only projection.
+- Script session absorption (moved here from A5) is not done: the paired baseline, the dirty calculation and save state stay in `ScriptEditor` (one calculation each), and navigation (siblings, return target) stays in `useScriptsAuthoringState`. `useScriptAuthoringSession` still owns draft resolution and the validation binding. Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
 
 ## 11. Proposed public contracts and persistence
 

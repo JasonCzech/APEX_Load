@@ -26,7 +26,7 @@ func browserIntelligenceReportFixture() *ReportBrowserIntelligence {
 			Heatmaps: []BrowserInteractionHeatmap{{Route: "/cart", LayoutRevision: "L1", ViewportWidth: 390, ViewportHeight: 844, Orientation: "portrait", Engine: "webkit", DeviceProfile: "iphone_15", Columns: 64, Rows: 64, Cells: [][3]int{{1, 2, 3}}, Points: 3}},
 			Notes:    []string{"Heatmaps show where gestures were dispatched."}},
 		Journeys: &JourneyRiskReport{Availability: "available", Policy: JourneyPolicyRef{ID: "journeys-1", Name: "Shop", Revision: 2}, WeightedFailureIndex: &index,
-			Journeys: []JourneyAccounting{{Name: "Checkout", Eligible: 8, Completed: 6, Failed: 2, FailureRate: &rate}}, Notes: []string{"Censored attempts are not failures."}},
+			Journeys: []JourneyAccounting{{ID: "checkout-web", Name: "Checkout", Eligible: 8, Completed: 6, Failed: 2, FailureRate: &rate}, {ID: "checkout-app", Name: "Checkout", Eligible: 1, Completed: 1}}, Notes: []string{"Censored attempts are not failures."}},
 	}
 }
 
@@ -55,16 +55,17 @@ func renderBrowserIntelligenceSections(t *testing.T, report *RunArchiveReport) m
 	return out
 }
 
-// The four browser intelligence sections render the attached results in
+// The three browser intelligence sections render the attached results in
 // HTML, PDF and CSV (BI-4).
 func TestBrowserIntelligenceReportSectionsRenderTheirResults(t *testing.T) {
 	report := consistencyMatrixReport()
 	report.BrowserIntelligence = browserIntelligenceReportFixture()
 	sections := renderBrowserIntelligenceSections(t, report)
 	expect := map[string][]string{
-		reportSectionBrowserFindings: {"Score 72.5/100 (needs improvement) under Vitals revision 3", "LCP · webkit / iphone_15", "3100 ms", "LCP p75 is poor."},
-		reportSectionInteractionMap:  {"1 patterns and 1 heatmaps from 40 interactions (30 mapped, 2 dropped)", "scripted_repetition", "Add to cart", "390×844 portrait"},
-		reportSectionJourneyRisk:     {"Weighted failure index 0.125 under Shop revision 2", "Checkout", "25.0%"},
+		reportSectionBrowserFindings: {"Score 72.5/100 (needs improvement) under Vitals revision 3", "LCP · webkit / iphone_15", "3100 ms", "LCP p75 is poor.", "Scores weigh only qualified final documents."},
+		reportSectionInteractionMap:  {"1 patterns and 1 heatmaps from 40 interactions (30 mapped, 2 dropped)", "scripted_repetition", "Add to cart", "390×844 portrait", "Heatmaps show where gestures were dispatched."},
+		// Two journeys share a name; each is told apart by its ID.
+		reportSectionJourneyRisk: {"Weighted failure index 0.125 under Shop revision 2", "Checkout", "checkout-web", "checkout-app", "25.0%", "Censored attempts are not failures."},
 	}
 	for id, wants := range expect {
 		for index, format := range []string{"HTML", "PDF", "CSV"} {
@@ -72,6 +73,47 @@ func TestBrowserIntelligenceReportSectionsRenderTheirResults(t *testing.T) {
 				if !strings.Contains(sections[id][index], want) {
 					t.Errorf("%s %s lacks %q:\n%s", id, format, want, sections[id][index])
 				}
+			}
+		}
+	}
+}
+
+// Rows past a section's limit are counted in every format, the CSV
+// included.
+func TestBrowserIntelligenceReportSectionsCountWhatTheyLeaveOut(t *testing.T) {
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	result := report.BrowserIntelligence.Findings.Result
+	for len(result.Findings) <= reportBrowserFindingsLimit {
+		result.Findings = append(result.Findings, result.Findings[0])
+	}
+	analysis := report.BrowserIntelligence.Interactions
+	for len(analysis.Patterns) <= reportInteractionPatternLimit {
+		analysis.Patterns = append(analysis.Patterns, analysis.Patterns[0])
+	}
+	for len(analysis.Heatmaps) <= reportInteractionHeatmapLimit {
+		analysis.Heatmaps = append(analysis.Heatmaps, analysis.Heatmaps[0])
+	}
+	sections := renderBrowserIntelligenceSections(t, report)
+	for id, wants := range map[string][]string{
+		reportSectionBrowserFindings: {"1 more findings are in the run report."},
+		reportSectionInteractionMap:  {"1 more patterns are in the run report.", "1 more heatmaps are in the run report."},
+	} {
+		for index, format := range []string{"HTML", "PDF"} {
+			for _, want := range wants {
+				if !strings.Contains(sections[id][index], want) {
+					t.Errorf("%s %s lacks %q:\n%s", id, format, want, sections[id][index])
+				}
+			}
+		}
+	}
+	for id, want := range map[string][]string{
+		reportSectionBrowserFindings: {"browser_findings,,more_findings,1"},
+		reportSectionInteractionMap:  {"interaction_map,,more_patterns,1", "interaction_map,,more_heatmaps,1"},
+	} {
+		for _, row := range want {
+			if !strings.Contains(sections[id][2], row) {
+				t.Errorf("%s CSV lacks %q:\n%s", id, row, sections[id][2])
 			}
 		}
 	}

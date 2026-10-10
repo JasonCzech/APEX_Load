@@ -38,6 +38,8 @@ var errBrowserHAREntryFound = errors.New("browser HAR entry found")
 //
 // OpenAPI-Responses: 400, 404, 500
 func (s *Server) handleGetRunArchiveBrowserHAREntry(w http.ResponseWriter, r *http.Request) {
+	// An entry carries request and response detail: never cached.
+	w.Header().Set("Cache-Control", "no-store")
 	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
 	if requestID == "" || len(requestID) > 128 {
 		writeError(w, http.StatusBadRequest, "request_id is required (at most 128 bytes)")

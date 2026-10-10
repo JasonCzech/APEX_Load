@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -51,8 +52,9 @@ func analyticsAcceptanceInventory() []analyticsAcceptanceItem {
 		{"Schema drift across the files of an import", []analyticsAcceptanceTest{duck("pkg/analysis/duckdb:TestNativeAcceptanceSchemaDriftAcrossFiles"), duck("pkg/api:TestAnalysisAcceptanceDuplicateAndDriftedFiles")}},
 		{"Raw versus summary and distribution inputs", []analyticsAcceptanceTest{duck("pkg/api:TestAnalysisSummaryImportPreviewCommitQueryReconcile"), duck("pkg/api:TestAnalysisHistogramImportCommitQueryReconcile"), def("pkg/api:TestAnalysisComparisonAdmitsSummaryOnlyStatisticsForDatasets")}},
 		{"Units", []analyticsAcceptanceTest{def("pkg/api:TestCatalogNativeWireUnitsMatchExecutedQueries"), def("pkg/analysis:TestNormalizeNativeObservationUnitAliases")}},
-		{"Duplicate files", []analyticsAcceptanceTest{duck("pkg/api:TestAnalysisAcceptanceDuplicateAndDriftedFiles"), def("pkg/api:TestDuplicateAnalysisImportFiles"), duck("pkg/analysis/duckdb:TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts")}},
-		{"Conflicting files (partition conflicts)", []analyticsAcceptanceTest{duck("pkg/analysis/duckdb:TestNativeAcceptanceConflictingFilesKeepEveryObservation")}},
+		{"Duplicate files", []analyticsAcceptanceTest{duck("pkg/api:TestAnalysisAcceptanceDuplicateAndDriftedFiles"), def("pkg/api:TestDuplicateAnalysisImportFiles")}},
+		{"Duplicate summary windows", []analyticsAcceptanceTest{duck("pkg/analysis/duckdb:TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts")}},
+		{"Conflicting files (overlapping observations)", []analyticsAcceptanceTest{duck("pkg/analysis/duckdb:TestNativeAcceptanceConflictingFilesKeepEveryObservation")}},
 		{"Resets", []analyticsAcceptanceTest{duck("pkg/analysis/duckdb:TestNativeCounterReadingsMarkResetsAndDuplicates"), duck("pkg/analysis/duckdb:TestNativeLongCumulativeHistogramDetectsResets"), def("pkg/api:TestImportedCounterDerivationsAreResetAware")}},
 		{"Exact rejection provenance", []analyticsAcceptanceTest{duck("pkg/analysis/duckdb:TestNativeRejectionProvenanceAndNullBuckets"), duck("pkg/api:TestAnalysisRejectionDownloadIsDurableAndBounded")}},
 		{"Preview, commit and query reconciliation", []analyticsAcceptanceTest{duck("pkg/api:TestAnalysisSummaryImportPreviewCommitQueryReconcile"), duck("pkg/api:TestAnalysisHistogramImportCommitQueryReconcile"), def("pkg/api:TestNativeReconciliationPinsStoreAtRealServerConstruction")}},
@@ -117,27 +119,46 @@ func renderAnalyticsAcceptance(t *testing.T) string {
 			out.WriteString(fmt.Sprintf("| %s | `%s` (`%s/%s`) | %s |\n", behavior, name, dir, file, test.Build))
 		}
 	}
-	workflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "desktop.yml"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "desktop.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out.WriteString("\n## Platforms\n\nNA-5 names five prebuilt targets. Each is a lane of `.github/workflows/desktop.yml`, which builds the controller with the embedded engine and the packaged desktop app on that platform and runs the native checks below; a lane that ran is that platform's evidence, and its results are recorded per platform as F4 acceptance records. A local run proves only the host it ran on.\n\n| Platform | Desktop lane |\n| --- | --- |\n")
+	// Only the five-platform desktop job counts: other jobs (the macOS
+	// recording agent) repeat some of the same commands.
+	workflow := analyticsAcceptanceDesktopJob(t, string(raw))
+	out.WriteString("\n## Platforms\n\nNA-5 names five prebuilt targets. Each is a lane of `.github/workflows/desktop.yml`, which builds the controller with the embedded engine and the packaged desktop app on that platform and runs the native checks below; a lane that ran is that platform's evidence. Its results are CI artifacts (`native-startup-*.json`); no F4 acceptance record is written, so an operator posts each platform's record from them. A local run proves only the host it ran on.\n\n| Platform | Desktop lane |\n| --- | --- |\n")
 	for _, platform := range analyticsAcceptancePlatforms {
-		if !strings.Contains(string(workflow), "platform: "+platform.Platform) {
+		if !strings.Contains(workflow, "platform: "+platform.Platform) {
 			t.Errorf("desktop.yml has no %s lane", platform.Platform)
 		}
 		out.WriteString(fmt.Sprintf("| %s | %s |\n", platform.Platform, platform.Lane))
 	}
 	out.WriteString("\nEvery lane runs, in order:\n\n")
 	for _, check := range analyticsAcceptanceLaneChecks {
-		if !strings.Contains(string(workflow), check.Command) {
+		if !strings.Contains(workflow, check.Command) {
 			t.Errorf("desktop.yml no longer runs %q (%s)", check.Command, check.Check)
 		}
 		out.WriteString(fmt.Sprintf("- %s: `%s`\n", check.Check, check.Command))
 	}
-	out.WriteString("\n## Reference workload\n\n`APEXLOAD_ANALYTICS_BENCHMARK=1 go test -tags analytics_duckdb ./pkg/api -run '^TestNativeAnalyticsReferenceBenchmark$' -v` generates a reproducible fixture: one ZSTD-compressed Parquet file per day, 3,456,000 rows each (25 ms apart, values derived from a hash of the row), until the files reach `APEXLOAD_ANALYTICS_BENCHMARK_BYTES` (default 1 GiB). It imports the fixture through the API, then times a selected-window query (one hour of the last day at 60-second buckets, cold and 20 times repeated), a full-range query and the cancellation of a heavy query. It records the fixture's hashes and rows, upload and normalization time, pruned objects and avoided bytes, peak controller and worker RSS and every failure. The interactive target is a selected-window P95 of at most five seconds on the 4 vCPU / 16 GiB reference host; the results say whether the host had that shape.\n\n")
+	out.WriteString("\n## Reference workload\n\n`APEXLOAD_ANALYTICS_BENCHMARK=1 go test -tags analytics_duckdb ./pkg/api -run '^TestNativeAnalyticsReferenceBenchmark$' -v` generates a reproducible fixture: one ZSTD-compressed Parquet file per day, 3,456,000 rows each (25 ms apart, values derived from a hash of the row), until the files reach `APEXLOAD_ANALYTICS_BENCHMARK_BYTES` (default 1 GiB, at most 6 GiB; at most 366 files, the span one series query may cover). It imports the fixture through the API, then times a selected-window query (one hour of the last day at 60-second buckets, cold and 20 times repeated), a full-range query and the cancellation of a heavy query. It records the fixture's hashes and rows, upload and normalization time, pruned objects and avoided bytes, peak RSS sampled for the controller, its workers and both together, and every failure; a fixture short of its target fails. The interactive target is a selected-window P95 of at most five seconds on the 4 vCPU / 16 GiB reference host; the results say whether the host had that shape.\n\n")
 	out.WriteString("With `APEXLOAD_ANALYTICS_BENCHMARK_OUT` it writes `analytics-reference.json` there, and, when `APEXLOAD_COMMIT_SHA` names the measured commit, `analytics-reference-acceptance-requests.json`: one F4 request (`NA-6`, `analytics-reference`), `pending` when the run had no failure and met the target, `failed` otherwise, never `passed` by itself. `scripts/run-optin-suites.sh --all` runs it as the \"native analytics reference workload\" suite. It does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention, and no result closes the waived 10 GB benchmark.\n")
 	return out.String()
+}
+
+// analyticsAcceptanceDesktopJob is the text of desktop.yml's `desktop` job:
+// from its key to the next job's.
+func analyticsAcceptanceDesktopJob(t *testing.T, workflow string) string {
+	t.Helper()
+	start := strings.Index(workflow, "\n  desktop:\n")
+	if start < 0 {
+		t.Fatal("desktop.yml has no desktop job")
+		return ""
+	}
+	job := workflow[start+1:]
+	if next := regexp.MustCompile(`\n  [A-Za-z0-9_-]+:\n`).FindStringIndex(job[1:]); next != nil {
+		job = job[:next[0]+1]
+	}
+	return job
 }
 
 func TestAnalyticsAcceptanceInventory(t *testing.T) {

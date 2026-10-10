@@ -18,7 +18,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -60,28 +59,54 @@ type telemetryReferenceResults struct {
 	DurationS      float64 `json:"duration_s"`
 	TargetRate     int     `json:"target_rate"`
 	ServedRequests int64   `json:"served_requests"`
-	// AcceptedRecords is the archive's transaction count; AcceptedRate is
-	// it over the run's duration.
+	// AcceptedRecords is the archive's samples of the script's request;
+	// AcceptedRate is it over the run's duration.
 	AcceptedRecords int64   `json:"accepted_records"`
 	AcceptedRate    float64 `json:"accepted_rate"`
-	// UnreportedLoss is served requests the archive does not hold and no
-	// loss counter reports.
-	UnreportedLoss int64                        `json:"unreported_loss"`
-	Loss           *TelemetryLossAccounting     `json:"loss,omitempty"`
-	Stages         []TelemetryStageDistribution `json:"stages"`
-	Coverage       *TelemetryCoverageRecord     `json:"coverage,omitempty"`
-	// CaptureToRenderMaxMs bounds capture → visible render: the sum of the
-	// sample-age and browser-render maxima (stage percentiles are never
-	// added).
-	CaptureToRenderMaxMs *float64  `json:"capture_to_render_max_ms,omitempty"`
-	ClockUncertaintyMs   []float64 `json:"clock_uncertainty_ms,omitempty"`
-	AnalysisReads        int       `json:"analysis_reads"`
-	AnalysisFailures     int       `json:"analysis_failures"`
-	CPUSeconds           float64   `json:"cpu_seconds"`
-	PeakRSSBytes         int64     `json:"peak_rss_bytes"`
-	PeakChildRSSBytes    int64     `json:"peak_child_rss_bytes"`
-	NotMeasured          []string  `json:"not_measured"`
-	Failures             []string  `json:"failures"`
+	// UnreportedLoss is served requests minus archived samples. A request a
+	// VUser had in flight when the run's duration ended is aborted and not
+	// recorded, so it may be at most InFlightBound (one per VUser); negative
+	// means duplicates.
+	UnreportedLoss int64 `json:"unreported_loss"`
+	InFlightBound  int64 `json:"in_flight_bound"`
+	// LiveTransactions and LiveErrors are the run's live totals (successes
+	// and recorded errors); LiveUnreportedLoss is served requests they do not
+	// hold that the dropped-results counter does not report (held to the same
+	// bound). Lost publications and dropped subscriber batches are counted in
+	// publications, not records, and a dropped batch is also a lost sequence:
+	// each lost publication may account for at most the largest window one
+	// generator's group published (LivePublicationBound in all), and a
+	// shortfall within that is reported loss of unknown size (classified
+	// live_publications_lost).
+	LiveTransactions     *int64                       `json:"live_transactions,omitempty"`
+	LiveErrors           *int64                       `json:"live_errors,omitempty"`
+	LiveUnreportedLoss   *int64                       `json:"live_unreported_loss,omitempty"`
+	LivePublicationBound int64                        `json:"live_publication_bound,omitempty"`
+	Loss                 *TelemetryLossAccounting     `json:"loss,omitempty"`
+	Stages               []TelemetryStageDistribution `json:"stages"`
+	Coverage             *TelemetryCoverageRecord     `json:"coverage,omitempty"`
+	// AgePlusRenderMaxMs sums the sample-age and browser-render maxima
+	// (stage percentiles are never added). It leaves out delivery from the
+	// controller's publication to the browser's receipt, so it is not a bound
+	// on capture to visible render.
+	AgePlusRenderMaxMs *float64 `json:"age_plus_render_max_ms,omitempty"`
+	// Classifications name what a run is judged apart from the pipeline:
+	// clock_unqualified (no age is scored), slow_browser (render alone over
+	// the target) and live_publications_lost (reported live loss of unknown
+	// size).
+	Classifications    []string  `json:"classifications,omitempty"`
+	ClockUncertaintyMs []float64 `json:"clock_uncertainty_ms,omitempty"`
+	AnalysisReads      int       `json:"analysis_reads"`
+	AnalysisFailures   int       `json:"analysis_failures"`
+	CPUSeconds         float64   `json:"cpu_seconds"`
+	// Peak RSS sampled during the reference run: this process (the
+	// controller, both generators and the target), its child processes (the
+	// browser and its driver), and the two together at one instant.
+	PeakRSSBytes         int64    `json:"peak_rss_bytes"`
+	PeakChildRSSBytes    int64    `json:"peak_child_rss_bytes"`
+	PeakCombinedRSSBytes int64    `json:"peak_combined_rss_bytes"`
+	NotMeasured          []string `json:"not_measured"`
+	Failures             []string `json:"failures"`
 }
 
 func (r *telemetryReferenceResults) stage(name string) *TelemetryStageDistribution {
@@ -113,7 +138,7 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 		rate = parsed
 	}
 	results := telemetryReferenceResults{Schema: "apexload.telemetry_reference.v1", GeneratedAt: time.Now().UTC(), Generators: 2, DurationS: duration.Seconds(), TargetRate: rate,
-		Failures: []string{}, NotMeasured: []string{"collector traffic", "an overload trial", "native (DuckDB) analytics: the concurrent analyses are archive reads"}}
+		Failures: []string{}, NotMeasured: []string{"collector traffic", "an overload trial", "native (DuckDB) analytics: the concurrent analyses are archive reads", "queue and byte volumes"}}
 	results.Host.OS, results.Host.Arch, results.Host.CPUs = runtime.GOOS, runtime.GOARCH, runtime.NumCPU()
 	fail := func(format string, args ...any) {
 		message := fmt.Sprintf(format, args...)
@@ -121,6 +146,11 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 		t.Error(message)
 	}
 	defer func() {
+		// A run that stopped before it was measured is a failure, never a
+		// pending candidate.
+		if t.Failed() && len(results.Failures) == 0 {
+			results.Failures = append(results.Failures, "the run stopped before it was measured")
+		}
 		if dir := strings.TrimSpace(os.Getenv("APEXLOAD_TELEMETRY_REFERENCE_OUT")); dir != "" {
 			writeTelemetryReferenceAcceptance(t, dir, results)
 		}
@@ -199,6 +229,7 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	// Each group (one per generator) is paced at half the workload's rate;
 	// TPS pacing is a group's total rate, shared by its VUsers.
 	vusersPerGenerator := max(1, rate/2/100)
+	results.InFlightBound = int64(2 * vusersPerGenerator)
 	server.runner.StoreScript(&dsl.Script{ID: "reference", Name: "Reference", Protocol: "http", Version: "1.0.0",
 		Config:  dsl.ScriptConfig{BaseURL: target.URL, Pacing: dsl.PacingConfig{Type: "tps", TPS: float64(rate) / 2}},
 		Actions: []dsl.Action{{Name: "Ping", Type: "request", Method: "GET", Target: "/"}}})
@@ -237,8 +268,9 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	waitArchived(warm.ID, 2*time.Minute)
 	servedBefore := served.Load()
 
-	var before syscall.Rusage
-	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &before)
+	cpuBefore, cpuMeasured := referenceCPUSeconds()
+	sampler := startReferenceRSSSampler(250 * time.Millisecond)
+	defer sampler.stop()
 	run := runOnce("Telemetry reference workload", duration)
 
 	// The foreground dashboard.
@@ -246,6 +278,7 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	// Concurrent archive analyses of the earlier run.
 	analysisDone := make(chan struct{})
 	var analysisWait sync.WaitGroup
+	var analysisReads, analysisFailures atomic.Int64
 	analysisWait.Add(1)
 	go func() {
 		defer analysisWait.Done()
@@ -256,44 +289,93 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 			case <-time.After(time.Second):
 			}
 			code, _ := call("GET", "/api/v1/tests/"+warm.ID+"/archive/report?profile=engineer", nil)
-			results.AnalysisReads++
+			analysisReads.Add(1)
 			if code != 200 {
-				results.AnalysisFailures++
+				analysisFailures.Add(1)
 			}
 		}
 	}()
-	record := waitArchived(run.ID, duration+5*time.Minute)
-	close(analysisDone)
-	analysisWait.Wait()
-	stopDashboard()
-	var after syscall.Rusage
-	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &after)
-	results.CPUSeconds = time.Duration(after.Utime.Nano() + after.Stime.Nano() - before.Utime.Nano() - before.Stime.Nano()).Seconds()
-	scale := int64(1024)
-	if runtime.GOOS == "darwin" {
-		scale = 1
+	// Stop the analyses and the dashboard on every path; this defer runs
+	// before the results are written.
+	var stopOnce sync.Once
+	stopLoad := func() {
+		stopOnce.Do(func() {
+			close(analysisDone)
+			analysisWait.Wait()
+			stopDashboard()
+			results.AnalysisReads, results.AnalysisFailures = int(analysisReads.Load()), int(analysisFailures.Load())
+		})
 	}
-	var children syscall.Rusage
-	_ = syscall.Getrusage(syscall.RUSAGE_CHILDREN, &children)
-	results.PeakRSSBytes, results.PeakChildRSSBytes = int64(after.Maxrss)*scale, int64(children.Maxrss)*scale
+	defer stopLoad()
+	record := waitArchived(run.ID, duration+5*time.Minute)
+	stopLoad()
+	cpuAfter, _ := referenceCPUSeconds()
+	self, children, combined, rssMeasured := sampler.stop()
+	if cpuMeasured {
+		results.CPUSeconds = cpuAfter - cpuBefore
+	}
+	if rssMeasured {
+		results.PeakRSSBytes, results.PeakChildRSSBytes, results.PeakCombinedRSSBytes = self, children, combined
+	}
+	if !cpuMeasured || !rssMeasured {
+		results.NotMeasured = append(results.NotMeasured, "CPU and RSS (not measured on this platform)")
+	}
 
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		t.Fatal(err)
 	}
 	results.Stages, results.Coverage, results.Loss = manifest.TelemetryStageDistributions, manifest.TelemetryCoverage, manifest.TelemetryLoss
-	// Accepted records are the archived samples of the script's request
-	// (the archive also holds each iteration's transaction row).
+	results.ServedRequests = served.Load() - servedBefore
+	// The archive path: every served request is an archived sample of the
+	// script's request (the archive also holds each iteration's transaction
+	// row), exactly once.
 	results.AcceptedRecords = telemetryReferenceArchivedRequests(t, record, manifest, "Ping")
+	results.UnreportedLoss = results.ServedRequests - results.AcceptedRecords
 	if manifest.Provenance.StartedAt != nil && manifest.CompletedAt.After(*manifest.Provenance.StartedAt) {
 		results.AcceptedRate = float64(results.AcceptedRecords) / manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt).Seconds()
 	}
-	results.ServedRequests = served.Load() - servedBefore
-	reported := int64(0)
-	if results.Loss != nil && results.Loss.DroppedResults != nil {
-		reported += results.Loss.DroppedResults.Value
+	// The live telemetry path: the run's live totals (successes and recorded
+	// errors), plus the results its dropped-results counter reports, account
+	// for every served request. Shed arrivals were never served.
+	if final, ok := server.runner.GetTest(run.ID); ok && final.LiveMetrics != nil && final.LiveMetrics.RunTotalTx != nil && final.LiveMetrics.RunTotalErrors != nil {
+		live, liveErrors := *final.LiveMetrics.RunTotalTx, *final.LiveMetrics.RunTotalErrors
+		results.LiveTransactions, results.LiveErrors = &live, &liveErrors
+		reported, exact := int64(0), false
+		if loss := results.Loss; loss != nil {
+			if dropped := loss.DroppedResults; dropped != nil {
+				reported, exact = dropped.Value, dropped.State == "exact"
+			}
+			// A lost publication carried at most one generator's window. A
+			// dropped subscriber batch is also a lost sequence, so the two
+			// counters are not added. Each group runs on one generator.
+			var publications, largestWindow int64
+			for _, counter := range []*TelemetryCounterTotal{loss.LostPublications, loss.DroppedSubscriberBatches} {
+				if counter != nil {
+					publications = max(publications, counter.Value)
+				}
+				exact = exact && counter != nil && counter.State == "exact"
+			}
+			for _, window := range final.History {
+				if window == nil {
+					continue
+				}
+				for _, group := range window.GroupMetrics {
+					if group != nil {
+						largestWindow = max(largestWindow, group.Transactions+group.Errors)
+					}
+				}
+			}
+			results.LivePublicationBound = publications * largestWindow
+		}
+		unreported := results.ServedRequests - live - liveErrors - reported
+		results.LiveUnreportedLoss = &unreported
+		if !exact {
+			results.NotMeasured = append(results.NotMeasured, "exact live loss (a loss counter is a lower bound or unavailable)")
+		}
+	} else {
+		results.NotMeasured = append(results.NotMeasured, "live loss (the run's live total is unavailable)")
 	}
-	results.UnreportedLoss = max(0, results.ServedRequests-results.AcceptedRecords-reported)
 	if raw, err := json.Marshal(manifest); err == nil {
 		for _, match := range regexp.MustCompile(`"uncertainty_ms":([0-9.]+)`).FindAllSubmatch(raw, 64) {
 			if value, err := strconv.ParseFloat(string(match[1]), 64); err == nil {
@@ -303,16 +385,40 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	}
 	age, render := results.stage(telemetryStageSampleAge), results.stage(telemetryStageBrowserRender)
 	if age != nil && render != nil && age.MaxMs != nil && render.MaxMs != nil {
-		bound := *age.MaxMs + *render.MaxMs
-		results.CaptureToRenderMaxMs = &bound
+		sum := *age.MaxMs + *render.MaxMs
+		results.AgePlusRenderMaxMs = &sum
+	}
+	// Each gate is checked on its own, so every failure is recorded.
+	if results.UnreportedLoss < 0 || results.UnreportedLoss > results.InFlightBound {
+		fail("%d served requests and %d archived samples differ by %d (at most %d may be in flight at the stop)", results.ServedRequests, results.AcceptedRecords, results.UnreportedLoss, results.InFlightBound)
+	}
+	if live := results.LiveUnreportedLoss; live != nil {
+		switch {
+		case *live < 0:
+			fail("the live totals hold %d more results than were served", -*live)
+		case *live > results.InFlightBound && *live <= results.InFlightBound+results.LivePublicationBound:
+			// Reported, but in publications: the size of the loss is unknown.
+			results.Classifications = append(results.Classifications, "live_publications_lost")
+		case *live > results.InFlightBound:
+			fail("the live totals and their reported loss are %d short of the served requests (at most %d may be in flight at the stop and %d in reported lost publications)", *live, results.InFlightBound, results.LivePublicationBound)
+		}
 	}
 	switch {
-	case results.UnreportedLoss > 0:
-		fail("%d served requests are neither archived nor reported lost", results.UnreportedLoss)
-	case age == nil || age.P99Ms == nil:
+	case age == nil:
+		fail("the archive holds no sample-age stage")
+	case age.P99Ms == nil && age.Excluded["clock_unqualified"] > 0:
+		// An unqualified clock is its own class: no age is judged.
+		results.Classifications = append(results.Classifications, "clock_unqualified")
+		fail("sample age is unscored: the generators' clocks were not qualified")
+	case age.P99Ms == nil:
 		fail("the sample-age stage has no P99")
 	case *age.P99Ms > telemetryReferenceAgeTargetMs:
 		fail("sample-age P99 %.0f ms is above the %d ms target", *age.P99Ms, telemetryReferenceAgeTargetMs)
+	}
+	if render == nil || render.Samples == 0 {
+		fail("the foreground dashboard reported no render evidence")
+	} else if render.P99Ms != nil && *render.P99Ms > telemetryReferenceAgeTargetMs {
+		results.Classifications = append(results.Classifications, "slow_browser")
 	}
 	if results.AnalysisFailures > 0 {
 		fail("%d of %d concurrent archive analyses failed", results.AnalysisFailures, results.AnalysisReads)
@@ -327,9 +433,16 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 			t.Logf("stage %s: %s %s %v", stage.Stage, stage.Availability, stage.Reason, stage.Excluded)
 		}
 	}
-	t.Logf("served %d, archived %d (%.0f/s), unreported loss %d; analyses %d/%d failed; CPU %.1f s, RSS %d MiB (+%d MiB children); clock uncertainty %v",
-		results.ServedRequests, results.AcceptedRecords, results.AcceptedRate, results.UnreportedLoss, results.AnalysisFailures, results.AnalysisReads,
-		results.CPUSeconds, results.PeakRSSBytes>>20, results.PeakChildRSSBytes>>20, results.ClockUncertaintyMs)
+	t.Logf("served %d, archived %d (%.0f/s), unreported loss %d, live total %v (unreported %v); analyses %d/%d failed; CPU %.1f s, peak RSS %d MiB (+%d MiB children, %d MiB together); clock uncertainty %v",
+		results.ServedRequests, results.AcceptedRecords, results.AcceptedRate, results.UnreportedLoss, telemetryReferenceInt(results.LiveTransactions), telemetryReferenceInt(results.LiveUnreportedLoss),
+		results.AnalysisFailures, results.AnalysisReads, results.CPUSeconds, results.PeakRSSBytes>>20, results.PeakChildRSSBytes>>20, results.PeakCombinedRSSBytes>>20, results.ClockUncertaintyMs)
+}
+
+func telemetryReferenceInt(value *int64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 // telemetryReferenceArchivedRequests counts the archive's samples of one
@@ -435,7 +548,7 @@ func writeTelemetryReferenceAcceptance(t *testing.T, dir string, results telemet
 		return
 	}
 	status := "pending"
-	if len(results.Failures) > 0 {
+	if age := results.stage(telemetryStageSampleAge); len(results.Failures) > 0 || results.AcceptedRecords == 0 || age == nil || age.P99Ms == nil {
 		status = "failed"
 	}
 	p99 := func(name string) string {
@@ -444,9 +557,17 @@ func writeTelemetryReferenceAcceptance(t *testing.T, dir string, results telemet
 		}
 		return "n/a"
 	}
-	notes := fmt.Sprintf("%d gens in-process, %.0f/s for %.0f s; P99 ms age %s gen %s transport %s fanout %s render %s; unreported loss %d; %d failures.",
+	live := "n/m"
+	if results.LiveUnreportedLoss != nil {
+		live = fmt.Sprint(*results.LiveUnreportedLoss)
+	}
+	classified := ""
+	if len(results.Classifications) > 0 {
+		classified = "; " + strings.Join(results.Classifications, ", ")
+	}
+	notes := fmt.Sprintf("%d gens in-process, %.0f/s for %.0f s; P99 ms age %s gen %s transport %s fanout %s render %s; unreported loss archive %d live %s%s; %d failures.",
 		results.Generators, results.AcceptedRate, results.DurationS, p99(telemetryStageSampleAge), p99(telemetryStageGeneratorProcessing), p99(telemetryStageTransport),
-		p99(telemetryStageControllerFanout), p99(telemetryStageBrowserRender), results.UnreportedLoss, len(results.Failures))
+		p99(telemetryStageControllerFanout), p99(telemetryStageBrowserRender), results.UnreportedLoss, live, classified, len(results.Failures))
 	if len(notes) > 256 {
 		t.Errorf("acceptance notes exceed the 256 bytes a record accepts: %q", notes)
 	}
@@ -469,7 +590,7 @@ func writeTelemetryReferenceAcceptance(t *testing.T, dir string, results telemet
 // pending only without failures, and carries the F4 shape.
 func TestTelemetryReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	p := func(v float64) *float64 { return &v }
-	results := telemetryReferenceResults{Schema: "apexload.telemetry_reference.v1", Generators: 2, DurationS: 99999, TargetRate: 2000, AcceptedRate: 99999, UnreportedLoss: 99999, Failures: []string{},
+	results := telemetryReferenceResults{Schema: "apexload.telemetry_reference.v1", Generators: 2, DurationS: 99999, TargetRate: 2000, AcceptedRecords: 99999, AcceptedRate: 99999, UnreportedLoss: 99999, Failures: []string{},
 		Stages: []TelemetryStageDistribution{
 			{Stage: telemetryStageSampleAge, P99Ms: p(99999)}, {Stage: telemetryStageGeneratorProcessing, P99Ms: p(99999)}, {Stage: telemetryStageTransport, P99Ms: p(99999)},
 			{Stage: telemetryStageControllerFanout, P99Ms: p(99999)}, {Stage: telemetryStageBrowserRender, P99Ms: p(99999)}}}
@@ -510,12 +631,26 @@ func TestTelemetryReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	}
 	t.Setenv("APEXLOAD_COMMIT_SHA", strings.Repeat("d", 40))
 	writeTelemetryReferenceAcceptance(t, dir, results)
-	if status, notes := read(dir); status != "pending" || !strings.Contains(notes, "in-process") {
+	if status, notes := read(dir); status != "pending" || !strings.Contains(notes, "in-process") || !strings.Contains(notes, "unreported loss archive 99999 live n/m") {
 		t.Fatalf("a clean run: %s %q", status, notes)
+	}
+	// A classification is named in the notes, within the 256 bytes.
+	results.Classifications = []string{"clock_unqualified", "slow_browser", "live_publications_lost"}
+	writeTelemetryReferenceAcceptance(t, dir, results)
+	if _, notes := read(dir); !strings.Contains(notes, "live n/m; clock_unqualified, slow_browser, live_publications_lost;") {
+		t.Fatalf("classifications in the notes: %q", notes)
 	}
 	results.Failures = []string{"sample-age P99 above the target"}
 	writeTelemetryReferenceAcceptance(t, dir, results)
 	if status, _ := read(dir); status != "failed" {
 		t.Fatalf("a run with a failure was %s", status)
+	}
+	// A run that stopped before it was measured, with no failure recorded,
+	// is failed, never pending.
+	stopped := telemetryReferenceResults{Schema: results.Schema, Generators: 2, TargetRate: 2000, Failures: []string{}}
+	stopped.Host = results.Host
+	writeTelemetryReferenceAcceptance(t, dir, stopped)
+	if status, _ := read(dir); status != "failed" {
+		t.Fatalf("a run that stopped before it was measured was %s", status)
 	}
 }

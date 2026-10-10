@@ -143,6 +143,13 @@ func executeAnalysisHAREntryCommand(ctx context.Context, args []string, out io.W
 	return writeIndentedJSON(out, data, "HAR entry")
 }
 
+// The controller serves at most analysisPolicyPage policies a request, and a
+// project keeps up to analysisPoliciesPerKind of each kind.
+const (
+	analysisPolicyPage      = 100
+	analysisPoliciesPerKind = 1000
+)
+
 var analysisPolicyKinds = []string{"browser_policy", "journey_policy", "telemetry_policy", "telemetry_acceptance_policy", "derived_operation"}
 
 func executeAnalysisPoliciesCommand(ctx context.Context, args []string, out io.Writer) error {
@@ -187,7 +194,7 @@ func executeAnalysisPoliciesCommand(ctx context.Context, args []string, out io.W
 			return err
 		}
 		scope.Set("kind", *kind)
-		method, path = http.MethodGet, "/api/v1/analysis/policies"
+		return listAllAnalysisPolicies(ctx, flags, scope, out)
 	case "get":
 		if strings.TrimSpace(*id) == "" {
 			return errors.New("policies get needs --id")
@@ -241,6 +248,37 @@ func executeAnalysisPoliciesCommand(ctx context.Context, args []string, out io.W
 		reader, contentType = bytes.NewReader(body), "application/json"
 	}
 	data, err := client.workflowRequest(ctx, method, path+"?"+scope.Encode(), reader, contentType)
+	if err != nil {
+		return err
+	}
+	return writeIndentedJSON(out, data, "policy response")
+}
+
+// listAllAnalysisPolicies reads every page of a project's policies of one
+// kind and writes them as one list.
+func listAllAnalysisPolicies(ctx context.Context, flags analysisCLIFlags, scope url.Values, out io.Writer) error {
+	client, err := flags.client()
+	if err != nil {
+		return err
+	}
+	policies := []json.RawMessage{}
+	for offset := 0; offset < analysisPoliciesPerKind; offset += analysisPolicyPage {
+		scope.Set("limit", strconv.Itoa(analysisPolicyPage))
+		scope.Set("offset", strconv.Itoa(offset))
+		data, err := client.workflowRequest(ctx, http.MethodGet, "/api/v1/analysis/policies?"+scope.Encode(), nil, "")
+		if err != nil {
+			return err
+		}
+		var page []json.RawMessage
+		if err := json.Unmarshal(data, &page); err != nil {
+			return fmt.Errorf("decode policies: %w", err)
+		}
+		policies = append(policies, page...)
+		if len(page) < analysisPolicyPage {
+			break
+		}
+	}
+	data, err := json.Marshal(policies)
 	if err != nil {
 		return err
 	}

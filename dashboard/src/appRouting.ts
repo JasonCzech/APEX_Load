@@ -533,6 +533,25 @@ export function workspaceScopeForAppView(view: AppView): AppWorkspaceScope {
   }
 }
 
+/**
+ * The scripts route naming what the authoring surface has open, so a refresh
+ * or a shared link returns to it: the library, a saved script's editor, or a
+ * named importer. The create options, the recorder and an unsaved draft have
+ * no route of their own and reopen at the create options, never at the
+ * archive importer a bare import route opens.
+ */
+export function scriptsRouteForAuthoringState(
+  state: { subView: string; editingId: string | null; importLauncher?: string | null; importMode?: string | null },
+  scope: AppWorkspaceScope,
+): Extract<AppView, { page: 'scripts' }> {
+  if (state.subView === 'list') return { page: 'scripts', mode: 'list', ...scope }
+  if (state.subView === 'edit' && state.editingId) return { page: 'scripts', mode: 'edit', scriptId: state.editingId, ...scope }
+  if (state.importLauncher && isScriptImportLauncher(state.importLauncher)) {
+    return { page: 'scripts', mode: 'import', importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}), ...scope }
+  }
+  return { page: 'scripts', mode: 'create', ...scope }
+}
+
 export function scopeAppViewToWorkspace(view: AppView, scope: AppWorkspaceScope): AppView {
   const next = { ...view }
   delete next.projectId

@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -45,8 +44,8 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	target := int64(1 << 30)
 	if raw := strings.TrimSpace(os.Getenv("APEXLOAD_ANALYTICS_BENCHMARK_BYTES")); raw != "" {
 		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 1<<20 || parsed > 10<<30 {
-			t.Fatalf("APEXLOAD_ANALYTICS_BENCHMARK_BYTES must be between 1 MiB and 10 GiB, got %q", raw)
+		if err != nil || parsed < 1<<20 || parsed > analyticsReferenceMaxBytes {
+			t.Fatalf("APEXLOAD_ANALYTICS_BENCHMARK_BYTES must be between 1 MiB and 6 GiB, got %q", raw)
 		}
 		target = parsed
 	}
@@ -87,12 +86,13 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
 	fixtureDir := filepath.Join(scratch, "fixture")
 	if err := os.MkdirAll(fixtureDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for day := 0; results.TotalBytes < target && day < 64; day++ {
+	// Two measures per file, at most 1,024 normalized partitions, and no more
+	// days than one series query may span.
+	for day := 0; results.TotalBytes < target && day < analyticsReferenceMaxDays; day++ {
 		path := filepath.Join(fixtureDir, fmt.Sprintf("day-%02d.parquet", day))
 		start := dayStart + int64(day)*86_400_000
 		query := fmt.Sprintf("COPY (SELECT %d + i*25 AS ts, (hash(i, %d) %% 200000) / 100.0 AS latency, (hash(%d, i) %% 16)::DOUBLE AS errors FROM range(%d) t(i)) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD)", start, day, day, rowsPerDay, path)
@@ -108,7 +108,31 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 		results.TotalBytes += int64(len(data))
 		results.TotalRows += rowsPerDay
 	}
+	// The fixture writer's memory is not the controller's: close it before
+	// the import, and sample RSS only from here on.
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("fixture: %d files, %d bytes, %d rows", len(results.Files), results.TotalBytes, results.TotalRows)
+	if results.TotalBytes < target {
+		fail("the fixture reached %d of the %d bytes requested", results.TotalBytes, target)
+		return
+	}
+	sampler := startReferenceRSSSampler(250 * time.Millisecond)
+	sampled := false
+	stopSampling := func() {
+		if sampled {
+			return
+		}
+		sampled = true
+		self, workers, combined, ok := sampler.stop()
+		if !ok {
+			results.NotMeasured = append(results.NotMeasured, "peak RSS (not measured on this platform)")
+			return
+		}
+		results.PeakControllerRSSBytes, results.PeakWorkerRSSBytes, results.PeakCombinedRSSBytes = self, workers, combined
+	}
+	defer stopSampling()
 
 	// Import through the API.
 	declared := []any{}
@@ -228,19 +252,26 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	// Cancel the same heavy query after 500 ms; it must return promptly and
 	// the controller keep answering.
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan float64, 1)
+	type answer struct {
+		elapsed float64
+		code    int
+	}
+	done := make(chan answer, 1)
 	go func() {
-		_, elapsed, _ := query(ctx, time.UnixMilli(dayStart).UTC(), time.Duration(len(results.Files))*24*time.Hour, 3600)
-		done <- elapsed
+		_, elapsed, code := query(ctx, time.UnixMilli(dayStart).UTC(), time.Duration(len(results.Files))*24*time.Hour, 3600)
+		done <- answer{elapsed, code}
 	}()
 	time.Sleep(500 * time.Millisecond)
 	cancelled := time.Now()
 	cancel()
 	select {
-	case elapsed := <-done:
-		if elapsed < 500 {
+	case got := <-done:
+		switch {
+		case got.elapsed < 500 && got.code != 200:
+			results.NotMeasured = append(results.NotMeasured, fmt.Sprintf("cancellation (the heavy query was refused with %d before it could be cancelled)", got.code))
+		case got.elapsed < 500:
 			results.NotMeasured = append(results.NotMeasured, "cancellation (the heavy query finished before it was cancelled)")
-		} else {
+		default:
 			results.CancelReturnMs = float64(time.Since(cancelled).Microseconds()) / 1000
 		}
 	case <-time.After(30 * time.Second):
@@ -252,10 +283,10 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	if _, _, code := query(context.Background(), selected, time.Hour, 60); code != 200 {
 		fail("the controller did not answer after the cancellation: %d", code)
 	}
-	results.PeakControllerRSSBytes, results.PeakWorkerRSSBytes = analyticsReferencePeakRSS()
-	t.Logf("queries: cold %.0f ms, repeated p50 %.0f / p95 %.0f / max %.0f ms, full range %.0f ms; pruned %d of %d objects (%d bytes avoided); cancel %.0f ms; RSS controller %d MiB, worker %d MiB",
+	stopSampling()
+	t.Logf("queries: cold %.0f ms, repeated p50 %.0f / p95 %.0f / max %.0f ms, full range %.0f ms; pruned %d of %d objects (%d bytes avoided); cancel %.0f ms; peak RSS controller %d MiB, workers %d MiB, together %d MiB",
 		results.ColdQueryMs, results.RepeatedQueries.P50Ms, results.RepeatedQueries.P95Ms, results.RepeatedQueries.MaxMs, results.FullRangeMs,
-		results.PrunedObjects, results.TotalObjects, results.AvoidedBytes, results.CancelReturnMs, results.PeakControllerRSSBytes>>20, results.PeakWorkerRSSBytes>>20)
+		results.PrunedObjects, results.TotalObjects, results.AvoidedBytes, results.CancelReturnMs, results.PeakControllerRSSBytes>>20, results.PeakWorkerRSSBytes>>20, results.PeakCombinedRSSBytes>>20)
 	if results.RepeatedQueries.P95Ms > analyticsReferenceP95TargetMs {
 		t.Logf("the selected-window P95 %.0f ms is above the %d ms target", results.RepeatedQueries.P95Ms, analyticsReferenceP95TargetMs)
 	}
@@ -272,19 +303,6 @@ func analyticsReferenceTimingOf(samples []float64) analyticsReferenceTiming {
 		return sorted[max(0, min(len(sorted)-1, index))]
 	}
 	return analyticsReferenceTiming{Samples: len(sorted), P50Ms: rank(0.5), P95Ms: rank(0.95), MaxMs: sorted[len(sorted)-1]}
-}
-
-// analyticsReferencePeakRSS is the peak RSS of this process and of its
-// largest waited-for child (the native workers), from getrusage.
-func analyticsReferencePeakRSS() (int64, int64) {
-	scale := int64(1024) // Linux reports KiB
-	if runtime.GOOS == "darwin" {
-		scale = 1 // macOS reports bytes
-	}
-	var self, children syscall.Rusage
-	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &self)
-	_ = syscall.Getrusage(syscall.RUSAGE_CHILDREN, &children)
-	return int64(self.Maxrss) * scale, int64(children.Maxrss) * scale
 }
 
 func analyticsReferenceHostInfo() analyticsReferenceHost {

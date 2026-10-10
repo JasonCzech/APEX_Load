@@ -784,6 +784,20 @@ describe('newTestRunModel', () => {
     expect(preview.points[preview.points.length - 1]).toMatchObject({ second: 1260, total: 0 })
   })
 
+  it('stops a late group\'s ramp-up at the deadline and ramps it down from the level it reached', () => {
+    const base = { ...scenarioFixture().scripts[0], stages: undefined }
+    // Activates at 9m with a 2m ramp: at the 10m deadline it reached half of
+    // its 20 VUsers, and ramps down from there.
+    const late = buildRunLoadProfilePreview([{ ...base, vusers: 20, start_offset: '9m', ramp_up: '2m', ramp_down: '1m' }], '10m', undefined, false)
+    const at = (second: number) => late.points.find(point => point.second === second)?.total
+    expect(at(600)).toBe(10)
+    expect(Math.max(...late.points.filter(point => point.second > 600).map(point => point.total))).toBeLessThanOrEqual(10)
+    expect(at(660)).toBe(0)
+    // Activating at the deadline, it never ran: nothing to ramp down.
+    const never = buildRunLoadProfilePreview([{ ...base, vusers: 20, start_offset: '10m', ramp_up: '0s', ramp_down: '1m' }], '10m', undefined, false)
+    expect(never.points.every(point => point.total === 0)).toBe(true)
+  })
+
   it('renders authored load stages instead of the legacy simple ramp fields', () => {
     const group = {
       ...scenarioFixture().scripts[0],

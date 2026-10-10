@@ -114,6 +114,7 @@ test('the Browser area leads from a finding to its document resources and HAR en
   for (const section of ['browser_findings', 'interaction_map', 'journey_risk']) expect(csv).toContain(section)
   expect(csv).toContain('This run has no browser evaluation.')
   expect(csv).toContain('This run captured no interaction evidence.')
+  expect(csv).toContain('The run pinned no journey policy.')
 })
 
 // BI-4: an editor creates and edits a browser policy; a save based on a

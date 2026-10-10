@@ -416,7 +416,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </div>
 {{end}}
 {{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Detailed Technical report.</p>{{end}}
-{{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
+{{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Qualification}}<p class="muted">{{range $i, $q := .Qualification}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
 {{if .RootCause.Limitations}}<details><summary>Limitations</summary><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
 {{end}}
 
@@ -589,7 +589,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{with .JourneyRiskView}}
 <p class="section-copy">{{.Summary}}</p>
 {{if .Journeys}}<table><thead><tr><th>Journey</th><th class="num">Eligible</th><th class="num">Completed</th><th class="num">Failed</th><th class="num">Aborted</th><th class="num">Skipped</th><th class="num">Censored</th><th class="num">Failure rate</th></tr></thead><tbody>
-{{range .Journeys}}<tr><td>{{.Name}}</td><td class="num">{{.Eligible}}</td><td class="num">{{.Completed}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Aborted}}</td><td class="num">{{.Skipped}}</td><td class="num">{{.Censored}}</td><td class="num">{{.FailureRate}}</td></tr>{{end}}
+{{range .Journeys}}<tr><td>{{.Name}}{{if ne .Name .ID}} <span class="muted">({{.ID}})</span>{{end}}</td><td class="num">{{.Eligible}}</td><td class="num">{{.Completed}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Aborted}}</td><td class="num">{{.Skipped}}</td><td class="num">{{.Censored}}</td><td class="num">{{.FailureRate}}</td></tr>{{end}}
 </tbody></table>{{end}}
 {{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
 {{end}}

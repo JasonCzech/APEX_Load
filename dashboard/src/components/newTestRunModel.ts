@@ -822,12 +822,15 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
       } else {
         const rampUp = parseDurationToSeconds(group.ramp_up)
         const rampDown = parseDurationToSeconds(group.ramp_down)
-        if (groupSecond < rampUp) {
-          value = rampUp > 0 ? (groupSecond / rampUp) * group.vusers : group.vusers
-        } else if (loadSecond < steadySeconds) {
-          value = group.vusers
+        // The level a group reached after activeSeconds of its own ramp.
+        const level = (activeSeconds: number) => activeSeconds < rampUp ? (activeSeconds / rampUp) * group.vusers : group.vusers
+        if (loadSecond < steadySeconds) {
+          value = level(groupSecond)
         } else if (loadSecond < steadySeconds + rampDown) {
-          value = rampDown > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * group.vusers : 0
+          // At the deadline a group stops ramping up and ramps down from the
+          // level it reached; one that activates at the deadline never ran.
+          const active = steadySeconds - groupOffsets[index]
+          value = rampDown > 0 && active > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * level(active) : 0
         }
       }
 

@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -72,7 +75,6 @@ func TestAnalysisPoliciesCommandsUseRevisionedSaves(t *testing.T) {
 		return executeWorkflowCommand(context.Background(), "analysis", append([]string{"policies"}, append(args, "--api", server.URL)...), &out)
 	}
 	for _, args := range [][]string{
-		{"list", "--project", "p1", "--kind", "browser_policy"},
 		{"get", "--project", "p1", "--id", "policy-1", "--revision", "2"},
 		{"save", "--project", "p1", "--kind", "browser_policy", "--name", "Vitals", "--file", definition},
 		{"save", "--project", "p1", "--kind", "browser_policy", "--name", "Vitals", "--file", definition, "--id", "policy-1", "--revision", "3"},
@@ -84,7 +86,6 @@ func TestAnalysisPoliciesCommandsUseRevisionedSaves(t *testing.T) {
 	}
 	got := *requests
 	want := []struct{ method, path, query string }{
-		{http.MethodGet, "/api/v1/analysis/policies", "kind=browser_policy&project_id=p1"},
 		{http.MethodGet, "/api/v1/analysis/policies/policy-1", "project_id=p1&revision=2"},
 		{http.MethodPost, "/api/v1/analysis/policies", "project_id=p1"},
 		{http.MethodPut, "/api/v1/analysis/policies/policy-1", "project_id=p1"},
@@ -98,11 +99,11 @@ func TestAnalysisPoliciesCommandsUseRevisionedSaves(t *testing.T) {
 			t.Fatalf("request %d = %+v, want %+v", index, got[index], expected)
 		}
 	}
-	if got[2].Body["kind"] != "browser_policy" || got[2].Body["name"] != "Vitals" || got[2].Body["revision"] != nil || got[2].Body["definition"] == nil {
-		t.Fatalf("create body %+v", got[2].Body)
+	if got[1].Body["kind"] != "browser_policy" || got[1].Body["name"] != "Vitals" || got[1].Body["revision"] != nil || got[1].Body["definition"] == nil {
+		t.Fatalf("create body %+v", got[1].Body)
 	}
-	if got[3].Body["revision"] != float64(3) {
-		t.Fatalf("update body %+v", got[3].Body)
+	if got[2].Body["revision"] != float64(3) {
+		t.Fatalf("update body %+v", got[2].Body)
 	}
 	for name, args := range map[string][]string{
 		"no project":              {"list", "--kind", "browser_policy"},
@@ -119,5 +120,32 @@ func TestAnalysisPoliciesCommandsUseRevisionedSaves(t *testing.T) {
 		if len(*requests) != before {
 			t.Fatalf("%s: sent a request", name)
 		}
+	}
+}
+
+// policies list reads every page the controller serves, until a short one.
+func TestAnalysisPoliciesListReadsEveryPage(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		page := []map[string]any{}
+		for index := offset; index < min(offset+analysisPolicyPage, 130); index++ {
+			page = append(page, map[string]any{"id": fmt.Sprintf("policy-%d", index), "revision": 1})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(page)
+	}))
+	t.Cleanup(server.Close)
+	var out bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"policies", "list", "--project", "p1", "--kind", "browser_policy", "--api", server.URL}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"kind=browser_policy&limit=100&offset=0&project_id=p1", "kind=browser_policy&limit=100&offset=100&project_id=p1"}; !slices.Equal(queries, want) {
+		t.Fatalf("queries %v, want %v", queries, want)
+	}
+	var listed []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &listed); err != nil || len(listed) != 130 || listed[129]["id"] != "policy-129" {
+		t.Fatalf("listed %d policies: %v", len(listed), err)
 	}
 }

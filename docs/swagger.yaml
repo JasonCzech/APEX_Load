@@ -11539,6 +11539,10 @@ paths:
                               type: array
                               items:
                                 type: string
+                            qualification:
+                              type: array
+                              items:
+                                type: string
                             status:
                               type: string
                             summary:
@@ -378112,6 +378116,10 @@ paths:
                             items:
                               type: string
                           limitations:
+                            type: array
+                            items:
+                              type: string
+                          qualification:
                             type: array
                             items:
                               type: string

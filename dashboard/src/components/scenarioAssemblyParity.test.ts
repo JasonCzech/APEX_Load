@@ -8,11 +8,13 @@ import { scenarioDraftFromStoredScenario, scenarioEstimateRequest, scenarioLoadP
 // loaded into a draft and projected into its save request, capacity estimate,
 // composition timeline and load preview. The golden file was first recorded
 // from TestHub's flat-form reconstruction (runtime mirrors rebuilt into the
-// override at save) before it was retired. Retirement changed exactly two
-// things, both corrections pinned below: a think-time section saved without
-// `ignore` is no longer given `ignore: false`, and an unchanged save no longer
-// re-normalizes a stored section (random_percentage kept its `mean_ms`).
-// Nothing else in any projection changed, browser fixtures included.
+// override at save) before it was retired. Retirement changed two things in
+// the save and estimate, both corrections pinned below: a think-time section
+// saved without `ignore` is no longer given `ignore: false`, and an unchanged
+// save no longer re-normalizes a stored section (random_percentage kept its
+// `mean_ms`). The load preview was re-recorded with the shared run projection
+// (A8), which draws group start offsets and takes the next stage's level at a
+// stage boundary; nothing else changed, browser fixtures included.
 // Re-record only for an intended change: APEXLOAD_UPDATE_SCENARIO_PARITY=1.
 function projections() {
   const out: Record<string, unknown> = {}

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +72,11 @@ type ReportBrowserBaseline struct {
 	// reportBrowserBaselineFindings are kept.
 	Findings    []string `json:"findings,omitempty"`
 	Limitations []string `json:"limitations,omitempty"`
+	// Qualification states how the comparison was qualified: the baseline
+	// run's own qualification when it is not fully qualified, the browser
+	// policy it followed, the current buckets it excluded and why, and why
+	// cohorts were left unscored (each "reason: count").
+	Qualification []string `json:"qualification,omitempty"`
 }
 
 // reportBrowserBaselineFindings bounds the anomalies a report lists.
@@ -97,6 +104,32 @@ func reportBrowserBaselineFromV2(b *rca.BrowserBaseline) *ReportBrowserBaseline 
 	}
 	for _, l := range b.Limitations {
 		out.Limitations = append(out.Limitations, rcaLimitationText(l))
+	}
+	if q := b.Baseline.Qualification; q != "" && q != rca.BaselineQualified {
+		line := fmt.Sprintf("Baseline run %s %s", b.Baseline.TestID, q)
+		if len(b.Baseline.Reasons) > 0 {
+			reasons := make([]string, 0, len(b.Baseline.Reasons))
+			for _, reason := range b.Baseline.Reasons {
+				reasons = append(reasons, strings.ReplaceAll(reason, "_", " "))
+			}
+			line += ": " + strings.Join(reasons, ", ")
+		}
+		out.Qualification = append(out.Qualification, line)
+	}
+	if b.Policy != "" {
+		out.Qualification = append(out.Qualification, "Browser policy "+b.Policy)
+	}
+	for _, reason := range slices.Sorted(maps.Keys(b.Excluded)) {
+		out.Qualification = append(out.Qualification, fmt.Sprintf("Excluded %s: %d bucket%s", strings.ReplaceAll(reason, "_", " "), b.Excluded[reason], pluralSuffix(int(b.Excluded[reason]))))
+	}
+	unscored := map[string]int{}
+	for _, r := range b.Results {
+		if r.State != rca.BrowserBaselineAnomaly && r.State != rca.BrowserBaselineWithinRange && r.Reason != "" {
+			unscored[r.Reason]++
+		}
+	}
+	for _, reason := range slices.Sorted(maps.Keys(unscored)) {
+		out.Qualification = append(out.Qualification, fmt.Sprintf("Unscored %s: %d cohort%s", strings.ReplaceAll(reason, "_", " "), unscored[reason], pluralSuffix(unscored[reason])))
 	}
 	out.Summary = reportBrowserBaselineSummary(out)
 	return out

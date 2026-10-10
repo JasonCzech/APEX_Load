@@ -608,7 +608,6 @@ function formatReportSectionLabel(section: string): string {
     official_outcome: 'Official outcome',
     telemetry_acceptance: 'Telemetry acceptance',
     browser_findings: 'Browser findings',
-    browser_baseline: 'Browser baseline',
     interaction_map: 'Interaction patterns and heatmaps',
     journey_risk: 'Journey risk',
   }

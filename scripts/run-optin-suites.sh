@@ -130,7 +130,7 @@ run_telemetry_reference() {
   out_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-telemetry-reference.XXXXXX")" || return 1
   printf 'Telemetry reference results: %s\n' "${out_dir}"
   commit="$(acceptance_commit)"
-  APEXLOAD_TELEMETRY_REFERENCE=1 APEXLOAD_TELEMETRY_REFERENCE_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
+  APEXLOAD_BROWSER_TESTS=require APEXLOAD_TELEMETRY_REFERENCE=1 APEXLOAD_TELEMETRY_REFERENCE_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
     go test -count=1 -timeout 30m -v -run '^TestTelemetryReferenceWorkload$' ./pkg/api
 }
 
@@ -155,7 +155,7 @@ run_suite "native analytics reference workload (NA-6: a 1 GiB partitioned import
   run_analytics_reference
 
 run_suite "telemetry fault matrix (TEL-4: the matrix's Go tests under the race detector)" \
-  "nothing" "true" \
+  "a CGO-enabled Go toolchain (the race detector)" '[[ "$(go env CGO_ENABLED)" == "1" ]]' \
   go test -race -count=1 -timeout 30m -run '^(TestArchiveSourceCoveragePersistsMissingAndRetiredSources|TestBaselineComparisonExportsCarryTelemetryCompatibility|TestBaselineTelemetryLegacyMetadataCannotImplyZeroDrops|TestBuildRunArchiveReportIncludesTelemetryHealthEvidence|TestCITelemetryVerdictComesFromTheArchiveManifest|TestCSVExportAppliesArchiveRedaction|TestClientRenderReportRefusedOnAFollower|TestClientRenderReportsRotatingTabsShareTheViewerBudget|TestClientRenderSamplesCountOnlyVisibleRenders|TestClockCalibrationExpiryJumpAndStep|TestClockCalibrationStepBetweenProbes|TestClockPipelineUnscoredIsNotHealthy|TestClockStepToleranceBelowTheTransportBudget|TestCounterDerivationsExcludeResetsEpochsMissingAndOverflow|TestDistributedDropCounterRequiresColdAssignedPeers|TestDistributedMetricsPublicationRejectsReorderedOlderAggregate|TestDistributedMetricsSequenceGapIsRetainedInTelemetry|TestDistributedNegativeDropCounterPresenceIsUnavailable|TestDistributedPublicationRetryKeepsHeldJointBatches|TestGeneratorArchiveTelemetryPreservesMeasuredZeroAvailability|TestGeneratorArchiveTelemetryRejectsNegativeCounterAvailability|TestGeneratorEpochKeeperWaitsForAdoptionReconcile|TestMetricsBrokerStampsTheProcessSourceEpoch|TestMetricsBrokerTerminalOverflowPreservesDetectableSequenceGap|TestMissingMetricWindowsAreCountedWithinOneSourceEpoch|TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn|TestStageDistributionsDiscloseALostRecorder|TestTelemetryCoverageAfterAdoption|TestTelemetryCoverageBeforeAdoptionAndForSilentSourcesIsUnknown|TestTelemetryCoverageBridgesJitterButNotLoss|TestTelemetryLiveCoverageAfterAdoptionIsALowerBound|TestTelemetryLostPublicationsClampOnOverflow|TestTelemetryPolicySegmentRejectsAnInvalidPolicy|TestTelemetryStageRecorderReadoptionSamplesFromTheAdoption)$' ./pkg/api ./pkg/distributed/generatorrpc ./pkg/analysis
 
 run_suite "telemetry reference workload (TEL-4: two generators at 2,000 observations a second with a foreground dashboard, and an F4 acceptance request)" \

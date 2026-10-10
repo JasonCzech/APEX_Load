@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -123,8 +124,12 @@ func (s *Server) runJourneyRisk(ctx context.Context, testID, project string) (*J
 	if err != nil {
 		return nil, "The run archive manifest is unreadable.", err
 	}
-	policy, ref, found, _, err := resolveJourneyPolicy(store, project, manifest, "", "")
+	policy, ref, found, status, err := resolveJourneyPolicy(store, project, manifest, "", "")
 	if err != nil {
+		// A store failure's cause goes to the log, never into the report.
+		if status >= http.StatusInternalServerError {
+			return nil, "The run's pinned journey policy could not be read.", err
+		}
 		return nil, "The run's pinned journey policy could not be used: " + err.Error(), nil
 	}
 	if !found {
@@ -174,7 +179,7 @@ type reportJourneyRiskView struct {
 }
 
 type reportJourneyRow struct {
-	Name, Eligible, Completed, Failed, Aborted, Skipped, Censored, FailureRate string
+	ID, Name, Eligible, Completed, Failed, Aborted, Skipped, Censored, FailureRate string
 }
 
 func (d *runArchiveHTMLReportData) browserIntelligence() *ReportBrowserIntelligence {
@@ -324,7 +329,7 @@ func (d *runArchiveHTMLReportData) JourneyRiskView() reportJourneyRiskView {
 		if journey.FailureRate != nil {
 			rate = fmt.Sprintf("%.1f%%", *journey.FailureRate*100)
 		}
-		view.Journeys = append(view.Journeys, reportJourneyRow{Name: journey.Name, Eligible: fmt.Sprint(journey.Eligible), Completed: fmt.Sprint(journey.Completed), Failed: fmt.Sprint(journey.Failed), Aborted: fmt.Sprint(journey.Aborted), Skipped: fmt.Sprint(journey.Skipped), Censored: fmt.Sprint(journey.Censored), FailureRate: rate})
+		view.Journeys = append(view.Journeys, reportJourneyRow{ID: journey.ID, Name: firstNonEmpty(journey.Name, journey.ID), Eligible: fmt.Sprint(journey.Eligible), Completed: fmt.Sprint(journey.Completed), Failed: fmt.Sprint(journey.Failed), Aborted: fmt.Sprint(journey.Aborted), Skipped: fmt.Sprint(journey.Skipped), Censored: fmt.Sprint(journey.Censored), FailureRate: rate})
 	}
 	return view
 }
@@ -363,7 +368,10 @@ func browserFindingsReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteF
 		rows = append(rows, [4]string{"browser_finding", key, "title", finding.Title}, [4]string{"browser_finding", key, "state", finding.State},
 			[4]string{"browser_finding", key, "severity", finding.Severity}, [4]string{"browser_finding", key, "observed", finding.Observed}, [4]string{"browser_finding", key, "summary", finding.Summary})
 	}
-	return writeReportCSVRows(write, rows)
+	if view.More > 0 {
+		rows = append(rows, [4]string{"browser_findings", "", "more_findings", fmt.Sprint(view.More)})
+	}
+	return writeReportCSVRows(write, appendReportCSVNotes(rows, "browser_findings", view.Notes))
 }
 
 func interactionMapReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
@@ -401,7 +409,13 @@ func interactionMapReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFu
 			rows = append(rows, [4]string{"interaction_heatmap", key, item[0], item[1]})
 		}
 	}
-	return writeReportCSVRows(write, rows)
+	if view.More > 0 {
+		rows = append(rows, [4]string{"interaction_map", "", "more_patterns", fmt.Sprint(view.More)})
+	}
+	if view.MoreMaps > 0 {
+		rows = append(rows, [4]string{"interaction_map", "", "more_heatmaps", fmt.Sprint(view.MoreMaps)})
+	}
+	return writeReportCSVRows(write, appendReportCSVNotes(rows, "interaction_map", view.Notes))
 }
 
 func journeyRiskReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
@@ -409,7 +423,7 @@ func journeyRiskReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 	pdfHeading(lines, "Journey Risk")
 	*lines = append(*lines, view.Summary)
 	for _, journey := range view.Journeys {
-		*lines = append(*lines, fmt.Sprintf("- %s: %s eligible, %s completed, %s failed, %s aborted, %s skipped, %s censored; failure rate %s", journey.Name, journey.Eligible, journey.Completed, journey.Failed, journey.Aborted, journey.Skipped, journey.Censored, journey.FailureRate))
+		*lines = append(*lines, fmt.Sprintf("- %s (%s): %s eligible, %s completed, %s failed, %s aborted, %s skipped, %s censored; failure rate %s", journey.Name, journey.ID, journey.Eligible, journey.Completed, journey.Failed, journey.Aborted, journey.Skipped, journey.Censored, journey.FailureRate))
 	}
 	*lines = append(*lines, view.Notes...)
 	*lines = append(*lines, "")
@@ -418,12 +432,21 @@ func journeyRiskReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 func journeyRiskReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 	view := d.JourneyRiskView()
 	rows := [][4]string{{"journey_risk", "", "summary", view.Summary}}
+	// Journey names may repeat; a journey's rows are keyed by its ID.
 	for _, journey := range view.Journeys {
-		for _, item := range [][2]string{{"eligible", journey.Eligible}, {"completed", journey.Completed}, {"failed", journey.Failed}, {"aborted", journey.Aborted}, {"skipped", journey.Skipped}, {"censored", journey.Censored}, {"failure_rate", journey.FailureRate}} {
-			rows = append(rows, [4]string{"journey", journey.Name, item[0], item[1]})
+		for _, item := range [][2]string{{"name", journey.Name}, {"eligible", journey.Eligible}, {"completed", journey.Completed}, {"failed", journey.Failed}, {"aborted", journey.Aborted}, {"skipped", journey.Skipped}, {"censored", journey.Censored}, {"failure_rate", journey.FailureRate}} {
+			rows = append(rows, [4]string{"journey", journey.ID, item[0], item[1]})
 		}
 	}
-	return writeReportCSVRows(write, rows)
+	return writeReportCSVRows(write, appendReportCSVNotes(rows, "journey_risk", view.Notes))
+}
+
+// appendReportCSVNotes adds a section's notes, as HTML and PDF carry them.
+func appendReportCSVNotes(rows [][4]string, section string, notes []string) [][4]string {
+	for index, note := range notes {
+		rows = append(rows, [4]string{section, fmt.Sprint(index), "note", note})
+	}
+	return rows
 }
 
 func writeReportCSVRows(write reportCSVWriteFunc, rows [][4]string) error {

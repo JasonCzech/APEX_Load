@@ -57,7 +57,7 @@ const biGoldenPage = `<!doctype html><html><head><title>browser intelligence gol
 const supported=(PerformanceObserver.supportedEntryTypes||[]).slice();
 window.oracle={supported,shifts:[],lcp:[],fcp:null};
 if(supported.includes('layout-shift'))new PerformanceObserver(l=>{for(const e of l.getEntries())if(!e.hadRecentInput)oracle.shifts.push({value:e.value,time:e.startTime})}).observe({type:'layout-shift',buffered:true});
-if(supported.includes('largest-contentful-paint'))new PerformanceObserver(l=>{for(const e of l.getEntries())oracle.lcp.push(e.startTime)}).observe({type:'largest-contentful-paint',buffered:true});
+if(supported.includes('largest-contentful-paint'))new PerformanceObserver(l=>{for(const e of l.getEntries())oracle.lcp.push({time:e.startTime,url:e.url||''})}).observe({type:'largest-contentful-paint',buffered:true});
 if(supported.includes('paint'))new PerformanceObserver(l=>{for(const e of l.getEntries())if(e.name==='first-contentful-paint')oracle.fcp=e.startTime}).observe({type:'paint',buffered:true});
 // Two shifts 300 ms apart form one session window; a third 1.4 s later
 // starts another, so CLS (the largest window) differs from the sum.
@@ -73,8 +73,11 @@ type biGoldenOracle struct {
 		Value float64 `json:"value"`
 		Time  float64 `json:"time"`
 	} `json:"shifts"`
-	LCP []float64 `json:"lcp"`
-	FCP *float64  `json:"fcp"`
+	LCP []struct {
+		Time float64 `json:"time"`
+		URL  string  `json:"url"`
+	} `json:"lcp"`
+	FCP *float64 `json:"fcp"`
 }
 
 var biGoldenEntryTypes = map[string]string{"cls": "layout-shift", "lcp": "largest-contentful-paint", "fcp": "paint"}
@@ -84,9 +87,14 @@ func (o biGoldenOracle) supports(metric string) bool {
 }
 
 // complete reports whether the page has measured everything its engine
-// supports: three shifts, an LCP entry and FCP.
+// supports: three shifts, the hero's LCP entry (an earlier candidate, such
+// as the text, can precede it) and FCP.
 func (o biGoldenOracle) complete() bool {
-	return (!o.supports("cls") || len(o.Shifts) >= 3) && (!o.supports("lcp") || len(o.LCP) > 0) && (!o.supports("fcp") || o.FCP != nil)
+	return (!o.supports("cls") || len(o.Shifts) >= 3) && (!o.supports("lcp") || o.heroLCP()) && (!o.supports("fcp") || o.FCP != nil)
+}
+
+func (o biGoldenOracle) heroLCP() bool {
+	return len(o.LCP) > 0 && strings.HasSuffix(o.LCP[len(o.LCP)-1].URL, "/hero.png")
 }
 
 // maxSessionWindow is CLS as the Layout Instability definition (and
@@ -121,7 +129,7 @@ func (o biGoldenOracle) expected(metric string) *float64 {
 		if len(o.LCP) == 0 {
 			return nil
 		}
-		value := o.LCP[len(o.LCP)-1]
+		value := o.LCP[len(o.LCP)-1].Time
 		return &value
 	case "fcp":
 		return o.FCP
@@ -135,6 +143,7 @@ type biGoldenEngineResult struct {
 	Engine         string              `json:"engine"`
 	BrowserVersion string              `json:"browser_version"`
 	Platform       string              `json:"platform"`
+	Ran            bool                `json:"ran"`
 	Failed         bool                `json:"failed"`
 	Unsupported    []string            `json:"unsupported"`
 	Oracle         map[string]*float64 `json:"oracle"`
@@ -173,7 +182,10 @@ func TestBrowserIntelligenceGoldenAcceptance(t *testing.T) {
 	var results []biGoldenEngineResult
 	for _, engine := range []string{"chromium", "webkit"} {
 		result := biGoldenEngineResult{Engine: engine, Platform: runtime.GOOS + "-" + runtime.GOARCH, Oracle: map[string]*float64{}, Measured: map[string]*float64{}}
+		// An engine a -run filter or -failfast left out did not run, and is
+		// never written as pending.
 		t.Run(engine, func(t *testing.T) {
+			result.Ran = true
 			defer func() { result.Failed = t.Failed() }()
 			runBrowserIntelligenceGolden(t, engine, &result)
 		})
@@ -468,8 +480,24 @@ func runBrowserIntelligenceGolden(t *testing.T, engine string, out *biGoldenEngi
 			missing = append(missing, metric)
 		}
 	}
+	// Each score component is read back from the archive: its observed
+	// value is the measured one (a single document's p75), or none when the
+	// engine cannot measure the metric.
+	for _, component := range findings.Score.Components {
+		measured := out.Measured[component.Metric]
+		switch {
+		case !oracle.supports(component.Metric):
+			if component.Observed != nil || component.Score != nil || component.Reason != "no_qualified_final_observations" {
+				t.Errorf("%s: unsupported %s score component %+v", engine, component.Metric, component)
+			}
+		case measured == nil || component.Observed == nil || *component.Observed != *measured || component.Samples != 1:
+			t.Errorf("%s: %s score component %+v, measured %v", engine, component.Metric, component, biGoldenValue(measured))
+		}
+	}
 	if len(missing) == 0 {
-		if findings.Score.Score == nil || findings.Score.Coverage.Observed != 3 || findings.Score.Coverage.Required != 3 {
+		// LCP (weight 2) and CLS (1) are poor and score 0; FCP (1) is good
+		// and scores 100: (2*0 + 1*0 + 1*100) / 4.
+		if findings.Score.Score == nil || *findings.Score.Score != 25 || findings.Score.Severity != "poor" || findings.Score.Coverage.Observed != 3 || findings.Score.Coverage.Required != 3 {
 			t.Errorf("%s: score %+v", engine, findings.Score)
 		}
 	} else if findings.Score.Score != nil || findings.Score.UnscoredReason != "missing_required_metric" || !slices.Equal(findings.Score.Missing, missing) {
@@ -532,9 +560,9 @@ func biGoldenFinding(result *BrowserIntelligenceResult, metric string) *BrowserF
 
 // writeBrowserIntelligenceAcceptance writes the golden results and one F4
 // feature acceptance request per engine, naming the results' SHA-256. A
-// request is pending review when the engine's golden held and failed when it
-// did not: a golden run never records a pass by itself, since a reviewer
-// records acceptance against a release binary.
+// request is pending review when the engine's golden ran and held, and
+// failed when it did not: a golden run never records a pass by itself, since
+// a reviewer records acceptance against a release binary.
 func writeBrowserIntelligenceAcceptance(t *testing.T, dir string, results []biGoldenEngineResult) {
 	t.Helper()
 	body, err := json.MarshalIndent(map[string]any{"schema": "apexload.browser_intelligence_golden.v1", "generated_at": time.Now().UTC(), "results": results}, "", "  ")
@@ -555,7 +583,7 @@ func writeBrowserIntelligenceAcceptance(t *testing.T, dir string, results []biGo
 	var requests []map[string]any
 	for _, result := range results {
 		status := "pending"
-		if result.Failed {
+		if result.Failed || !result.Ran {
 			status = "failed"
 		}
 		notes := fmt.Sprintf("%s %s: unsupported %v; score %s%s; active %d; repeated taps %d; journey failed %d; target requests %d.",
@@ -585,7 +613,7 @@ func writeBrowserIntelligenceAcceptance(t *testing.T, dir string, results []biGo
 func TestBrowserIntelligenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	dir := t.TempDir()
 	cls := 0.25
-	held := biGoldenEngineResult{Engine: "chromium", BrowserVersion: "149.0.7827.55", Platform: "darwin-arm64", Oracle: map[string]*float64{"cls": &cls}, Measured: map[string]*float64{"cls": &cls},
+	held := biGoldenEngineResult{Engine: "chromium", BrowserVersion: "149.0.7827.55", Platform: "darwin-arm64", Ran: true, Oracle: map[string]*float64{"cls": &cls}, Measured: map[string]*float64{"cls": &cls},
 		ScoreSeverity: "poor", ActiveFindings: []string{"threshold:lcp", "threshold:cls"}, RepeatedTaps: 3, JourneyFailed: 1, TargetRequests: map[string]int{"/": 1, "/hero.png": 1}}
 	broken := held
 	broken.Engine, broken.Failed, broken.Unsupported, broken.ScoreSeverity, broken.UnscoredReason = "webkit", true, []string{"cls", "lcp"}, "unscored", "missing_required_metric"
@@ -622,6 +650,16 @@ func TestBrowserIntelligenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	digest := sha256.Sum256(results)
 	if len(written) != 2 || written[0].Result != "pending" || written[1].Result != "failed" {
 		t.Fatalf("requests %+v", written)
+	}
+	// An engine that never ran is failed, never pending.
+	notRun := held
+	notRun.Engine, notRun.Ran = "webkit", false
+	writeBrowserIntelligenceAcceptance(t, dir, []biGoldenEngineResult{held, notRun})
+	var skipped []struct {
+		Result string `json:"result"`
+	}
+	if raw, err := os.ReadFile(requests); err != nil || json.Unmarshal(raw, &skipped) != nil || len(skipped) != 2 || skipped[0].Result != "pending" || skipped[1].Result != "failed" {
+		t.Fatalf("an engine that did not run: %s %v", raw, err)
 	}
 	for _, request := range written {
 		if request.RequirementID != "BI-4" || request.Feature != "browser-intelligence-golden" || request.CommitSHA != strings.Repeat("b", 40) || len(request.Notes) > 256 ||

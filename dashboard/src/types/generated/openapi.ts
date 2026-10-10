@@ -4143,6 +4143,7 @@ export interface operations {
                 "compared"?: number;
                 "findings"?: Array<string>;
                 "limitations"?: Array<string>;
+                "qualification"?: Array<string>;
                 "status"?: string;
                 "summary"?: string;
                 "unscored"?: number;
@@ -72933,6 +72934,7 @@ export interface operations {
                 "compared": number;
                 "findings"?: Array<string>;
                 "limitations"?: Array<string>;
+                "qualification"?: Array<string>;
                 "status": string;
                 "summary": string;
                 "unscored": number;

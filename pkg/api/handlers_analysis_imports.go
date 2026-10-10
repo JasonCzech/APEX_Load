@@ -627,10 +627,13 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "mapping exceeds the 1024 normalized partition limit")
 		return
 	}
-	if first, second, ok := duplicateAnalysisImportFiles(in.Files); ok {
+	if first, second, ok := duplicateAnalysisImportFiles(in.Files); ok && (in.State == "mapped" || in.State == "failed") {
 		// Every file's rows are imported, so the same content twice would be
 		// counted twice; refuse it here rather than fail during publication.
-		writeError(w, 422, fmt.Sprintf("files %q and %q have the same content; remove one before committing", first, second))
+		// An import's files are fixed when it is created, so the remedy is a
+		// new import. (An expired normalizing claim is left to the attempt
+		// pipeline, which fails it closed.)
+		writeError(w, 422, fmt.Sprintf("files %q and %q have the same content; create a new import without one of them", first, second))
 		return
 	}
 	if !admitAnalysisPipeline(w) {

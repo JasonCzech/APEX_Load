@@ -40,15 +40,38 @@ const RETIRED: { seam: string; owner: string; forbidden: (string | RegExp)[]; al
     allowedIn: ['./components/workloadStages.ts'],
   },
   {
+    // Structural: a ramp curve (a division by a ramp duration, whether a
+    // variable, a member or a parsed field) outside the projections that own
+    // one. Comments are not division.
+    seam: 'simple ramp curves',
+    owner: 'newTestRunModel.buildRunLoadProfilePreview and workloadStages.ts; the wizard model chart and the Command Center live model keep theirs (docs/qa/ADAPTER_RETIREMENT.md)',
+    forbidden: [/(?<![/*])\/(?![/*])\s*\(?\s*(?:[\w.]*\(\s*)?[\w.]*ramp_?(up|down)/i],
+    allowedIn: ['./components/newTestRunModel.ts', './components/workloadStages.ts', './components/scenarioWizardUtils.ts', './components/commandCenterLoadModel.ts'],
+  },
+  {
     seam: 'CompatibleDebugStartRequest',
     owner: 'types/replay.ts ScriptDebugStartRequest (the generated request body; openapiContract.test.ts pins it)',
     forbidden: ['CompatibleDebugStartRequest'],
   },
 ]
 
+// The callers each retired copy served, and the owner each must import from.
+const OWNED_CALLERS: { path: string; owner: RegExp }[] = [
+  { path: './components/CreateTestModal.tsx', owner: /import \{[^}]*\bscenarioLoadPreview\b[^}]*\} from '\.\/scenarioAssembly'/ },
+  { path: './components/scenarioAssembly.ts', owner: /import \{[^}]*\bbuildRunLoadProfilePreview\b[^}]*\} from '\.\/newTestRunModel'/ },
+  { path: './components/testExecutionScenarioModel.ts', owner: /import \{[^}]*\bbuildRunLoadProfilePreview\b[^}]*\} from '\.\/newTestRunModel'/ },
+  { path: './components/newTestRunModel.ts', owner: /from '\.\/workloadStages'/ },
+  { path: './components/scenarioWizardUtils.ts', owner: /from '\.\/workloadStages'/ },
+]
+
 describe('adapter retirement', () => {
   it('scans the application sources', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(100)
+  })
+
+  it('resolves each retired copy\'s callers through its owner', () => {
+    const missing = OWNED_CALLERS.filter(({ path, owner }) => !owner.test(sources[path] ?? '')).map(({ path, owner }) => `${path}: ${owner}`)
+    expect(missing).toEqual([])
   })
 
   for (const { seam, owner, forbidden, allowedIn = [] } of RETIRED) {

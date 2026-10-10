@@ -1,7 +1,7 @@
 import TooltipButton from './components/ux/TooltipButton'
 import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
-import { terminalRunReportView } from './appRouting';
+import { scriptsRouteForAuthoringState, terminalRunReportView } from './appRouting';
 import PageHeader from './components/ux/PageHeader'
 import { settingsOwner } from "./components/settingsNavigation";
 import {
@@ -2413,23 +2413,7 @@ function AppShell({
       // the page is keyed by its route and a view change would remount it.
       const current = parseAppViewFromHash(window.location.hash);
       if (current.page !== "scripts") return;
-      const mode = state.subView === "list"
-        ? "list"
-        : state.subView === "edit" && state.editingId
-          ? "edit"
-          : state.subView === "create" || state.subView === "create-options"
-            ? "create"
-            : "import";
-      const next = viewToLocationHash({
-        page: "scripts",
-        mode,
-        ...(mode === "edit" && state.editingId ? { scriptId: state.editingId } : {}),
-        // Name the open importer, so a refresh or shared link reopens it.
-        ...(mode === "import" && state.importLauncher
-          ? { importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}) }
-          : {}),
-        ...workspaceScopeForAppView(current),
-      });
+      const next = viewToLocationHash(scriptsRouteForAuthoringState(state, workspaceScopeForAppView(current)));
       if (next !== window.location.hash) window.history.replaceState(window.history.state, "", next);
     },
     [],

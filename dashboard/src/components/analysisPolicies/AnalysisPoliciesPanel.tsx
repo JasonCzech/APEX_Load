@@ -35,6 +35,9 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   const [reload, setReload] = useState(0)
   const [editing, setEditing] = useState<Editing | null>(null)
   const [saveError, setSaveError] = useState('')
+  // A failed delete reloads the list, so its reason is kept apart from the
+  // list's own load error.
+  const [deleteError, setDeleteError] = useState('')
   const [conflict, setConflict] = useState(false)
   const [busy, setBusy] = useState(false)
   const [revisionView, setRevisionView] = useState<{ policy: AnalysisPolicyRecord; revision: string; record: AnalysisPolicyRecord | null; error: string } | null>(null)
@@ -76,6 +79,16 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
     }
   }, [editing, projectId])
 
+  // A 409 is a revision conflict only when the policy's revision moved: the
+  // controller also refuses a second default policy or a full project.
+  const revisionChanged = async (id: string, revision: number) => {
+    try {
+      return (await analysisPoliciesApi.get(projectId, id)).revision !== revision
+    } catch {
+      return false
+    }
+  }
+
   const save = async (event: FormEvent) => {
     event.preventDefault()
     if (!editing) return
@@ -89,7 +102,7 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
       setEditing(null)
       setReload(value => value + 1)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && editing.id) setConflict(true)
+      if (err instanceof ApiError && err.status === 409 && editing.id && await revisionChanged(editing.id, editing.revision)) setConflict(true)
       else setSaveError(getErrorMessage(err, 'Unable to save the policy'))
     } finally {
       setBusy(false)
@@ -99,12 +112,13 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   const remove = async (policy: AnalysisPolicyRecord) => {
     const accepted = await confirmAction(`Delete the ${KIND_LABELS[policy.kind as EditableAnalysisPolicyKind]?.singular || 'policy'} "${policy.name || policy.id}"? Runs that pinned one of its revisions keep it.`, { title: 'Delete policy', confirmLabel: 'Delete policy', destructive: true })
     if (!accepted) return
-    setLoadError('')
+    setDeleteError('')
     try {
       await analysisPoliciesApi.remove(projectId, policy.id, policy.revision)
       setReload(value => value + 1)
     } catch (err) {
-      setLoadError(err instanceof ApiError && err.status === 409 ? 'The policy changed since the list was loaded. Review it and try again.' : getErrorMessage(err, 'Unable to delete the policy'))
+      const changed = err instanceof ApiError && err.status === 409 && await revisionChanged(policy.id, policy.revision)
+      setDeleteError(changed ? 'The policy changed since the list was loaded. Review it and try again.' : getErrorMessage(err, 'Unable to delete the policy'))
       setReload(value => value + 1)
     }
   }
@@ -125,10 +139,11 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   return <section className="settings-subsection analysis-policies" aria-label="Browser and journey policies">
     <p>Browser policies score a run's document metrics and set how the root-cause browser baseline compares them; journey policies define the journeys whose attempts are accounted. The default policy of each kind is pinned when a run starts, and findings keep the revision they were evaluated under: editing a policy never rewrites a finished run's results.</p>
     <div className="settings-inline-actions" role="group" aria-label="Policy kind">
-      {(Object.keys(KIND_LABELS) as EditableAnalysisPolicyKind[]).map(value => <button key={value} type="button" className={`btn btn-sm ${kind === value ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={kind === value} onClick={() => { setKind(value); setEditing(null); setRevisionView(null); setPolicies(null) }}>{KIND_LABELS[value].plural}</button>)}
+      {(Object.keys(KIND_LABELS) as EditableAnalysisPolicyKind[]).map(value => <button key={value} type="button" className={`btn btn-sm ${kind === value ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={kind === value} onClick={() => { setKind(value); setEditing(null); setRevisionView(null); setPolicies(null); setDeleteError('') }}>{KIND_LABELS[value].plural}</button>)}
       {canEdit && !editing && <button type="button" className="btn btn-sm btn-secondary" onClick={startNew}>New {KIND_LABELS[kind].singular}</button>}
     </div>
     {!canEdit && <p className="run-report-muted">Your role in this project can view policies but not change them.</p>}
+    {deleteError && <Notice tone="error" title="The policy was not deleted">{deleteError}</Notice>}
     {loadError && <Notice tone="error" title="Policies could not be loaded" action={<button type="button" className="btn btn-secondary btn-sm" onClick={() => setReload(value => value + 1)}>Retry</button>}>{loadError}</Notice>}
     {policies === null && !loadError && <p role="status">Loading policies…</p>}
     {policies && policies.length === 0 && <p>This project has no {KIND_LABELS[kind].plural.toLowerCase()} yet.</p>}

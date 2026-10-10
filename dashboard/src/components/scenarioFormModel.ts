@@ -169,15 +169,17 @@ export type ScenarioSeedRuntime = Pick<ScenarioSeed, 'pacing' | 'think_time' | '
 
 /**
  * The scenario runtime defaults after a seed: a seed's runtime_settings
- * replaces the current defaults, and its pacing, think time, iterations,
- * logging, auto-transaction and error-handling fragments are then applied over
- * them. A fragment of the same pacing or think-time type keeps the current
+ * replaces the current defaults, except the authored iterations, log level,
+ * auto transactions and error-handling flags it does not set itself, and its
+ * pacing, think time, iterations, logging, auto-transaction and error-handling
+ * fragments are then applied over them. A fragment of the same pacing or think-time type keeps the current
  * section's other fields; a different type replaces the section. Iterations,
  * log level and auto transactions go where the defaults already author them
  * (run_logic and log), else to their top-level fields.
  */
 export function seededScenarioRuntime(current: RuntimeSettingsOverride | undefined, seed: ScenarioSeedRuntime): RuntimeSettingsOverride | undefined {
   const runtime: RuntimeSettingsOverride = structuredClone(seed.runtime_settings ?? current ?? {})
+  if (seed.runtime_settings && current) carryAuthoredRuntime(runtime, current)
   if (seed.pacing?.type) {
     const sameType = runtime.pacing?.type === seed.pacing.type
     runtime.pacing = { ...(sameType ? runtime.pacing : {}), ...seed.pacing, type: seed.pacing.type } as NonNullable<RuntimeSettingsOverride['pacing']>
@@ -204,6 +206,32 @@ export function seededScenarioRuntime(current: RuntimeSettingsOverride | undefin
     runtime.error_handling = { ...(runtime.error_handling ?? {}), [flag]: seed[flag] }
   }
   return Object.values(runtime).some(entry => entry !== undefined) ? runtime : undefined
+}
+
+// carryAuthoredRuntime keeps the current iterations, log level, auto
+// transactions and error-handling flags that a seed's runtime_settings leaves
+// unset (a template never resets a continue-on-error opt-out), where runtime
+// authors them.
+function carryAuthoredRuntime(runtime: RuntimeSettingsOverride, current: RuntimeSettingsOverride) {
+  const iterations = current.run_logic?.iterations ?? current.iterations
+  if (iterations !== undefined && runtime.run_logic?.iterations === undefined && runtime.iterations === undefined) {
+    if (runtime.run_logic) runtime.run_logic = { ...runtime.run_logic, iterations }
+    else runtime.iterations = iterations
+  }
+  const level = current.log?.level ?? current.log_level
+  if (level !== undefined && runtime.log?.level === undefined && runtime.log_level === undefined) {
+    if (runtime.log) runtime.log = { ...runtime.log, level }
+    else runtime.log_level = level
+  }
+  const autoTransactions = current.run_logic?.auto_transactions ?? current.auto_transactions
+  if (autoTransactions !== undefined && runtime.run_logic?.auto_transactions === undefined && runtime.auto_transactions === undefined) {
+    if (runtime.run_logic) runtime.run_logic = { ...runtime.run_logic, auto_transactions: autoTransactions }
+    else runtime.auto_transactions = autoTransactions
+  }
+  for (const flag of ['continue_on_error', 'snapshot_on_error'] as const) {
+    const value = current.error_handling?.[flag]
+    if (value !== undefined && runtime.error_handling?.[flag] === undefined) runtime.error_handling = { ...(runtime.error_handling ?? {}), [flag]: value }
+  }
 }
 
 export function assignmentFromForm(form: ScenarioFormState): GeneratorAssignmentSettings {

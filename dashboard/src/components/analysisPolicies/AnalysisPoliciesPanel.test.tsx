@@ -52,7 +52,7 @@ describe('AnalysisPoliciesPanel (BI-4)', () => {
 
   it('saves an edit at the revision it was read at, and offers the current revision on a conflict', async () => {
     api.update.mockRejectedValueOnce(new ApiError('analysis policy revision changed', 409))
-    api.get.mockResolvedValueOnce({ ...browserPolicy, revision: 4, name: 'Vitals v4' })
+    api.get.mockResolvedValue({ ...browserPolicy, revision: 4, name: 'Vitals v4' })
     await act(async () => root.render(<AnalysisPoliciesPanel projectId="p1" canEdit />))
     await flush()
     await click('Edit')
@@ -64,6 +64,25 @@ describe('AnalysisPoliciesPanel (BI-4)', () => {
     await click('Load the current revision')
     expect(api.get).toHaveBeenCalledWith('p1', 'policy-1')
     expect(container.textContent).toContain('Edit Vitals v4 (revision 4)')
+  })
+
+  it('shows a refusal that is not a revision change as it is, on save and on delete', async () => {
+    api.update.mockRejectedValueOnce(new ApiError('another browser_policy policy already applies by default (Other)', 409))
+    api.remove.mockRejectedValueOnce(new ApiError('analysis policy limit reached', 409))
+    api.get.mockResolvedValue(browserPolicy)
+    confirm.mockResolvedValue(true)
+    await act(async () => root.render(<AnalysisPoliciesPanel projectId="p1" canEdit />))
+    await flush()
+    await click('Edit')
+    await act(async () => { container.querySelector('form.analysis-policy-editor')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(api.get).toHaveBeenCalledWith('p1', 'policy-1')
+    expect(container.textContent).not.toContain('This policy changed since you opened it')
+    expect(container.textContent).toContain('another browser_policy policy already applies by default (Other)')
+    await click('Cancel')
+    await click('Delete')
+    expect(container.textContent).not.toContain('The policy changed since the list was loaded')
+    expect(container.textContent).toContain('analysis policy limit reached')
   })
 
   it('creates a journey policy and refuses a draft the controller would refuse, before sending it', async () => {

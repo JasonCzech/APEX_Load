@@ -65,6 +65,17 @@ describe('browser comparison (BI-4)', () => {
     expect(comparison.rows.map(row => row.cohortLabel)).toEqual(['runtime cohort 1 of 2', 'runtime cohort 2 of 2'])
   })
 
+  it('keeps cohorts apart when a group or region holds a #', () => {
+    const comparison = buildBrowserComparison(summary([
+      tuple('lcp', [1000], { group: 'checkout#eu', region: 'us#east' }),
+      tuple('lcp', [3000], { group: 'checkout#eu', region: 'us#east', cohort: { ...cohort, network_latency_ms: 300 } }),
+      tuple('fcp', [400], { group: 'checkout#eu', region: 'us#east' }),
+    ]), 'live-history')
+    expect(comparison.rows.map(row => [row.group, row.region, row.cohortLabel])).toEqual([['checkout#eu', 'us#east', 'runtime cohort 1 of 2'], ['checkout#eu', 'us#east', 'runtime cohort 2 of 2']])
+    expect(comparison.rows[0].metrics.fcp?.final).toBe(1)
+    expect(new Set(comparison.rows.map(row => row.key)).size).toBe(2)
+  })
+
   it('reports absent, unsupported and invalid summaries', () => {
     expect(buildBrowserComparison(undefined, 'archive-latest').state).toBe('absent')
     expect(buildBrowserComparison({ version: 1 }, 'archive-latest').state).toBe('unsupported')

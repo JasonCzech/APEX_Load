@@ -55,6 +55,8 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
             <XAxis
               dataKey="time"
+              type="number"
+              domain={['dataMin', 'dataMax']}
               tickFormatter={(value) => formatTimeCompact(value)}
               stroke="var(--text-muted)"
               fontSize={10}

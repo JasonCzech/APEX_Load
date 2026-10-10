@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { terminalRunReportView, APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
+import { terminalRunReportView, APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, scriptsRouteForAuthoringState, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('round-trips analysis baseline and population into a transaction report', () => {
@@ -119,6 +119,20 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/scripts?mode=import&launcher=sample&importMode=Java%20HTTP')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'sample' })
     // Changing project keeps the open importer.
     expect(resetProjectScopedAssetView(har, 'p2')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p2' })
+  })
+
+  it('writes a scripts route every authoring state reopens at', () => {
+    const scope = { projectId: 'p1' }
+    const route = (state: Parameters<typeof scriptsRouteForAuthoringState>[0]) => parseAppViewFromHash(viewToLocationHash(scriptsRouteForAuthoringState(state, scope)))
+    expect(route({ subView: 'list', editingId: null })).toEqual({ page: 'scripts', mode: 'list', projectId: 'p1' })
+    expect(route({ subView: 'edit', editingId: 'script-1' })).toEqual({ page: 'scripts', mode: 'edit', scriptId: 'script-1', projectId: 'p1' })
+    expect(route({ subView: 'traffic_har', editingId: null, importLauncher: 'traffic_har', importMode: 'auto_detect' })).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p1' })
+    // The recorder, an unsaved draft and the create options have no route of
+    // their own: they reopen at the create options, not the archive importer.
+    for (const subView of ['recorder', 'create', 'create-options']) {
+      expect(route({ subView, editingId: null }), subView).toEqual({ page: 'scripts', mode: 'create', projectId: 'p1' })
+    }
+    expect(route({ subView: 'edit', editingId: null })).toEqual({ page: 'scripts', mode: 'create', projectId: 'p1' })
   })
 
   it('round-trips deep links for runs, scenario launches, and scripts', () => {

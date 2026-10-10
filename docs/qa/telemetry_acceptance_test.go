@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -109,7 +110,7 @@ func renderTelemetryAcceptance(t *testing.T) string {
 		}
 	}
 	out.WriteString("\n## Reference workload\n\n`APEXLOAD_TELEMETRY_REFERENCE=1 go test ./pkg/api -run '^TestTelemetryReferenceWorkload$' -v` runs the TEL-4 reference workload in one process: two declared generators (real generator services reached over in-memory gRPC) each run half of `APEXLOAD_TELEMETRY_REFERENCE_RATE` (default 2,000) accepted observations a second against a local target for `APEXLOAD_TELEMETRY_REFERENCE_SECONDS` (default 60), publishing every second. While it runs, a foreground dashboard (headless Chromium on the run's live page, reporting its render evidence) watches it, and archive analyses of an earlier run are read every second. It records each stage's P50/P95/P99 and maximum, the run's coverage and loss accounting, the target's own count of served requests against the archive's samples (unreported loss), clock uncertainty, process CPU and peak RSS, and every failure.\n\n")
-	out.WriteString("Stage percentiles are never added: capture to visible render is bounded by the sum of the sample-age and browser-render maxima. A run fails with unreported loss, a sample-age P99 above 2,000 ms, a sustained rate under 90% of the workload, or a failed analysis. With `APEXLOAD_TELEMETRY_REFERENCE_OUT` it writes `telemetry-reference.json`, and, when `APEXLOAD_COMMIT_SHA` names the measured commit, one F4 request (`TEL-4`, `telemetry-reference`): `pending` without failures, `failed` otherwise, never `passed` by itself. `scripts/run-optin-suites.sh --all` runs it as the \"telemetry reference workload\" suite. It does not exercise collector traffic, an overload trial, generators on other hosts or native (DuckDB) analytics, and it is not the 4 vCPU / 16 GiB reference controller.\n")
+	out.WriteString("Stage percentiles are never added. The sum of the sample-age and browser-render maxima is recorded, but it leaves out delivery from the controller's publication to the browser's receipt, so it does not bound capture to visible render. Loss is accounted per path: the archive's samples, and separately the run's live totals (successes and recorded errors) plus its dropped-results counter, must account for every served request but those aborted in flight at the stop (at most one per VUser); a counter that is only a lower bound is noted. Lost publications and dropped subscriber batches are counted in publications, and a dropped batch is also a lost sequence: each lost publication may account for at most the largest window one generator's group published, and a shortfall within that is reported loss of unknown size, classified `live_publications_lost`. A run fails with unreported loss on either path, more results than were served on either path (duplicates), no sample-age P99 (an unqualified clock is classified `clock_unqualified`), a sample-age P99 above 2,000 ms, no browser-render evidence, a sustained rate under 90% of the workload, a failed analysis, or a stop before it was measured; render alone over the target is classified `slow_browser`. With `APEXLOAD_TELEMETRY_REFERENCE_OUT` it writes `telemetry-reference.json`, and, when `APEXLOAD_COMMIT_SHA` names the measured commit, one F4 request (`TEL-4`, `telemetry-reference`): `pending` without failures, `failed` otherwise, never `passed` by itself. `scripts/run-optin-suites.sh --all` runs it as the \"telemetry reference workload\" suite. It does not exercise collector traffic, an overload trial, generators on other hosts or native (DuckDB) analytics, it does not record queue or byte volumes, and it is not the 4 vCPU / 16 GiB reference controller.\n")
 	return out.String()
 }
 
@@ -137,18 +138,33 @@ func TestTelemetryAcceptanceInventory(t *testing.T) {
 			t.Errorf("scripts/run-optin-suites.sh does not register %s", suite)
 		}
 	}
-	// The fault matrix suite selects every listed Go test.
+	// The fault matrix suite's own command selects every listed Go test and
+	// runs its package.
+	_, suite, _ := strings.Cut(script, `run_suite "telemetry fault matrix`)
+	suite, _, _ = strings.Cut(suite, "\n\n")
+	selected := map[string]bool{}
+	if match := regexp.MustCompile(`-run '\^\(([A-Za-z0-9_|]+)\)\$'`).FindStringSubmatch(suite); match != nil {
+		for _, name := range strings.Split(match[1], "|") {
+			selected[name] = true
+		}
+	}
+	packages := map[string]bool{}
+	for _, field := range strings.Fields(suite) {
+		if strings.HasPrefix(field, "./") {
+			packages[strings.TrimPrefix(field, "./")] = true
+		}
+	}
 	for _, item := range telemetryAcceptanceInventory() {
 		for _, ref := range item.Go {
 			dir, name, _ := strings.Cut(ref, ":")
-			if !strings.Contains(script, name) {
+			if !selected[name] {
 				t.Errorf("the telemetry fault matrix suite does not select %s", name)
 			}
 			found := false
 			for _, pkg := range telemetryFaultMatrixPackages {
 				found = found || pkg == dir
 			}
-			if !found || !strings.Contains(script, "./"+dir) {
+			if !found || !packages[dir] {
 				t.Errorf("the telemetry fault matrix suite does not run package %s", dir)
 			}
 		}

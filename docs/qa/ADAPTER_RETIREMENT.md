@@ -2,7 +2,7 @@
 
 Status: Wave 5 (A8), 2026-10-09. This is the AUTH-3 seam inventory of the [feature completion specification](../FEATURE_COMPLETION_SPEC.md#auth-3-adapter-retirement-inventory). For each seam it records the decision, the canonical owner that now resolves its values, the callers that were moved, and the tests that prove parity.
 
-Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. That ratchet fails when application code names a retired adapter or one of its mirror fields again. Tests are not scanned, so they can still name an old value to prove it is refused or translated.
+Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. That ratchet fails when application code names a retired adapter or one of its mirror fields again, when a division by a ramp duration (a variable, a member or a parsed field named for the ramp) appears outside the projections that own one, or when a caller of a retired copy stops importing its owner. Tests are not scanned, so they can still name an old value to prove it is refused or translated.
 
 ## Retired seams
 
@@ -55,9 +55,11 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
 - **Readers:** `runtimeSettingsFromForm`, `goalConfigFromForm` and `assignmentFromForm` now read the canonical values.
 - **Conflicting legacy aliases:** where a stored override has both a legacy alias and its canonical section, the alias is dropped (top-level `iterations` and `auto_transactions` under `run_logic`, `log_level` under `log`, the legacy `browser` block under `browser_config`).
 - **Proof:**
-  - **Parity corpus:** `scenarioAssemblyParity.test.ts` projects a corpus of stored scenarios (`dashboard/src/test/scenarioAssemblyParityFixtures.ts`) into the save request, capacity estimate, composition timeline and load preview. Its golden file was first recorded from the retired reconstruction. Retirement changed exactly two things, both corrections:
+  - **Parity corpus:** `scenarioAssemblyParity.test.ts` projects a corpus of stored scenarios (`dashboard/src/test/scenarioAssemblyParityFixtures.ts`) into the save request, capacity estimate, composition timeline and load preview. Its golden file was first recorded from the retired reconstruction. Retirement changed two things in the save and estimate, both corrections:
     - a think-time section saved without `ignore` is no longer given `ignore: false`;
     - an unchanged save no longer re-normalizes a stored section.
+
+    The load preview was then re-recorded with the shared run projection, which draws group start offsets and takes the next stage's level at a stage boundary (see the next two sections). Nothing else changed.
   - **Unchanged saves:** every corpus runtime is saved exactly as stored, apart from the conflicting-alias fixture, which drops its aliases.
   - **Editor tests:** `TestHub.test.tsx` round-trips the canonical sections and checks hidden fields through the editor.
 
@@ -94,6 +96,7 @@ These are purposeful and documented here rather than removed.
 - **Domain service adapters that preserve authorization or compare-and-swap:** purposeful boundaries.
 - **`NewTestPage` group edit draft** (`GroupEditDraft`): a legitimate run-only editing projection. Its flat browser fields edit a run override, not a stored scenario.
 - **The wizard's model chart** (`buildScenarioModelPreview`): series metadata, TPS stages and draft placeholders for the scenario editor. It shares stage semantics (`workloadStages`) but draws neither baselines nor start offsets; the composition timeline beside it draws offsets.
+- **The Command Center live load model** (`commandCenterLoadModel.ts`): draws a running group's expected ramp beside its live counts. It is outside the authoring seams and keeps its own simple ramp.
 
 ## Old addresses
 
@@ -102,4 +105,5 @@ These are purposeful and documented here rather than removed.
 | `#/scripts?mode=import` (before routes named a launcher) | The LoadRunner script archive importer, as before | `appRouting.test.ts`, `workflow-import-source.spec.ts` |
 | `#/scripts?mode=import&launcher=<unknown>` | The create options, which list every importer | `appRouting.test.ts`, `workflow-import-source.spec.ts` |
 | `#/scripts?mode=list` / `mode=create` / `mode=edit&scriptId=…` | Unchanged | `tier0-routes.spec.ts`, `appRouting.test.ts` |
+| The address written while the recorder, the create options or an unsaved draft is open | The create options (`mode=create`), never the archive importer | `appRouting.test.ts` |
 | `#/recorder-panel` without a session, `#/repository-guide`, old archive-tab and terminal-run links | Unchanged translations (Script library, the API workflows article, the report section, the Results workspace) | `appRouting.test.ts` |

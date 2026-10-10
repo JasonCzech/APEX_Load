@@ -55,7 +55,6 @@ const SECTION_ALIASES: Record<string, string> = {
   technical_overview: 'kpis',
   telemetry_acceptance: 'diagnostics',
   browser_findings: 'diagnostics',
-  browser_baseline: 'diagnostics',
   interaction_map: 'diagnostics',
   journey_risk: 'diagnostics',
   transaction_sla: 'sla',

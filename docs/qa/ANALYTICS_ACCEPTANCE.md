@@ -24,8 +24,8 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 |  | `TestNormalizeNativeObservationUnitAliases` (`pkg/analysis/parquet_mapping_test.go`) | Default build |
 | Duplicate files | `TestAnalysisAcceptanceDuplicateAndDriftedFiles` (`pkg/api/analysis_acceptance_native_test.go`) | DuckDB build |
 |  | `TestDuplicateAnalysisImportFiles` (`pkg/api/analysis_import_duplicates_test.go`) | Default build |
-|  | `TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
-| Conflicting files (partition conflicts) | `TestNativeAcceptanceConflictingFilesKeepEveryObservation` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
+| Duplicate summary windows | `TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
+| Conflicting files (overlapping observations) | `TestNativeAcceptanceConflictingFilesKeepEveryObservation` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 | Resets | `TestNativeCounterReadingsMarkResetsAndDuplicates` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestNativeLongCumulativeHistogramDetectsResets` (`pkg/analysis/duckdb/native_histogram_test.go`) | DuckDB build |
 |  | `TestImportedCounterDerivationsAreResetAware` (`pkg/api/native_derivations_test.go`) | Default build |
@@ -56,7 +56,7 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 
 ## Platforms
 
-NA-5 names five prebuilt targets. Each is a lane of `.github/workflows/desktop.yml`, which builds the controller with the embedded engine and the packaged desktop app on that platform and runs the native checks below; a lane that ran is that platform's evidence, and its results are recorded per platform as F4 acceptance records. A local run proves only the host it ran on.
+NA-5 names five prebuilt targets. Each is a lane of `.github/workflows/desktop.yml`, which builds the controller with the embedded engine and the packaged desktop app on that platform and runs the native checks below; a lane that ran is that platform's evidence. Its results are CI artifacts (`native-startup-*.json`); no F4 acceptance record is written, so an operator posts each platform's record from them. A local run proves only the host it ran on.
 
 | Platform | Desktop lane |
 | --- | --- |
@@ -78,6 +78,6 @@ Every lane runs, in order:
 
 ## Reference workload
 
-`APEXLOAD_ANALYTICS_BENCHMARK=1 go test -tags analytics_duckdb ./pkg/api -run '^TestNativeAnalyticsReferenceBenchmark$' -v` generates a reproducible fixture: one ZSTD-compressed Parquet file per day, 3,456,000 rows each (25 ms apart, values derived from a hash of the row), until the files reach `APEXLOAD_ANALYTICS_BENCHMARK_BYTES` (default 1 GiB). It imports the fixture through the API, then times a selected-window query (one hour of the last day at 60-second buckets, cold and 20 times repeated), a full-range query and the cancellation of a heavy query. It records the fixture's hashes and rows, upload and normalization time, pruned objects and avoided bytes, peak controller and worker RSS and every failure. The interactive target is a selected-window P95 of at most five seconds on the 4 vCPU / 16 GiB reference host; the results say whether the host had that shape.
+`APEXLOAD_ANALYTICS_BENCHMARK=1 go test -tags analytics_duckdb ./pkg/api -run '^TestNativeAnalyticsReferenceBenchmark$' -v` generates a reproducible fixture: one ZSTD-compressed Parquet file per day, 3,456,000 rows each (25 ms apart, values derived from a hash of the row), until the files reach `APEXLOAD_ANALYTICS_BENCHMARK_BYTES` (default 1 GiB, at most 6 GiB; at most 366 files, the span one series query may cover). It imports the fixture through the API, then times a selected-window query (one hour of the last day at 60-second buckets, cold and 20 times repeated), a full-range query and the cancellation of a heavy query. It records the fixture's hashes and rows, upload and normalization time, pruned objects and avoided bytes, peak RSS sampled for the controller, its workers and both together, and every failure; a fixture short of its target fails. The interactive target is a selected-window P95 of at most five seconds on the 4 vCPU / 16 GiB reference host; the results say whether the host had that shape.
 
 With `APEXLOAD_ANALYTICS_BENCHMARK_OUT` it writes `analytics-reference.json` there, and, when `APEXLOAD_COMMIT_SHA` names the measured commit, `analytics-reference-acceptance-requests.json`: one F4 request (`NA-6`, `analytics-reference`), `pending` when the run had no failure and met the target, `failed` otherwise, never `passed` by itself. `scripts/run-optin-suites.sh --all` runs it as the "native analytics reference workload" suite. It does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention, and no result closes the waived 10 GB benchmark.

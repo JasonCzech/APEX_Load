@@ -20,6 +20,14 @@ import (
 
 const analyticsReferenceP95TargetMs = 5000
 
+// The reference fixture writes one file a day, and a series query spans at
+// most 366 days (analytics.SeriesQuery.Validate), so a fixture is at most 366
+// files, about 6.5 GB at its ZSTD compression.
+const (
+	analyticsReferenceMaxDays  = 366
+	analyticsReferenceMaxBytes = int64(6) << 30
+)
+
 type analyticsReferenceHost struct {
 	OS          string `json:"os"`
 	Arch        string `json:"arch"`
@@ -70,10 +78,12 @@ type analyticsReferenceResults struct {
 	AvoidedBytes   int64   `json:"avoided_bytes"`
 	StagedBytes    int64   `json:"staged_bytes"`
 	CancelReturnMs float64 `json:"cancel_return_ms"`
-	// Peak RSS of the controller process and of the native worker children
-	// (getrusage); spill is bounded by SpillLimit but not measured.
+	// Peak RSS sampled during the import and the queries: of the controller
+	// process, of its native worker processes, and of the two together at
+	// one instant. Spill is bounded by SpillLimit but not measured.
 	PeakControllerRSSBytes int64    `json:"peak_controller_rss_bytes"`
 	PeakWorkerRSSBytes     int64    `json:"peak_worker_rss_bytes"`
+	PeakCombinedRSSBytes   int64    `json:"peak_combined_rss_bytes"`
 	MemoryLimit            string   `json:"memory_limit"`
 	SpillLimit             string   `json:"spill_limit"`
 	NotMeasured            []string `json:"not_measured"`
@@ -110,9 +120,23 @@ func writeAnalyticsReferenceAcceptance(t *testing.T, dir string, results analyti
 	if results.Host.Reference {
 		host = "reference host shape"
 	}
-	notes := fmt.Sprintf("%.2f GiB, %d files, %d rows: normalize %.0f s; query cold %.0f ms, P95 %.0f ms; pruned %d/%d; cancel %.0f ms; RSS %d+%d MiB; %s.",
+	// A value the run did not measure reads n/m, never zero: one listed as
+	// not measured, or never taken (a run that stopped before it, or a
+	// cancellation that never returned).
+	measured := func(name string, taken bool, value string) string {
+		if !taken {
+			return "n/m"
+		}
+		for _, item := range results.NotMeasured {
+			if strings.HasPrefix(item, name) {
+				return "n/m"
+			}
+		}
+		return value
+	}
+	notes := fmt.Sprintf("%.2f GiB, %d files, %d rows: normalize %.0f s; query cold %.0f ms, P95 %.0f ms; pruned %d/%d; cancel %s; peak RSS %s; %s.",
 		float64(results.TotalBytes)/(1<<30), len(results.Files), results.TotalRows, results.NormalizeMs/1000, results.ColdQueryMs, results.RepeatedQueries.P95Ms,
-		results.PrunedObjects, results.TotalObjects, results.CancelReturnMs, results.PeakControllerRSSBytes>>20, results.PeakWorkerRSSBytes>>20, host)
+		results.PrunedObjects, results.TotalObjects, measured("cancellation", results.CancelReturnMs > 0, fmt.Sprintf("%.0f ms", results.CancelReturnMs)), measured("peak RSS", results.PeakCombinedRSSBytes > 0, fmt.Sprintf("%d MiB", results.PeakCombinedRSSBytes>>20)), host)
 	if len(notes) > 256 {
 		t.Errorf("acceptance notes exceed the 256 bytes a record accepts: %q", notes)
 	}
@@ -138,7 +162,7 @@ func TestAnalyticsReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	results := analyticsReferenceResults{Schema: "apexload.analytics_reference.v1", Host: analyticsReferenceHost{OS: "darwin", Arch: "arm64", CPUs: 12},
 		Files: []analyticsReferenceFile{{Name: "day-00.parquet", Bytes: 1 << 30, Rows: 1e8}}, TotalBytes: 1 << 30, TotalRows: 1e8,
 		RepeatedQueries: analyticsReferenceTiming{Samples: 20, P50Ms: 900, P95Ms: 1200, MaxMs: 1300}, ColdQueryMs: 9999, NormalizeMs: 999999, CancelReturnMs: 99,
-		TotalObjects: 9999, PrunedObjects: 9998, PeakControllerRSSBytes: 99999 << 20, PeakWorkerRSSBytes: 99999 << 20}
+		TotalObjects: 9999, PrunedObjects: 9998, PeakControllerRSSBytes: 99999 << 20, PeakWorkerRSSBytes: 99999 << 20, PeakCombinedRSSBytes: 199998 << 20}
 	read := func(dir string) (status, notes string) {
 		raw, err := os.ReadFile(filepath.Join(dir, "analytics-reference-acceptance-requests.json"))
 		if err != nil {
@@ -175,8 +199,24 @@ func TestAnalyticsReferenceAcceptanceRequestsArePendingOrFailed(t *testing.T) {
 	}
 	t.Setenv("APEXLOAD_COMMIT_SHA", strings.Repeat("c", 40))
 	writeAnalyticsReferenceAcceptance(t, dir, results)
-	if status, notes := read(dir); status != "pending" || !strings.Contains(notes, "not the 4 vCPU/16 GiB reference host") {
+	if status, notes := read(dir); status != "pending" || !strings.Contains(notes, "not the 4 vCPU/16 GiB reference host") || !strings.Contains(notes, "cancel 99 ms") {
 		t.Fatalf("a clean run within the target: %s %q", status, notes)
+	}
+	// A value the run did not measure is never written as zero.
+	unmeasured := results
+	unmeasured.CancelReturnMs, unmeasured.PeakCombinedRSSBytes = 0, 0
+	unmeasured.NotMeasured = []string{"cancellation (the heavy query finished before it was cancelled)", "peak RSS (not measured on this platform)"}
+	writeAnalyticsReferenceAcceptance(t, dir, unmeasured)
+	if _, notes := read(dir); !strings.Contains(notes, "cancel n/m") || !strings.Contains(notes, "peak RSS n/m") {
+		t.Fatalf("unmeasured values in the notes: %q", notes)
+	}
+	// A run that failed before it took them (no not_measured entry) says so too.
+	stopped := results
+	stopped.CancelReturnMs, stopped.PeakCombinedRSSBytes = 0, 0
+	stopped.Failures = []string{"a cancelled heavy query did not return within 30 s"}
+	writeAnalyticsReferenceAcceptance(t, dir, stopped)
+	if status, notes := read(dir); status != "failed" || !strings.Contains(notes, "cancel n/m") || !strings.Contains(notes, "peak RSS n/m") {
+		t.Fatalf("values never taken in the notes: %s %q", status, notes)
 	}
 	slow := results
 	slow.RepeatedQueries.P95Ms = analyticsReferenceP95TargetMs + 1

@@ -111,9 +111,9 @@ func TestAnalysisAcceptanceDuplicateAndDriftedFiles(t *testing.T) {
 	}
 
 	// The same content twice is refused before normalization, naming both
-	// files, and the import stays editable.
+	// files; the import is left as it was (mapped), to be replaced.
 	code, body, in := acceptanceImport(t, server, store, []acceptanceImportFile{{"a.parquet", first}, {"copy of a.parquet", first}}, mapping)
-	if code != 422 || !strings.Contains(body, `\"a.parquet\" and \"copy of a.parquet\" have the same content`) || in.State != "mapped" || in.Accepted != 0 {
+	if code != 422 || !strings.Contains(body, `\"a.parquet\" and \"copy of a.parquet\" have the same content; create a new import without one of them`) || in.State != "mapped" || in.Accepted != 0 {
 		t.Fatalf("duplicate content: commit %d %s, state %s", code, body, in.State)
 	}
 

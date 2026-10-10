@@ -54,7 +54,9 @@ function cohortKey(summary: BrowserDocumentMetricSummary): string {
 export function buildBrowserComparison(summary: unknown, mode: BrowserDocumentSummaryMode): BrowserComparison {
   const model = buildBrowserDocumentPanelModel(summary, undefined, mode)
   if (model.state !== 'ready') return { state: model.state, issue: model.issue, rows: [], otherScopes: 0, incomplete: model.incomplete }
-  const rows = new Map<string, BrowserComparisonRow>()
+  // Each row keeps its tuple and cohort apart: a group or region may hold
+  // any character, so neither is parsed back out of the row key.
+  const rows = new Map<string, { row: BrowserComparisonRow; tuple: string; cohort: string }>()
   const cohortsByTuple = new Map<string, string[]>()
   let otherScopes = 0
   for (const row of model.rows) {
@@ -69,27 +71,30 @@ export function buildBrowserComparison(summary: unknown, mode: BrowserDocumentSu
     const cohort = cohortKey(metric)
     if (!cohorts.includes(cohort)) cohorts.push(cohort)
     cohortsByTuple.set(tuple, cohorts)
-    const key = `${tuple}#${cohort}`
-    const current = rows.get(key) ?? {
-      key,
-      engine: metric.engine,
-      deviceProfile: metric.device_profile,
-      group: metric.group ?? '',
-      region: metric.region ?? '',
-      cohortLabel: '',
-      metrics: {},
+    const key = JSON.stringify([tuple, cohort])
+    const entry = rows.get(key) ?? {
+      tuple,
+      cohort,
+      row: {
+        key,
+        engine: metric.engine,
+        deviceProfile: metric.device_profile,
+        group: metric.group ?? '',
+        region: metric.region ?? '',
+        cohortLabel: '',
+        metrics: {},
+      },
     }
-    current.metrics[metric.metric] = {
+    entry.row.metrics[metric.metric] = {
       p75: metric.eligible_final > 0 ? browserDistributionQuantile(metric.distribution, 0.75) : null,
       final: metric.eligible_final,
       unit: metric.unit,
     }
-    rows.set(key, current)
+    rows.set(key, entry)
   }
-  const ordered = [...rows.values()].map(row => {
-    const tuple = row.key.slice(0, row.key.indexOf('#'))
+  const ordered = [...rows.values()].map(({ row, tuple, cohort }) => {
     const cohorts = cohortsByTuple.get(tuple) ?? []
-    return cohorts.length > 1 ? { ...row, cohortLabel: `runtime cohort ${cohorts.indexOf(row.key.slice(row.key.indexOf('#') + 1)) + 1} of ${cohorts.length}` } : row
+    return cohorts.length > 1 ? { ...row, cohortLabel: `runtime cohort ${cohorts.indexOf(cohort) + 1} of ${cohorts.length}` } : row
   })
   ordered.sort((a, b) => a.engine.localeCompare(b.engine) || a.deviceProfile.localeCompare(b.deviceProfile) || a.group.localeCompare(b.group) || a.region.localeCompare(b.region) || a.cohortLabel.localeCompare(b.cohortLabel))
   return { state: 'ready', issue: null, rows: ordered, otherScopes, incomplete: model.incomplete }
