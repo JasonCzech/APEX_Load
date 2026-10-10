@@ -214,7 +214,8 @@ func (r *CIRunRootCause) pending() bool {
 	return r.State == "queued" || r.State == "running" || (r.State == "none" && r.AutoAnalyze)
 }
 
-// text is the root cause in one line for the job summary and outputs.
+// text is the root cause in one line for the job summary and outputs, the
+// same line the controller writes to the GitHub Check.
 func (r *CIRunRootCause) text() string {
 	if r == nil {
 		return ""
@@ -229,6 +230,8 @@ func (r *CIRunRootCause) text() string {
 		return "no cause supported"
 	case r.Outcome == "insufficient_evidence":
 		return "insufficient evidence"
+	case r.State == "none" && r.AutoAnalyze:
+		return "analysis pending"
 	case r.State == "none":
 		return "not analyzed"
 	}

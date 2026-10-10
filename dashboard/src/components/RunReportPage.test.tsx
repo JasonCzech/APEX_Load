@@ -304,6 +304,19 @@ describe('RunReportPage', () => {
     expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'diagnostics', analysis: 'rca-1', hypothesis: undefined, focus: 'rca-changes' }))
   })
 
+  it('shows the Summary an analysis started since the report loaded', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_summary: rcaTestSummary() } as unknown as RunArchiveReport
+    // An editor re-analyzed in Diagnostics: the newest analysis runs.
+    const running = { analysis_id: 'rca-3', revision: 3, state: 'running', presented: true, analysis_enabled: true, origin: 'requested', created_at: '2026-10-05T12:20:00Z' }
+    mocks.api.getRootCauseAssessment.mockResolvedValue(running)
+    mocks.api.getRootCauseAnalysis.mockResolvedValue(running)
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    await act(async () => { await Promise.resolve() })
+    const outcome = mocks.outcomeProps as { rootCauseSummary?: { state: string; analysis_id?: string; latest?: { analysis_id: string } } }
+    expect(outcome.rootCauseSummary).toMatchObject({ state: 'running', analysis_id: 'rca-1', latest: { analysis_id: 'rca-3' } })
+  })
+
   it('opens the Diagnostics root cause when the run has no completed analysis', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_summary: rcaTestSummary({ state: 'none', analysis_id: undefined, outcome: undefined, top_hypothesis: undefined }) } as unknown as RunArchiveReport

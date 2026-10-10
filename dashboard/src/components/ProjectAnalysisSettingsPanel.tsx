@@ -25,7 +25,7 @@ interface FlagRow {
 
 const ROWS: FlagRow[] = [
   { flag: { group: 'root_cause', key: 'enabled' }, label: 'Compute root-cause analyses', description: 'Editors can analyze an archived run; analyses already saved stay readable when this is off.' },
-  { flag: { group: 'root_cause', key: 'present' }, label: 'Show root cause in summaries and reports', description: 'Run summaries, Results, the dashboard, Diagnostics and exported reports show the generated root cause and run validity.' },
+  { flag: { group: 'root_cause', key: 'present' }, label: 'Show root cause in summaries and reports', description: 'Run summaries, Results, the dashboard, Command Center, Diagnostics and exported reports show the generated root cause. Run validity is shown either way.' },
   { flag: { group: 'root_cause', key: 'auto_analyze' }, label: 'Analyze every archived run automatically', description: 'An analysis is queued as soon as a run’s archive is finalized. Requested analyses still run first.' },
   { flag: { group: 'root_cause', key: 'auto_enrich' }, label: 'Capture provider evidence when a run is archived', description: 'Freezes the monitor sources and datasets as they stand at archive time, for later analyses to reuse.' },
   { flag: { group: 'business_keys', key: 'enabled' }, label: 'Allow business-key lookups', description: 'Approved business-key mappings digest values such as order IDs, and editors can find a run’s requests and logs by them.' },

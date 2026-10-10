@@ -43,8 +43,10 @@ func (s *Server) ciRunRootCause(ctx context.Context, test *ManagedTest) *ciRunRo
 	return out
 }
 
-// ciRootCauseText is a CI run's root cause in one line, for the GitHub Check
-// and the job summary.
+// ciRootCauseText is a CI run's root cause in one line, for the GitHub Check.
+// apexctl's CIRunRootCause.text writes the same line to the job summary and
+// the action's root-cause output. A run whose automatic analysis is not yet
+// queued reads as pending, since a completed Check is never edited.
 func ciRootCauseText(rootCause *ciRunRootCause) string {
 	if rootCause == nil {
 		return ""
@@ -60,8 +62,10 @@ func ciRootCauseText(rootCause *ciRunRootCause) string {
 		return "no cause supported"
 	case rootCause.Outcome == "insufficient_evidence":
 		return "insufficient evidence"
+	case rootCause.State == "none" && rootCause.AutoAnalyze:
+		return "analysis pending"
 	case rootCause.State == "none":
 		return "not analyzed"
 	}
-	return "analysis " + strings.ReplaceAll(rootCause.State, "_", " ") + "; see the run report"
+	return "analysis " + strings.ReplaceAll(rootCause.State, "_", " ")
 }

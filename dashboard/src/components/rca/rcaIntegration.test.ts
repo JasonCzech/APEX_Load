@@ -13,7 +13,7 @@ import {
   rcaTimelineOverlays,
 } from './rcaModel'
 import { rcaTestAssessment, rcaTestSummary } from './rcaTestFixture'
-import { rcaSummaryWithResponse } from './useRootCauseSummary'
+import { rcaSummaryWithLatest, rcaSummaryWithResponse } from './useRootCauseSummary'
 
 const assessment = () => normalizeRcaAssessment(rcaTestAssessment())
 
@@ -59,6 +59,27 @@ describe('rcaSummaryWithResponse', () => {
     const next = rcaSummaryWithResponse(summary, { analysis_id: 'rca-3', revision: 3, state: 'failed', presented: true })
     expect(next).toMatchObject({ state: 'failed', analysis_id: 'rca-1', outcome: 'supported' })
     expect(next.latest?.state).toBe('failed')
+  })
+})
+
+describe('rcaSummaryWithLatest', () => {
+  const summary = rcaTestSummary()
+  it('takes a newer analysis the panel started as the newest state', () => {
+    const next = rcaSummaryWithLatest(summary, { analysis_id: 'rca-3', revision: 3, state: 'queued', presented: true, origin: 'requested', created_at: '2026-10-05T12:20:00Z' })
+    expect(next).toMatchObject({ state: 'queued', analysis_id: 'rca-1', outcome: 'supported', latest: { analysis_id: 'rca-3', revision: 3, state: 'queued', origin: 'requested' } })
+    expect(rcaSummaryLine(next)?.text).toBe('#1 Resource pressure (medium confidence) · re-analysis queued')
+  })
+  it('takes the panel\'s newer completed analysis as the verdict', () => {
+    const next = rcaSummaryWithLatest(summary, { analysis_id: 'rca-3', revision: 3, state: 'completed', presented: true, origin: 'requested', assessment: assessment() })
+    expect(next).toMatchObject({ state: 'completed', analysis_id: 'rca-3', revision: 3, origin: 'requested', latest: undefined })
+  })
+  it('changes nothing for the same or an older analysis', () => {
+    expect(rcaSummaryWithLatest(summary, { analysis_id: 'rca-1', revision: 2, state: 'completed', presented: true, assessment: assessment() })).toBe(summary)
+    const newer = rcaTestSummary({ state: 'running', latest: { analysis_id: 'rca-4', revision: 4, state: 'running', created_at: '2026-10-05T12:30:00Z' } })
+    expect(rcaSummaryWithLatest(newer, { analysis_id: 'rca-3', revision: 3, state: 'completed', presented: true, assessment: assessment() })).toBe(newer)
+    expect(rcaSummaryWithLatest(summary, { state: 'none', presented: true })).toBe(summary)
+    const off = rcaTestSummary({ state: 'not_enabled', presented: false })
+    expect(rcaSummaryWithLatest(off, { analysis_id: 'rca-3', revision: 3, state: 'queued', presented: false })).toBe(off)
   })
 })
 

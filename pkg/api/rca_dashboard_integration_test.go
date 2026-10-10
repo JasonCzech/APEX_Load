@@ -340,7 +340,9 @@ func TestCIRootCauseLineAndCheckRow(t *testing.T) {
 		{&ciRunRootCause{State: "completed", Outcome: rca.OutcomeNoSupportedHypothesis}, "no cause supported"},
 		{&ciRunRootCause{State: "completed", Outcome: rca.OutcomeInsufficientEvidence}, "insufficient evidence"},
 		{&ciRunRootCause{State: "none"}, "not analyzed"},
-		{&ciRunRootCause{State: "queued"}, "analysis queued; see the run report"},
+		// An automatic analysis is still to be queued.
+		{&ciRunRootCause{State: "none", AutoAnalyze: true}, "analysis pending"},
+		{&ciRunRootCause{State: "queued"}, "analysis queued"},
 	} {
 		if got := ciRootCauseText(tc.root); got != tc.want {
 			t.Errorf("ciRootCauseText(%+v) = %q, want %q", tc.root, got, tc.want)

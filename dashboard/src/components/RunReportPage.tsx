@@ -36,7 +36,7 @@ import { formatRcaWindow, rcaHypothesisWindow, rcaPatternHypotheses, rcaSignatur
 import { useRcaPhases } from './rca/useRcaPhases'
 import type { TimelineOverlay } from './runReport/timelineOverlays'
 import { useRootCauseAnalysis } from './rca/useRootCauseAnalysis'
-import { useRootCauseSummary } from './rca/useRootCauseSummary'
+import { rcaSummaryWithLatest, useRootCauseSummary } from './rca/useRootCauseSummary'
 import { appendReportFinding, createRunAnnotation, rcaHypothesisAnnotation, rcaHypothesisFinding, rcaHypothesisNoteDraft } from './rca/rcaActions'
 import { settingsHref } from './settingsNavigation'
 import RunReportExportActions from './runReport/RunReportExportActions'
@@ -143,7 +143,11 @@ export default function RunReportPage({
   // The run's root cause in brief, kept current while its newest analysis
   // (an automatic one, say) is queued or running; the panel reloads once it
   // ends.
-  const liveRootCause = useRootCauseSummary(testId, archiveModel.archiveReport?.root_cause_summary, rootCause.reload)
+  // An analysis started or finished in Diagnostics since the report loaded
+  // reaches the Summary too.
+  const reportRootCauseSummary = archiveModel.archiveReport?.root_cause_summary
+  const rootCauseSummaryInput = useMemo(() => rcaSummaryWithLatest(reportRootCauseSummary, rootCause.response), [reportRootCauseSummary, rootCause.response])
+  const liveRootCause = useRootCauseSummary(testId, rootCauseSummaryInput, rootCause.reload)
   const [annotationReload, setAnnotationReload] = useState(0)
   // The Performance timeline marks the analysis's anomalies, the spans the
   // run was not valid and its load steps.
@@ -722,7 +726,7 @@ export default function RunReportPage({
             canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause}
             liveSummary={liveRootCause} onCopyLink={/^https?:$/.test(window.location.protocol) ? () => void copyReportLink() : undefined}
             settingsHref={canManageProject ? settingsHref('analysis') : undefined} monitorEvidenceHref={monitorEvidenceHref} monitorSourcesHref={monitorSourcesHref} hypothesisActions={hypothesisActions} />
-          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} />
+          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} settingsHref={canManageProject ? settingsHref('analysis') : undefined} />
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           <div data-report-focus="transaction-drilldown">{renderEvidence('transactions')}</div>

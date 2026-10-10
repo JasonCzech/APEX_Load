@@ -734,8 +734,8 @@ points and the mapping decisions frozen into the evidence revision.
   all kept and marked `ambiguous` (`graph_ambiguous_mappings`). An operator
   records a decision as an `rca_mapping` definition at
   `/api/v1/analysis/rca-mappings?project_id=…` (GET, POST; GET, PUT and
-  DELETE by ID; editor to write, viewer to read; gated by
-  `APEXLOAD_RCA_V2_PROJECTS`) with `{dependency, provider, entity_id,
+  DELETE by ID; editor to write, viewer to read; available where the project
+  computes root-cause analyses) with `{dependency, provider, entity_id,
   entity_name, decision}`, where `dependency` is the dependency label as the
   graph shows it and `decision` is `approved` or `rejected`. Approved
   decisions become explicit edges carrying the definition's ID and
@@ -927,8 +927,8 @@ returning v1.
   `imported_dataset_changed` and is not read. A POST captures a revision when
   the run has none, when the archive, the mapping decisions or the associated
   datasets changed since the latest, or when `enrich` is true.
-  `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` captures an enriched revision at archive
-  finalize. Provider evidence pulls (topology and diagnostics) arrive with the
+  A project that captures provider evidence at archive time (`auto_enrich`)
+  gets an enriched revision at archive finalize. Provider evidence pulls (topology and diagnostics) arrive with the
   per-run graph and signatures (WP3.7–WP3.8); until then enrichment records
   the same inventory.
 - **Jobs** run on the execution leader, at most two at a time per controller,

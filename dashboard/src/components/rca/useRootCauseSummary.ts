@@ -39,6 +39,22 @@ export function rcaSummaryWithResponse(summary: ReportRootCauseSummary, response
   return { ...summary, state: response.state, latest }
 }
 
+// rcaSummaryWithLatest is a report's root-cause summary updated with the
+// Root cause panel's analysis when that one is newer, as after an editor
+// re-analyzes in Diagnostics: a queued or running one becomes the newest
+// state (and is then polled), a completed one the verdict, a failed or
+// cancelled one the newest state. An older analysis the panel was pinned to
+// by a link changes nothing.
+export function rcaSummaryWithLatest(summary: ReportRootCauseSummary | undefined, response: RcaAnalysisResponse | null | undefined): ReportRootCauseSummary | undefined {
+  if (!summary || summary.state === 'not_enabled' || !response?.analysis_id || !response.revision) return summary
+  if (response.analysis_id === summary.analysis_id) return summary
+  const newest = summary.latest?.revision ?? summary.revision ?? 0
+  if (response.revision < newest) return summary
+  if (response.state === 'completed' && response.assessment) return rcaSummaryWithResponse(summary, response)
+  if (response.state === 'none' || response.state === 'completed') return summary
+  return { ...summary, state: response.state, latest: { analysis_id: response.analysis_id, revision: response.revision, state: response.state, origin: response.origin, created_at: response.created_at || '' } }
+}
+
 // useRootCauseSummary keeps a report's root-cause summary current while the
 // run's newest analysis is queued or running: it polls that analysis until
 // it ends, then returns the summary updated with it and calls onSettled, so

@@ -528,12 +528,13 @@ a completed CI run's response and `apexctl ci run`'s JSON result carry
 `root_cause`: the `state` of the run's newest analysis (`none`, `queued`,
 `running`, `completed`, `failed` or `cancelled`), and once one completed its
 `outcome`, `top_hypothesis`, `confidence`, `analysis_id` and a `report_url`
-that opens it; `auto_analyze` says one is on its way. It never changes the
+that opens it; `auto_analyze` says the project analyzes every archived run, so
+a run without one yet reads `analysis pending`. It never changes the
 outcome or the exit code.
 
 The Check and the job summary add a `Root cause` row (the leading hypothesis
-with its confidence, `no cause supported`, `insufficient evidence`, or the
-analysis state), and the action's `root-cause` output holds the same line,
+with its confidence, `no cause supported`, `insufficient evidence`,
+`analysis pending`, `not analyzed`, or the analysis state), and the action's `root-cause` output holds the same line,
 beside a `validity` output with the verdict. An automatic analysis is queued
 when the run's archive is finalized and usually completes after the Check
 has; a completed Check is not edited afterwards, so it shows the state it

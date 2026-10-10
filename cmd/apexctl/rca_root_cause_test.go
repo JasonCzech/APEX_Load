@@ -46,6 +46,28 @@ func TestCIRootCauseReachesTheSummaryAndOutputs(t *testing.T) {
 	}
 }
 
+// TestCIRootCauseTextMatchesTheCheck keeps the job summary's and outputs'
+// line equal to the controller's GitHub Check row (pkg/api ciRootCauseText,
+// whose test holds the same table).
+func TestCIRootCauseTextMatchesTheCheck(t *testing.T) {
+	for _, tc := range []struct {
+		root *CIRunRootCause
+		want string
+	}{
+		{nil, ""},
+		{&CIRunRootCause{State: "completed", Outcome: "supported", TopHypothesis: "Pool exhaustion", Confidence: "high"}, "Pool exhaustion (high confidence)"},
+		{&CIRunRootCause{State: "completed", Outcome: "no_supported_hypothesis"}, "no cause supported"},
+		{&CIRunRootCause{State: "completed", Outcome: "insufficient_evidence"}, "insufficient evidence"},
+		{&CIRunRootCause{State: "none"}, "not analyzed"},
+		{&CIRunRootCause{State: "none", AutoAnalyze: true}, "analysis pending"},
+		{&CIRunRootCause{State: "queued"}, "analysis queued"},
+	} {
+		if got := tc.root.text(); got != tc.want {
+			t.Errorf("text(%+v) = %q, want %q", tc.root, got, tc.want)
+		}
+	}
+}
+
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
