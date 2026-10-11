@@ -1259,6 +1259,35 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Missing secret: LOGIN_TOKEN')
   })
 
+  it('opens the script history from the More menu instead of taking page space', async () => {
+    const creator = { id: 'c', project_id: 'project-1', resource_type: 'script' as const, resource_id: 'script-1', resource_name: 'Checkout Flow', actor_type: 'user', actor_subject: 'user:alice', actor_display_name: 'Alice', action: 'create', status: 'success', created_at: '2026-10-01T00:00:00Z' }
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" activity={{ creator }} />)
+    })
+    await flushReact()
+    expect(container.querySelector('section[aria-label="Object history"]')).toBeNull()
+    const more = container.querySelector<HTMLButtonElement>('button[aria-label="More actions for script editor"]')
+    expect(more).toBeTruthy()
+    await act(async () => { more!.click() })
+    const history = findButtonByText(container, 'History')
+    expect(history).toBeTruthy()
+    await act(async () => { history!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.textContent).toContain('History · Checkout Flow')
+    expect(dialog?.querySelector('section[aria-label="Object history"]')?.textContent).toContain('Created by Alice')
+    await act(async () => { findButtonByText(dialog!, 'Close')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('offers no history for a script that is not saved yet', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="More actions for script editor"]')!.click() })
+    expect(findButtonByText(container, 'History')).toBeUndefined()
+    expect(findButtonByText(container, 'Reset layout')).toBeTruthy()
+  })
+
   it('publishes script identity and primary actions to the app topbar contribution', async () => {
     await act(async () => {
       root.render(
@@ -1297,11 +1326,11 @@ describe('ScriptEditor', () => {
       topbarWorkspaceButton('Debug')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
-    expect(debugActionLabels()).toEqual([
-      'Debug one iteration',
-      'Step',
-      'Break on failure',
-    ])
+    // The top bar keeps only the action that starts a run; the step controls
+    // sit in the debugger's session bar.
+    expect(debugActionLabels()).toEqual(['Debug one iteration'])
+    const sessionControlLabels = Array.from(container.querySelectorAll<HTMLButtonElement>('.debug-session-controls .topbar-debug-action .topbar-action-label')).map(label => label.textContent?.trim())
+    expect(sessionControlLabels).toEqual(['Step', 'Break on failure'])
     await act(async () => {
       topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()

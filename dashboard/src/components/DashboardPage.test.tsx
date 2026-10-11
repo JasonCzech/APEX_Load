@@ -323,7 +323,7 @@ describe('DashboardPage', () => {
     expect(container.textContent).not.toContain('API Server')
     expect(container.textContent).not.toContain('Active Runs')
     expect(container.querySelector('.dash-release-panel.is-open')).toBeTruthy()
-    expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('button[aria-label="Collapse Release snapshot"]')?.getAttribute('aria-expanded')).toBe('true')
     expect(container.textContent).toContain('Operations Activity')
     expect(container.textContent).toContain('Load generators ready')
     expect(container.querySelector('.dash-attention')).toBeNull()
@@ -509,7 +509,7 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Release snapshot')
     expect(panel?.hidden).toBe(false)
-    expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('button[aria-label="Collapse Release snapshot"]')?.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('surfaces a native release trend export failure', async () => {

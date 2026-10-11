@@ -1752,7 +1752,7 @@ export default function AccessPage({
             <h3 ref={userInspectorHeadingRef} tabIndex={-1}>User Details: {selectedUser.display_name || selectedUser.email || selectedUser.subject}</h3>
             <p>{selectedUser.display_name || selectedUser.email || selectedUser.subject}</p>
           </div>
-          <PanelToggle expanded={true} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(true)} />
+          <PanelToggle side="end" expanded={true} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(true)} />
         </div>
         <div className="access-inspector-title">
           <span className={`access-status-badge ${userStatusBadge(selectedUser).tone}`}>{userStatusBadge(selectedUser).label}</span>
@@ -1983,7 +1983,7 @@ export default function AccessPage({
             <h3>Account Details</h3>
             <p>{selectedAccount.name}</p>
           </div>
-          <PanelToggle expanded={true} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(true)} />
+          <PanelToggle side="end" expanded={true} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(true)} />
         </div>
         <div className="access-badge-row">
           {accountBadges(selectedAccount).map(badge => (
@@ -2187,7 +2187,7 @@ export default function AccessPage({
             <h3>Event Details</h3>
             <p>{selectedActivity.action}</p>
           </div>
-          <PanelToggle expanded={true} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(true)} />
+          <PanelToggle side="end" expanded={true} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(true)} />
         </div>
         <span className={`access-status-badge ${selectedActivity.status === 'success' ? 'healthy' : 'warning'}`}>{selectedActivity.status}</span>
         <dl className="access-detail-grid">
@@ -2238,7 +2238,7 @@ export default function AccessPage({
                 <p>{usersLoading ? 'Loading users…' : `${filteredUsers.length} of ${usersTotal} users`}</p>
               </div>
               {userSubTab === 'existing' && selectedUser && userInspectorCollapsed && (
-                <PanelToggle expanded={false} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(false)} />
+                <PanelToggle side="end" expanded={false} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(false)} />
               )}
             </div>
             <TabList className="access-subtab-row" role="tablist" aria-label="User workspace views" onKeyDown={handleTabKey}>
@@ -2430,7 +2430,7 @@ export default function AccessPage({
                 <p>{loading ? 'Loading service accounts…' : `${filteredAccounts.length} of ${accounts.length} automation principals`}</p>
               </div>
               {serviceAccountSubTab === 'existing' && selectedAccount && accountInspectorCollapsed && (
-                <PanelToggle expanded={false} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(false)} />
+                <PanelToggle side="end" expanded={false} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(false)} />
               )}
             </div>
             {accessReviewAttention && (accessReviewAttention.accountsFlagged > 0 || accessReviewAttention.denials > 0) && (
@@ -2659,7 +2659,7 @@ export default function AccessPage({
               </div>
               <div className="access-account-actions">
                 {activitySubTab === 'events' && selectedActivity && activityInspectorCollapsed && (
-                  <PanelToggle expanded={false} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(false)} />
+                  <PanelToggle side="end" expanded={false} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(false)} />
                 )}
                 {activitySubTab === 'events' && <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity || activityExporting}>
                   {activityExporting ? 'Exporting…' : 'Export all matching events CSV'}

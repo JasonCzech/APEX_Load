@@ -2587,7 +2587,7 @@ function RunCalendarPanel({
         {selectedEvent && (
           <aside id="calendar-run-details" className={`run-calendar-detail-panel ${detailCollapsed ? 'collapsed' : ''}`} aria-label="Run details">
             {detailCollapsed ? (
-              <PanelToggle expanded={false} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(false)} />
+              <PanelToggle className="ux-panel-rail" side="end" expanded={false} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(false)} />
             ) : (
               <div className="run-calendar-detail" role="region" aria-label="Run details">
                 <div className="run-calendar-detail-header">
@@ -2596,7 +2596,7 @@ function RunCalendarPanel({
                     <h3>{selectedEvent.title}</h3>
                   </div>
                   <div className="run-calendar-detail-icon-actions">
-                    <PanelToggle expanded={true} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(true)} />
+                    <PanelToggle side="end" expanded={true} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(true)} />
                     <button type="button" className="btn-icon" aria-label="Close run details" onClick={onCloseDetails}>
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <path d="M4 4l8 8" />

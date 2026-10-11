@@ -515,7 +515,7 @@ function ReleaseSnapshotPanel({
 
   return (
     <aside className={`dash-release-panel ${open ? 'is-open' : 'is-collapsed'}`} aria-label="Release snapshot panel">
-      <PanelToggle className="release-panel-rail" expanded={false} panelName="Release snapshot" controls={panelId} onToggle={onToggle} hidden={open} />
+      <PanelToggle side="end" className="release-panel-rail" expanded={false} panelName="Release snapshot" controls={panelId} onToggle={onToggle} hidden={open} />
 
       <section id={panelId} className="release-panel-card" hidden={!open}>
         <div className="release-panel-header">
@@ -524,7 +524,7 @@ function ReleaseSnapshotPanel({
             <h3>Release Snapshot</h3>
             <p>{releaseName}</p>
           </div>
-          <PanelToggle className="release-panel-toggle" expanded panelName="Release snapshot" controls={panelId} onToggle={onToggle} />
+          <PanelToggle side="end" className="release-panel-toggle" expanded panelName="Release snapshot" controls={panelId} onToggle={onToggle} />
         </div>
 
         <div className="dash-release-selector release-panel-selector" role="group" aria-label="Dashboard release selector">

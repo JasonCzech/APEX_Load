@@ -22,7 +22,8 @@ import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
-import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarAction, type TopbarContribution } from '../hooks/TopbarContributionProvider'
+import TopbarActionButton from './TopbarActionButton'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { interactiveElementProps } from './interactiveElementProps'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -53,6 +54,9 @@ import {
 } from '../types/scripts'
 import ScriptBrowserEvidence from './ScriptBrowserEvidence'
 import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
+import ObjectHistoryDialog from './ObjectHistoryDialog'
+import RowActions from './ux/RowActions'
+import type { ObjectActivitySummary } from '../types/objectActivity'
 import {
   addCorrelationExtractorIfMissing,
   applyCorrelationRepairToAction,
@@ -685,6 +689,8 @@ interface Props {
    * (retainedGuardIds) are kept when Close or the return leads back to it.
    */
   returnTarget?: { label: string; description?: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null
+  /** Who created and last changed the stored script; History opens from the editor's More menu. */
+  activity?: ObjectActivitySummary
 }
 
 function scriptHasAuthoredActions(script: ScriptData): boolean {
@@ -694,8 +700,9 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 const SAVED_SCRIPT_OPENING = 'This script was saved and is opening. Edits made after it was saved are not kept.'
 
-export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget, activity }: Props) {
   const [authorOverview, setAuthorOverview] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
   const [insertPhase, setInsertPhase] = useState<ScriptActionPhase>('action')
   const [insertPosition, setInsertPosition] = useState<InsertPosition>('end')
@@ -5191,6 +5198,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     && replayEvidenceMatchesCurrentDraft
     && errorCount === 0
   )
+  const validationEvidenceLabel = validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'
+  // The status row shows these as one truncating line; the tooltip keeps all of it.
+  const scriptEvidenceSummary = `Saved: ${scriptEditorDirty ? 'unsaved changes' : 'up to date'} · Validation evidence: ${validationEvidenceLabel} · Debugged: ${debugEvidenceStatus} · Approval readiness: ${approvalReady ? 'ready for review' : 'needs evidence'}`
   const debugWorkspaceStatusLabel = replaying
     ? (isReplayPaused ? 'Paused' : 'Running')
     : replayReport?.completed_at
@@ -5373,83 +5383,93 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         disabled: replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0,
         onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
       },
-      {
-        id: 'pause-debug',
-        label: isReplayPaused ? 'Continue' : 'Pause',
-        compactLabel: isReplayPaused ? 'Continue' : 'Pause',
-        icon: <DebugTopbarIcon kind={isReplayPaused ? "run" : "pause"} />,
-        className: 'topbar-debug-action topbar-debug-action-pause',
-        hidden: workspaceTab !== 'debug' || !replaying,
-        title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
-        tone: 'secondary',
-        disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
-        onClick: () => { void topbarActionHandlersRef.current.handlePauseResumeReplay() },
-      },
-      {
-        id: 'step-debug',
-        label: replayReport?.completed_at ? 'Restart in step mode' : 'Step',
-        compactLabel: replayReport?.completed_at ? 'Restart step' : 'Step',
-        icon: <DebugTopbarIcon kind="step" />,
-        className: 'topbar-debug-action topbar-debug-action-step',
-        hidden: workspaceTab !== 'debug',
-        title: replayReport?.completed_at ? 'Restart in step mode at the first action; previous replay evidence is retained' : 'Step to next action',
-        tone: 'secondary',
-        disabled: stepReplayDisabled,
-        onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('into') },
-      },
-      {
-        id: 'step-over-debug',
-        label: replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over',
-        compactLabel: replayReport?.completed_at ? 'Restart over' : 'Over',
-        icon: <DebugTopbarIcon kind="stepOver" />,
-        className: 'topbar-debug-action topbar-debug-action-step-over',
-        hidden: workspaceTab !== 'debug' || !isReplayPaused,
-        title: 'Step over the current block (run the rest of it, pause after)',
-        tone: 'secondary',
-        disabled: stepReplayDisabled,
-        onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('over') },
-      },
-      {
-        id: 'finish-loop-debug',
-        label: 'Finish Loop',
-        compactLabel: 'Loop',
-        icon: <DebugTopbarIcon kind="loop" />,
-        className: 'topbar-debug-action topbar-debug-action-loop',
-        hidden: workspaceTab !== 'debug' || !isReplayPaused || !(browserReplaySession?.current_action?.iteration_path?.length || browserReplaySession?.current_action?.iteration != null),
-        title: 'Run to the end of the enclosing loop',
-        tone: 'secondary',
-        disabled: stepReplayDisabled,
-        onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('loop_end') },
-      },
-      {
-        id: 'stop-debug',
-        label: 'Stop',
-        compactLabel: 'Stop',
-        icon: <DebugTopbarIcon kind="stop" />,
-        className: 'topbar-debug-action topbar-debug-action-stop',
-        hidden: workspaceTab !== 'debug' || !replaying,
-        title: 'Stop debugger',
-        tone: 'danger',
-        disabled: !activeReplaySessionId || !replaying,
-        onClick: () => { void topbarActionHandlersRef.current.handleStopReplay() },
-      },
-      {
-        id: 'break-on-failure',
-        label: 'Break on failure',
-        compactLabel: 'Break on failure',
-        icon: <DebugTopbarIcon kind="break" />,
-        className: 'topbar-debug-action topbar-debug-action-break',
-        hidden: workspaceTab !== 'debug',
-        title: replayOptions.breakOnFailure
-          ? 'Break on failure is on — the debugger pauses on the first failing action'
-          : 'Break on failure: pause automatically when an action fails',
-        tone: 'ghost',
-        pressed: replayOptions.breakOnFailure,
-        onClick: () => { void topbarActionHandlersRef.current.setBreakOnFailure(!replayOptions.breakOnFailure) },
-      },
     ],
-  }), [activeReplaySessionId, browserReplaySession, currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, isReplayPaused, problemCount, replayBlockedByMissingSecrets, replayOptions.breakOnFailure, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, stepReplayDisabled, validationEvidence, workspaceTab])
+  }), [currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, problemCount, replayBlockedByMissingSecrets, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
+  // The step controls belong to the debug session, beside its evidence: the
+  // top bar keeps Save and the one action that starts a debug run, so it
+  // never wraps while a run is paused.
+  const debugControlActions = useMemo<TopbarAction[]>(() => [
+    {
+      id: 'pause-debug',
+      label: isReplayPaused ? 'Continue' : 'Pause',
+      compactLabel: isReplayPaused ? 'Continue' : 'Pause',
+      icon: <DebugTopbarIcon kind={isReplayPaused ? "run" : "pause"} />,
+      className: 'topbar-debug-action topbar-debug-action-pause',
+      hidden: workspaceTab !== 'debug' || !replaying,
+      title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
+      tone: 'secondary',
+      disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
+      onClick: () => { void topbarActionHandlersRef.current.handlePauseResumeReplay() },
+    },
+    {
+      id: 'step-debug',
+      label: replayReport?.completed_at ? 'Restart in step mode' : 'Step',
+      compactLabel: replayReport?.completed_at ? 'Restart step' : 'Step',
+      icon: <DebugTopbarIcon kind="step" />,
+      className: 'topbar-debug-action topbar-debug-action-step',
+      hidden: workspaceTab !== 'debug',
+      title: replayReport?.completed_at ? 'Restart in step mode at the first action; previous replay evidence is retained' : 'Step to next action',
+      tone: 'secondary',
+      disabled: stepReplayDisabled,
+      onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('into') },
+    },
+    {
+      id: 'step-over-debug',
+      label: replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over',
+      compactLabel: replayReport?.completed_at ? 'Restart over' : 'Over',
+      icon: <DebugTopbarIcon kind="stepOver" />,
+      className: 'topbar-debug-action topbar-debug-action-step-over',
+      hidden: workspaceTab !== 'debug' || !isReplayPaused,
+      title: 'Step over the current block (run the rest of it, pause after)',
+      tone: 'secondary',
+      disabled: stepReplayDisabled,
+      onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('over') },
+    },
+    {
+      id: 'finish-loop-debug',
+      label: 'Finish Loop',
+      compactLabel: 'Loop',
+      icon: <DebugTopbarIcon kind="loop" />,
+      className: 'topbar-debug-action topbar-debug-action-loop',
+      hidden: workspaceTab !== 'debug' || !isReplayPaused || !(browserReplaySession?.current_action?.iteration_path?.length || browserReplaySession?.current_action?.iteration != null),
+      title: 'Run to the end of the enclosing loop',
+      tone: 'secondary',
+      disabled: stepReplayDisabled,
+      onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('loop_end') },
+    },
+    {
+      id: 'stop-debug',
+      label: 'Stop',
+      compactLabel: 'Stop',
+      icon: <DebugTopbarIcon kind="stop" />,
+      className: 'topbar-debug-action topbar-debug-action-stop',
+      hidden: workspaceTab !== 'debug' || !replaying,
+      title: 'Stop debugger',
+      tone: 'danger',
+      disabled: !activeReplaySessionId || !replaying,
+      onClick: () => { void topbarActionHandlersRef.current.handleStopReplay() },
+    },
+    {
+      id: 'break-on-failure',
+      label: 'Break on failure',
+      compactLabel: 'Break on failure',
+      icon: <DebugTopbarIcon kind="break" />,
+      className: 'topbar-debug-action topbar-debug-action-break',
+      hidden: workspaceTab !== 'debug',
+      title: replayOptions.breakOnFailure
+        ? 'Break on failure is on — the debugger pauses on the first failing action'
+        : 'Break on failure: pause automatically when an action fails',
+      tone: 'ghost',
+      pressed: replayOptions.breakOnFailure,
+      onClick: () => { void topbarActionHandlersRef.current.setBreakOnFailure(!replayOptions.breakOnFailure) },
+    },
+  ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replayOptions.breakOnFailure, replayReport, replaying, stepReplayDisabled, workspaceTab])
+  const debugSessionControls = (
+    <div className="debug-session-controls" role="group" aria-label="Debugger controls">
+      {debugControlActions.map(action => <TopbarActionButton key={action.id} action={action} />)}
+    </div>
+  )
 
   const renderBlockedCenterDocument = (title: string) => (
     <section className="center-document center-document-blocked" aria-label={title}>
@@ -5474,7 +5494,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const renderActionInspectorContent = (): ReactNode => (
     activeInspectorScope ? (
       <>
-        <p className="inspector-selection-path">{actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)}<small>{activeInspectorScope.path} · Current draft</small></p>
+        <p className="inspector-selection-path" title={`${actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)} (${activeInspectorScope.path})`}>{actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)}<small>{activeInspectorScope.path}</small></p>
         <ActionEditor inspector initialSection={inspectorFocusSection} key={`${activeInspectorScope.path}:${inspectorFocusSection}`}
           onOpenBody={() => { openCenterTab('request-body'); setNarrowAuthorPane('editor') }}
           action={activeInspectorScope.action}
@@ -6394,25 +6414,32 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
       {showAuthorProblems && <IssueDetailsDialog title="Author Problems" issues={editorIssueDetails} onClose={() => setShowAuthorProblems(false)} />}
       {datasetChange && <DatasetChangeReview change={datasetChange} affected={(script.parameters || []).filter(parameter => parameter.data_source?.trim().toLowerCase() === datasetChange.before.name.trim().toLowerCase()).map(parameter => parameter.name)} error={datasetChangeError} onApply={applyDatasetChange} onCancel={() => setDatasetChange(null)} />}
+      {/* One row of editor furniture, so the work below gets the height:
+          the status reads as one line, History and layout reset live in More. */}
       <div className="script-evidence-states" aria-label="Script evidence states">
-        {workspaceTab === 'author' && !(isParameterDataTabActive || centerTabsState.activeTabId === 'runtime-settings') && <button type="button" className="btn btn-sm btn-ghost" aria-pressed={!authorOutlineCollapsed} onClick={() => setAuthorOutlineCollapsed(value => !value)}>Outline</button>}
-        {onClose && <button type="button" className="btn btn-sm btn-ghost" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>}
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
         {workspaceTab === 'author' && <>
           <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={jsonDirty || editorHistory.past.length === 0} title="Undo document change" aria-label="Undo document change"><EditorRailActionIcon kind="undo" /></TooltipButton>
           <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={jsonDirty || editorHistory.future.length === 0} title="Redo document change" aria-label="Redo document change"><EditorRailActionIcon kind="redo" /></TooltipButton>
         </>}
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowSavedDiff(true)}>Review changes</button>
-        <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
-        <span>Validation evidence: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
-        <span>Debugged: {debugEvidenceStatus}</span>
-        <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
+        <span className="script-evidence-summary" title={scriptEvidenceSummary}>
+          <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
+          <span>Validation evidence: {validationEvidenceLabel}</span>
+          <span>Debugged: {debugEvidenceStatus}</span>
+          <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
+        </span>
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowAuthorProblems(true)}>Author Problems ({problemCount})</button>
         <details className="script-health-summary"><summary>Checks &amp; readiness</summary><div className="author-readiness-popover">
           <p>Static checks inspect the draft. Runtime prerequisites are verified when debugging starts. Replay evidence belongs to its recorded revision.</p>
           {renderReadyToRunCard({ showChecklist: true })}
         </div></details>
+        {onClose && <button type="button" className="btn btn-sm btn-ghost" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>}
+        <RowActions className="script-editor-more" label="script editor">
+          {scriptId && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowHistory(true)}>History</button>}
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
+        </RowActions>
       </div>
+      {showHistory && scriptId && <ObjectHistoryDialog title={`History · ${currentDraftScript.name || 'Script'}`} projectId={projectId} resourceType="script" resourceId={scriptId} activity={activity} onClose={() => setShowHistory(false)} />}
       {workspaceTab === 'author' && !isParameterDataTabActive && centerTabsState.activeTabId !== 'runtime-settings' && <div className="script-pane-switch" role="group" aria-label="Author panes">
         {(['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowAuthorPane === pane} onClick={() => { setNarrowAuthorPane(pane); if (pane === 'outline') setAuthorOutlineCollapsed(false); if (pane === 'inspector') setAuthorRightSidebarCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Context'}</button>)}
       </div>}
@@ -6701,6 +6728,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       <div className={`editor-body workspace-${workspaceTab}`}>
           {workspaceTab === 'debug' && (
           <ScriptReplayDebuggerView
+            // Without a top bar (embedded use and tests) the editor's own action proxy carries the step controls.
+            sessionControls={hasTopbarContributionProvider ? debugSessionControls : undefined}
             actionProblemRows={actionProblemRows}
             activeReplaySessionId={activeReplaySessionId}
             addExtractorDefinition={addExtractorDefinition}
@@ -7014,7 +7043,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               )}
               <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef} id="script-outline-panel">
                 {authorOutlineCollapsed ? (
-                  <PanelToggle className="actions-sidebar-restore" expanded={false} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(false)} />
+                  <PanelToggle className="actions-sidebar-restore ux-panel-rail" expanded={false} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(false)} />
                 ) : (
                 <>
                 <div className="editor-outline-nav">
@@ -7024,7 +7053,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         <EditorRailActionIcon kind="save" />
                       </TooltipButton>}
 
-                      <PanelToggle className="" expanded={true} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(true)} />
+                      <PanelToggle expanded={true} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(true)} />
                     </div>
                   </div>
                 </div>
@@ -7107,7 +7136,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
               <div id="script-details-panel" className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (
-                  <PanelToggle className="utility-sidebar-restore" expanded={false} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(false)} />
+                  <PanelToggle className="utility-sidebar-restore ux-panel-rail" side="end" expanded={false} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(false)} />
                 ) : (
                 <>
                 <div className="side-pane-header">
@@ -7121,7 +7150,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   ) : (
                     <span>{authorRightSidebarContext.title}</span>
                   )}
-                  <PanelToggle className="" expanded={true} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(true)} />
+                  <PanelToggle side="end" expanded={true} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(true)} />
                 </div>
                 {authorRightSidebarContext.kind !== 'signals' ? renderContextualRightSidebarContent() : (
                 <ScriptJsonInsightsView

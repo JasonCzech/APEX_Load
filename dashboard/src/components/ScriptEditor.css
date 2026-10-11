@@ -8179,7 +8179,6 @@ button.debugger-problem-row:hover {
 .inspector-section-tabs [aria-pressed="true"] { background: var(--bg-hover); border-color: var(--accent); }
 .action-editor-panel [hidden] { display: none !important; }
 .request-body-workspace { display: block; width: 100%; min-height: 50vh; box-sizing: border-box; resize: vertical; font-family: var(--font-mono, monospace); }
-@container (max-width: 1100px) { .script-evidence-states button[aria-pressed] { display: none; } }
 
 /* Debugging keeps transport, execution position and evidence in one workbench. */
 .debug-session-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
@@ -8343,3 +8342,59 @@ button.debugger-problem-row:hover {
     color: var(--text-secondary);
   }
 }
+
+/* Editor frame: one row of furniture above the work. The status line
+   truncates (its tooltip keeps the full text) instead of wrapping into a
+   second row; History and Reset layout live in the More menu. */
+.script-evidence-states { flex-wrap: nowrap; align-items: center; gap: 8px; padding: 6px 12px; min-height: 44px; box-sizing: border-box; }
+.script-evidence-states > * { flex: 0 0 auto; }
+.script-evidence-states > .script-evidence-summary { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-secondary); font-size: 12px; }
+.script-evidence-summary > span + span::before { content: ' · '; }
+.script-health-summary > summary { white-space: nowrap; }
+.author-readiness-popover { max-width: calc(100vw - 32px); }
+/* When the row wraps, the details may sit at its start: open the panel in the row, under its summary, instead of floating it off the editor's edge. */
+@container (max-width: 760px) { .script-health-summary[open] { flex-basis: 100%; } .author-readiness-popover { position: static; width: auto; max-width: none; margin-top: 8px; } }
+.script-editor-more .ux-row-actions-toggle { min-height: 30px; padding: 4px 10px; }
+@container (max-width: 760px) { .script-evidence-states { flex-wrap: wrap; } }
+/* The missing-secret notice is one line: what is blocked, and the fix. */
+.script-secret-banner { margin: 6px 12px 0; padding: 6px 12px; }
+.script-secret-banner > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+/* The selected action's place reads as one line: breadcrumb, then its JSON path. */
+.author-edit-toolbar { margin-bottom: 8px; }
+.author-main-action .inspector-selection-path { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.author-main-action .inspector-selection-path small { display: inline; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.inspector-section-tabs { padding: 6px 0; }
+.inspector-section-tabs button { min-height: 30px; padding: 4px 10px; }
+/* Debug frame: one session bar (status, step controls, options) and one row
+   of selection tools and disclosures above the panes. */
+.debug-options-toolbar.debug-session-bar { flex-wrap: nowrap; gap: 8px; padding: 6px 12px; min-height: 48px; box-sizing: border-box; }
+.debug-session-bar > * { flex: 0 0 auto; }
+.debug-session-bar > .debugger-live-strip, .debug-session-bar > .debug-session-idle { flex: 1 1 auto; min-width: 0; }
+.debug-session-bar .debugger-live-strip { padding: 4px 10px; gap: 10px; }
+.debug-session-bar .debugger-live-strip-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.debug-session-bar .debugger-live-strip small { white-space: nowrap; }
+.debug-session-idle { color: var(--text-secondary); font-size: 12px; }
+.debug-session-summary { color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.debug-session-controls { display: flex; align-items: center; gap: 6px; }
+.debug-session-controls .topbar-action-button.topbar-debug-action { min-height: 30px; padding: 4px 10px; box-shadow: none; }
+.debug-session-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; flex-shrink: 0; }
+.debug-session-row > .debug-session-disclosures:has(> details[open]) { flex-basis: 100%; }
+@container (max-width: 1240px) { .debug-session-summary, .debug-session-bar .debugger-live-strip-time { display: none; } }
+@container (max-width: 1000px) { .debug-options-toolbar.debug-session-bar { flex-wrap: wrap; } }
+.debug-session-bar button { white-space: nowrap; }
+.debug-session-bar > .debugger-live-strip { flex: 1 1 240px; min-width: 180px; overflow: hidden; }
+.debug-session-bar .debugger-live-strip > .replay-live-badge { flex: 0 0 auto; }
+.debug-session-bar .debugger-live-strip > small { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.debug-session-bar .debugger-live-strip-time { display: none; }
+.debug-session-bar.is-running > .debug-session-summary { display: none; }
+/* Collapse controls are small chevrons pointing the way the panel moves:
+   the outline's sits in its top corner instead of a header row of its own,
+   and a collapsed panel leaves a slim rail. */
+.actions-sidebar { position: relative; }
+.actions-sidebar > .editor-outline-nav:has(> .editor-outline-header-actions-only) { position: absolute; top: 6px; right: 6px; z-index: 2; margin: 0; padding: 0; border: 0; background: transparent; }
+.actions-sidebar .editor-outline-header-actions-only { margin: 0; }
+.actions-content-grid.author-outline-collapsed { --author-rail-width: 32px; }
+.actions-content-grid.author-right-sidebar-collapsed { --author-utility-width: 32px; }
+@media (min-width: 901px) { .actions-sidebar.collapsed, .editor-utility-sidebar.collapsed { padding: 4px 2px; } }
+.side-pane-header > .ux-panel-toggle-icon { margin-left: auto; }
+@media (min-width: 901px) { .editor-utility-sidebar.collapsed { border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; } }

@@ -26,6 +26,13 @@ describe('object history', () => {
     expect(request).toHaveBeenCalledWith('/projects/p/activity?resource_type=script&resource_id=s&limit=25&offset=0')
     expect(container.textContent).toContain('Created by Alice'); expect(container.textContent).toContain('Checkout (deleted)')
   })
+  it('shows history at once, with no disclosure, when expanded', async () => {
+    vi.mocked(request).mockResolvedValue({ events: [event], has_more: false, activity: { creator: { ...event, action: 'create' } } })
+    await act(async () => root.render(<ObjectHistory projectId="p" resourceType="script" resourceId="s" expanded />))
+    expect(request).toHaveBeenCalledWith('/projects/p/activity?resource_type=script&resource_id=s&limit=25&offset=0')
+    expect(container.querySelector('details')).toBeNull()
+    expect(container.textContent).toContain('Checkout (deleted)')
+  })
   it('refreshes attribution after a saved change while history is closed', async () => {
     const creator = { ...event, action: 'create' }
     vi.mocked(request).mockResolvedValue({ events: [event], has_more: false, activity: { creator } })

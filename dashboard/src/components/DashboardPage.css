@@ -1826,3 +1826,11 @@
   .analysis-controls label { flex-basis: 160px; }
   .analysis-table-wrap th:first-child, .analysis-table-wrap td:first-child { min-width: 145px; max-width: 180px; }
 }
+
+/* A collapsed snapshot is a slim, quiet rail, like every collapsed side panel.
+   Wide layouts only: below 981px the snapshot stacks and collapses to a bar. */
+@media (min-width: 981px) {
+  .dash-dashboard-layout.snapshot-collapsed { grid-template-columns: minmax(0, 1fr) 32px; }
+  .release-panel-rail.ux-panel-toggle { width: 32px; min-height: 240px; padding: 8px 0; border-color: transparent; background: transparent; box-shadow: none; color: var(--text-secondary); }
+  .release-panel-rail.ux-panel-toggle:hover { border-color: var(--border); background: var(--bg-hover); color: var(--text-primary); transform: none; }
+}

@@ -1,4 +1,5 @@
 import TooltipButton from './components/ux/TooltipButton'
+import TopbarActionButton from './components/TopbarActionButton'
 import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
 import { scriptsRouteForAuthoringState, terminalRunReportView } from './appRouting';
@@ -81,7 +82,6 @@ import { useTestApi } from "./hooks/api/useTestApi";
 import { useSharedTestList } from "./hooks/useSharedTestList";
 import {
   useActiveTopbarContribution,
-  type TopbarAction,
   type TopbarMetaChip,
 } from "./hooks/TopbarContributionProvider";
 import { TopbarContributionProvider } from "./hooks/TopbarContributionRoot";
@@ -227,59 +227,6 @@ type PendingGuardedHistoryTraversal = {
   targetIndex: number;
   targetView: AppView;
 };
-
-function topbarActionClass(action: TopbarAction): string {
-  const tone = action.tone || "secondary";
-  const btnClass =
-    tone === "primary"
-      ? "btn-primary"
-      : tone === "success"
-        ? "btn-success"
-        : tone === "danger"
-          ? "btn-danger"
-          : tone === "ghost"
-            ? "btn-ghost"
-            : "btn-secondary";
-  return [
-    "btn",
-    "btn-sm",
-    "topbar-action-button",
-    btnClass,
-    action.className,
-    action.compactLabel ? "has-compact-label" : "",
-    action.pressed ? "topbar-action-pressed" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function renderTopbarAction(action: TopbarAction) {
-  if (action.hidden) return null;
-  return (
-    <TooltipButton
-      key={action.id}
-      type="button"
-      className={topbarActionClass(action)}
-      aria-label={action.ariaLabel}
-      aria-pressed={action.pressed}
-      title={action.title}
-      disabled={action.disabled}
-      onClick={action.onClick}
-    >
-      {action.icon && (
-        <span className="topbar-action-icon" aria-hidden="true">
-          {action.icon}
-        </span>
-      )}
-      <span className="topbar-action-label">{action.label}</span>
-      {action.compactLabel && (
-        <span className="topbar-action-compact-label">
-          {action.compactLabel}
-        </span>
-      )}
-    </TooltipButton>
-  );
-}
 
 function renderTopbarMetaChip(chip: TopbarMetaChip) {
   if (chip.hidden) return null;
@@ -3324,7 +3271,7 @@ function AppShell({
                   className="topbar-action-group secondary"
                   aria-label="Contextual secondary actions"
                 >
-                  {topbarSecondaryActions.map(renderTopbarAction)}
+                  {topbarSecondaryActions.map(action => <TopbarActionButton key={action.id} action={action} />)}
                 </div>
               )}
               {topbarPrimaryActions.length > 0 && (
@@ -3332,7 +3279,7 @@ function AppShell({
                   className="topbar-action-group primary"
                   aria-label="Contextual primary actions"
                 >
-                  {topbarPrimaryActions.map(renderTopbarAction)}
+                  {topbarPrimaryActions.map(action => <TopbarActionButton key={action.id} action={action} />)}
                 </div>
               )}
               {showDesktopStatus && (

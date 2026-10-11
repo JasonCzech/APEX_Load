@@ -11,3 +11,5 @@
 
 /* Dense tables: the History disclosure sits inline with the row's metadata. */
 .object-history.compact { display: inline-block; margin: 0; vertical-align: middle; }
+.modal.object-history-dialog { width: min(960px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 64px); overflow: auto; }
+.modal.object-history-dialog .object-history { margin: 0; }

@@ -8675,3 +8675,10 @@ col.results-actions-col {
   margin-right: 4px;
   color: var(--text-muted);
 }
+
+/* Collapsed run details leave a slim rail, like every collapsed side panel
+   (wide layouts only: below 901px the details stack under the calendar). */
+@media (min-width: 901px) { .run-calendar-workspace.detail-collapsed { grid-template-columns: minmax(0, 1fr) 32px; } }
+/* The card library's collapsed rail is quiet too. */
+.dashboard-workspace-library-restore.ux-panel-toggle { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.dashboard-workspace-library-restore.ux-panel-toggle:hover { border-color: var(--border); background: var(--bg-hover); color: var(--text-primary); }
