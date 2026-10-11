@@ -216,6 +216,10 @@ export interface BrowserReplayReport {
 }
 
 export interface BrowserReplaySession {
+  /** The value {{run.id}} takes in this session. */
+  run_id?: string
+  /** Whether the session carries on after a failed action. */
+  continue_on_error?: boolean
   runtime_evidence_unavailable?: boolean
   dropped_event_count?: number
   id: string
@@ -246,6 +250,10 @@ export interface BrowserReplayStartRequest {
   breakpoints?: number[]
   browser?: BrowserConfig
   ignore_think_time?: boolean
+  /** The value of {{run.id}} in the session; omitted uses "debug-<session id>". */
+  run_id?: string
+  /** What follows a failed action; omitted does what a test run of the script would. */
+  continue_on_error?: boolean
   /** Record a native HAR of the replay (opt-in; recording runs under the
    * HAR size and memory limits). Otherwise the replay serves the native HAR
    * its script's own capture policy recorded, if any, or else the synthetic
@@ -379,6 +387,10 @@ export interface ScriptDebugSession {
   current_event?: BrowserReplayEvent
   breakpoints?: ScriptDebugBreakpoint[]
   break_on_failure?: boolean
+  /** The value {{run.id}} takes in this session. */
+  run_id?: string
+  /** Whether the session carries on after a failure it does not pause on. */
+  continue_on_error?: boolean
   events?: BrowserReplayEvent[]
   logs?: ScriptDebugLogEntry[]
   raw_output?: string[]

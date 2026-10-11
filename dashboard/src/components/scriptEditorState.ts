@@ -61,6 +61,10 @@ export interface ReplayOptionsState {
   breakOnFailure: boolean
   logLevel: ScriptDebugLogLevel
   variablesText: string
+  /** What follows a failure the debugger does not pause on; 'test-run' does what a test run of the script would. */
+  afterFailure: 'test-run' | 'continue' | 'stop'
+  /** The value of {{run.id}} in the session; blank uses the session's own identity. */
+  runId: string
 }
 
 export interface ReplayActivityItem {
@@ -162,6 +166,8 @@ export const DEFAULT_REPLAY_OPTIONS: ReplayOptionsState = {
   breakOnFailure: false,
   logLevel: 'info',
   variablesText: '{\n  \n}',
+  afterFailure: 'test-run',
+  runId: '',
 }
 
 function applyUpdate<T>(current: T, update: ScriptEditorStateUpdate<T>): T {

@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
-import { parameterUsageLabel, debugOverrideCount, handleOutlineKeys, sessionVariablesError } from './scriptSidebarModel'
+import { parameterUsageLabel, debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, handleOutlineKeys, sessionVariablesError } from './scriptSidebarModel'
 import { DebugParameterInspector } from './DebugParameterInspector'
 import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptDefinition } from '../types/scripts'
@@ -62,5 +62,23 @@ describe('sidebar navigation and session context', () => {
     expect(host.querySelector('output')?.textContent).toBe('captured-secret')
     act(() => host.querySelector('button')!.click()); expect(edit).toHaveBeenCalledWith('password')
     act(() => root.unmount()); host.remove()
+  })
+})
+
+describe('debug run policy', () => {
+  const script = (continueOnError?: boolean) => ({ name: 's', version: '1', protocol: 'http', config: continueOnError === undefined ? {} : { error_handling: { continue_on_error: continueOnError } }, actions: [] }) as unknown as Parameters<typeof debugContinuesAfterFailure>[1]
+
+  it('does what a test run would unless told otherwise', () => {
+    expect(debugContinuesAfterFailure({ afterFailure: 'test-run' }, script())).toBe(true)
+    expect(debugContinuesAfterFailure({ afterFailure: 'test-run' }, script(false))).toBe(false)
+    expect(debugContinuesAfterFailure({ afterFailure: 'continue' }, script(false))).toBe(true)
+    expect(debugContinuesAfterFailure({ afterFailure: 'stop' }, script())).toBe(false)
+  })
+
+  it('accepts a blank or URL-safe run identity and counts a custom one as an override', () => {
+    expect(debugRunIdError('')).toBeNull()
+    expect(debugRunIdError('release_7.2:debug-1')).toBeNull()
+    expect(debugRunIdError('has space')).toMatch(/Run identity/)
+    expect(debugOverrideCount({ ...DEFAULT_REPLAY_OPTIONS, runId: 'ticket-42', afterFailure: 'stop' })).toBe(2)
   })
 })

@@ -9,7 +9,7 @@ import { actionBreadcrumb, dedupeAuthorIssues, humanActionType, insertAuthorActi
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
 import { preserveMappingBindings, withMappingReviewState } from './sourceMappingReviewState'
 import { ActionBodyWorkspace } from './ActionBodyWorkspace'
-import { handleOutlineKeys, parameterUsageLabel } from './scriptSidebarModel'
+import { debugContinuesAfterFailure, debugRunIdError, handleOutlineKeys, parameterUsageLabel } from './scriptSidebarModel'
 import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
 import { parameterUsages, renameScriptParameter, renameDatasetColumn, validateDatasetReplacement } from './parameterIntegrity'
 import TabList from './ux/TabList'
@@ -2206,6 +2206,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         setReplayOptions(prev => prev.breakOnFailure === session.break_on_failure ? prev : { ...prev, breakOnFailure: session.break_on_failure! })
       }
       const isPaused = msg.type === 'script_debug_paused'
+      // Following execution, a pause shows the action about to run rather than
+      // the one that just ran, unless the pause is at a failure.
+      if (isPaused && followExecutionRef.current && session.current_event?.success !== false) setExpandedReplayEvent(null)
       const activityId = msg.type === 'script_debug_breakpoints_updated'
         ? 'breakpoints'
         : msg.type === 'script_debug_options_updated'
@@ -2420,6 +2423,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const session = msg.session
       setBrowserReplaySession(session)
       const isPaused = msg.type === 'browser_replay_paused'
+      if (isPaused && followExecutionRef.current && session.current_event?.success !== false) setExpandedReplayEvent(null)
       setReplayActivity(prev => upsertReplayActivity(prev, {
         id: isPaused ? 'paused' : 'resumed',
         kind: 'event',
@@ -3257,6 +3261,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
       setReplayDocumentFingerprint(replayDraft.fingerprint)
       const variables = parseReplayVariablesText(replayOptions.variablesText)
+      // Stop here, in the field's own words, rather than send a run identity the controller refuses.
+      const runIdProblem = debugRunIdError(replayOptions.runId)
+      if (runIdProblem) throw new Error(runIdProblem)
       const replaySessionId = createReplaySessionId()
       requestedReplaySessionId = replaySessionId
       debugMutationSequenceRef.current += 1
@@ -3290,11 +3297,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         breakpoints: options?.runTo ? [{ ...options.runTo, once: true }, ...debugBreakpoints.filter(bp => !bp.once)] : debugBreakpoints.filter(bp => !bp.once),
         break_on_failure: replayOptions.breakOnFailure,
         log_level: replayOptions.logLevel,
+        ...(replayOptions.runId.trim() ? { run_id: replayOptions.runId.trim() } : {}),
+        // Unset does what a test run would; only an explicit choice is sent.
+        ...(replayOptions.afterFailure !== 'test-run' ? { continue_on_error: replayOptions.afterFailure === 'continue' } : {}),
       }
       currentRunRef.current = {
         id: replaySessionId, options: structuredClone({ ...replayOptions, startPaused }), breakpoints: structuredClone(payload.breakpoints),
         target: currentScript.config.base_url || 'Action-specific targets', draft: scriptEditorDirty, dataSourceCount: currentScript.data_sources?.length || 0,
-        failurePolicy: currentScript.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error',
+        failurePolicy: debugContinuesAfterFailure(replayOptions, currentScript) ? 'Continue on error' : 'Stop on error',
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),
       }
       const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
@@ -5604,8 +5614,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     },
     {
       id: 'break-on-failure',
-      label: 'Break on failure',
-      compactLabel: 'Break on failure',
+      // The state shows in the text; the name stays, with aria-pressed saying on or off.
+      label: `Break on failure: ${replayOptions.breakOnFailure ? 'on' : 'off'}`,
+      ariaLabel: 'Break on failure',
       icon: <DebugTopbarIcon kind="break" />,
       className: 'topbar-debug-action topbar-debug-action-break',
       hidden: workspaceTab !== 'debug',

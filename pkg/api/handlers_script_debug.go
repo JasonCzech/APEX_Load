@@ -24,6 +24,8 @@ type ScriptDebugStartRequest struct {
 	StartPaused       bool                         `json:"start_paused,omitempty"`
 	Breakpoints       []ScriptDebugBreakpoint      `json:"breakpoints,omitempty"`
 	BreakOnFailure    bool                         `json:"break_on_failure,omitempty"`
+	RunID             string                       `json:"run_id,omitempty"`
+	ContinueOnError   *bool                        `json:"continue_on_error,omitempty"`
 	LogLevel          string                       `json:"log_level,omitempty"`
 	Browser           *dsl.BrowserConfig           `json:"browser,omitempty"`
 	IgnoreThinkTime   *bool                        `json:"ignore_think_time,omitempty"`
@@ -225,6 +227,10 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateDebugRunIdentity(req.RunID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

@@ -58986,6 +58986,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -59564,6 +59565,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -78953,6 +78955,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -79563,6 +79566,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -79658,6 +79662,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -80268,6 +80273,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -99970,6 +99976,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -100548,6 +100555,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -100724,6 +100732,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -101334,6 +101343,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -101434,6 +101444,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -102044,6 +102055,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -134889,6 +134901,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -135467,6 +135480,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -135643,6 +135657,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -136253,6 +136268,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -136353,6 +136369,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -136963,6 +136980,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -142302,6 +142320,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "project_id"?: string;
@@ -142312,6 +142331,7 @@ export interface operations {
             "replacement"?: string;
           }>;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "script": ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -143054,6 +143074,7 @@ export interface operations {
             "script_id": string;
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -143632,6 +143653,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -143765,6 +143787,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "project_id"?: string;
@@ -143775,6 +143798,7 @@ export interface operations {
             "replacement"?: string;
           }>;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -144517,6 +144541,7 @@ export interface operations {
             "script_id": string;
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -145095,6 +145120,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -145292,6 +145318,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "log_level"?: string;
@@ -145303,6 +145330,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -146077,6 +146105,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -146687,6 +146716,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -146854,6 +146884,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "log_level"?: string;
@@ -146865,6 +146896,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -147639,6 +147671,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -148249,6 +148282,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -148417,6 +148451,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "log_level"?: string;
@@ -148428,6 +148463,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -149202,6 +149238,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -149812,6 +149849,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -149979,6 +150017,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "log_level"?: string;
@@ -149990,6 +150029,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -150764,6 +150804,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -151374,6 +151415,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -151599,6 +151641,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -152209,6 +152252,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -152318,6 +152362,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -152928,6 +152973,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -153047,6 +153093,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -153625,6 +153672,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -153796,6 +153844,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -154406,6 +154455,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -154501,6 +154551,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -155111,6 +155162,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -169056,6 +169108,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -169666,6 +169719,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -169775,6 +169829,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -170385,6 +170440,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -170494,6 +170550,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -171104,6 +171161,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -171213,6 +171271,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -171823,6 +171882,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -175775,6 +175835,7 @@ export interface operations {
           "application/json": {
             "replay_session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -176353,6 +176414,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;

@@ -36355,6 +36355,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -38088,6 +38090,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -38121,6 +38125,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -38222,6 +38227,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -39955,6 +39962,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -39988,6 +39997,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -40170,6 +40180,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -41903,6 +41915,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -41936,6 +41950,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -42000,6 +42015,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -43733,6 +43750,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -43766,6 +43785,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -43830,6 +43850,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -45563,6 +45585,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -45596,6 +45620,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -130252,6 +130277,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -132079,6 +132106,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -132197,6 +132226,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -132318,6 +132348,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -134145,6 +134177,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -134263,6 +134297,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -134444,6 +134479,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -136271,6 +136308,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -136389,6 +136428,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -136516,6 +136556,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -138343,6 +138385,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -138461,6 +138505,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -138582,6 +138627,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -140409,6 +140456,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -140527,6 +140576,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -140653,6 +140703,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -142480,6 +142532,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -142598,6 +142652,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -142725,6 +142780,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -144552,6 +144609,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -144670,6 +144729,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -183085,6 +183145,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -184912,6 +184974,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -185030,6 +185094,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -185152,6 +185217,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -186979,6 +187046,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -187097,6 +187166,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -187280,6 +187350,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -189107,6 +189179,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -189225,6 +189299,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -189353,6 +189428,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -191180,6 +191257,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -191298,6 +191377,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -191420,6 +191500,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -193247,6 +193329,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -193365,6 +193449,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -193492,6 +193577,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -195319,6 +195406,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -195437,6 +195526,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -195565,6 +195655,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -197392,6 +197484,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -197510,6 +197604,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -216317,6 +216412,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -216339,6 +216437,8 @@ paths:
                       replacement:
                         type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 script:
                   type: object
@@ -218300,6 +218400,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -220033,6 +220135,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -220066,6 +220170,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -220585,6 +220690,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -220608,6 +220716,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -222649,6 +222759,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -224476,6 +224588,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -224594,6 +224708,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -227707,6 +227822,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -227730,6 +227848,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -229771,6 +229891,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -231598,6 +231720,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -231716,6 +231840,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -250786,6 +250911,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -250808,6 +250936,8 @@ paths:
                       replacement:
                         type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 script:
                   type: object
@@ -252771,6 +252901,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -254504,6 +254636,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -254537,6 +254671,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -261022,6 +261157,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -261045,6 +261183,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -263086,6 +263226,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -264913,6 +265055,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -265031,6 +265175,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -311284,6 +311429,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -311307,6 +311455,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -313348,6 +313498,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -315175,6 +315327,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -315293,6 +315447,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id

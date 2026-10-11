@@ -45,7 +45,7 @@ func allowUnresolvedTemplateRefs(envName string) bool {
 // was resolved, so the placeholder is never sent to the protocol.
 func (vu *VUser) checkResolvedSecrets() error {
 	if len(vu.unresolvedRunRefs) > 0 {
-		return fmt.Errorf("unresolved run identity: refusing to run with a {{run.id}} placeholder")
+		return fmt.Errorf("unresolved run identity: {{run.id}} has a value only in a test run or a debug session; refusing to send the placeholder")
 	}
 	if len(vu.unresolvedSecretRefs) == 0 || allowUnresolvedSecrets() {
 		return vu.checkResolvedFiles()

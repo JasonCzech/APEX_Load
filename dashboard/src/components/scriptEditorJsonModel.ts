@@ -333,7 +333,7 @@ function parseActionStepSegment(segment: string): ParsedActionStepSegment | null
 	return { name: 'case', caseIndex: Number.parseInt(switchCase[1], 10), index: Number.parseInt(switchCase[2], 10) }
 }
 
-function resolveNestedAction(root: ScriptActionDefinition | undefined, stepPath?: string[]): ScriptActionDefinition | null {
+export function resolveNestedAction(root: ScriptActionDefinition | undefined, stepPath?: string[]): ScriptActionDefinition | null {
   let current = root
   for (const segment of stepPath || []) {
     const parsed = parseActionStepSegment(segment)

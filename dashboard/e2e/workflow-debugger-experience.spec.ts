@@ -60,7 +60,15 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Get customer' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Running…', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Step', exact: true }).click()
+  // Paused again, the debugger shows the request about to run, with the value
+  // the step just extracted filled in; the step that ran is one click away.
+  await expect(page.getByRole('status').filter({ hasText: 'Paused before: Check order' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
+  await page.getByRole('complementary', { name: 'Actions' }).locator('.debugger-action-row-main').filter({ hasText: 'Get customer' }).click()
   await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('Response body: captured')
+  // Inspecting a step stops following; follow again before continuing.
+  await page.getByLabel('Follow execution', { exact: true }).check()
+  await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')

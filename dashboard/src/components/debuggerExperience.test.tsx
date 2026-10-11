@@ -62,6 +62,13 @@ describe('debugger operator experience', () => {
     expect(JSON.stringify(profile)).not.toContain('private')
     expect(readProfiles(JSON.stringify([{ ...profile, options: { ...profile.options, variablesText: 'private' } }]))).toEqual([profile])
     for (const input of ['{', '{}', '[null]', '[{"name":"bad","options":{}}]']) expect(readProfiles(input)).toEqual([])
+    // A profile keeps the failure choice but never a run identity; older ones default it.
+    const stopping = safeProfile('Stop', { ...DEFAULT_REPLAY_OPTIONS, afterFailure: 'stop', runId: 'ticket-42' })
+    expect(stopping.options).toMatchObject({ afterFailure: 'stop' })
+    expect(stopping.options).not.toHaveProperty('runId')
+    const legacy: Record<string, unknown> = { ...profile.options }
+    delete legacy.afterFailure
+    expect(readProfiles(JSON.stringify([{ name: 'Legacy', options: legacy }]))[0].options.afterFailure).toBe('test-run')
   })
   it('hides unavailable history detail and comparison bodies even when a caller retains an older raw report', () => {
     const detail = 'synthetic-history-runtime-detail'

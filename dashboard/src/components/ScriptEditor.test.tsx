@@ -1335,7 +1335,7 @@ describe('ScriptEditor', () => {
     const sessionBarItems = Array.from(container.querySelector('.debug-session-bar')?.children || [])
       .map(item => item.classList.contains('debug-session-controls') ? 'run controls' : item.querySelector('.topbar-action-label')?.textContent?.trim() || item.textContent?.trim().replace(/ \(\d+\)$/, ''))
     expect(sessionBarItems[0]).toBe('run controls')
-    expect(sessionBarItems.slice(-3)).toEqual(['Debug options', 'Break on failure', 'Export session'])
+    expect(sessionBarItems.slice(-3)).toEqual(['Debug options', 'Break on failure: off', 'Export session'])
     await act(async () => {
       topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
@@ -5723,6 +5723,48 @@ describe('ScriptEditor', () => {
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
       breakpoints: [{ phase: 'action', action_index: 0 }],
     }))
+  })
+
+  it('sends the Debug options run identity and failure choice with the debug start', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))!
+    await act(async () => { optionsButton.click() })
+    const afterFailure = container.querySelector<HTMLSelectElement>('select[aria-label="After a failure"]')!
+    // The default names what a test run of this script does (it opts out of continue-on-error).
+    expect(afterFailure.selectedOptions[0].textContent).toBe('As a test run: stop this iteration')
+    await act(async () => {
+      afterFailure.value = 'continue'
+      afterFailure.dispatchEvent(new Event('change', { bubbles: true }))
+      changeInputValue(container.querySelector<HTMLInputElement>('input[aria-label="Run identity"]')!, 'ticket-42')
+    })
+    expect(optionsButton.textContent).toBe('Debug options (2)')
+    await act(async () => {
+      findDebuggerRunButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.startScriptDebugSession).toHaveBeenCalledWith('script-1', expect.objectContaining({ run_id: 'ticket-42', continue_on_error: true }))
+  })
+
+  it('keeps an unusable run identity from reaching the controller', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))!.click() })
+    const runId = container.querySelector<HTMLInputElement>('input[aria-label="Run identity"]')!
+    await act(async () => { changeInputValue(runId, 'has space') })
+    expect(runId.getAttribute('aria-invalid')).toBe('true')
+    await act(async () => {
+      findDebuggerRunButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Run identity takes up to 128 letters')
   })
 
   it('restores saved-script debug breakpoints from local storage', async () => {

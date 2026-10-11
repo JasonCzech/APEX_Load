@@ -66,11 +66,13 @@ export function compareRuns(before: BrowserReplayReport, after: BrowserReplayRep
     return { key, before: a, after: b, fields }
   })
 }
-export type DebugProfile = { name: string; options: Omit<ReplayOptionsState, 'variablesText' | 'groupName'> }
+// A run identity is per run, like the group name, so a profile does not keep one.
+export type DebugProfile = { name: string; options: Omit<ReplayOptionsState, 'variablesText' | 'groupName' | 'runId'> }
 export function safeProfile(name: string, options: ReplayOptionsState): DebugProfile {
   // Whitelist only execution controls. Never persist variables, URLs, group
   // names, captured evidence or copied credentials in named presets.
-  return { name: name.trim().slice(0, 60), options: { ignoreThinkTime: options.ignoreThinkTime, startPaused: options.startPaused, breakOnFailure: options.breakOnFailure, logLevel: options.logLevel, capture: options.capture || 'diagnostic' } }
+  const afterFailure = (['test-run', 'continue', 'stop'] as const).find(value => value === options.afterFailure) || 'test-run'
+  return { name: name.trim().slice(0, 60), options: { ignoreThinkTime: options.ignoreThinkTime, startPaused: options.startPaused, breakOnFailure: options.breakOnFailure, logLevel: options.logLevel, capture: options.capture || 'diagnostic', afterFailure } }
 }
 export function readProfiles(raw: string | null): DebugProfile[] {
   try {

@@ -8350,3 +8350,16 @@ button.debugger-problem-row:hover {
 .script-json-scope-bar:has(> .script-json-scope-actions) { justify-content: flex-start; }
 .script-json-scope-bar:has(> .script-json-scope-actions) > .script-json-scope-toggle,
 .script-json-scope-bar > .script-json-scope-actions:only-child { margin-left: auto; }
+/* The request a paused session runs next, with the values it holds now. */
+.debugger-next-request { display: grid; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+.debugger-next-request h4 { margin: 0; font-size: 13px; }
+.debugger-next-request h4 small { color: var(--text-secondary); font-weight: 400; }
+.debugger-next-request-line, .debugger-next-request-body, .debugger-next-request-headers { margin: 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; overflow-wrap: anywhere; }
+.debugger-next-request-body { max-height: 240px; overflow: auto; white-space: pre-wrap; }
+.debugger-next-request-headers { display: grid; gap: 2px; }
+.debugger-next-request-headers > div { display: grid; grid-template-columns: minmax(80px, max-content) minmax(0, 1fr); gap: 8px; }
+.debugger-next-request-headers dt { color: var(--text-secondary); }
+.debugger-next-request-headers dd { margin: 0; }
+.debug-preview-value { border-radius: 3px; background: var(--accent-soft); color: var(--text-primary); }
+.debug-preview-unresolved { text-decoration: underline dotted var(--warning); text-underline-offset: 3px; color: var(--warning-text, var(--warning)); }
+.debug-preview-secret, .debug-preview-generated { color: var(--text-secondary); font-style: italic; }
