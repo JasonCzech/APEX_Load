@@ -37,6 +37,7 @@ import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import type { ScriptRepairSuggestion } from './scriptAuthoringAssist'
 import type { ImportedParameterFileMapping } from './scriptEditorImportModel'
 import type { ScriptPhaseActionRow } from './scriptEditorWorkbench'
+import type { IssueDetail } from './IssueDetailsDialog'
 import {
   shouldWrapScriptJsonLines,
   type ActionEditorSelectionState,
@@ -565,6 +566,7 @@ export function ScriptJsonInsightsView({
   onSelectExtractor,
   parameterInspectorItems,
   readiness,
+  additionalIssues = [],
   repairSuggestions,
   scriptLevelIssues,
   warningCount,
@@ -583,6 +585,8 @@ export function ScriptJsonInsightsView({
   onSelectExtractor: (item: ExtractorInspectorItem) => void
   parameterInspectorItems: string[]
   readiness: ReactNode
+  /** Problems beyond the authoring checks (validation, replay readiness, the current operation), listed after them. */
+  additionalIssues?: IssueDetail[]
   repairSuggestions: ScriptRepairSuggestion[]
   scriptLevelIssues: InsightIssue[]
   warningCount: number
@@ -618,7 +622,7 @@ export function ScriptJsonInsightsView({
             ) : <span>0 warnings</span>}
           </span>
         </div>
-        {scriptLevelIssues.length > 0 || actionProblems.length > 0 ? (
+        {scriptLevelIssues.length > 0 || actionProblems.length > 0 || additionalIssues.length > 0 ? (
           <ul className="utility-list">
             {scriptLevelIssues.map(issue => <li key={issue.id} className={`utility-list-item ${issue.severity}`}>{issue.message}</li>)}
             {actionProblems.map(({ issue, row }) => (
@@ -628,6 +632,16 @@ export function ScriptJsonInsightsView({
                   <strong>{row.action.name || issue.message}</strong>
                   {row.action.name && <small>{issue.message}</small>}
                 </button>
+              </li>
+            ))}
+            {additionalIssues.map(issue => (
+              <li key={issue.id} className={`utility-list-item ${issue.severity === 'blocker' ? 'error' : issue.severity}`}>
+                {issue.onSelect ? (
+                  <button type="button" className="utility-list-button" onClick={issue.onSelect}>
+                    <span>{issue.source}</span>
+                    <strong>{issue.title}</strong>
+                  </button>
+                ) : issue.title}
               </li>
             ))}
           </ul>

@@ -75,7 +75,8 @@ import type { ProjectSecretStatus, ScriptSecretStatus } from '../types/secrets'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
-import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel } from './replayPreflightUtils'
+import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, templateVariableNames } from './replayPreflightUtils'
+import { replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
 import {
   applyMigrationAssistantSuggestion,
   applyAuthoringComponentToScript,
@@ -1660,7 +1661,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     [authoringIssues],
   )
   const errorCount = authoringIssues.filter((issue) => issue.severity === 'error').length
-  const warningCount = authoringIssues.filter((issue) => issue.severity === 'warning').length
   const starterTemplates = useMemo(
     () => buildProtocolStarterTemplates(script.protocol, script.actions.length),
     [script.protocol, script.actions.length],
@@ -3807,6 +3807,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     projectProbeIsUnavailable,
   )
   const replayPreflight = errorCount || jsonParseMessage || (validationResultIsCurrent && validationSidebarResult?.tone === 'error') ? { ...secretReconciledPreflight, valid: false, checks: [...(secretReconciledPreflight.checks || []), { id: 'author-problems', label: 'Current draft', status: 'fail' as const, detail: 'The current draft has blocking issues. Open Author Problems to repair them.' }] } : secretReconciledPreflight
+  // Readiness problems come from the preflight Checks & readiness shows, so
+  // Author Problems, the top bar, the rail and the debugger agree with it.
+  // Keyed by the facts' text: the preflight object is rebuilt every render.
+  // Secrets count only once their status is known, not while it is checked.
+  const readinessFactsJson = JSON.stringify({
+    issues: secretReconciledPreflight.issues,
+    blocking_variables: secretReconciledPreflight.blocking_variables,
+    placeholder_variables: secretReconciledPreflight.placeholder_variables,
+    missing_variables: secretReconciledPreflight.missing_variables,
+    missing_secrets: secretStatusKnown ? secretReconciledPreflight.missing_secrets : [],
+    data_source_issues: secretReconciledPreflight.data_source_issues,
+    warnings: secretReconciledPreflight.warnings,
+  } satisfies ReadinessFacts)
+  // Text Author Problems already lists from validation or the last replay.
+  const alreadyListedProblemsJson = JSON.stringify([...(validationResultIsCurrent ? validationSidebarResult?.issues || [] : []), ...warnings])
+  const readinessIssues = useMemo(
+    () => replayReadinessIssues(JSON.parse(readinessFactsJson) as ReadinessFacts, JSON.parse(alreadyListedProblemsJson) as string[]),
+    [readinessFactsJson, alreadyListedProblemsJson],
+  )
   const missingProjectSecrets = replayPreflight.missing_secrets || []
   replayMissingProjectSecretsRef.current = missingProjectSecrets
   replaySecretStatusKnownRef.current = secretStatusKnown
@@ -5211,6 +5230,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const actionProblemRows = scriptPhaseActionRows.flatMap((row) =>
     (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).map(issue => ({ issue, row })),
   )
+  // The first action that uses each value a readiness problem names: one pass
+  // over the actions, and none when no value is missing.
+  const readinessVariableFirstUse = useMemo(() => {
+    const pending = new Set(readinessIssues.flatMap(issue => issue.variable ? [issue.variable] : []))
+    const firstUse = new Map<string, ScriptPhaseActionRow>()
+    for (const row of pending.size ? scriptPhaseActionRows : []) {
+      const names = templateVariableNames(JSON.stringify(row.action))
+      for (const name of pending) {
+        if (names.has(name)) { firstUse.set(name, row); pending.delete(name) }
+      }
+      if (!pending.size) break
+    }
+    return firstUse
+  }, [readinessIssues, scriptPhaseActionRows])
   const editorIssueDetails = useMemo<IssueDetail[]>(() => {
     const structured = [
       ...scriptLevelIssues.map(issue => ({
@@ -5276,9 +5309,45 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const index = Number(match[2] || match[6]), field = match[3] || match[4]
       return authoringIssues.some(local => local.phase === phase && local.actionIndex === index && local.id.endsWith(`:${field}`))
     }
-    return dedupeAuthorIssues([...structured, ...serverIssues.filter(issue => !overlapsLocal(issue)), ...operational.filter(issue => !overlapsLocal(issue))])
-  }, [selectRuntimeSettingsSection, actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, requestInspectorFocus, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
+    // Like an authoring problem, opening one moves focus to the action it names.
+    const openActionRow = (row: ScriptPhaseActionRow) => {
+      selectAuthorPhaseActionRef.current(row)
+      requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex })
+    }
+    const readiness: IssueDetail[] = readinessIssues.map(issue => {
+      const location = issue.location
+      const row = location ? scriptPhaseActionRows.find(candidate => candidate.phase === location.phase && candidate.actionIndex === location.actionIndex) : undefined
+      const variable = issue.variable
+      // Where the value is used; with no use found, the parameters open to add one.
+      const used = !row && variable ? readinessVariableFirstUse.get(variable) : undefined
+      return {
+        id: issue.id,
+        severity: issue.severity,
+        title: issue.title,
+        description: issue.description,
+        source: row ? actionBreadcrumb(script, { phase: row.phase, actionIndex: row.actionIndex }) : 'Replay readiness',
+        ownsDestinationFocus: Boolean(row || used),
+        onSelect: row ? () => openActionRow(row)
+          : issue.secret ? openProjectSecrets
+          : used ? () => openActionRow(used)
+          : variable ? () => openCenterTab('parameter-data')
+          : undefined,
+      }
+    })
+    // Blocking problems lead, whichever check found them; the sort is stable,
+    // so each source keeps its own order within a severity.
+    const rank = (issue: IssueDetail) => issue.severity === 'blocker' || issue.severity === 'error' ? 0 : issue.severity === 'warning' ? 1 : 2
+    return dedupeAuthorIssues([...structured, ...serverIssues.filter(issue => !overlapsLocal(issue)), ...readiness, ...operational.filter(issue => !overlapsLocal(issue))])
+      .sort((a, b) => rank(a) - rank(b))
+  }, [openProjectSecrets, readinessIssues, readinessVariableFirstUse, selectRuntimeSettingsSection, actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, requestInspectorFocus, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
   const problemCount = editorIssueDetails.length
+  const problemErrorCount = editorIssueDetails.filter(issue => issue.severity === 'error' || issue.severity === 'blocker').length
+  const problemWarningCount = editorIssueDetails.filter(issue => issue.severity === 'warning').length
+  // The rail lists the authoring checks its own way; every other problem the
+  // counts include (validation, replay readiness, the current operation) is
+  // listed after them, so the counts and the list agree.
+  const authoringIssueIds = new Set([...scriptLevelIssues.map(issue => issue.id), ...actionProblemRows.map(({ issue }) => issue.id)])
+  const railAdditionalIssues = editorIssueDetails.filter(issue => !authoringIssueIds.has(issue.id))
   const editorIssueDetailsRef = useRef(editorIssueDetails)
   editorIssueDetailsRef.current = editorIssueDetails
   const toggleSelectedBreakpoint = () => {
@@ -5349,7 +5418,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       {
         id: 'problems',
         label: `${problemCount} issue${problemCount === 1 ? '' : 's'}`,
-        tone: problemCount > 0 ? 'danger' : 'success',
+        // Red only when something blocks; warnings alone (placeholders) do not.
+        tone: problemErrorCount > 0 ? 'danger' : problemCount > 0 ? 'warning' : 'success',
         hidden: problemCount === 0 && !validationEvidence,
         onClick: problemCount > 0
           ? () => setIssueDialog({ title: 'Script issues', issues: editorIssueDetailsRef.current })
@@ -5384,24 +5454,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
       },
     ],
-  }), [currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, problemCount, replayBlockedByMissingSecrets, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
+  }), [currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, problemCount, problemErrorCount, replayBlockedByMissingSecrets, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
   // The step controls belong to the debug session, beside its evidence: the
   // top bar keeps Save and the one action that starts a debug run, so it
   // never wraps while a run is paused.
   const debugControlActions = useMemo<TopbarAction[]>(() => [
-    {
-      id: 'pause-debug',
-      label: isReplayPaused ? 'Continue' : 'Pause',
-      compactLabel: isReplayPaused ? 'Continue' : 'Pause',
-      icon: <DebugTopbarIcon kind={isReplayPaused ? "run" : "pause"} />,
-      className: 'topbar-debug-action topbar-debug-action-pause',
-      hidden: workspaceTab !== 'debug' || !replaying,
-      title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
-      tone: 'secondary',
-      disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
-      onClick: () => { void topbarActionHandlersRef.current.handlePauseResumeReplay() },
-    },
     {
       id: 'step-debug',
       label: replayReport?.completed_at ? 'Restart in step mode' : 'Step',
@@ -5413,6 +5471,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       tone: 'secondary',
       disabled: stepReplayDisabled,
       onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('into') },
+    },
+    {
+      id: 'pause-debug',
+      label: isReplayPaused ? 'Continue' : 'Pause',
+      compactLabel: isReplayPaused ? 'Continue' : 'Pause',
+      icon: <DebugTopbarIcon kind={isReplayPaused ? "run" : "pause"} />,
+      className: 'topbar-debug-action topbar-debug-action-pause',
+      hidden: workspaceTab !== 'debug' || !replaying,
+      title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
+      tone: 'secondary',
+      disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
+      onClick: () => { void topbarActionHandlersRef.current.handlePauseResumeReplay() },
     },
     {
       id: 'step-over-debug',
@@ -5465,11 +5535,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       onClick: () => { void topbarActionHandlersRef.current.setBreakOnFailure(!replayOptions.breakOnFailure) },
     },
   ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replayOptions.breakOnFailure, replayReport, replaying, stepReplayDisabled, workspaceTab])
+  // Run controls come and go with the run, so they lead the session bar and
+  // Break on failure sits with the controls that never move: when a run ends,
+  // nothing persistent slides under the pointer that just pressed Continue.
+  // Step is the one run control always shown (Restart in step mode once a run
+  // ends), so it leads and keeps its place.
   const debugSessionControls = (
     <div className="debug-session-controls" role="group" aria-label="Debugger controls">
-      {debugControlActions.map(action => <TopbarActionButton key={action.id} action={action} />)}
+      {debugControlActions.filter(action => action.id !== 'break-on-failure').map(action => <TopbarActionButton key={action.id} action={action} />)}
     </div>
   )
+  const breakOnFailureAction = debugControlActions.find(action => action.id === 'break-on-failure')
+  const debugSessionToggles = breakOnFailureAction && <TopbarActionButton action={breakOnFailureAction} />
 
   const renderBlockedCenterDocument = (title: string) => (
     <section className="center-document center-document-blocked" aria-label={title}>
@@ -6730,6 +6807,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           <ScriptReplayDebuggerView
             // Without a top bar (embedded use and tests) the editor's own action proxy carries the step controls.
             sessionControls={hasTopbarContributionProvider ? debugSessionControls : undefined}
+            sessionToggles={hasTopbarContributionProvider ? debugSessionToggles : undefined}
             actionProblemRows={actionProblemRows}
             activeReplaySessionId={activeReplaySessionId}
             addExtractorDefinition={addExtractorDefinition}
@@ -7156,7 +7234,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 <ScriptJsonInsightsView
                   actionProblems={actionProblemRows}
                   dataSourceInspectorItems={dataSourceInspectorItems}
-                  errorCount={errorCount}
+                  errorCount={problemErrorCount}
                   extractorInspectorItems={extractorInspectorItems}
                   importReview={importMetadata ? (
                     <ImportReviewCommitPanel
@@ -7194,7 +7272,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   readiness={<p>Use Checks &amp; readiness above to review validation and runtime evidence.</p>}
                   repairSuggestions={repairSuggestions}
                   scriptLevelIssues={scriptLevelIssues}
-                  warningCount={warningCount}
+                  warningCount={problemWarningCount}
+                  additionalIssues={railAdditionalIssues}
                 />
                 )}
                 </>

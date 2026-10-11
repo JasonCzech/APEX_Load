@@ -1340,6 +1340,7 @@ export interface operations {
               "migration_readiness"?: (Record<string, unknown>) | null;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -1348,11 +1349,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -7630,6 +7633,7 @@ export interface operations {
               "migration_readiness"?: (Record<string, unknown>) | null;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -7638,11 +7642,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -15136,6 +15142,7 @@ export interface operations {
             "findings": Record<string, Array<Record<string, unknown>>>;
             "preflight": ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -15144,11 +15151,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -59404,6 +59413,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -59412,11 +59422,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -79399,6 +79411,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -79407,11 +79420,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -80101,6 +80116,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -80109,11 +80125,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -100379,6 +100397,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -100387,11 +100406,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -101161,6 +101182,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -101169,11 +101191,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -101868,6 +101892,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -101876,11 +101901,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -114064,6 +114091,7 @@ export interface operations {
             "findings": Record<string, Array<Record<string, unknown>>>;
             "preflight": ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -114072,11 +114100,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -135286,6 +135316,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -135294,11 +135325,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -136068,6 +136101,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -136076,11 +136110,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -136775,6 +136811,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -136783,11 +136820,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -142990,6 +143029,7 @@ export interface operations {
           "application/json": {
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -142998,11 +143038,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -143439,6 +143481,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -143447,11 +143490,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -144447,6 +144492,7 @@ export interface operations {
           "application/json": {
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -144455,11 +144501,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -144896,6 +144944,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -144904,11 +144953,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -145982,6 +146033,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -145990,11 +146042,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -146481,6 +146535,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -146489,11 +146544,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -147538,6 +147595,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -147546,11 +147604,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -148037,6 +148097,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -148045,11 +148106,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -149095,6 +149158,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -149103,11 +149167,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -149594,6 +149660,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -149602,11 +149669,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -150651,6 +150720,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -150659,11 +150729,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -151150,6 +151222,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -151158,11 +151231,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -151982,6 +152057,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -151990,11 +152066,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -152698,6 +152776,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -152706,11 +152785,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -153393,6 +153474,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -153401,11 +153483,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -154170,6 +154254,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -154178,11 +154263,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -154872,6 +154959,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -154880,11 +154968,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -169424,6 +169514,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -169432,11 +169523,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -170140,6 +170233,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -170148,11 +170242,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -170856,6 +170952,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -170864,11 +170961,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -171572,6 +171671,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -171580,11 +171680,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -174344,6 +174446,7 @@ export interface operations {
             "migration_readiness"?: (Record<string, unknown>) | null;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -174352,11 +174455,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -175575,6 +175680,7 @@ export interface operations {
             "migration_readiness"?: (Record<string, unknown>) | null;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -175583,11 +175689,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -176094,6 +176202,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -176102,11 +176211,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;

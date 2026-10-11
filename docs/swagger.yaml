@@ -3839,6 +3839,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -3861,6 +3865,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -3879,6 +3887,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -20721,6 +20733,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -20743,6 +20759,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -20761,6 +20781,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -37599,6 +37623,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -37621,6 +37649,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -37639,6 +37671,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -39454,6 +39490,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -39476,6 +39516,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -39494,6 +39538,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -41390,6 +41438,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -41412,6 +41464,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -41430,6 +41486,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -43208,6 +43268,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -43230,6 +43294,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -43248,6 +43316,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -45026,6 +45098,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -45048,6 +45124,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -45066,6 +45146,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -131526,6 +131610,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -131548,6 +131636,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -131566,6 +131658,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -133580,6 +133676,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -133602,6 +133702,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -133620,6 +133724,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -135694,6 +135802,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -135716,6 +135828,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -135734,6 +135850,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -137754,6 +137874,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -137776,6 +137900,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -137794,6 +137922,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -139808,6 +139940,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -139830,6 +139966,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -139848,6 +139988,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -141867,6 +142011,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -141889,6 +142037,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -141907,6 +142059,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -143927,6 +144083,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -143949,6 +144109,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -143967,6 +144131,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -184275,6 +184443,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -184297,6 +184469,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -184315,6 +184491,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -186330,6 +186510,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -186352,6 +186536,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -186370,6 +186558,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -188446,6 +188638,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -188468,6 +188664,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -188486,6 +188686,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -190507,6 +190711,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -190529,6 +190737,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -190547,6 +190759,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -192562,6 +192778,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -192584,6 +192804,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -192602,6 +192826,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -194622,6 +194850,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -194644,6 +194876,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -194662,6 +194898,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -196683,6 +196923,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -196705,6 +196949,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -196723,6 +196971,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -217963,6 +218215,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -217985,6 +218241,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -218003,6 +218263,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -219304,6 +219568,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -219326,6 +219594,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -219344,6 +219616,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -222235,6 +222511,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -222257,6 +222537,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -222275,6 +222559,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -223719,6 +224007,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -223741,6 +224033,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -223759,6 +224055,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -229333,6 +229633,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -229355,6 +229659,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -229373,6 +229681,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -230817,6 +231129,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -230839,6 +231155,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -230857,6 +231177,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -234699,6 +235023,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -234721,6 +235049,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -234739,6 +235071,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -252350,6 +252686,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -252372,6 +252712,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -252390,6 +252734,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -253691,6 +254039,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -253713,6 +254065,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -253731,6 +254087,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -262588,6 +262948,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -262610,6 +262974,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -262628,6 +262996,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -264072,6 +264444,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -264094,6 +264470,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -264112,6 +264492,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -290015,6 +290399,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -290037,6 +290425,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -290055,6 +290447,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -297441,6 +297837,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -297463,6 +297863,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -297481,6 +297885,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -312802,6 +313210,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -312824,6 +313236,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -312842,6 +313258,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -314286,6 +314706,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -314308,6 +314732,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -314326,6 +314754,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -325055,6 +325487,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -325077,6 +325513,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -325095,6 +325535,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:

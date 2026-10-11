@@ -1542,6 +1542,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const reviewedRepairIssueIds = useMemo(() => new Set(reviewedRepairIssues.scope === guidedRepairScope ? reviewedRepairIssues.ids : []), [reviewedRepairIssues, guidedRepairScope])
   const tabIssues = useMemo(() => allTabIssues.filter(issue => issue.blocking || !reviewedRepairIssueIds.has(issue.id)), [allTabIssues, reviewedRepairIssueIds])
   const reviewedTabIssueCount = allTabIssues.length - tabIssues.length
+  // Until the protected draft's repair inspection answers, the issue list is
+  // the draft's provisional one and its counts change when the answer lands.
+  // Before an answer exists the repair panel is busy only with that
+  // inspection, so say "checking" instead of showing numbers that will move.
+  const repairCheckPending = Boolean(importedScript) && !currentRepairReview && guidedRepairBusy
+    && String(importedScript?.metadata?.import?.preserved?.server_import_attestation_v1 || '').startsWith('protected:')
   const selectReviewSection = (tab: ValidationReviewTab) => {
     setValidationReviewTab(tab)
     document.getElementById(`lr-validation-review-tab-${tab}`)?.focus()
@@ -4819,14 +4825,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             </div>
           )}
-          <div className="lr-tab-readiness" role="status">{importedScript && (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review${reviewedTabIssueCount ? ` · ${reviewedTabIssueCount} reviewed` : ''}`; })()}</div>
+          <div className="lr-tab-readiness" role="status">{importedScript && (repairCheckPending ? 'Checking repair requirements…' : (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review${reviewedTabIssueCount ? ` · ${reviewedTabIssueCount} reviewed` : ''}`; })())}</div>
           <div className="lr-validation-review-navigation">
           {reviewProjectPicker}
           <TabList className="lr-validation-review-tabs"
  role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
               {validationReviewTabs.map((tab) => {
                 // Unresolved grouped issues for this tab, named once in the tab's accessible name.
-                const issueCount = importedScript && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
+                const issueCount = importedScript && !repairCheckPending && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
                   ? tabIssues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length
                   : 0
                 return (
@@ -4883,7 +4889,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             showDataReview={validationReviewTab === 'data'}
             reviewNavigation={validationReviewTab !== 'overview' && <nav className="import-review-navigation" aria-label="Related replay issues">
               <button type="button" className="btn btn-secondary btn-sm" hidden={!returnToIssue} onClick={() => { selectReviewSection('overview'); setReturnToIssue(false) }}>Back to this issue</button>
-              <p>{sectionIssueCount} unresolved grouped replay {sectionIssueCount === 1 ? 'issue' : 'issues'}{reviewCategory !== 'all' ? ` in ${reviewCategory === 'values' ? 'missing values & correlations' : reviewCategory === 'runtime' ? 'transport & runtime' : 'credentials'}` : ''}.</p>
+              <p>{repairCheckPending ? 'Checking repair requirements…' : <>{sectionIssueCount} unresolved grouped replay {sectionIssueCount === 1 ? 'issue' : 'issues'}{reviewCategory !== 'all' ? ` in ${reviewCategory === 'values' ? 'missing values & correlations' : reviewCategory === 'runtime' ? 'transport & runtime' : 'credentials'}` : ''}.</>}</p>
               <button type="button" className="btn btn-secondary btn-sm" onClick={openReviewIssues}>{reviewCategory === 'values' ? 'Review missing values & correlations' : reviewCategory === 'runtime' ? 'Review runtime issues' : reviewCategory === 'credentials' ? 'Review credential issues' : 'Review all issues'}</button>
             </nav>}
             credentialTarget={credentialTarget}

@@ -106,6 +106,9 @@ func scriptReviewGateIssuesWithBrowserPolicy(
 					detail = fmt.Sprintf("%s (%s)", blockers[0], strings.Join(names, ", "))
 				}
 			}
+			// The script editor titles this message by its shape
+			// (dashboard/src/components/replayReadinessIssues.ts); a new
+			// wording still shows, just untitled.
 			issues = append(issues, fmt.Sprintf(
 				"%s: execution blocker %s blocks %s until the imported behavior is resolved",
 				label,

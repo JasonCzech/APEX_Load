@@ -35,6 +35,9 @@
 
 .issue-details-list {
   display: grid;
+  /* Rows keep their content height and the list scrolls; auto rows would
+     shrink to the buttons' min-height once the list outgrows the dialog. */
+  grid-auto-rows: max-content;
   gap: 10px;
   overflow: auto;
   padding: 4px 2px;

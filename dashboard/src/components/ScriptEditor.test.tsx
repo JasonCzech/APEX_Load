@@ -366,7 +366,7 @@ function TopbarContributionHarness() {
     <div data-testid="topbar-contribution">
       {contribution?.titleNode}
       {contribution?.meta?.filter(item => !item.hidden).map(item => (
-        <span className="topbar-meta-chip" key={item.id}>
+        <span className="topbar-meta-chip" data-tone={item.tone} key={item.id}>
           {item.label}
         </span>
       ))}
@@ -1327,10 +1327,15 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
     // The top bar keeps only the action that starts a run; the step controls
-    // sit in the debugger's session bar.
+    // lead the debugger's session bar, and Break on failure sits with the
+    // controls that stay put when a run starts or ends.
     expect(debugActionLabels()).toEqual(['Debug one iteration'])
     const sessionControlLabels = Array.from(container.querySelectorAll<HTMLButtonElement>('.debug-session-controls .topbar-debug-action .topbar-action-label')).map(label => label.textContent?.trim())
-    expect(sessionControlLabels).toEqual(['Step', 'Break on failure'])
+    expect(sessionControlLabels).toEqual(['Step'])
+    const sessionBarItems = Array.from(container.querySelector('.debug-session-bar')?.children || [])
+      .map(item => item.classList.contains('debug-session-controls') ? 'run controls' : item.querySelector('.topbar-action-label')?.textContent?.trim() || item.textContent?.trim().replace(/ \(\d+\)$/, ''))
+    expect(sessionBarItems[0]).toBe('run controls')
+    expect(sessionBarItems.slice(-3)).toEqual(['Debug options', 'Break on failure', 'Export session'])
     await act(async () => {
       topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
@@ -4424,6 +4429,54 @@ describe('ScriptEditor', () => {
       expect(container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="name"]')!.value).toBe('Create order')
       expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('script.actions[1]')
     } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+  })
+
+  it('lists replay-readiness problems in Author Problems and opens the action that uses a missing value', async () => {
+    const readinessScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Health check', target: '/health' },
+      { ...initialScript.actions[0], name: 'Store cart', method: 'POST', target: '/store/{{var.c_storeid}}/cart' },
+    ] }
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptEditor initialScript={readinessScript} projectId="project-1" />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushReact()
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    expect(problems.textContent).toBe('Author Problems (1)')
+    // A warning alone does not turn the top bar's issue chip red.
+    const issueChip = Array.from(container.querySelectorAll<HTMLElement>('.topbar-meta-chip')).find(chip => chip.textContent?.trim() === '1 issue')
+    expect(issueChip?.dataset.tone).toBe('warning')
+    // The Insights rail counts and lists the same problem.
+    const rail = container.querySelector('.utility-problem-summary')?.closest('.utility-card')
+    expect(rail?.querySelector('.utility-problem-summary')?.textContent).toContain('1 warning')
+    expect(rail?.querySelector('.utility-list')?.textContent).toContain('Missing value: c_storeid')
+    await act(async () => { problems.click() })
+    const missing = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Missing value: c_storeid'))
+    expect(missing).toBeTruthy()
+    expect(missing!.textContent).toContain('replay sends the placeholder text')
+    await act(async () => { missing!.click() })
+    await flushReact()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('script.actions[1]')
+  })
+
+  it('lists a replay blocker ahead of earlier warnings, titled as the importer titles it', async () => {
+    // A script-level authoring warning is found first; the replay blocker still leads.
+    const orderScript: ScriptDefinition = { ...initialScript, config: { ...initialScript.config, http: { ...initialScript.config.http, auth: { type: 'bearer' } } }, actions: [
+      { ...initialScript.actions[0], name: 'Store cart', method: 'POST', target: '/store/{{var.c_storeid}}/cart' },
+      { ...initialScript.actions[0], name: 'Legacy socket', target: '/health', metadata: { execution_blocker: 'legacy_tls_replacement' } },
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={orderScript} projectId="project-1" />) })
+    await flushReact()
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    await act(async () => { problems.click() })
+    const titles = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy strong')).map(title => title.textContent)
+    expect(titles.indexOf('Choose supported TLS settings')).toBe(0)
+    expect(titles).toContain('Bearer authentication is enabled without a token value.')
+    expect(titles).toContain('Missing value: c_storeid')
   })
 
   it('lets the latest problem repair focus its target without an earlier selection focus taking ownership', async () => {

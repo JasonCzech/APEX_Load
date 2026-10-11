@@ -127,8 +127,10 @@ interface ReplayVariableTimelineEntry {
 }
 
 export interface ScriptReplayDebuggerViewProps {
-  /** The debugger's step controls (Continue, Step, Stop…), drawn in the session bar. */
+  /** The debugger's run controls (Step, Continue, Stop…), drawn first in the session bar. */
   sessionControls?: ReactNode
+  /** Session toggles that stay put through a run (Break on failure), drawn beside Debug options. */
+  sessionToggles?: ReactNode
   runHistory: DebugRunRecord[]
   runRecord: Omit<DebugRunRecord, 'report'> | null
   seedVariables: Record<string, string>
@@ -220,6 +222,7 @@ function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fa
 
 export function ScriptReplayDebuggerView({
   sessionControls,
+  sessionToggles,
   runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onExportSession, onUpdateBreakpoints, onRunTo,
   actionProblemRows,
   activeReplaySessionId,
@@ -401,6 +404,7 @@ export function ScriptReplayDebuggerView({
             {/* One session bar: the run's status, its step controls and its options.
                 The selection tools and disclosures share the row below it. */}
             <div className={`debug-options-toolbar debug-session-bar${replaying ? ' is-running' : ''}`}>
+              {sessionControls}
               {(replaying || replayReport) ? (
                 <div className={`debugger-live-strip ${debuggerStatusState}`}>
                   <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Passed' : 'Failed'}</span>
@@ -412,9 +416,9 @@ export function ScriptReplayDebuggerView({
                   <span className="debugger-live-strip-time">{formatReplayTime(replayLatestActivity?.timestamp || replayReport?.completed_at || replayReport?.started_at)}</span>
                 </div>
               ) : <span className="debug-session-idle">No debug run yet</span>}
-              {sessionControls}
-              <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" title={debugOptionsSummary} onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
               <span className="debug-session-summary">{debugOptionsSummary}</span>
+              <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" title={debugOptionsSummary} onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
+              {sessionToggles}
               <TooltipButton type="button" className="btn btn-sm btn-secondary" disabled={!replayReport} title="Download Debug JSON" onClick={() => void onExportSession()}>Export session</TooltipButton>
               {optionsError && <span role="alert">{optionsError}</span>}
             </div>
