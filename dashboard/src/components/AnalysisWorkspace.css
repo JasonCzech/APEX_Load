@@ -1,15 +1,47 @@
-.analysis-workspace { width: 100%; min-width: 0; }
-.analysis-columns { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 4fr); gap: 24px; }
-.analysis-workspace fieldset { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--border-color, #666); border-radius: 8px; }
+/* The analysis workspace sits in a Monitoring card (and Run monitor sources
+   shares its layout), so it uses the cards' parts: muted notes, small
+   section headings, the shared field style and outlined panels. */
+.analysis-workspace { width: 100%; min-width: 0; box-sizing: border-box; }
+/* :where() keeps these defaults below the shared .monitor-hint/.monitor-status-note classes. */
+:where(.analysis-workspace) p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); overflow-wrap: anywhere; }
+.analysis-workspace p[role="alert"], .analysis-workspace .form-error { color: var(--danger-text); }
+.analysis-workspace h3 { margin: 0 0 8px; color: var(--text-secondary); font-size: 13px; font-weight: 700; }
+/* A nested panel's own heading (collection ownership) reads as a card subheading too. */
+.analysis-workspace section > h4 { margin: 0; color: var(--text-secondary); font-size: 13px; font-weight: 700; }
+.analysis-columns { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 4fr); gap: 20px; }
 .analysis-columns > * { min-width: 0; }
-.analysis-workspace label { display: flex; gap: 6px; flex-direction: column; font-size: 13px; }
-.analysis-measure { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; width: 100%; }
-.analysis-table { overflow: auto; max-height: 220px; }
-.analysis-table table { border-collapse: collapse; width: 100%; }
-.analysis-table th, .analysis-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border-color, #666); white-space: nowrap; }
+.analysis-columns > div { display: flex; flex-direction: column; gap: 12px; }
+.analysis-columns > aside { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-right: 20px; border-right: 1px solid var(--border-subtle, var(--border)); }
+.analysis-dataset-list { width: 100%; margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.analysis-dataset { position: relative; display: grid; gap: 2px; width: 100%; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.analysis-dataset span { color: var(--text-secondary); font-size: 12px; }
+.analysis-dataset:hover:not(:disabled), .analysis-dataset[aria-current="true"] { border-color: var(--accent-border); background: var(--accent-soft); }
+.analysis-dataset:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.analysis-dataset:disabled { cursor: default; opacity: 0.6; }
+.analysis-workspace fieldset { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; min-width: 0; margin: 0; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+/* Nested panels (comparison, collection ownership, source inspection) are block
+   flow, so space their children the way the flex gaps space everything else. */
+.analysis-workspace section > * + * { margin-top: 10px; }
+.analysis-workspace legend { padding: 0 6px; color: var(--text-secondary); font-size: 13px; font-weight: 700; }
+.analysis-workspace label { display: flex; gap: 6px; flex-direction: column; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.analysis-workspace label:has(> input[type="checkbox"]) { flex-direction: row; align-items: center; color: var(--text-primary); font-weight: 400; }
+.analysis-workspace :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) { min-height: 32px; box-sizing: border-box; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 400; }
+.analysis-workspace input[type="file"] { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.analysis-workspace input[type="file"]::file-selector-button { margin-right: 8px; padding: 5px 12px; border: 1px solid var(--accent-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+:where(.analysis-workspace) small { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.run-monitor-source-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.run-monitor-source-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.analysis-measure { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; width: 100%; padding-top: 8px; border-top: 1px solid var(--border-subtle, var(--border)); }
+.analysis-table { overflow: auto; max-height: 220px; border: 1px solid var(--border); border-radius: 8px; }
+.analysis-table table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.analysis-table th, .analysis-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.analysis-table th { position: sticky; top: 0; background: var(--bg-secondary); color: var(--text-secondary); }
 .analysis-table small { display: block; font-weight: normal; }
-.analysis-chart { min-width: 0; margin: 18px 0; }
-@media (max-width: 760px) { .analysis-columns { grid-template-columns: minmax(0, 1fr); } }
+.analysis-chart { min-width: 0; margin: 6px 0; }
+@media (max-width: 760px) {
+  .analysis-columns { grid-template-columns: minmax(0, 1fr); }
+  .analysis-columns > aside { padding-right: 0; padding-bottom: 12px; border-right: 0; border-bottom: 1px solid var(--border-subtle, var(--border)); }
+}
 
 .monitor-card-full { grid-column: 1 / -1; }
 

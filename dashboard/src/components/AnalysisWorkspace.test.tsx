@@ -21,10 +21,28 @@ it('reports the native capability and hides unsupported imports', async () => {
   expect(container.querySelector('input[type=file]')).toBeNull()
 })
 
+it('says the dataset list is empty only after it loads', async () => {
+  const list = deferred<unknown[]>()
+  request.mockImplementation(async (path: string) => path.includes('capabilities') ? { native_parquet: true, enabled: true } : list.promise)
+  await act(async () => root.render(<AnalysisWorkspace projectId="p" />))
+  expect(container.textContent).not.toContain('No datasets imported yet.')
+  await act(async () => list.resolve([]))
+  expect(container.textContent).toContain('No datasets imported yet.')
+})
+
+it('does not call a failed dataset list empty', async () => {
+  request.mockImplementation(async (path: string) => { if (path.includes('capabilities')) return { native_parquet: true, enabled: true }; throw new Error('list failed') })
+  await act(async () => root.render(<AnalysisWorkspace projectId="p" />))
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('list failed')
+  expect(container.textContent).not.toContain('No datasets imported yet.')
+})
+
 it('allows a viewer to inspect dataset state without upload or deletion controls', async () => {
   request.mockImplementation(async (path: string) => path.includes('capabilities') ? { native_parquet: true, enabled: true } : [{ id: 'one', name: 'My dataset', state: 'cancelled', files: [], accepted: 0, rejected: 0 }])
   await act(async () => root.render(<AnalysisWorkspace projectId="p" />))
   const item = [...container.querySelectorAll('button')].find(b => b.textContent?.includes('My dataset'))!
+  // The name and state sit on two lines; a hidden separator keeps the accessible name readable.
+  expect(item.textContent).toBe('My dataset · cancelled')
   await act(async () => item.click())
   expect(container.textContent).toContain('State: cancelled')
   expect(container.querySelector('input[type=file]')).toBeNull()

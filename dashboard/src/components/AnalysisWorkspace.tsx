@@ -22,6 +22,8 @@ const initialMapping: AnalysisMapping = { version: 1, timestamp: [], timestamp_e
 export default function AnalysisWorkspace({ projectId, canEdit = false, showEnableHint = false }: { projectId?: string; canEdit?: boolean; /** Tell an administrator how the project gate is enabled. */ showEnableHint?: boolean }) {
   const [capabilities, setCapabilities] = useState<AnalysisCapabilities>()
   const [imports, setImports] = useState<AnalysisImport[]>([])
+  // The empty-list note waits for the first successful list, so it never shows while loading or after a failed load.
+  const [importsLoaded, setImportsLoaded] = useState(false)
   const [selected, setSelected] = useState<AnalysisImport>()
   const [files, setFiles] = useState<File[]>([])
   const [fileError, setFileError] = useState('')
@@ -54,12 +56,12 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     if (!projectId) return
-    const next = await request<AnalysisImport[]>(`/analysis/imports?project_id=${encodeURIComponent(projectId)}`, { signal }); if (!signal?.aborted) setImports(next)
+    const next = await request<AnalysisImport[]>(`/analysis/imports?project_id=${encodeURIComponent(projectId)}`, { signal }); if (!signal?.aborted) { setImports(next); setImportsLoaded(true) }
   }, [projectId])
 
   useEffect(() => {
     const controller = new AbortController()
-    setSelected(undefined); setPreview(undefined); setPoints([]); setImports([]); setFiles([]); setFileError(''); setName(''); setProgress(''); setBusy(false); setAcceptRejected(false); updateMapping(initialMapping); setMappingTemplate(undefined); setCapabilities(undefined); setError(''); setIdentityFilters(emptyAnalysisIdentityFilters())
+    setSelected(undefined); setPreview(undefined); setPoints([]); setImports([]); setImportsLoaded(false); setFiles([]); setFileError(''); setName(''); setProgress(''); setBusy(false); setAcceptRejected(false); updateMapping(initialMapping); setMappingTemplate(undefined); setCapabilities(undefined); setError(''); setIdentityFilters(emptyAnalysisIdentityFilters())
     if (projectId) request<AnalysisCapabilities>(`/analysis/capabilities?project_id=${encodeURIComponent(projectId)}`, { signal: controller.signal })
       .then(async caps => { if (controller.signal.aborted) return; setCapabilities(caps); if (caps.enabled && caps.native_parquet) await reload(controller.signal) })
       .catch(e => { if (!controller.signal.aborted) setError(String(e)) })
@@ -140,17 +142,20 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
   const aggregationOptions = metricAggregations.options
   const queryAggregation = aggregationOptions.includes(aggregation) ? aggregation : aggregationOptions[0]
   const summaryWindowSeconds = metricAggregations.windowSeconds?.(queryAggregation)
-  if (!projectId) return <p>Select a project to analyze datasets.</p>
-  return <section className="analysis-workspace" aria-label="Analysis workspace">
-    <h2>Parquet analysis</h2>
-    <p>Import metric observations, inspect their schema, and compare measurements on a UTC timeline.</p>
-    {error && <p role="alert">{error}</p>}
+  // The card's title names it; the body reads like the other Monitoring
+  // cards: a muted note, small subheadings and the shared controls.
+  if (!projectId) return <div className="monitor-body"><p className="monitor-hint">Select a project to analyze datasets.</p></div>
+  return <section className="analysis-workspace monitor-body" aria-label="Analysis workspace">
+    <p className="monitor-status-note">Import Parquet metric observations, inspect their schema, and compare measurements on a UTC timeline.</p>
+    {error && <p className="form-error" role="alert">{error}</p>}
     {!capabilities ? <p>Checking analysis availability…</p> : !capabilities.enabled || !capabilities.native_parquet ? <p className="monitor-hint">Native Parquet analysis is not enabled for this project.{showEnableHint && <> It is enabled per project in the controller configuration (<code>APEXLOAD_ANALYSIS_PROJECTS</code>).</>}</p> : <>
       <div className="analysis-columns">
         <aside aria-label="Datasets">
           <h3>Datasets and imports</h3>
-          <button type="button" disabled={busy} onClick={() => { setSelected(undefined); setPreview(undefined); setPoints([]); setMapping(initialMapping); setIdentityFilters(emptyAnalysisIdentityFilters()) }}>New import</button>
-          <ul>{imports.map(item => <li key={item.id}><button type="button" disabled={busy} onClick={() => void act(signal => inspect(item, signal))}>{item.name} · {item.state}</button></li>)}</ul>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { setSelected(undefined); setPreview(undefined); setPoints([]); setMapping(initialMapping); setIdentityFilters(emptyAnalysisIdentityFilters()) }}>New import</button>
+          {imports.length === 0
+            ? importsLoaded && <p className="monitor-hint">No datasets imported yet.</p>
+            : <ul className="analysis-dataset-list">{imports.map(item => <li key={item.id}><button type="button" className="analysis-dataset" aria-current={selected?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void act(signal => inspect(item, signal))}><strong>{item.name}</strong><span><span className="sr-only"> · </span>{item.state}</span></button></li>)}</ul>}
         </aside>
         <div>
           {canEdit && (!selected || selected.state === 'uploading') && <fieldset disabled={busy}>
@@ -158,13 +163,13 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
             <label>Dataset name<input value={name} onChange={e => setName(e.target.value)} /></label>
             <label>Files<input type="file" multiple accept=".parquet" onChange={e => chooseFiles(Array.from(e.target.files ?? []))} /></label>
             <label>Directory<input type="file" multiple accept=".parquet" ref={input => input?.setAttribute('webkitdirectory', '')} onChange={e => setFiles(Array.from(e.target.files ?? []).filter(f => f.name.toLowerCase().endsWith('.parquet')))} /></label>
-            {fileError && <p role="alert">{fileError}</p>}
-            <button type="button" disabled={!files.length} aria-describedby={files.length ? undefined : 'analysis-upload-requirement'} onClick={() => void upload()}>{selected ? 'Resume and verify upload' : 'Upload files'}</button>
-            {!files.length && <small id="analysis-upload-requirement">Choose at least one .parquet file to upload.</small>}
+            {fileError && <p className="form-error" role="alert">{fileError}</p>}
+            <button type="button" className="btn btn-primary btn-sm" disabled={!files.length} aria-describedby={files.length ? undefined : 'analysis-upload-requirement'} onClick={() => void upload()}>{selected ? 'Resume and verify upload' : 'Upload files'}</button>
+            {!files.length && <small className="monitor-hint" id="analysis-upload-requirement">Choose at least one .parquet file to upload.</small>}
           </fieldset>}
-          {progress && <p role="status">{progress}</p>}
-          {busy && <button type="button" onClick={() => { const current = operation.current; operation.current = undefined; current?.abort(); setBusy(false) }}>Pause operation</button>}
-          {selected && <><h3>{selected.name}</h3><p>State: {selected.state} · Accepted: {selected.accepted} · Rejected: {selected.rejected}</p>{selected.error && <p role="alert">{selected.error}</p>}{selected.state === 'ready' && selected.rejection_artifacts?.map((_, i) => <p key={i}><button type="button" disabled={busy} onClick={() => void act(async signal => {
+          {progress && <p className="monitor-status-note" role="status">{progress}</p>}
+          {busy && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { const current = operation.current; operation.current = undefined; current?.abort(); setBusy(false) }}>Pause operation</button>}
+          {selected && <><h3>{selected.name}</h3><p className="monitor-status-note">State: {selected.state} · Accepted: {selected.accepted.toLocaleString()} · Rejected: {selected.rejected.toLocaleString()}</p>{selected.error && <p className="form-error" role="alert">{selected.error}</p>}{selected.state === 'ready' && selected.rejection_artifacts?.map((_, i) => <p key={i}><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(async signal => {
                 const response = await apiFetch(`/analysis/datasets/${encodeURIComponent(selected.id)}/rejections/${i}`, { signal, timeoutMs: 120000 })
                 if (signal.aborted) { await response.body?.cancel(); return }
                 if (!response.ok) throw new Error('Rejection artifact download failed.')
@@ -195,7 +200,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
             })}
             {summaryMeasureError && <p role="alert">{summaryMeasureError}</p>}
             <label><input type="checkbox" checked={acceptRejected} onChange={e => setAcceptRejected(e.target.checked)} />Accept rejected observations and retain the full rejected-row set in provenance</label>
-            <button type="button" disabled={!mapping.timestamp.length || !mapping.measures.length || mappingUnsupported || !!analysisMappingDisclosureError(mapping) || !!summaryMeasureError} onClick={() => void act(async signal => {
+            <button type="button" className="btn btn-primary btn-sm" disabled={!mapping.timestamp.length || !mapping.measures.length || mappingUnsupported || !!analysisMappingDisclosureError(mapping) || !!summaryMeasureError} onClick={() => void act(async signal => {
               if (mappingUnsupported) throw new Error('Imported identity schema 2 is unavailable on this controller.')
               const identityError = analysisMappingDisclosureError(mapping)
               if (identityError) throw new Error(identityError)
@@ -221,7 +226,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
             <label>Bucket (seconds, optional)<input type="number" min={1} max={86400} step={1} placeholder="automatic" value={bucket} onChange={e => setBucket(e.target.value)} /></label>
             <label>{histogramDeclaration ? 'Histogram statistic' : summaryDeclarations.length ? 'Summary statistic' : 'Aggregation'}<select value={queryAggregation} onChange={e => setAggregation(e.target.value)}>{aggregationOptions.map(v => <option key={v}>{v}</option>)}</select></label>
             {selected.mapping?.version === 2 && <AnalysisIdentityFilters value={identityFilters} onChange={setIdentityFilters} label="Dataset identity filters" />}
-            <button type="button" disabled={!metric || !from || !to || !!selectedMappingDisclosureError || selectedIdentityUnsupported || selected.mapping?.version === 2 && !!analysisIdentityFilterError(identityFilters)} onClick={() => void act(async signal => {
+            <button type="button" className="btn btn-primary btn-sm" disabled={!metric || !from || !to || !!selectedMappingDisclosureError || selectedIdentityUnsupported || selected.mapping?.version === 2 && !!analysisIdentityFilterError(identityFilters)} onClick={() => void act(async signal => {
               if (selectedIdentityUnsupported) throw new Error('Imported identity schema 2 is unavailable on this controller.')
               if (selectedMappingDisclosureError) throw new Error(selectedMappingDisclosureError)
               const identitySelection = selected.mapping?.version === 2 ? buildAnalysisIdentitySelection(identityFilters) : {}
@@ -238,7 +243,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
           </fieldset>}
           {selected?.state === 'ready' && <AnalysisComparison key={selected.id} importedIdentityVersion={capabilities?.imported_identity_version} projectId={projectId} dataset={selected} datasets={imports} canEdit={canEdit} onAssociated={setSelected} />}
           {!selectedMappingDisclosureError && points.length > 0 && <div className="analysis-chart"><SeriesChartExport id="dataset-series" title={`${points[0].metric_name} dataset series`} rows={points.map(point => ({ ...point, value: point.quality === "valid" ? point.value : undefined }))} axes={[{ key: "utc", label: "UTC timestamp", value: point => point.timestamp_utc }, { key: "quality", label: "Quality", value: point => point.quality }, { key: "missing_reason", label: "Missing reason", value: point => point.missing_reason ? analysisMissingReasonLabels[point.missing_reason] ?? point.missing_reason : undefined }, { key: "estimate_bin", label: "Interpolated within bin", value: point => point.estimate_bin ? point.estimate_bin.lower_assumed ? `≤ ${point.estimate_bin.upper} (first bin; lower edge assumed)` : `${point.estimate_bin.lower}–${point.estimate_bin.upper}` : undefined }, { key: "kind", label: "Evidence kind", value: point => point.input_kind === 'summary' || point.input_kind === 'histogram' ? point.input_kind : point.kind }, { key: "source", label: "Source", value: point => point.source }, { key: "host", label: "Host", value: point => point.host }, { key: "service", label: "Service", value: point => point.service }, { key: "dimensions", label: "Dimensions", value: point => point.dimensions }]} series={[{ key: "value", label: points[0].metric_name, unit: points[0].unit }]} context={seriesSelection}><div role="img" aria-label={`${points[0].metric_name} over UTC time; ${points.length} buckets`}><ResponsiveContainer width="100%" height={260}><LineChart data={points.map(point => ({ ...point, value: point.quality === "valid" ? point.value : undefined }))} margin={{ top: 8, right: 60, bottom: 8, left: 8 }}><XAxis dataKey="timestamp_utc" tickFormatter={formatAnalysisTimeTick} tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={20} /><YAxis unit={points[0].unit ? ` ${points[0].unit}` : undefined} tick={{ fontSize: 11 }} /><Tooltip /><Line isAnimationActive={false} type="linear" dataKey="value" stroke="var(--chart-1)" connectNulls={false} dot={false} /></LineChart></ResponsiveContainer></div></SeriesChartExport></div>}
-          {canEdit && selected && !['deleted', 'cancelled'].includes(selected.state) && <button type="button" disabled={busy} onClick={() => void act(async signal => { await request(importPath(selected.id), { method: 'DELETE', signal }); if (signal.aborted) return; setSelected(undefined); setPreview(undefined); setPoints([]); await reload(signal) })}>{selected.state === 'ready' ? 'Delete dataset' : 'Cancel import'}</button>}
+          {canEdit && selected && !['deleted', 'cancelled'].includes(selected.state) && <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void act(async signal => { await request(importPath(selected.id), { method: 'DELETE', signal }); if (signal.aborted) return; setSelected(undefined); setPreview(undefined); setPoints([]); await reload(signal) })}>{selected.state === 'ready' ? 'Delete dataset' : 'Cancel import'}</button>}
         </div>
       </div>
     </>}

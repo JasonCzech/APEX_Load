@@ -1149,7 +1149,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const capacitySummary = useMemo(() => fleetCapacitySummary(fleetCapacity, health), [fleetCapacity, health])
   const cards = useMemo<MonitorCard[]>(() => [
     { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} showEnableHint={canManageSystem} /> },
-    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} showEnableHint={canManageSystem} /> },
+    // A line icon like the other Overview cards' (a dataset over a chart), not
+    // a text abbreviation.
+    { id: 'parquet-analysis', title: 'Analysis workspace', icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="8" ry="3" />
+        <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+        <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+      </svg>
+    ), content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} showEnableHint={canManageSystem} /> },
     {
       id: 'system-health',
       title: 'Control Plane',

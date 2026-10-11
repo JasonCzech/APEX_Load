@@ -3,7 +3,7 @@ import { analysisIdentityFilterError, analysisIdentityFilterShapeError, emptyAna
 
 export default function AnalysisIdentityFilters({ value, onChange, label = 'Identity filters' }: { value: IdentityFilters; onChange: (filters: IdentityFilters) => void; label?: string }) {
   const shapeError = analysisIdentityFilterShapeError(value)
-  if (shapeError) return <fieldset className="analysis-identity-filters" aria-label={label}><legend>{label}</legend><p role="alert">{shapeError}</p><button type="button" onClick={() => onChange(emptyAnalysisIdentityFilters())}>Reset identity filters</button></fieldset>
+  if (shapeError) return <fieldset className="analysis-identity-filters" aria-label={label}><legend>{label}</legend><p role="alert">{shapeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(emptyAnalysisIdentityFilters())}>Reset identity filters</button></fieldset>
   const error = analysisIdentityFilterError(value)
   return <fieldset className="analysis-identity-filters" aria-label={label}>
     <legend>{label}</legend>
@@ -13,8 +13,8 @@ export default function AnalysisIdentityFilters({ value, onChange, label = 'Iden
     {value.dimensions.map((dimension, index) => <div key={index}>
       <label>Filter {index + 1} name<input value={dimension.name} maxLength={128} onChange={event => onChange({ ...value, dimensions: value.dimensions.map((row, at) => at === index ? { ...row, name: event.target.value } : row) })} /></label>
       <label>Filter {index + 1} value<input value={dimension.value} maxLength={128} onChange={event => onChange({ ...value, dimensions: value.dimensions.map((row, at) => at === index ? { ...row, value: event.target.value } : row) })} /></label>
-      <button type="button" onClick={() => onChange({ ...value, dimensions: value.dimensions.filter((_, at) => at !== index) })}>Remove filter {index + 1}</button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...value, dimensions: value.dimensions.filter((_, at) => at !== index) })}>Remove filter {index + 1}</button>
     </div>)}
-    <button type="button" disabled={value.dimensions.length >= 16} onClick={() => onChange({ ...value, dimensions: [...value.dimensions, { name: '', value: '' }] })}>Add dimension filter</button>
+    <button type="button" className="btn btn-secondary btn-sm" disabled={value.dimensions.length >= 16} onClick={() => onChange({ ...value, dimensions: [...value.dimensions, { name: '', value: '' }] })}>Add dimension filter</button>
   </fieldset>
 }

@@ -1,3 +1,5 @@
+// Run monitor sources shares the analysis workspace's card layout.
+import './AnalysisWorkspace.css'
 import ElasticSourceFields from './ElasticSourceFields'
 import ElasticRunEvidence from './ElasticRunEvidence'
 import { emptyElasticSelection } from './elasticMonitoringModel'
@@ -67,7 +69,7 @@ export function RunMonitorSources({ projectId, canManage = false, showEnableHint
     if (enabled && projectId) void Promise.all([request<Source[]>(sourcesPath(projectId), { signal: c.signal }), request<MonitoringCollectorListResponse>(`/monitoring/collectors?project_id=${encodeURIComponent(projectId)}`, { signal: c.signal })]).then(([s, collectors]) => { if (!c.signal.aborted) { setSources(s); setCollectors(collectors.collectors) } }).catch(e => { if (!c.signal.aborted) setError(String(e)) })
     return () => { c.abort(); operation.current?.abort() }
   }, [enabled, projectId, refresh])
-  if (!enabled || !projectId) return <p className="monitor-hint">Run-bound monitoring is not enabled for this project.{showEnableHint && <> It is enabled per project in the controller configuration (<code>APEXLOAD_RUN_MONITOR_PROJECTS</code>).</>}</p>
+  if (!enabled || !projectId) return <div className="monitor-body"><p className="monitor-hint">Run-bound monitoring is not enabled for this project.{showEnableHint && <> It is enabled per project in the controller configuration (<code>APEXLOAD_RUN_MONITOR_PROJECTS</code>).</>}</p></div>
   const savedDraftSource = sources.find(source => source.id === draft.id && source.pack === draft.pack)
   const savedManagementSource = savedDraftSource ? managementSource(savedDraftSource) : undefined
   // Direct packs query their own connection; every other pack runs on a collector.
@@ -102,11 +104,11 @@ export function RunMonitorSources({ projectId, canManage = false, showEnableHint
       if (!c.signal.aborted) { setDraft(emptySource()); setRefresh(x => x + 1) }
     } catch (e) { if (!c.signal.aborted) setError(String(e)) } finally { if (!c.signal.aborted) setBusy(false) }
   }
-  return <section className="analysis-workspace run-monitor-sources" aria-label="Run monitor sources">
-    <p>Sources are captured when a run starts. Edits apply to subsequent runs. Collection continues through pauses.</p>
-    {error && <p role="alert">{error}</p>}
+  return <section className="analysis-workspace run-monitor-sources monitor-body" aria-label="Run monitor sources">
+    <p className="monitor-status-note">Sources are captured when a run starts. Edits apply to subsequent runs. Collection continues through pauses.</p>
+    {error && <p className="form-error" role="alert">{error}</p>}
     {draft.id && draft.management_scope && <ManagementCollectionState key={`${projectId}:${draft.id}`} projectId={projectId} sourceId={draft.id} canManage={canManage} />}
-    <ul>{sources.map(source => <li key={source.id}>{source.name} · {source.pack} · revision {source.revision} · {source.enabled ? 'enabled' : 'disabled'} {canManage && <button type="button" disabled={busy || source.pack === 'appdynamics'} onClick={() => setDraft(source)}>Edit {source.name}</button>}</li>)}</ul>
+    {sources.length > 0 && <ul className="run-monitor-source-list">{sources.map(source => <li key={source.id}>{source.name} · {source.pack} · revision {source.revision} · {source.enabled ? 'enabled' : 'disabled'} {canManage && <button type="button" className="btn btn-secondary btn-sm" disabled={busy || source.pack === 'appdynamics'} onClick={() => setDraft(source)}>Edit {source.name}</button>}</li>)}</ul>}
     {canManage && <fieldset disabled={busy}>
       <legend>{draft.id ? 'Edit source' : 'New source'}</legend>
       <label>Name (required)<input value={draft.name} maxLength={256} required aria-required="true" onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
@@ -128,8 +130,8 @@ export function RunMonitorSources({ projectId, canManage = false, showEnableHint
       <label>Collection interval (seconds)<input type="number" min={['dynatrace', 'cloudwatch', 'azure-monitor'].includes(draft.pack) ? 60 : ['servicebus-runtime', 'solace-semp'].includes(draft.pack) ? 30 : draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
       {saveBlockedReason && <p id="run-monitor-save-reason" className="run-monitor-save-reason">{saveBlockedReason}</p>}
-      <button type="button" aria-describedby={saveBlockedReason ? 'run-monitor-save-reason' : undefined} disabled={Boolean(saveBlockedReason) || !draft.name || (draft.pack === 'elastic' && Boolean(sourceValidation)) || !monitorSourceSelectionComplete(draft) || (draft.pack === 'kafka-offsets' && (!kafkaManagementAvailable || !!kafkaSourceError(managementSource(draft)))) || (draft.pack === 'servicebus-runtime' && (!serviceBusManagementAvailable || !!serviceBusSourceError(managementSource(draft)))) || (draft.pack === 'solace-semp' && (!solaceManagementAvailable || !!solaceSourceError(managementSource(draft))))} onClick={() => void save()}>Save monitor source</button>
-      {draft.id && <><button type="button" onClick={() => void save(true)}>Delete source</button><button type="button" onClick={() => setDraft(emptySource())}>New source</button></>}
+      <button type="button" className="btn btn-primary btn-sm" aria-describedby={saveBlockedReason ? 'run-monitor-save-reason' : undefined} disabled={Boolean(saveBlockedReason) || !draft.name || (draft.pack === 'elastic' && Boolean(sourceValidation)) || !monitorSourceSelectionComplete(draft) || (draft.pack === 'kafka-offsets' && (!kafkaManagementAvailable || !!kafkaSourceError(managementSource(draft)))) || (draft.pack === 'servicebus-runtime' && (!serviceBusManagementAvailable || !!serviceBusSourceError(managementSource(draft)))) || (draft.pack === 'solace-semp' && (!solaceManagementAvailable || !!solaceSourceError(managementSource(draft))))} onClick={() => void save()}>Save monitor source</button>
+      {draft.id && <><button type="button" className="btn btn-danger btn-sm" onClick={() => void save(true)}>Delete source</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => setDraft(emptySource())}>New source</button></>}
     </fieldset>}
   </section>
 }
