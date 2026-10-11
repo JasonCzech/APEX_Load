@@ -206,16 +206,17 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     {pending && pending.operation.type !== 'preview_allocation' && <div className="lr-repair-preview-footer"><p>Preview only. Nothing changes until you apply.</p><button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button></div>}
   </section>
   return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Preview unique data allocation' : 'Guided import repair'} hidden={view === 'hidden' || (view === 'data' && (!hasUniqueParameters || (!!settings && settings.dataView !== 'allocation')))}>
-    <p className="lr-repair-announcement" role="status">{announcement || (loading ? 'Checking current repair requirements…' : '')}</p>
+    <p className="lr-repair-announcement" role="status">{announcement}</p>
     {view !== 'data' ? <>
       <ImportReviewSectionHeader title="Resolve import issues" description={`${resolved.length} resolved${reviewedCount ? ` and ${reviewedCount} reviewed` : ''} in this session. Repeated findings are grouped; request locations are available within each issue.`} actions={
-        <button type="button" className="btn btn-primary" disabled={busy || loading || filter === 'resolved' || !nextIssue || nextIssue.id === selection} onClick={() => nextIssue && choose(nextIssue)}>Next unresolved issue</button>
+        <button type="button" className="btn btn-secondary" disabled={busy || loading || filter === 'resolved' || !nextIssue || nextIssue.id === selection} onClick={() => nextIssue && choose(nextIssue)}>Next unresolved issue</button>
       } />
       {(expired || (!candidate.startsWith('protected:') && issues.some(issue => issue.findings.some(item => issueRepairOptions(item.code).length > 0)))) && <div className="lr-issue-unavailable" role="status"><strong>{expired ? 'This protected draft has expired' : 'Protected repairs unavailable for this draft'}</strong><p>{expired ? 'Revalidate the archive to renew its repair session.' : 'Body, correlation, and TLS repairs require encrypted import storage. Existing settings and credential editors remain available when supported.'}</p>{onReimport && <button type="button" className="btn btn-secondary btn-sm" onClick={onReimport}>Open archive setup to revalidate</button>}</div>}
       <div className="import-review-toolbar"><label>Find an issue<input type="search" value={search} placeholder="Search values or source locations" onChange={e => setSearch(e.target.value)} /></label>
         <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">{counted('All unresolved', unresolvedCount)}</option><option value="blockers">{counted('Blockers', blocked)}</option><option value="review">{counted('Review notes', reviewCount)}</option><option value="resolved">{counted('Resolved', resolved.length)}</option><option value="reviewed">{counted('Reviewed with limitation', reviewedCount)}</option></select></label>
         <label>Issue category<select value={category} onChange={e => { setCategory(e.target.value as IssueCategory | 'all'); setSelection(''); resetPreview() }}><option value="all">All categories</option>{(Object.keys(issueCategories) as IssueCategory[]).map(key => <option value={key} key={key}>{issueCategories[key]}</option>)}</select></label>
-        <span role="status">{checking ? 'Checking repair requirements…' : `${shown.length} matching issues`}</span>
+        {/* The one place a running inspection is announced. */}
+        <span role="status">{loading ? 'Checking repair requirements…' : `${shown.length} matching issues`}</span>
       </div>
       <div className="lr-issue-layout"><div className="lr-issue-queue" aria-label="Import issue queue">
         {(Object.keys(issueCategories) as IssueCategory[]).map(category => {

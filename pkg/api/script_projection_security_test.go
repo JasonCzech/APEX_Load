@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -731,6 +732,11 @@ func TestMaskScriptSecretsPreservesNativeSourceAndMessageIdentifiers(t *testing.
 	}
 	if unresolved := discoverSecretBindingRequirements(masked, 0); len(unresolved) != 2 {
 		t.Fatalf("unresolved requirements = %#v, want only the duplicated session credential surfaces", unresolved)
+	}
+	// A repeat comes from the masking cache and must match exactly, including
+	// the typed values restored from the source script.
+	if again := maskScriptSecrets(script); !reflect.DeepEqual(again, masked) {
+		t.Fatalf("repeated mask = %#v, want %#v", again, masked)
 	}
 }
 

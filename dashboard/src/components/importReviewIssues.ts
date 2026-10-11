@@ -86,6 +86,30 @@ export function issueTitle(code: string): string {
   if (code.startsWith('conditional_producer:')) return `Check producer order: ${code.slice(21)}`
   return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES, ...HTTP3_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
 }
+// Converter warnings are raw messages. Known ones get a title saying what to
+// do; the rest keep their message, cut at a word. The full message stays in
+// the finding's detail either way.
+const WARNING_ACTION_TITLES: Array<[RegExp, string]> = [
+  [/\bweb_set_sockets_option\b[^;]*\b(?:SSL|TLS)/i, 'Choose supported TLS settings'],
+  [/\bweb_reg_save_param\w*\b/i, 'Review the response extraction'],
+  [/\bweb_reg_find\b/i, 'Review the text check'],
+]
+const WARNING_TITLE_LENGTH = 100
+export function warningIssueTitle(detail: string): string {
+  const message = detail.replace(/^line\s+\d+:\s*/i, '').trim()
+  for (const [pattern, title] of WARNING_ACTION_TITLES) if (pattern.test(message)) return title
+  if (message.length <= WARNING_TITLE_LENGTH) return message
+  const cut = message.slice(0, WARNING_TITLE_LENGTH)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > WARNING_TITLE_LENGTH / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, '')}…`
+}
+// Where an issue applies, for its title: a source location, else the action.
+function findingLocation(finding: ImportFinding, actions: Map<string, ScriptActionDefinition>): string {
+  const ref = (finding.source_ref || '').replace(/:$/, '')
+  const unmappedLine = /^Line (\d+) · /.exec(ref)
+  if (unmappedLine) return `line ${unmappedLine[1]}`
+  return ref || (finding.action_path && actions.get(finding.action_path)?.name) || ''
+}
 export function groupImportFindings(findings: ImportFinding[], script: ScriptDefinition): ImportIssue[] {
   const actions = new Map(importActionEntries(script).map(entry => [entry.path, entry.action]))
   const grouped = new Map<string, ImportIssue>()
@@ -109,6 +133,12 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
     issue.blocking ||= blocking
     if (!issue.findings.some(f => f.code === finding.code && f.action_path === path)) issue.findings.push(finding)
     grouped.set(id, issue)
+  }
+  // "<what to do> — <where>", so issues with the same fix at different places
+  // read apart. Issues spanning several places show their count instead.
+  for (const issue of grouped.values()) {
+    const locations = new Set(issue.findings.map(finding => findingLocation(finding, actions)).filter(Boolean))
+    if (locations.size === 1) issue.title = `${issue.title} — ${[...locations][0]}`
   }
   return [...grouped.values()].sort((a, b) => Number(b.blocking) - Number(a.blocking) || b.findings.length - a.findings.length || a.title.localeCompare(b.title))
 }
@@ -147,7 +177,7 @@ export function reviewSectionFindings(sections: ImportReviewSection[], source?: 
       const narrowerAssertion = /web_reg_find.*Search=ALL/i.test(detail)
       return {
         code: warning ? `diagnostic:warnings:${detail}` : `diagnostic:${section.key}`,
-        title: narrowerAssertion ? 'Text check searches a narrower response scope' : warning ? detail.replace(/^line\s+\d+:\s*/i, '').slice(0, 120) : section.key.startsWith('runtime_') ? issueTitle(`diagnostic:${section.key}`) : section.title || issueTitle(`diagnostic:${section.key}`),
+        title: narrowerAssertion ? 'Text check searches a narrower response scope' : warning ? warningIssueTitle(detail) : section.key.startsWith('runtime_') ? issueTitle(`diagnostic:${section.key}`) : section.title || issueTitle(`diagnostic:${section.key}`),
         detail, evidence: warning ? [] : [...(section.items || []), ...(section === parity && coverage ? [coverage.summary, ...(coverage.items || [])] : [])],
         gate: section.severity === 'blocker' ? 'execution' : 'promotion',
         source_ref: mapping ? `${mapping.source_file}:${line![1]}` : line ? `Line ${line[1]} · source file not identified` : undefined,

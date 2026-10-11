@@ -302,9 +302,7 @@ test('LoadRunner concurrent markers import exact child mappings and replay on th
     for (const mapping of childMappings) await expect(page.locator(`tr[data-mapping-id="${mapping.id}"]`)).toContainText(mapping.target_path!)
     await page.getByRole('tab', { name: /^Review(,|$)/ }).click()
     const save = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-    const setup = page.locator('.lr-completed-setup')
-    if (await setup.getAttribute('open') === null) await setup.locator(':scope > summary').click()
-    await page.locator('.lr-import-actions-card').getByRole('button', { name: 'Save draft', exact: true }).click()
+    await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save draft', exact: true }).click()
     const saved = await json(await save)
     const scripts = saved.scripts as { id: string }[]
     expect(scripts).toHaveLength(1)

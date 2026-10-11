@@ -19,6 +19,8 @@
 .lr-drop-content { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .lr-drop-content p { color: var(--text-secondary); font-size: 14px; margin: 0; }
 .lr-drop-hint { color: var(--text-muted); font-size: 12px; }
+.lr-drop-hint .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
+.lr-drop-hint .link-button:disabled { color: inherit; text-decoration: none; cursor: default; }
 .lr-file-queue {
   display: flex;
   flex-direction: column;
@@ -841,7 +843,9 @@
 .lr-repair-summary p, .lr-repair-summary li { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .lr-repair-summary li + li { margin-top: 8px; }
 .lr-repair-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.lr-import .script-import-review-header { scroll-margin-top: 90px; }
+/* Scroll targets clear the sticky top bar, tabs and save header (sticky
+   offsets sit inside .main-content's 20px padding, scroll margins do not). */
+.lr-import .script-import-review-header { scroll-margin-top: calc(var(--lr-review-sticky-top) + var(--lr-review-navigation-height, 0px) + 32px); }
 .main-content:has(.lr-import) > .main-topbar { background: var(--bg-primary); backdrop-filter: none; }
 
 /* The post-validation surface prioritizes the current repair task. */
@@ -910,7 +914,7 @@
 .lr-issue-workspace .lr-repair-preview-fields p { margin: 10px 0 0; font-size: 11px; }
 .lr-issue-detail .lr-repair-preview-comparison { margin: 16px 0 0; border-top: 1px solid var(--border); }
 .lr-repair-preview-comparison > summary { font-weight: 600; font-size: 12px; }
-.lr-repair-preview { scroll-margin-top: 150px; }
+.lr-repair-preview { scroll-margin-top: calc(var(--lr-review-content-top, 118px) + 52px); }
 .lr-repair-preview-code-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; margin-top: 10px; }
 .lr-repair-preview-code-grid > div { display: flex; flex-direction: column; min-width: 0; }
 .lr-repair-preview-code-grid h6 { margin: 0 0 7px; color: var(--text-secondary); font-size: 11px; text-transform: var(--label-case, uppercase); letter-spacing: var(--label-tracking, .04em); }
@@ -930,13 +934,12 @@
   .lr-import-reviewed .lr-file-info { flex-wrap: wrap; }
 }
 .lr-issue-queue { max-height: 70vh; overflow-y: auto; overscroll-behavior: contain; }
-.lr-issue-detail, .lr-issue-detail h4 { scroll-margin-top: 130px; }
+.lr-issue-detail, .lr-issue-detail h4 { scroll-margin-top: calc(var(--lr-review-content-top, 98px) + 32px); }
 .lr-import .script-import-review-original-diagnostics { margin-top: 16px; color: var(--text-secondary); }
 .lr-import .script-import-review-original-diagnostics > summary { cursor: pointer; padding: 10px 0; }
 @media (max-width: 900px) {
   .lr-issue-detail { grid-row: 1; }
   .lr-issue-queue { max-height: 60vh; }
-  .lr-issue-detail, .lr-issue-detail h4 { scroll-margin-top: 150px; }
 }
 
 /* Import review: decisions first, evidence on demand. */
@@ -992,7 +995,28 @@
 .lr-validation-review-panel .credentials-card-summary span { border: 0; border-radius: 0; background: transparent; padding: 0 12px 0 0; font-size: 13px; }
 .lr-validation-review-panel .import-review-suggestions > summary { padding: 16px; }
 .lr-validation-review-panel .import-review-toolbar :is(input[type=search], select) { min-height: 40px; }
-.lr-validation-review-navigation { position: sticky; top: 64px; z-index: 5; background: var(--bg-card, var(--bg-primary)); }
+/* After validation the review tabs, then the review's save header, stay in
+   view under the top bar. The import page measures both heights into the
+   --lr-review-*-height variables. Sticky offsets are measured inside the top
+   padding of .main-content (20px, or 16px on phones): 36px is the sticky top
+   bar's 56px less that padding, and where the bar scrolls away the offset is
+   minus the padding. */
+.lr-import {
+  --lr-review-sticky-top: 36px;
+  --lr-review-content-top: calc(var(--lr-review-sticky-top) + var(--lr-review-navigation-height, 0px) + var(--lr-review-header-height, 0px));
+}
+.lr-validation-review-navigation { position: sticky; top: var(--lr-review-sticky-top); z-index: 5; background: var(--bg-card, var(--bg-primary)); }
+.lr-validation-review-panel .script-import-review-compact > .script-import-review-header {
+  position: sticky;
+  top: calc(var(--lr-review-sticky-top) + var(--lr-review-navigation-height, 0px));
+  z-index: 4;
+  background: var(--bg-card, var(--bg-primary));
+  border-bottom: 1px solid var(--border);
+}
+/* The stepper and the tabs already name this step. */
+.lr-validation-review-panel .script-import-review-compact > .script-import-review-header .script-import-review-context {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 .lr-validation-review-navigation .lr-validation-review-tabs { position: static; background: inherit; }
 .lr-review-project-picker { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-secondary); }
 .lr-review-project-picker select { min-width: 0; flex: 1; max-width: 650px; min-height: 36px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; }
@@ -1015,15 +1039,19 @@
 @media (max-width: 1000px) {
   /* Keep the review tabs available without stacking them under a wrapping page header. */
   .main-content:has(.lr-import-reviewed) > .main-topbar { position: static; }
-  .lr-validation-review-tabs { top: 0; }
+  .lr-import { --lr-review-sticky-top: -20px; }
+}
+@media (max-width: 768px) {
+  /* On a phone the wrapped save header would take a third of the screen, so
+     only the tabs stay. */
+  .lr-import { --lr-review-sticky-top: -16px; --lr-review-content-top: calc(var(--lr-review-sticky-top) + var(--lr-review-navigation-height, 0px)); }
+  .lr-validation-review-panel .script-import-review-compact > .script-import-review-header { position: static; }
 }
 .lr-validation-review-tabs { background: var(--bg-primary); }
 .lr-validation-review-panel .import-review-suggestions h4 { font-size: 15px; text-transform: none; letter-spacing: normal; color: var(--text-primary); }
 @media (min-width: 1001px) {
   .lr-validation-review-tabs { flex-wrap: nowrap; }
-  .lr-validation-review-panel .import-category-nav { top: 7.5rem; max-height: calc(100vh - 9rem); }
-  .lr-validation-review-panel .import-category-editbar { top: 7.5rem; }
-  .lr-validation-review-panel .import-runtime-table thead th { top: 10.5rem; }
+  .lr-validation-review-panel .import-category-nav { top: calc(var(--lr-review-content-top) + 8px); max-height: calc(100vh - var(--lr-review-content-top) - 44px); }
 }
 
 /* Issue resolution keeps the queue stable while the detail pane does the work. */
@@ -1052,3 +1080,15 @@
 .lr-issue-detail .import-credentials-introduction { padding: 0; }
 .lr-issue-detail .secret-binding-review { padding: 0; border: 0; }
 @media (max-width: 760px) { .lr-issue-comparison { grid-template-columns: 1fr; } .lr-issue-action-row { position: static; } }
+
+/* Once reviewed, the upload card is one bar: its actions, then the queued
+   archive, in DOM order so focus follows what is on screen. */
+.lr-import-reviewed .lr-dropzone.has-file { padding: 8px 12px; }
+.lr-import-reviewed .lr-file-queue { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.lr-import-reviewed .lr-file-list { flex: 1 1 420px; max-height: 140px; }
+.lr-import-reviewed .lr-file-info { flex: 0 1 auto; gap: 8px; }
+.lr-import-reviewed .lr-file-info > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* At every width the category edit bar sticks under the review header, and
+   the table's column headings stick below the edit bar, as before. */
+.lr-validation-review-panel .import-category-editbar { top: var(--lr-review-content-top); }
+.lr-validation-review-panel .import-runtime-content .import-runtime-table thead th { top: calc(var(--lr-review-content-top) + 3rem); }

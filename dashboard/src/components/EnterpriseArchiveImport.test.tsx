@@ -642,22 +642,48 @@ describe('EnterpriseArchiveImport', () => {
     }), 'project-1', undefined)
   })
 
-  it('opens the archive picker from the keyboard-accessible dropzone', async () => {
+  it('queues a dropped VuGen folder as one source and ignores drags without files', async () => {
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    const live = () => container.querySelector('.drop-ingest-live')?.textContent || ''
+    // A dragged text selection carries no files, so nothing is read or reported.
+    await dropOnArchiveZone(container, { items: [{ kind: 'string' }], files: [] })
+    expect(live()).toBe('')
+    expect(container.querySelector('.lr-file-row')).toBeNull()
+
+    await dropOnArchiveZone(container, droppedFolder('Checkout', ['Checkout.usr', 'Action.c']))
+    expect(container.textContent).toContain('1 source queued')
+    expect(live()).toBe('Reading folder…')
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 500)) })
+    expect(live()).toBe('Folder added')
+  })
+
+  it('reports a dropped folder that cannot be read', async () => {
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    const unreadable = { isFile: false, isDirectory: true, name: 'Locked', createReader: () => ({ readEntries: (_resolve: unknown, reject: (error: Error) => void) => reject(new Error('Locked could not be opened.')) }) }
+    await dropOnArchiveZone(container, { items: [{ kind: 'file', webkitGetAsEntry: () => unreadable, getAsFile: () => null }], files: [] })
+    expect(container.textContent).toContain('Locked could not be opened.')
+    expect(container.querySelector('.lr-file-row')).toBeNull()
+  })
+
+  it('offers archives and a VuGen folder from buttons inside the drop zone', async () => {
     await act(async () => {
       root.render(<EnterpriseArchiveImport />)
     })
 
     const dropzone = container.querySelector<HTMLElement>('.lr-dropzone')
     const archiveInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')
-    expect(dropzone?.getAttribute('role')).toBe('button')
-    expect(dropzone?.tabIndex).toBe(0)
-    const clickSpy = archiveInput ? vi.spyOn(archiveInput, 'click') : null
+    const folderInput = container.querySelector<HTMLInputElement>('input[type="file"][webkitdirectory]')
+    expect(dropzone?.getAttribute('role')).toBe('group')
+    const archiveClick = archiveInput ? vi.spyOn(archiveInput, 'click') : null
+    const folderClick = folderInput ? vi.spyOn(folderInput, 'click') : null
+    const inside = (label: string) => Array.from(dropzone?.querySelectorAll('button') || []).find(button => button.textContent === label)
 
-    await act(async () => {
-      dropzone?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
-    })
+    await clickButton(inside('browse for archives')!)
+    await clickButton(inside('choose a VuGen folder')!)
 
-    expect(clickSpy).toHaveBeenCalledTimes(1)
+    // Each button opens only its own picker, not the drop zone's archive click too.
+    expect(archiveClick).toHaveBeenCalledTimes(1)
+    expect(folderClick).toHaveBeenCalledTimes(1)
   })
 
   it('paginates a high-cardinality archive queue with keyboard selection across pages', async () => {
@@ -806,6 +832,35 @@ describe('EnterpriseArchiveImport', () => {
     expect(javaJDBCDetails?.textContent).toContain('PreparedStatement.executeQuery')
   })
 
+  it('names the running save step in the review header until the save settles', async () => {
+    const importNow = apiMock.importEnterpriseArchive.getMockImplementation()!
+    let finishImport: (() => void) | undefined
+    apiMock.importEnterpriseArchive.mockImplementationOnce((...args: unknown[]) => new Promise(resolve => {
+      finishImport = () => resolve(importNow(...args))
+    }))
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'demo.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    const status = () => container.querySelector('.lr-validation-review-panel .script-import-review-header [role="status"]')?.textContent || ''
+    expect(status()).not.toContain('Saving')
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-import-review-actions button')).find(button => button.textContent?.trim() === 'Save draft')
+    expect(save).toBeTruthy()
+    if (!save) return
+    await clickButton(save)
+    expect(status()).toContain('Saving the draft…')
+
+    finishImport?.()
+    await flushPromises()
+    await flushPromises()
+    expect(status()).not.toContain('Saving the draft…')
+  })
+
   it('imports a zip and saves the converted script', async () => {
     const onImported = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({
@@ -926,10 +981,15 @@ describe('EnterpriseArchiveImport', () => {
       preserve_transactions: true,
       migration_block_statuses: ['blocked'],
     })
-    expect(convertButton.disabled).toBe(false)
     expect(container.textContent).toContain('Review and resolve')
+    // Once reviewed, saving lives only in the review header.
+    expect(container.querySelectorAll('.lr-import-action-buttons button')).toHaveLength(1)
+    const reviewSaveButton = findButton(container, 'Save to Script Library')
+    expect(reviewSaveButton?.closest('.script-import-review-actions')).toBeTruthy()
+    expect(reviewSaveButton?.disabled).toBe(false)
+    if (!reviewSaveButton) return
 
-    await clickButton(convertButton)
+    await clickButton(reviewSaveButton)
 
     expect(apiMock.importEnterpriseArchive).toHaveBeenCalledWith(file, {
       name: undefined,
@@ -3168,9 +3228,9 @@ describe('EnterpriseArchiveImport', () => {
 
     // Removing one queued row must not look like the batch ended: the run is
     // still in flight, so the queue actions stay locked.
-    const queueActions = Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-import-action-buttons button'))
-    expect(queueActions[0]?.disabled).toBe(true)
-    expect(queueActions[1]?.disabled).toBe(true)
+    const queueActions = Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-import-action-buttons button, .script-import-review-actions button'))
+    expect(queueActions.length).toBeGreaterThan(1)
+    expect(queueActions.every(button => button.disabled)).toBe(true)
     expect(container.textContent).toContain('Processing')
 
     await act(async () => {
@@ -7496,7 +7556,7 @@ describe('EnterpriseArchiveImport', () => {
 
       await flushPromises()
 
-      const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Continue to browser replay'))
       expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
@@ -7653,7 +7713,7 @@ describe('EnterpriseArchiveImport', () => {
 
       await flushPromises()
 
-      const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Continue to browser replay'))
       expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
@@ -7797,7 +7857,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('.script-import-review-actions button')).find(button => button.textContent?.trim() === 'Save draft')
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -7849,6 +7909,30 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement | 
     .replace('Save and open in Visual Editor', 'Save draft and open in Visual Editor')
   return buttons.find(button => button.textContent?.includes(nextLabel))
     || (label === 'Save to Script Library' ? buttons.find(button => button.textContent?.includes('Save draft — execution blocked')) : undefined)
+}
+
+async function dropOnArchiveZone(container: HTMLElement, dataTransfer: unknown) {
+  const drop = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer })
+  await act(async () => {
+    container.querySelector('.lr-dropzone')?.dispatchEvent(drop)
+  })
+  await flushPromises()
+}
+
+// A dropped folder as browsers expose it: FileSystem entries, read in batches.
+function droppedFolder(name: string, fileNames: string[]) {
+  const fileEntry = (fileName: string) => ({ isFile: true, isDirectory: false, name: fileName, file: (resolve: (file: File) => void) => resolve(new File([fileName], fileName)) })
+  const folder = {
+    isFile: false,
+    isDirectory: true,
+    name,
+    createReader: () => {
+      let read = false
+      return { readEntries: (resolve: (entries: unknown[]) => void) => { resolve(read ? [] : fileNames.map(fileEntry)); read = true } }
+    },
+  }
+  return { items: [{ kind: 'file', webkitGetAsEntry: () => folder, getAsFile: () => null }], files: [] }
 }
 
 async function clickButton(button: HTMLButtonElement) {

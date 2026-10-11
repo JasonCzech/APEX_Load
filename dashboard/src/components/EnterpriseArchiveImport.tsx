@@ -21,6 +21,7 @@ import { type JavaClasspathAsset, type ReplayPreflight, type SourceArchiveReview
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
 import DropIngestOverlay from './DropIngestOverlay'
 import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
+import { readDroppedImportSources } from './droppedImportSources'
 import ImportCoverageButton from './ImportCoverageButton'
 import { JavaClasspathResolver } from './JavaClasspathResolver'
 import { JavaDependencyInventory } from './JavaDependencyInventory'
@@ -997,6 +998,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const atomicSaveInFlightRef = useRef<{ operationKey: string; operationId: string } | null>(null)
   const [atomicSaveInProgress, setAtomicSaveInProgress] = useState(false)
   const [scriptSaveInProgress, setScriptSaveInProgress] = useState(false)
+  const [secretBindingsApplying, setSecretBindingsApplying] = useState(false)
+  // The save started from the review, while it runs. A depth count keeps an
+  // outer save's description when it calls another tracked save.
+  const [trackedSave, setTrackedSave] = useState<{ destination: ImportSaveDestination; several: boolean } | null>(null)
+  const trackedSaveDepthRef = useRef(0)
   const operationBusy = classpathUploadInProgress || workingMode !== null
     || reviewArtifactSaving
     || reviewArtifactPersistenceInProgress
@@ -1542,6 +1548,28 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const reviewedRepairIssueIds = useMemo(() => new Set(reviewedRepairIssues.scope === guidedRepairScope ? reviewedRepairIssues.ids : []), [reviewedRepairIssues, guidedRepairScope])
   const tabIssues = useMemo(() => allTabIssues.filter(issue => issue.blocking || !reviewedRepairIssueIds.has(issue.id)), [allTabIssues, reviewedRepairIssueIds])
   const reviewedTabIssueCount = allTabIssues.length - tabIssues.length
+  // The review tabs and the review's save header stick in turn below the top
+  // bar, so each sticky offset needs the measured heights above it. They are
+  // written straight to CSS variables; a re-render of this page per resize
+  // would cost far more than the layout it adjusts.
+  const reviewNavigationRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const navigation = reviewNavigationRef.current
+    const root = navigation?.closest<HTMLElement>('.lr-import')
+    const header = root?.querySelector<HTMLElement>('.lr-validation-review-panel .script-import-review-header')
+    if (!navigation || !root || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      // A detached node measures 0; keep the last real heights until the
+      // remounted review is observed instead.
+      if (!navigation.isConnected || (header && !header.isConnected)) return
+      root.style.setProperty('--lr-review-navigation-height', `${Math.round(navigation.getBoundingClientRect().height)}px`)
+      root.style.setProperty('--lr-review-header-height', `${Math.round(header?.getBoundingClientRect().height || 0)}px`)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(navigation)
+    if (header) observer.observe(header)
+    return () => observer.disconnect()
+  }, [importedScript, validationReviewTab, guidedRepairScope])
   // Until the protected draft's repair inspection answers, the issue list is
   // the draft's provisional one and its counts change when the answer lands.
   // Before an answer exists the repair panel is busy only with that
@@ -1714,6 +1742,22 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const browserReplayWasStarted = browserImport && replayValidationSession !== null
   const browserReplayInProgress = browserImport && (browserReplayStarting || browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
   const browserReplayNeedsRerun = browserImport && !browserReplayInProgress && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
+  // A save from the review header can take many seconds on a large script, so
+  // its header names the step it is on rather than only disabling buttons.
+  // A single browser draft's save converts it and starts its required replay
+  // first; it saves nothing yet.
+  const reviewSaveProgress = secretBindingsApplying
+    ? { label: 'Applying credential bindings…' }
+    : !trackedSave
+      ? undefined
+      : {
+          action: trackedSave.destination === 'editor' ? 'edit' as const : 'save' as const,
+          label: browserReplayNeedsRerun && !trackedSave.several
+            ? 'Preparing draft browser replay…'
+            : trackedSave.destination === 'editor'
+              ? 'Saving the draft, then opening it in the Visual Editor…'
+              : trackedSave.several ? 'Saving the reviewed drafts…' : 'Saving the draft…',
+        }
   const saveRequiresBrowserReplay = executableImport && browserReplayNeedsRerun
   const primarySaveDisabled = saveBlockedByProtocolGate
     ? (!reviewArtifact || reviewArtifactSaving || !reviewMatchesCurrentOptions)
@@ -2391,15 +2435,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     return zipFiles.length
   }, [invalidateOperationScopes])
 
-  const addFolderToQueue = useCallback((fileList?: FileList | null) => {
-    if (sourceMutationLockedRef.current) return
-    const files = Array.from(fileList || [])
-    if (files.length === 0) return
+  const addFolderToQueue = useCallback((files: File[]): boolean => {
+    if (sourceMutationLockedRef.current) return false
     const roots = new Set(files.map(file => (file.webkitRelativePath || '').split('/')[0]))
-    if (roots.size !== 1 || files.some(file => !file.webkitRelativePath) ||
+    if (files.length === 0 || roots.size !== 1 || files.some(file => !file.webkitRelativePath) ||
         files.filter(file => file.name.toLowerCase().endsWith('.usr')).length !== 1) {
-      setError('Choose one VuGen script folder containing exactly one .usr project file.')
-      return
+      setError(`${Array.from(roots)[0] || 'That folder'} is not a VuGen script folder: it must contain exactly one .usr project file.`)
+      return false
     }
     const retainedItemIds = retainedAtomicSaveRef.current?.entries.map(entry => entry.itemId) || []
     if (retainedItemIds.length > 0) invalidateOperationScopes(retainedItemIds)
@@ -2412,12 +2454,18 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     setSelectedItemId(id)
     setError('')
     setNotice('')
+    return true
   }, [invalidateOperationScopes])
 
+  // Dropping a folder needs a pointer; this picker is the keyboard and
+  // desktop-app path to the same queue.
   useEffect(() => {
     folderRef.current?.setAttribute('webkitdirectory', '')
     folderRef.current?.setAttribute('directory', '')
   }, [])
+  const handleBrowseFolder = () => {
+    if (!sourceMutationLockedRef.current) folderRef.current?.click()
+  }
 
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
@@ -2432,6 +2480,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     beginIngest(describeReading(paths.length))
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
+      // The native drop hands over paths only, so a dropped folder cannot be read.
+      if (files.length === 0) {
+        failIngest()
+        setError('Drop .zip or .usz archives here. To add an unpacked VuGen folder, choose it with the folder picker in this drop zone.')
+        return
+      }
       const queued = addFilesToQueue(files)
       if (queued > 0) succeedIngest(describeAccepted(queued))
       else failIngest()
@@ -2501,13 +2555,23 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     setDragOver(false)
     // Desktop file drops arrive via the native OnFileDrop router with real
     // paths; the webview's dataTransfer has none, so ignore HTML5 drop there.
-    if (desktop) return
-    const dropped = e.dataTransfer.files
-    if (!dropped || dropped.length === 0) return
-    beginIngest(describeReading(dropped.length))
-    const queued = addFilesToQueue(dropped)
-    if (queued > 0) succeedIngest(describeAccepted(queued))
-    else failIngest()
+    if (desktop || sourceMutationLockedRef.current) return
+    const fileItems = Array.from(e.dataTransfer.items || []).filter(item => item.kind === 'file')
+    const droppedCount = fileItems.length || e.dataTransfer.files?.length || 0
+    if (droppedCount === 0) return
+    const folderDropped = fileItems.some(item => item.webkitGetAsEntry?.()?.isDirectory)
+    beginIngest(folderDropped ? 'Reading folder…' : describeReading(droppedCount))
+    // A dropped VuGen folder queues as one source, the same as an archive.
+    void readDroppedImportSources(e.dataTransfer).then(({ files, folders }) => {
+      const queuedFolders = folders.filter(folder => addFolderToQueue(folder)).length
+      const queuedFiles = files.length > 0 ? addFilesToQueue(files) : 0
+      if (queuedFolders + queuedFiles === 0) failIngest()
+      else if (queuedFiles === 0) succeedIngest(queuedFolders === 1 ? 'Folder added' : `${queuedFolders} folders added`)
+      else succeedIngest(describeAccepted(queuedFolders + queuedFiles))
+    }).catch(error => {
+      failIngest()
+      setError(error instanceof Error ? error.message : 'The dropped folder could not be read.')
+    })
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2856,7 +2920,22 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       .finally(() => setRefreshingRemainingDraftsOf(current => current === refreshing ? null : current))
   }, [convertAfterEditorSave])
 
-  const convertValidatedItems = async (itemIds?: string[], destination: ImportSaveDestination = 'stay') => {
+  const trackSave = async (destination: ImportSaveDestination, several: boolean, run: () => Promise<unknown>) => {
+    trackedSaveDepthRef.current += 1
+    if (trackedSaveDepthRef.current === 1) setTrackedSave({ destination, several })
+    try {
+      await run()
+    } finally {
+      trackedSaveDepthRef.current -= 1
+      if (trackedSaveDepthRef.current === 0) setTrackedSave(null)
+    }
+  }
+
+  const convertValidatedItems = (itemIds?: string[], destination: ImportSaveDestination = 'stay') => (
+    trackSave(destination, (itemIds?.length ?? validatedFileCount) > 1, () => runConvertValidatedItems(itemIds, destination))
+  )
+
+  const runConvertValidatedItems = async (itemIds?: string[], destination: ImportSaveDestination = 'stay') => {
     const targetItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id)) && item.status === 'validated')
     if (targetItems.length === 0) {
       setError('Validate the queued enterprise script archive before converting it.')
@@ -3388,7 +3467,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     }
   }
 
-  const handleSaveConverted = async (destination: ImportSaveDestination = 'stay') => {
+  const handleSaveConverted = (destination: ImportSaveDestination = 'stay') => (
+    trackSave(destination, false, () => runSaveConverted(destination))
+  )
+
+  const runSaveConverted = async (destination: ImportSaveDestination = 'stay') => {
     const preparedReview = latestPreparedReviewRef.current
     const currentImportedScript = preparedReview.importedScript
     if (!currentImportedScript || !selectedItem) return
@@ -3732,6 +3815,15 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
+    setSecretBindingsApplying(true)
+    try {
+      await applySecretBindingsToReview(bindings)
+    } finally {
+      setSecretBindingsApplying(false)
+    }
+  }
+
+  const applySecretBindingsToReview = async (bindings: SecretBindingSelection[]) => {
     if (!selectedItem || !result || !importedScript) return
     const sourceItemId = selectedItem.id
     const sourceGeneration = selectedItem.reviewGeneration
@@ -4258,29 +4350,25 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         onDragOver={e => { e.preventDefault(); if (!sourceMutationLocked) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
+        // A click anywhere still browses for archives; the buttons inside
+        // give the keyboard both archives and folders.
         onClick={sourceMutationLocked || queuedFileCount > 0 ? undefined : handleBrowseArchives}
-        role={queuedFileCount > 0 ? "group" : "button"}
-        tabIndex={sourceMutationLocked || queuedFileCount > 0 ? -1 : 0}
+        role="group"
         aria-disabled={sourceMutationLocked}
-        aria-label={queuedFileCount > 0 ? `Add enterprise script archives. ${queuedFileCount} currently queued` : 'Choose one or more enterprise script archives'}
-        onKeyDown={event => {
-          if (sourceMutationLocked || queuedFileCount > 0 || event.currentTarget !== event.target) return
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            handleBrowseArchives()
-          }
-        }}>
+        aria-label={queuedFileCount > 0 ? `Add enterprise script archives or VuGen folders. ${queuedFileCount} currently queued` : 'Add enterprise script archives or an unpacked VuGen folder'}>
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
         <input ref={fileRef} type="file" accept=".zip,.usz" multiple disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
-        <input ref={folderRef} type="file" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { addFolderToQueue(event.target.files); event.target.value = '' }} hidden />
+        <input ref={folderRef} type="file" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; if (files.length > 0) addFolderToQueue(files) }} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">
             <div className="lr-file-info">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               <div>
-                <span className="lr-filename">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} archive${queuedFileCount === 1 ? '' : 's'}`} queued</span>
-                <span className="lr-filesize">Select a source to review its result.</span>
+                {/* Once a single archive is reviewed, its own row says it all. */}
+                {!(result && queuedFileCount === 1) && <span className="lr-filename">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} archive${queuedFileCount === 1 ? '' : 's'}`} queued</span>}
+                {queuedFileCount > 1 && <span className="lr-filesize">Select a source to review its result.</span>}
                 <button type="button" className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseArchives() }}>Add archives</button>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseFolder() }}>Add folder</button>
               </div>
               <button className="btn btn-sm btn-ghost" disabled={sourceMutationLocked} onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
             </div>
@@ -4371,14 +4459,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         ) : (
           <div className="lr-drop-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drop one or more enterprise script archive <code>.zip</code> or <code>.usz</code> files here</p>
-            <span className="lr-drop-hint">or click to browse</span>
+            <p>Drop enterprise script archives (<code>.zip</code> or <code>.usz</code>) or an unpacked VuGen script folder here</p>
+            <span className="lr-drop-hint">or <button type="button" className="link-button" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseArchives() }}>browse for archives</button> · <button type="button" className="link-button" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseFolder() }}>choose a VuGen folder</button></span>
           </div>
         )}
-      </div>
-
-      <div className="lr-import-actions" style={actionWrapStyle}>
-        <button type="button" className="btn btn-secondary" disabled={sourceMutationLocked} onClick={() => folderRef.current?.click()}>Choose VuGen folder</button>
       </div>
 
       {queuedFileCount > 0 && (
@@ -4560,10 +4644,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             </div>
           )}
           <div className="lr-import-action-buttons">
-            <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || operationBusy}>
+            {/* One primary per stage: Validate until there is a review, whose
+                own header then holds the save actions. */}
+            <button className={`btn ${result ? 'btn-secondary' : 'btn-primary'} btn-lg`} onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || operationBusy}>
               {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : validateButtonLabel}
             </button>
-            {(queuedFileCount > 1 || reviewMode !== 'conversion') && <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
+            {(queuedFileCount > 1 || reviewMode !== 'conversion') && !(result && reviewMode === 'validation' && !(saveBlockedByProtocolGate && !reviewArtifact)) && <button className="btn btn-secondary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
               {workingMode === 'convert' ? <><span className="spinner" /> {refreshingRemainingDrafts ? 'Converting remaining drafts…' : 'Converting and saving…'}</> : convertButtonLabel}
             </button>}
           </div>
@@ -4826,7 +4912,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             </div>
           )}
           <div className="lr-tab-readiness" role="status">{importedScript && (repairCheckPending ? 'Checking repair requirements…' : (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review${reviewedTabIssueCount ? ` · ${reviewedTabIssueCount} reviewed` : ''}`; })())}</div>
-          <div className="lr-validation-review-navigation">
+          <div className="lr-validation-review-navigation" ref={reviewNavigationRef}>
           {reviewProjectPicker}
           <TabList className="lr-validation-review-tabs"
  role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
@@ -4924,6 +5010,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             sourceMigrationRequirements={archiveSecretBindingRequirements}
             preserveSourceSessionAfterApply={archiveSecretBindingRequirements.length > secretBindingRequirements.length}
             onSecretBindingsApply={handleSecretBindingsApply}
+            progress={reviewSaveProgress}
             onSecretBindingsErrorChange={setError}
             sharedValues={result.shared_values}
             sharedValueScripts={resultScripts}
