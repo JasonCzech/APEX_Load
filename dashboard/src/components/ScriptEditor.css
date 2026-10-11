@@ -8039,7 +8039,7 @@ button.debugger-problem-row:hover {
   .debugger-shell > .debugger-bottom { flex: 0 0 auto; height: 260px; min-height: 0; }
   .debugger-shell.debug-dock-collapsed > .debugger-bottom { height: auto; min-height: 42px; }
 }
-.inspector-section-tabs { position: sticky; top: 0; z-index: 1; padding: 0 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
+.inspector-section-tabs { position: sticky; top: 0; z-index: 1; padding: 0; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
 .action-editor-panel [hidden] { display: none !important; }
 .request-body-workspace { display: block; width: 100%; min-height: 50vh; box-sizing: border-box; resize: vertical; font-family: var(--font-mono, monospace); }
 
@@ -8233,7 +8233,6 @@ button.debugger-problem-row:hover {
 .author-edit-toolbar { margin-bottom: 8px; }
 .author-main-action .inspector-selection-path { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .author-main-action .inspector-selection-path small { display: inline; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.inspector-section-tabs { padding: 0; }
 /* Debug frame: one session bar (status, step controls, options) and one row
    of selection tools and disclosures above the panes. */
 .debug-options-toolbar.debug-session-bar { flex-wrap: nowrap; gap: 8px; padding: 6px 12px; min-height: 48px; box-sizing: border-box; }
@@ -8290,8 +8289,7 @@ button.debugger-problem-row:hover {
 .script-outline-flag.attention { background: var(--warning); }
 .script-outline-group > .script-outline-row:not(.script-outline-group-head) { margin-left: 8px; border-left: 1px solid var(--border); }
 .script-outline-group-head [data-outline-select] .script-outline-name,
-.script-outline-group-label { font-weight: 650; }
-.script-outline-group-label { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; padding: 3px 6px; }
+.script-outline-group-label { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; padding: 3px 6px; font-weight: 650; }
 .script-outline-group-label small { flex: 0 0 auto; max-width: 40%; overflow: hidden; color: var(--text-secondary); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 /* Source's own actions sit at the end of the scope bar, after the scope toggle. */
 .script-json-scope-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }

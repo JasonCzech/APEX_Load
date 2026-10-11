@@ -91,7 +91,7 @@ function getSelectedParameterHeaderDetails(
 ) {
   if (!selectedParameter || selectedParameterIdx === null) {
     return {
-      title: 'Parameter Data',
+      title: 'Parameters',
       token: '',
       details: ['Select a parameter from the Parameters sidebar.'],
     }
@@ -259,7 +259,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
         className={`editor-dialog parameter-data-dialog ${variant === 'document' ? 'parameter-data-document' : ''}`}
         role={variant === 'document' ? 'region' : 'dialog'}
         aria-modal={variant === 'document' ? undefined : true}
-        aria-label="Parameter Data"
+        aria-label="Parameters"
       >
         <div className="parameter-workspace-toolbar">
           <div><h3>Parameters &amp; datasets</h3><p>Define values, allocate rows, and inspect where each parameter is used.</p></div>
@@ -1041,8 +1041,8 @@ function ParameterDraftPanel({
           <strong style={{ display: 'block', marginBottom: 4 }}>Parameterize Selection</strong>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             {draft.source === 'json'
-              ? 'This selection came from the Script JSON. Save it, then pick the parameter type (data file, time, random, uuid, …) below.'
-              : 'This selection came from the Action List editor. Review it here with the rest of the parameter configuration.'}
+              ? 'This selection came from Source. Add it as a parameter, then pick the parameter type (data file, time, random, uuid, …) below.'
+              : 'This selection came from the Action editor. Review it here with the rest of the parameter configuration.'}
           </span>
         </div>
       </div>
@@ -1066,7 +1066,7 @@ function ParameterDraftPanel({
       </div>
       <div className="parameter-draft-actions">
         <button type="button" className="btn btn-sm btn-primary" onClick={onApplyPendingParameterDraft} disabled={!draft.requestedName.trim()}>
-          Save To Parameter Data
+          Add parameter
         </button>
         <button type="button" className="btn btn-sm btn-ghost" onClick={onClearPendingParameterDraft}>
           Cancel
@@ -1110,7 +1110,7 @@ export function SelectedParameterDetails({ parameter, referenceLines, usages, da
       <dt>Allocation</dt><dd>{parameter.same_line_as ? `Same row as ${parameter.same_line_as}` : parameter.selection || 'Sequential'}</dd>
       {dataInfo && <><dt>Dataset</dt><dd>{dataInfo.fileName}{dataInfo.rows !== null ? ` · ${dataInfo.rows} rows` : ''}</dd></>}
     </dl>
-    <button type="button" className="btn btn-sm btn-primary" onClick={onEditInDataTab}>Edit in Parameter Data →</button>
+    <button type="button" className="btn btn-sm btn-primary" onClick={onEditInDataTab}>Edit in Parameters →</button>
     <h4>Usages ({referenceLines.length})</h4>
     {!referenceLines.length && <p>No references in the current source.</p>}
     {(usages?.length ? usages : referenceLines.map(line => ({ line, path: 'Full script', label: 'Full script' }))).map(({ line, path, label }, index) => <button key={`${path}:${index}`} type="button" className="selected-parameter-ref" onClick={() => onJumpToLine(line)} aria-label={`Open ${parameter.name} usage in ${path} at line ${line}`}>{label || path} · line {line}</button>)}
@@ -1994,7 +1994,7 @@ function ParameterTypeFields({ parameter, onUpdate }: ParameterTypeFieldsProps) 
       <p className="parameter-settings-empty">
         {type === 'uuid'
           ? 'UUID values are generated automatically — no extra configuration needed.'
-          : 'Host uses the runtime host value. Configure optional host overrides later in Parameter Data.'}
+          : 'Host uses the runtime host value. Configure optional host overrides later in Parameters.'}
       </p>
     )
   }

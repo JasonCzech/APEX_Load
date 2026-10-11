@@ -117,7 +117,7 @@ test('parameter workspace preserves 4000 rows, references, masked values and run
   if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Editor', exact: true }).click()
   await page.getByRole('tab', { name: 'Parameters', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Close script editor', exact: true })).toBeVisible()
-  const panel = page.getByRole('region', { name: 'Parameter Data', exact: true })
+  const panel = page.getByRole('region', { name: 'Parameters', exact: true })
   await panel.getByRole('textbox', { name: 'Parameter name', exact: true }).fill('account')
   await panel.getByRole('button', { name: 'Rename references' }).click()
   await panel.getByRole('tab', { name: 'Usage', exact: true }).click()

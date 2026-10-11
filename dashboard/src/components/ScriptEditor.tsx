@@ -6613,7 +6613,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   {httpConversionGenerating ? 'Generating…' : 'Generate HTTP Draft Preview'}
                 </button>
                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Debug</button>
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameter Data</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameters</button>
                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('runtime')}>Review Runtime Settings</button>
               </div>
             </div>
@@ -7250,7 +7250,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     Debug
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('parameter-data')}>
-                    Review Parameter Data
+                    Review Parameters
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('runtime')}>
                     Review Runtime Settings

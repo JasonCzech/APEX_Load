@@ -2049,7 +2049,7 @@ describe('ScriptEditor', () => {
     await act(async () => {
       findCenterTab(container, 'Parameters')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const workspace = container.querySelector('[aria-label="Parameter Data"]')
+    const workspace = container.querySelector('[aria-label="Parameters"]')
     const parameterItem = Array.from(workspace?.querySelectorAll<HTMLButtonElement>('nav[aria-label="Parameter selection"] button') || [])
       .find(button => button.textContent?.includes('session_id'))
     await act(async () => {
@@ -2902,8 +2902,8 @@ describe('ScriptEditor', () => {
       parameterLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(findCenterTab(container, 'Parameters')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Parameter: session_id')
-    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('{{param.session_id}}')
+    expect(container.querySelector('[aria-label="Parameters"]')?.textContent).toContain('Parameter: session_id')
+    expect(container.querySelector('[aria-label="Parameters"]')?.textContent).toContain('{{param.session_id}}')
   })
 
   it('only exposes the Source Mapping and Metadata JSON center tabs for scripts with actual import metadata', async () => {
@@ -3581,7 +3581,7 @@ describe('ScriptEditor', () => {
       parameterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const dialog = container.querySelector('[aria-label="Parameter Data"]')
+    const dialog = container.querySelector('[aria-label="Parameters"]')
     const typeSelect = dialog?.querySelector('select[aria-label="Parameter Type for session_id"]')
     const readonlyType = dialog?.querySelector('.parameter-type-readonly[aria-label="Parameter Type for session_id: Counter"]')
 
@@ -3632,7 +3632,7 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Parameters')?.getAttribute('aria-selected')).toBe('true')
 
-    const parameterWorkspace = container.querySelector('[aria-label="Parameter Data"]')
+    const parameterWorkspace = container.querySelector('[aria-label="Parameters"]')
     const activePanel = container.querySelector('.center-tab-panel.active') as HTMLDivElement | null
     const autoButton = Array.from(parameterWorkspace?.querySelectorAll('.parameter-workspace-actions button') || []).find(button =>
       button.textContent?.trim() === 'Auto Params',
@@ -5736,12 +5736,16 @@ describe('ScriptEditor', () => {
     const afterFailure = container.querySelector<HTMLSelectElement>('select[aria-label="After a failure"]')!
     // The default names what a test run of this script does (it opts out of continue-on-error).
     expect(afterFailure.selectedOptions[0].textContent).toBe('As a test run: stop this iteration')
+    const failurePolicy = () => Array.from(container.querySelectorAll('.debug-effective-settings dt')).find(term => term.textContent === 'Failure policy')?.nextElementSibling?.textContent
+    expect(failurePolicy()).toBe('Stop on error')
     await act(async () => {
       afterFailure.value = 'continue'
       afterFailure.dispatchEvent(new Event('change', { bubbles: true }))
       changeInputValue(container.querySelector<HTMLInputElement>('input[aria-label="Run identity"]')!, 'ticket-42')
     })
     expect(optionsButton.textContent).toBe('Debug options (2)')
+    // Before any run, the effective configuration already reflects the choice.
+    expect(failurePolicy()).toBe('Continue on error')
     await act(async () => {
       findDebuggerRunButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
@@ -9749,7 +9753,7 @@ describe('ScriptEditor', () => {
     expect(editorInputs.length).toBeGreaterThanOrEqual(2)
 
     const saveButton = Array.from(container.querySelectorAll('.parameter-draft-panel button')).find(button =>
-      button.textContent?.includes('Save To Parameter Data'),
+      button.textContent?.includes('Add parameter'),
     )
     expect(saveButton).toBeTruthy()
     if (!saveButton) {
@@ -9872,10 +9876,11 @@ describe('ScriptEditor', () => {
 
     const draftPanel = container.querySelector('.parameter-draft-panel')
     expect(draftPanel).not.toBeNull()
-    expect(draftPanel?.textContent).toContain('Script JSON')
+    // It names the tab the selection came from.
+    expect(draftPanel?.textContent).toContain('came from Source')
 
     const saveButton = Array.from(container.querySelectorAll('.parameter-draft-panel button')).find(button =>
-      button.textContent?.includes('Save To Parameter Data'),
+      button.textContent?.includes('Add parameter'),
     )
     expect(saveButton).toBeTruthy()
     if (!saveButton) {

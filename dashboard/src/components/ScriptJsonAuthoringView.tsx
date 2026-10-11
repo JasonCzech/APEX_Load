@@ -624,7 +624,7 @@ export function ScriptJsonInsightsView({
 
       <div className="utility-card">
         <div className="utility-card-header">
-          <strong>Parameter Data & Extractors</strong>
+          <strong>Parameters & extractors</strong>
           <span>{dataSourceInspectorItems.length} data • {extractorInspectorItems.length} extractor{extractorInspectorItems.length === 1 ? '' : 's'}</span>
         </div>
         {dataSourceInspectorItems.length > 0
