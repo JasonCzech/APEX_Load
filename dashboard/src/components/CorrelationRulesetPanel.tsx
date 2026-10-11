@@ -1,10 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { CorrelationRuleset, CorrelationRulesetApplyResponse } from '../types'
 import './parityPanels.css'
+import ScriptPicker, { type ScriptOption } from './ScriptPicker'
+import { useDisclosedFormFocus } from './useDisclosedFormFocus'
 import { formatDateTime } from '../utils/dateTime'
 
 const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
@@ -12,6 +14,8 @@ const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
 interface Props {
   projectId?: string
   canManage?: boolean
+  /** The project's scripts, when the page already holds them. */
+  scripts?: ScriptOption[]
 }
 
 const CATALOG_PAGE_SIZE = 100
@@ -36,8 +40,9 @@ function snapshotCaughtUp(
 
 // Project-scoped catalog of learned, reusable correlation rules. Discover rules
 // from a script's recorded baseline, then apply them to other scripts.
-export default function CorrelationRulesetPanel({ projectId, canManage = false }: Props) {
+export default function CorrelationRulesetPanel({ projectId, canManage = false, scripts }: Props) {
   const api = useCorrelationRulesetApi()
+  const titleId = useId()
   const mountedRef = useRef(false)
   const currentProjectRef = useRef(projectId)
   const loadRequestRef = useRef(0)
@@ -51,7 +56,9 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState(false)
+  const [showDiscover, setShowDiscover] = useState(false)
   const [discoverForm, setDiscoverForm] = useState({ scriptId: '', name: '' })
+  const { openerRef, formRef } = useDisclosedFormFocus(showDiscover)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [applyForm, setApplyForm] = useState<{ rulesetId: string; scriptId: string }>({ rulesetId: '', scriptId: '' })
   const [applyResult, setApplyResult] = useState<CorrelationRulesetApplyResponse | null>(null)
@@ -79,6 +86,7 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     setLoading(false)
     setError(null)
     setLoadError(false)
+    setShowDiscover(false)
     setDiscoverForm({ scriptId: '', name: '' })
     setExpanded(null)
     setApplyForm({ rulesetId: '', scriptId: '' })
@@ -195,10 +203,11 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
 
   const handleDiscover = (): Promise<boolean> => {
     const requestedProject = projectId
-    if (!requestedProject || !discoverForm.scriptId.trim()) return Promise.resolve(false)
+    const form = discoverForm
+    if (!requestedProject || !form.scriptId) return Promise.resolve(false)
     return runAction(
       async () => {
-        const committed = await api.discoverCorrelationRulesetFromScript({ script_id: discoverForm.scriptId.trim(), name: discoverForm.name.trim() || undefined })
+        const committed = await api.discoverCorrelationRulesetFromScript({ script_id: form.scriptId, name: form.name.trim() || undefined })
         if ((committed.project_id || '').trim() !== requestedProject) {
           throw new ApiError('The selected script belongs to a different project. Select a script from the active project.', 409)
         }
@@ -211,16 +220,19 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
           ...current.filter(ruleset => ruleset.id !== committed.id),
           committed,
         ].sort((left, right) => left.name.localeCompare(right.name)))
+        setShowDiscover(false)
         setDiscoverForm({ scriptId: '', name: '' })
       },
     )
   }
 
   const handleApply = async (rulesetId: string, commit: boolean) => {
-    const requestedScriptID = applyForm.scriptId.trim()
+    const requestedScriptID = applyForm.scriptId
     if (!requestedScriptID || applyForm.rulesetId !== rulesetId || actionInFlightRef.current) return
+    // An applied result's token describes the script before the apply, so it cannot commit again.
     if (commit && (
       !applyResult?.preview_token
+      || applyResult.applied
       || applyResult.ruleset_id !== rulesetId
       || applyResult.script_id !== requestedScriptID
     )) return
@@ -262,34 +274,35 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     }
   }
 
-  const openApply = (rulesetId: string) => {
-    // Only (re)initialize when switching to a different ruleset's input. onFocus
-    // fires every time the field gains focus, so resetting unconditionally would
-    // wipe the typed script id and the computed preview when the user clicks back
-    // into the same field to verify or edit it.
-    if (applyForm.rulesetId === rulesetId) return
-    applyRequestRef.current += 1
-    setApplyForm({ rulesetId, scriptId: '' })
-    setApplyResult(null)
+  const cancelDiscovery = () => {
+    setShowDiscover(false)
+    setDiscoverForm({ scriptId: '', name: '' })
+    setError(null)
   }
 
+  // Choosing a script for one ruleset replaces any choice and preview made for another.
   const updateApplyScriptID = (rulesetId: string, scriptId: string) => {
     applyRequestRef.current += 1
     setApplyForm({ rulesetId, scriptId })
     setApplyResult(null)
   }
 
+  // A chosen script is unfinished work until its Apply has gone through.
+  const applied = Boolean(applyResult?.applied && applyResult.ruleset_id === applyForm.rulesetId && applyResult.script_id === applyForm.scriptId)
   const draftDirty = Boolean(
-    discoverForm.scriptId.trim()
-    || discoverForm.name.trim()
-    || applyForm.scriptId.trim(),
+    (showDiscover && (discoverForm.scriptId || discoverForm.name.trim()))
+    || (applyForm.scriptId && !applied),
   )
   const draftDirtyRef = useRef(draftDirty)
   draftDirtyRef.current = draftDirty
   const saveDraftRef = useRef<() => Promise<boolean>>(async () => false)
   saveDraftRef.current = async () => {
-    if (applyForm.scriptId.trim()) {
+    if (applyForm.scriptId && !applied) {
       setError('Finish or clear the correlation preview before leaving this page.')
+      return false
+    }
+    if (!discoverForm.scriptId) {
+      setError('Choose the script to discover rules from, or cancel the discovery.')
       return false
     }
     return handleDiscover()
@@ -297,10 +310,9 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   const discardDraftRef = useRef<() => void>(() => undefined)
   discardDraftRef.current = () => {
     applyRequestRef.current += 1
-    setDiscoverForm({ scriptId: '', name: '' })
+    cancelDiscovery()
     setApplyForm({ rulesetId: '', scriptId: '' })
     setApplyResult(null)
-    setError(null)
   }
   const navigationGuard = useMemo<NavigationGuard>(() => ({
     id: 'correlation-ruleset-draft',
@@ -312,9 +324,19 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   useNavigationGuard(navigationGuard, draftDirty)
 
   return (
-    <div className="pp-panel" aria-label="Correlation rulesets">
+    <section className="pp-panel" aria-labelledby={titleId}>
       <div className="pp-toolbar">
-        <h3 className="pp-toolbar-title">Correlation Rulesets</h3>
+        <div className="pp-toolbar-copy">
+          <h3 id={titleId} className="pp-panel-title">Correlation rulesets</h3>
+          <p className="pp-muted">Rules for dynamic values, such as session ids and tokens, learned from one script&apos;s recording and reusable on other scripts.</p>
+        </div>
+        {/* The form closes through its own Cancel, so a draft is never hidden. The
+            opener stays enabled so focus can return to it when a discovery completes. */}
+        {canManage && projectId && !showDiscover && (
+          <button ref={openerRef} type="button" className="btn btn-primary btn-sm" onClick={() => setShowDiscover(true)}>
+            Discover from a script
+          </button>
+        )}
       </div>
 
       {error && (
@@ -329,12 +351,26 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
       )}
       {!projectId && <div className="pp-empty">Select a project to view its correlation rulesets.</div>}
 
-      {canManage && projectId && (
-        <div className="pp-field-row">
-          <input className="pp-field" aria-label="Discover from script id…" placeholder="Discover from script id…" value={discoverForm.scriptId} onChange={e => setDiscoverForm(f => ({ ...f, scriptId: e.target.value }))} />
-          <input className="pp-field" aria-label="Ruleset name (optional)" placeholder="Ruleset name (optional)" value={discoverForm.name} onChange={e => setDiscoverForm(f => ({ ...f, name: e.target.value }))} />
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => { void handleDiscover() }} disabled={busy || !discoverForm.scriptId.trim()}>Discover from script</button>
-        </div>
+      {canManage && projectId && showDiscover && (
+        <form ref={formRef} className="pp-create" aria-label="Discover a correlation ruleset" onSubmit={event => { event.preventDefault(); void handleDiscover() }}>
+          <ScriptPicker
+            projectId={projectId}
+            label="Script"
+            hint="Needs a recording made in APEX Load, which keeps the recorded baseline the rules are learned from."
+            value={discoverForm.scriptId}
+            scripts={scripts}
+            disabled={busy}
+            onChange={scriptId => setDiscoverForm(form => ({ ...form, scriptId }))}
+          />
+          <label className="pp-field">
+            <span>Ruleset name (optional)</span>
+            <input value={discoverForm.name} onChange={event => setDiscoverForm(form => ({ ...form, name: event.target.value }))} />
+          </label>
+          <div className="pp-create-actions">
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !discoverForm.scriptId}>Discover rules</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={cancelDiscovery}>Cancel</button>
+          </div>
+        </form>
       )}
 
       {loading && <p className="pp-muted">Loading…</p>}
@@ -368,14 +404,25 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
                       {ruleset.rules.length > 25 && <li className="pp-muted">+{ruleset.rules.length - 25} more</li>}
                     </ul>
                   )}
-                  {canManage && (
-                    <div className="pp-field-row">
-                      <input className="pp-field" aria-label="Apply to script id…" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => updateApplyScriptID(ruleset.id, e.target.value)} />
-                      <button type="button" className="btn btn-secondary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, false)}>Preview</button>
-                      <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim() || !applyResult?.preview_token || applyResult.matched_rules === 0 || applyResult.ruleset_id !== ruleset.id || applyResult.script_id !== applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
+                  {canManage && projectId && (
+                    <div className="pp-apply">
+                      <ScriptPicker
+                        projectId={projectId}
+                        label="Apply to script"
+                        hint="Preview the changes first; Apply saves them as a new script version."
+                        value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''}
+                        scripts={scripts}
+                        // Changing the script mid-request would drop the answer, even a completed Apply.
+                        disabled={busy}
+                        onChange={scriptId => updateApplyScriptID(ruleset.id, scriptId)}
+                      />
+                      <div className="pp-create-actions">
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId} onClick={() => handleApply(ruleset.id, false)}>Preview</button>
+                        <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId || !applyResult?.preview_token || applyResult.applied || applyResult.matched_rules === 0 || applyResult.ruleset_id !== ruleset.id || applyResult.script_id !== applyForm.scriptId} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
+                      </div>
                     </div>
                   )}
-                  {applyResult && applyForm.rulesetId === ruleset.id && applyResult.ruleset_id === ruleset.id && applyResult.script_id === applyForm.scriptId.trim() && (
+                  {applyResult && applyForm.rulesetId === ruleset.id && applyResult.ruleset_id === ruleset.id && applyResult.script_id === applyForm.scriptId && (
                     <div className="pp-apply-result">
                       {applyResult.applied
                         ? <span className="pp-pill pp-pill-heal">applied {applyResult.matched_rules} rule{applyResult.matched_rules === 1 ? '' : 's'}</span>
@@ -420,12 +467,18 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
                   committedRulesetsRef.current.delete(target.id)
                   setRulesets(current => current.filter(ruleset => ruleset.id !== target.id))
                   setDeleteTarget(null)
+                  // A script chosen to apply the deleted ruleset is no longer work to finish.
+                  if (applyForm.rulesetId === target.id) {
+                    applyRequestRef.current += 1
+                    setApplyForm({ rulesetId: '', scriptId: '' })
+                    setApplyResult(null)
+                  }
                 },
               )
             }}
           />
         </Suspense>
       )}
-    </div>
+    </section>
   )
 }

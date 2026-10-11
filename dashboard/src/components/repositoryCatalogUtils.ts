@@ -167,7 +167,7 @@ function testMatchesApplication(test: TestSummary, activeApplicationId: string, 
 // An asset belongs to the active application when it is assigned to it or ran
 // under one of its releases. Assets with no application at all (fresh imports,
 // API-created scripts) are project-wide and stay visible, so the Repository
-// reconciles with the Script Library instead of silently hiding them.
+// reconciles with the script library instead of silently hiding them.
 function assetInApplicationScope(
   assignedApplicationId: string | undefined,
   refsForApplication: unknown[],

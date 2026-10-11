@@ -635,7 +635,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
 
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({ body: 'status=[REDACTED]' })],
@@ -963,7 +963,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = findButton(container, 'Save to Script Library')
+    const convertButton = findButton(container, 'Save to script library')
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -984,7 +984,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Review and resolve')
     // Once reviewed, saving lives only in the review header.
     expect(container.querySelectorAll('.lr-import-action-buttons button')).toHaveLength(1)
-    const reviewSaveButton = findButton(container, 'Save to Script Library')
+    const reviewSaveButton = findButton(container, 'Save to script library')
     expect(reviewSaveButton).toBeTruthy()
     expect(reviewSaveButton?.closest('.script-import-review-actions')).toBeTruthy()
     expect(reviewSaveButton?.disabled).toBe(false)
@@ -1144,7 +1144,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
     await flushPromises()
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
 
     expect(apiMock.createScript).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Review parameterization suggestions before saving.')
@@ -1157,7 +1157,7 @@ describe('EnterpriseArchiveImport', () => {
       await Promise.resolve()
     })
     await act(async () => {
-      findButton(container, 'Save to Script Library')?.click()
+      findButton(container, 'Save to script library')?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -1189,7 +1189,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(findButton(container, 'Apply credentials')!)
     await flushPromises()
     expect(apiMock.createScript).not.toHaveBeenCalled()
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
     expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
@@ -1217,7 +1217,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
 
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
@@ -1403,7 +1403,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
     expect(container.querySelector('.secret-binding-review')?.closest('[hidden]')).not.toBeNull()
 
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
 
     const visibleError = container.querySelector<HTMLElement>('.lr-error[role="alert"]')
     expect(visibleError?.textContent).toBe('The protected draft changed; retry credential preparation.')
@@ -1413,9 +1413,9 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
     expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
     expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
-    expect(findButton(container, 'Save to Script Library')?.disabled).toBe(false)
+    expect(findButton(container, 'Save to script library')?.disabled).toBe(false)
 
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(2)
     expect(container.querySelector('.lr-error[role="alert"]')).toBeNull()
   })
@@ -1496,14 +1496,14 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     await clickImportAction(container, 'Validate Only')
-    const convertButton = findButton(container, 'Save to Script Library')
+    const convertButton = findButton(container, 'Save to script library')
     expect(convertButton).toBeDefined()
     await clickButton(convertButton!)
 
     expect(container.textContent).toContain('Resolve the redacted credential bindings before saving')
     expect(container.textContent).toContain('Credential groups (1)')
     expect(apiMock.createScript).not.toHaveBeenCalled()
-    const save = findButton(container, 'Save to Script Library with 1 secret to configure')
+    const save = findButton(container, 'Save to script library with 1 secret to configure')
     expect(save?.disabled).toBe(false)
     act(() => {
       save?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1608,7 +1608,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
 
     const valueInput = container.querySelector<HTMLInputElement>('input[aria-label="Secret value for ENTERPRISE_LOGIN_PASSWORD"]')!
     await act(async () => {
@@ -1682,7 +1682,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
     await act(async () => {
-      findButton(container, 'Save to Script Library')?.click()
+      findButton(container, 'Save to script library')?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -1778,7 +1778,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
@@ -2013,7 +2013,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
@@ -2090,12 +2090,12 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.createScript).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Review parameterization suggestions before saving')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
@@ -2205,7 +2205,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
 
     expect(container.textContent).toContain('Credential groups (1)')
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
@@ -2316,7 +2316,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
 
     const prepareFirst = findButton(container, 'Prepare Credentials for Script 1 of 2')
     expect(prepareFirst).toBeDefined()
@@ -2367,7 +2367,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     const save = findButton(container, 'Save remaining 2 scripts atomically with 1 secret to configure')!
     act(() => save.click())
     await flushPromises()
@@ -3146,7 +3146,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.createScript).not.toHaveBeenCalled()
 
     await act(async () => {
-      findButton(container, 'Save to Script Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      findButton(container, 'Save to script library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
     expect(apiMock.createScript).toHaveBeenCalledTimes(1)
@@ -3158,7 +3158,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     // The POST for alpha is still running, so the save action must stay locked
-    // instead of reverting to a clickable "Save to Script Library".
+    // instead of reverting to a clickable "Save to script library".
     const savingButton = findButton(container, 'Saving…')
     expect(savingButton?.disabled).toBe(true)
     savingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3974,7 +3974,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
@@ -4030,7 +4030,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
@@ -4494,9 +4494,9 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('2 archives queued')
     await clickButton(findButton(container, 'DSL Preview')!)
     expect(container.querySelector('.script-import-review-preview pre')?.textContent).toContain(reviewedScript.name)
-    expect(findButton(container, 'Save to Script Library')).toBeDefined()
+    expect(findButton(container, 'Save to script library')).toBeDefined()
 
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
@@ -4567,14 +4567,14 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     await clickImportAction(container, 'Validate Only')
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     if (refresh === 'converted') {
       await clickImportAction(container, 'Validate Only')
       expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
       apiMock.importEnterpriseArchive.mockResolvedValueOnce(await apiMock.importEnterpriseArchive.mock.results[0].value)
-      await clickButton(findButton(container, 'Save to Script Library')!)
+      await clickButton(findButton(container, 'Save to script library')!)
     }
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(onImported).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -4605,7 +4605,7 @@ describe('EnterpriseArchiveImport', () => {
       expect(container.textContent).toContain('Generated Lane A')
     }
 
-    await clickButton(findButton(container, 'Save to Script Library')!)
+    await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
@@ -5334,7 +5334,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -5357,7 +5357,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(findButton(container, 'Source Mapping')!)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(container.textContent).toContain('external required')
-    expect(Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))).toBeUndefined()
+    expect(Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))).toBeUndefined()
 
     const saveArtifactButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save review artifact'))
     expect(saveArtifactButton).toBeTruthy()
@@ -5739,7 +5739,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -5751,7 +5751,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked'))) as HTMLButtonElement | undefined
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked'))) as HTMLButtonElement | undefined
     expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
@@ -5795,7 +5795,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -5849,7 +5849,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -5899,7 +5899,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -5953,7 +5953,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6007,7 +6007,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6067,7 +6067,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6121,7 +6121,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6339,7 +6339,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6501,7 +6501,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
     await flushPromises()
 
-    const convertButton = findButton(container, 'Save to Script Library')
+    const convertButton = findButton(container, 'Save to script library')
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6610,7 +6610,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -6929,7 +6929,7 @@ describe('EnterpriseArchiveImport', () => {
 
       await clickImportAction(container, 'Validate Only')
 
-      const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
       expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
@@ -7019,7 +7019,7 @@ describe('EnterpriseArchiveImport', () => {
       expect(container.textContent).toContain('2 source steps')
       expect(container.textContent).toContain('1 transaction')
 
-      const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+      const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
       expect(finalSaveButton).toBeTruthy()
       if (!finalSaveButton) {
         return
@@ -7163,7 +7163,7 @@ describe('EnterpriseArchiveImport', () => {
 
       await clickImportAction(container, 'Validate Only')
 
-      const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
       expect(convertButton).toBeTruthy()
       if (!convertButton) {
         return
@@ -7285,7 +7285,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickImportAction(container, 'Validate Only')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
     expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
@@ -7910,10 +7910,10 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement | 
   // Validation now says what the next step actually does; conversion retains
   // the save action. Existing save-flow tests cover both stages.
   const nextLabel = label.replace('Save Ready Scripts and Continue Importing', 'Save reviewed drafts')
-    .replace('Save to Script Library', 'Save draft')
+    .replace('Save to script library', 'Save draft')
     .replace('Save and open in Visual Editor', 'Save draft and open in Visual Editor')
   return buttons.find(button => button.textContent?.includes(nextLabel))
-    || (label === 'Save to Script Library' ? buttons.find(button => button.textContent?.includes('Save draft — execution blocked')) : undefined)
+    || (label === 'Save to script library' ? buttons.find(button => button.textContent?.includes('Save draft — execution blocked')) : undefined)
 }
 
 async function dropOnArchiveZone(container: HTMLElement, dataTransfer: unknown) {

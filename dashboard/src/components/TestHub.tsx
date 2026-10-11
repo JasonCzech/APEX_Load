@@ -1753,16 +1753,16 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         else openCreate()
       }}
       options={[
-        { value: 'library', label: 'Scenario Library' },
-        { value: 'builder', label: 'Scenario Builder', disabled: !canManageTests },
-        { value: 'plans', label: 'Execution Plans' },
+        { value: 'library', label: 'Scenario library' },
+        { value: 'builder', label: 'Scenario builder', disabled: !canManageTests },
+        { value: 'plans', label: 'Execution plans' },
       ]}
     />
   ), [canManageTests, guardedOpenExecutionPlans, guardedOpenScenarioLibrary, openCreate, showForm, showPlans])
 
   const scenarioTopbarContribution = useMemo(() => ({
     id: 'scenario-page',
-    title: showPlans ? 'Execution Plans' : showForm ? 'Scenario Builder' : 'Scenario Library',
+    title: showPlans ? 'Execution plans' : showForm ? 'Scenario builder' : 'Scenario library',
     controls: scenarioPageControls,
     priority: 10,
   }), [scenarioPageControls, showForm, showPlans])
@@ -3209,7 +3209,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   isScenarioBuilderDirtyRef.current = () => scenarioBuilderDirty
   const scenarioBuilderGuard = useMemo<NavigationGuard>(() => ({
     id: 'scenario-builder',
-    label: 'Scenario Builder',
+    label: 'Scenario builder',
     isDirty: () => isScenarioBuilderDirtyRef.current(),
     save: async () => {
       const saved = await saveAuthoringRef.current()
@@ -4694,7 +4694,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       {(!showForm || !hasTopbarContributionProvider) && (
         <div className="page-header">
           <div>
-            <h2>{showPlans ? 'Execution Plans' : showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
+            <h2>{showPlans ? 'Execution plans' : showForm ? 'Scenario builder' : 'Scenario library'}</h2>
             <p className="page-subtitle">
               {showPlans
                 ? 'Ordered, cross-run orchestration of scenarios — parallel or sequential.'

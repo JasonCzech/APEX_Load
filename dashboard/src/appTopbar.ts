@@ -103,9 +103,10 @@ export function importSurfaceTitle(launcher: string): string {
 
 export function pageTitleForScriptSubView(subView?: string, importLauncher?: string | null): string {
   switch (subView) {
-    // Library and Builder are tabs of the Scripts page.
+    // Library, Builder and Assets are tabs of the Scripts page.
     case 'list':
     case 'create-options':
+    case 'assets':
       return 'Scripts'
     case 'create':
       return 'Create script'

@@ -510,7 +510,7 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    const builderLink = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Open Scenario Builder')
+    const builderLink = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Open scenario builder')
     expect(builderLink).toBeTruthy()
     expect(builderLink?.className).toContain('new-test-builder-button')
 
@@ -538,7 +538,7 @@ describe('NewTestPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('No scenarios are available yet. Open Scenario Builder to create the first reusable workload.')
+    expect(container.textContent).toContain('No scenarios are available yet. Create the first reusable workload in the scenario builder.')
     expect(container.textContent).not.toContain('No scenarios match this search.')
     const runSetupStep = Array.from(container.querySelectorAll<HTMLElement>('.new-test-step'))
       .find(step => step.querySelector('h3')?.textContent === 'Run Setup')

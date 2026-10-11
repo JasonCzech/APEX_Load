@@ -138,7 +138,7 @@ describe('TestHub', () => {
   const clickWizardStep = async (text: string) => {
     let button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
     if (!button) {
-      await clickButton('Scenario Builder')
+      await clickButton('Scenario builder')
       button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
     }
     expect(button).toBeTruthy()
@@ -1273,7 +1273,7 @@ describe('TestHub', () => {
     expect(startActionLabels).not.toContain('Back')
     expect(startActionLabels).toContain('Next')
     const builderToggle = Array.from(container.querySelectorAll('.scenario-page-toggle button'))
-      .find(button => button.textContent === 'Scenario Builder')
+      .find(button => button.textContent === 'Scenario builder')
     expect(builderToggle?.getAttribute('aria-pressed')).toBe('true')
 
     await clickWizardStep('Model & Shape')
@@ -1700,7 +1700,7 @@ describe('TestHub', () => {
 		expect(duration?.select.value).toBe('h')
   })
 
-  it('groups Scenario Builder run settings into focused tabs', async () => {
+  it('groups scenario builder run settings into focused tabs', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
     })
@@ -2185,7 +2185,7 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-script-select-button')?.textContent).toContain('Archived')
   })
 
-  it.each(['Scenario Library', 'Execution Plans'])('does not resurrect a canceled saved scenario as a new draft after visiting %s', async destination => {
+  it.each(['Scenario library', 'Execution plans'])('does not resurrect a canceled saved scenario as a new draft after visiting %s', async destination => {
     const stored: StoredScenario = { id: 'existing', name: 'Existing scenario', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], created_at: '', updated_at: '', script_count: 1 }
     apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
     const onSelectTest = vi.fn()
@@ -2352,8 +2352,8 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Scenario Library')
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).toContain('Scenario library')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).toContain('Saved scenarios')
     expect(container.textContent).toContain('Run release')
     expect(container.textContent).toContain('Search scenarios')
@@ -2731,7 +2731,7 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    await clickButton('Scenario Builder')
+    await clickButton('Scenario builder')
     expect(container.textContent).toContain('Start Your Scenario')
     const authoredName = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.placeholder === 'Scenario name')
@@ -2761,7 +2761,7 @@ describe('TestHub', () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
 
     expect(container.textContent).not.toContain('Existing Scripts Library')
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Test ID')
     expect(container.textContent).not.toContain('Finish')
     expect(container.textContent).not.toContain('Last Run')
@@ -3732,16 +3732,16 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).toContain('Scenario library')
     expect(container.querySelector('.scenario-builder')).toBeNull()
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
-    await clickButton('Scenario Builder')
+    await clickButton('Scenario builder')
 
     expect(onScenarioViewChange).toHaveBeenLastCalledWith('builder')
-    expect(container.textContent).toContain('Scenario Builder')
+    expect(container.textContent).toContain('Scenario builder')
     expect(container.textContent).not.toContain('Model Preview')
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Model & Shape')
@@ -3751,38 +3751,38 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Model Preview')
     expect(container.querySelector('[data-testid="scenario-model-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(Array.from(container.querySelectorAll('[data-testid="scenario-model-y-axis"]')).map(axis => axis.getAttribute('data-label'))).toContain('VUsers')
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Start')
 
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Run Settings')
 
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Data')
 
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Review')
 
-    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickButton('Cancel')
 
-    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).toContain('Scenario library')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
-    await clickButton('Scenario Library')
+    await clickButton('Scenario library')
 
     expect(onScenarioViewChange).toHaveBeenLastCalledWith('library')
-    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).toContain('Scenario library')
     expect(container.querySelector('.scenario-builder')).toBeNull()
   })
 

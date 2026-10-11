@@ -14,7 +14,7 @@ test('[U03 U08] empty setup explains prerequisites and invalid saves do not pers
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await expect(page.getByText(/No scenarios are available yet/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start Now' })).toBeDisabled()
-  await page.getByRole('button', { name: 'Open Scenario Builder' }).click()
+  await page.getByRole('button', { name: 'Open scenario builder' }).click()
   await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeDisabled()
   await expect(page.getByRole('heading', { level: 4, name: 'Scripts And Groups' })).toBeVisible()
   await page.getByPlaceholder('Scenario name', { exact: true }).fill('Preserve this incomplete draft')

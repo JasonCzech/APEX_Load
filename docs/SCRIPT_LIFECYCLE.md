@@ -575,7 +575,7 @@ reload before retrying.
 
 #### Scenario editor conflict recovery
 
-Opening a scenario in the Scenario Builder reads it first and builds the form
+Opening a scenario in the scenario builder reads it first and builds the form
 from that durable body, so the tag the editor keeps describes exactly what the
 form was built from (never a possibly stale library row). Every save presents
 that tag and adopts the committed tag from the response. A stale tag (412), a

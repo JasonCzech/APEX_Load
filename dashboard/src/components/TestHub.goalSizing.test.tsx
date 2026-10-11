@@ -144,7 +144,7 @@ describe('TestHub build-from-goal', () => {
     })
     await flush()
 
-    await act(async () => { findButton(container, 'Scenario Builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { findButton(container, 'Scenario builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await openBuildFromGoal()
     await flush()
 
@@ -192,7 +192,7 @@ describe('TestHub build-from-goal', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
-    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Scenario builder')?.click() })
     await openBuildFromGoal()
     await flush()
 
@@ -212,7 +212,7 @@ describe('TestHub build-from-goal', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
-    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Scenario builder')?.click() })
     await openBuildFromGoal()
     expect(apiMock.listTests).toHaveBeenCalledWith({ limit: 1000, offset: 0, project_id: 'project-1', summary: true })
 
@@ -290,7 +290,7 @@ describe('TestHub build-from-goal', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
-    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Scenario builder')?.click() })
     await openBuildFromGoal()
     await flush()
 

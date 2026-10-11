@@ -512,9 +512,10 @@ Once you have a recording:
 - **Replay** the captured flow with self-healing selectors that tolerate small UI
   changes.
 - **Correlation** finds the dynamic values (tokens, session IDs, view state) that must
-  be captured from one response and replayed in the next request. The **Correlation
-  Diagnose** and **ruleset** panels let you review what was detected, see the evidence,
-  and tune the rules.
+  be captured from one response and replayed in the next request. **Correlation
+  Diagnose** lets you review what was detected and see the evidence. To reuse the
+  rules, open **Shared assets** on the **Scripts** page, discover a ruleset from the
+  recorded script, then preview and apply it to other scripts.
 - **Parameterization review** suggests which recorded literals should become data-pool
   or template values, so the script drives varied data instead of one fixed path.
 
@@ -587,7 +588,7 @@ A scenario brings together:
 - **Placement** — which generators, regions, or load zones run each group, including
   weighted distribution across zones.
 - **Application and release** — the scenario is assigned to the workspace's application
-  and release; change it with **Change application/releases…** in the Scenario Library.
+  and release; change it with **Change application/releases…** in the scenario library.
 - **Shakeout** and **Resource baseline windows** — whether the run first proves the
   scripts with a canary, and whether it captures an idle resource baseline before load
   starts.
@@ -899,10 +900,17 @@ rules and its limits are described in
 ## Repository And Shared Assets
 
 The **Repository** page is where you manage the structural hierarchy — applications,
-releases, projects, and the shared **object repository** that scripts and scenarios
-bind to (for example, reusable selectors or shared definitions). Keeping shared assets
-here means scripts reference one source of truth instead of duplicating values, so a
-changed selector is fixed once rather than in fourteen scripts.
+releases and projects — and the project's shared test data.
+
+What scripts share lives on the **Shared assets** tab of the **Scripts** page, where
+you pick scripts by name:
+
+- **Object repositories** hold named page elements that browser scripts reference.
+  Seed one from a script's recorded elements, and optionally point that script's
+  actions at it. A changed selector is then fixed once rather than in fourteen scripts.
+- **Correlation rulesets** hold the dynamic-value rules learned from one recording.
+  Preview a ruleset against another script before applying it; applying saves a new
+  script version.
 
 ## Settings Reference
 

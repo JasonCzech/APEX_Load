@@ -1801,7 +1801,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     : (reviewMode === 'validation'
       ? (queuedFileCount > 1 ? 'Save reviewed drafts' : browserImport ? 'Continue to browser replay' : 'Save draft')
       : (selectedResultScriptSaved
-      ? 'Saved to Script Library'
+      ? 'Saved to script library'
       : enterprisePrepareSelectedForBatch
         ? (selectedNeedsCredentialPreparation
             ? `Prepare Credentials for Script ${activeResultScriptIndex + 1} of ${resultScripts.length}`
@@ -1812,7 +1812,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
           ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
-          : needsExecutionRepair ? 'Save draft — execution blocked' : 'Save to Script Library'))))
+          : needsExecutionRepair ? 'Save draft — execution blocked' : 'Save to script library'))))
   const replayActionLabel = replayValidationLoading
     ? 'Starting Draft Browser Replay…'
     : (browserReplayInProgress

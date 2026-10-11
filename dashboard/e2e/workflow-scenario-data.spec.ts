@@ -130,7 +130,7 @@ test('legacy browser checkpoint migrates a first-pool replacement through save a
  await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeEnabled()
  await expect(page.getByRole('region', { name: 'Saved browser draft' })).toHaveCount(0)
  await expect(page.getByText('Editing · Saved', { exact: true })).toBeVisible()
- await page.getByRole('group', { name: 'Scenario page view' }).getByRole('button', { name: 'Scenario Library', exact: true }).click()
+ await page.getByRole('group', { name: 'Scenario page view' }).getByRole('button', { name: 'Scenario library', exact: true }).click()
  const row = page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Legacy pool migration' })
  await expect(row).toBeVisible()
  await page.reload()

@@ -25,6 +25,12 @@ vi.mock('../hooks/api/useCorrelationRulesetApi', () => ({
   useCorrelationRulesetApi: () => apiMock,
 }))
 
+const scriptApiMock = { listScripts: vi.fn() }
+vi.mock('../hooks/api/useScriptApi', () => ({
+  useScriptApi: () => scriptApiMock,
+}))
+const projectScripts = ['s1', 's2', 's7', 's9', 's10', 'script-b', 'script-draft'].map(id => ({ id, name: `Recorded ${id}`, protocol: 'web' }))
+
 let container: HTMLElement
 let root: Root
 
@@ -32,6 +38,7 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  scriptApiMock.listScripts.mockResolvedValue({ scripts: projectScripts, count: projectScripts.length })
 })
 afterEach(() => {
   act(() => root.unmount())
@@ -64,13 +71,26 @@ function findButton(text: string): HTMLButtonElement | undefined {
   return Array.from(container.querySelectorAll('button')).find(b => b.textContent?.trim() === text) as HTMLButtonElement | undefined
 }
 
-function setInput(placeholder: string, value: string) {
-  const input = Array.from(container.querySelectorAll('input')).find(i => i.getAttribute('placeholder') === placeholder) as HTMLInputElement
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+function scriptSelect(label = 'Script'): HTMLSelectElement | undefined {
+  const picker = Array.from(container.querySelectorAll('.script-picker')).find(element => element.querySelector('span')?.textContent === label)
+  return picker?.querySelector('select') ?? undefined
+}
+
+// The picker lists the project's scripts once its (debounced) search settles.
+async function pickScript(id: string, label = 'Script') {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  await flush()
+  const select = scriptSelect(label)
+  expect(select).toBeTruthy()
   act(() => {
-    setter.call(input, value)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    select!.value = id
+    select!.dispatchEvent(new Event('change', { bubbles: true }))
   })
+}
+
+async function discoverFrom(id: string) {
+  await act(async () => { findButton('Discover from a script')!.click() })
+  await pickScript(id)
 }
 
 describe('CorrelationRulesetPanel', () => {
@@ -112,8 +132,10 @@ describe('CorrelationRulesetPanel', () => {
     expect(container.textContent).toContain('Checkout correlations')
     expect(container.textContent).toContain('1 rule')
 
-    setInput('Discover from script id…', 's7')
-    await act(async () => { findButton('Discover from script')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelector('.pp-create')).toBeNull()
+    await discoverFrom('s7')
+    expect(scriptApiMock.listScripts).toHaveBeenCalledWith('proj-a', undefined, { search: '', limit: 50 })
+    await act(async () => { findButton('Discover rules')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
     expect(apiMock.discoverCorrelationRulesetFromScript).toHaveBeenCalledWith(expect.objectContaining({ script_id: 's7' }))
@@ -126,8 +148,8 @@ describe('CorrelationRulesetPanel', () => {
 
     await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
     await flush()
-    setInput('Discover from script id…', 's7')
-    const discover = findButton('Discover from script')!
+    await discoverFrom('s7')
+    const discover = findButton('Discover rules')!
     act(() => {
       discover.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       discover.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -138,6 +160,65 @@ describe('CorrelationRulesetPanel', () => {
       resolveDiscover(ruleset({ id: 'r2' }))
       await Promise.resolve()
     })
+  })
+
+  it('opens discovery in place of its button and returns focus to it on Cancel', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [], count: 0 })
+    await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => { findButton('Discover from a script')!.click() })
+    expect(findButton('Discover from a script')).toBeUndefined()
+    expect(document.activeElement?.closest('.pp-create')).not.toBeNull()
+
+    await act(async () => { findButton('Cancel')!.click() })
+    expect(container.querySelector('.pp-create')).toBeNull()
+    expect(document.activeElement).toBe(findButton('Discover from a script'))
+  })
+
+  it('leaves no unsaved draft once an Apply has gone through', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.applyCorrelationRulesetToScript
+      .mockResolvedValueOnce({ ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: false, preview_token: 'preview-r1-s9', diffs: [] })
+      .mockResolvedValueOnce({ ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: true, preview_token: 'applied-r1-s9' })
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <CorrelationRulesetPanel projectId="proj-a" canManage />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flush()
+    await act(async () => { (container.querySelector('.pp-row-title-button') as HTMLButtonElement).click() })
+    await pickScript('s9', 'Apply to script')
+    await act(async () => { findButton('Preview')!.click() })
+    await flush()
+    expect(registration?.dirty).toBe(true)
+
+    await act(async () => { findButton('Apply')!.click() })
+    await flush()
+    expect(container.textContent).toContain('applied 1 rule')
+    expect(registration?.dirty).toBe(false)
+    // Its token described the script before the apply; a second Apply would only be refused as stale.
+    expect(findButton('Apply')?.disabled).toBe(true)
+    expect(findButton('Preview')?.disabled).toBe(false)
+  })
+
+  it('returns focus to the opener once a discovery completes', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [], count: 0 })
+    apiMock.discoverCorrelationRulesetFromScript.mockResolvedValue(ruleset({ id: 'r2', name: 'Discovered' }))
+    await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+    await flush()
+    await discoverFrom('s7')
+    const discover = findButton('Discover rules')!
+    discover.focus()
+    await act(async () => { discover.click() })
+    await flush()
+    expect(container.querySelector('.pp-create')).toBeNull()
+    expect(document.activeElement).toBe(findButton('Discover from a script'))
   })
 
   it('previews then applies a ruleset to a script', async () => {
@@ -154,7 +235,7 @@ describe('CorrelationRulesetPanel', () => {
     await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
-    setInput('Apply to script id…', 's9')
+    await pickScript('s9', 'Apply to script')
     await act(async () => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
@@ -168,7 +249,7 @@ describe('CorrelationRulesetPanel', () => {
     expect(container.textContent).toContain('applied 1 rule')
   })
 
-  it('keeps the typed script id and preview when the apply input is re-focused', async () => {
+  it('keeps the chosen script and preview when the ruleset is collapsed and expanded again', async () => {
     apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
     apiMock.applyCorrelationRulesetToScript
 	  .mockResolvedValueOnce({ ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: false, preview_token: 'preview-r1-s9', diffs: [{ kind: 'extractor_added', path: '/actions/0/extractors' }] })
@@ -179,21 +260,24 @@ describe('CorrelationRulesetPanel', () => {
     await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
-    setInput('Apply to script id…', 's9')
+    await pickScript('s9', 'Apply to script')
     await act(async () => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
     expect(container.textContent).toContain('1 rule matched')
 
-    // Click back into the same field. onFocus must NOT wipe the typed id/preview.
-    const input = Array.from(container.querySelectorAll('input')).find(i => i.getAttribute('placeholder') === 'Apply to script id…') as HTMLInputElement
-    await act(async () => { input.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+    // Collapsing unmounts the picker; reopening must show the same script, not a blank list over a hidden choice.
+    await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(scriptSelect('Apply to script')).toBeUndefined()
+    await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
     await flush()
-    expect(input.value).toBe('s9')
+    expect(scriptSelect('Apply to script')?.value).toBe('s9')
+    expect(scriptSelect('Apply to script')?.selectedOptions[0]?.textContent).toBe('Recorded s9 · web')
     expect(container.textContent).toContain('1 rule matched')
     expect(findButton('Apply')!.disabled).toBe(false)
   })
 
-  it('disables Apply once the script id is edited until a fresh Preview', async () => {
+  it('disables Apply once another script is chosen until a fresh Preview', async () => {
     apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
     apiMock.applyCorrelationRulesetToScript
 	  .mockResolvedValueOnce({ ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: false, preview_token: 'preview-r1-s9', diffs: [{ kind: 'extractor_added', path: '/actions/0/extractors' }] })
@@ -205,15 +289,15 @@ describe('CorrelationRulesetPanel', () => {
     await flush()
 
     // Preview s9 → Apply becomes enabled and the diff is shown.
-    setInput('Apply to script id…', 's9')
+    await pickScript('s9', 'Apply to script')
     await act(async () => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
     expect(findButton('Apply')!.disabled).toBe(false)
     expect(container.textContent).toContain('1 rule matched')
 
-    // Edit the script id without re-previewing → Apply must disable and the stale
+    // Choose another script without re-previewing → Apply must disable and the stale
     // preview must clear, so Apply can never commit against an unpreviewed script.
-    setInput('Apply to script id…', 's10')
+    await pickScript('s10', 'Apply to script')
     await flush()
     expect(findButton('Apply')!.disabled).toBe(true)
     expect(container.textContent).not.toContain('1 rule matched')
@@ -241,11 +325,12 @@ describe('CorrelationRulesetPanel', () => {
     await flush()
     const titles = Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-row-title-button'))
     await act(async () => { titles[0].dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    setInput('Apply to script id…', 's1')
+    await pickScript('s1', 'Apply to script')
     act(() => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
     await act(async () => { titles[1].dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    setInput('Apply to script id…', 's2')
+    // The other ruleset's picker waits for the request: a change now would drop its answer.
+    expect(scriptSelect('Apply to script')?.disabled).toBe(true)
     await act(async () => {
       resolvePreview({
         ruleset_id: 'r1',
@@ -286,7 +371,7 @@ describe('CorrelationRulesetPanel', () => {
     await flush()
     const title = container.querySelector('.pp-row-title-button') as HTMLButtonElement
     await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    setInput('Apply to script id…', 's9')
+    await pickScript('s9', 'Apply to script')
     await act(async () => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
@@ -317,8 +402,8 @@ describe('CorrelationRulesetPanel', () => {
     await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
     await flush()
 
-    setInput('Discover from script id…', 's7')
-    await act(async () => findButton('Discover from script')?.click())
+    await discoverFrom('s7')
+    await act(async () => findButton('Discover rules')?.click())
     await flush()
 
     expect(container.textContent).toContain('Checkout correlations')
@@ -365,7 +450,7 @@ describe('CorrelationRulesetPanel', () => {
     await flush()
     const title = container.querySelector('.pp-row-title-button') as HTMLButtonElement
     await act(async () => title.click())
-    setInput('Apply to script id…', 's9')
+    await pickScript('s9', 'Apply to script')
     await act(async () => findButton('Preview')?.click())
     await flush()
     expect(findButton('Apply')?.disabled).toBe(false)
@@ -375,6 +460,44 @@ describe('CorrelationRulesetPanel', () => {
     expect(container.textContent).toContain('preview unavailable')
     expect(findButton('Apply')?.disabled).toBe(true)
     expect(container.textContent).not.toContain('1 rule matched')
+  })
+
+  it('drops the apply draft of a ruleset once it is deleted', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.deleteCorrelationRuleset.mockResolvedValue({ deleted: 'r1' })
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <CorrelationRulesetPanel projectId="proj-a" canManage />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flush()
+    await act(async () => { (container.querySelector('.pp-row-title-button') as HTMLButtonElement).click() })
+    await pickScript('s9', 'Apply to script')
+    expect(registration?.dirty).toBe(true)
+
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [], count: 0 })
+    await act(async () => findButton('Delete')?.click())
+    await waitForDestructiveDialog()
+    const reason = container.querySelector<HTMLInputElement>('input[placeholder="Operational reason"]')
+    const confirmation = container.querySelector<HTMLInputElement>('input[placeholder="Checkout correlations"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(reason, 'obsolete rules')
+      reason?.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(confirmation, 'Checkout correlations')
+      confirmation?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => findButton('Delete ruleset')?.click())
+    await flush()
+
+    expect(apiMock.deleteCorrelationRuleset).toHaveBeenCalledWith('r1')
+    expect(registration?.dirty).toBe(false)
   })
 
   it('keeps destructive confirmation state when deletion fails', async () => {
@@ -417,8 +540,8 @@ describe('CorrelationRulesetPanel', () => {
     )
     await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
     await flush()
-    setInput('Discover from script id…', 's7')
-    await act(async () => findButton('Discover from script')?.click())
+    await discoverFrom('s7')
+    await act(async () => findButton('Discover rules')?.click())
     await flush()
 
     expect(container.textContent).toContain('Server-refined rules')
@@ -444,13 +567,13 @@ describe('CorrelationRulesetPanel', () => {
     apiMock.discoverCorrelationRulesetFromScript.mockResolvedValue(ruleset({ id: 'r-b', project_id: 'proj-b', name: 'Project B rules' }))
     await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
     await flush()
-    setInput('Discover from script id…', 'script-b')
-    await act(async () => findButton('Discover from script')?.click())
+    await discoverFrom('script-b')
+    await act(async () => findButton('Discover rules')?.click())
     await flush()
 
     expect(container.textContent).toContain('different project')
     expect(container.textContent).not.toContain('Project B rules')
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Discover from script id…"]')?.value).toBe('script-b')
+    expect(scriptSelect()?.value).toBe('script-b')
   })
 
   it('registers discovery and apply edits with the global navigation guard', async () => {
@@ -467,11 +590,14 @@ describe('CorrelationRulesetPanel', () => {
       )
     })
     await flush()
-    setInput('Discover from script id…', 'script-draft')
-    await flush()
+    await act(async () => { findButton('Discover from a script')!.click() })
+    expect(registration?.dirty).toBe(false)
+    await pickScript('script-draft')
     expect(registration?.dirty).toBe(true)
 
     act(() => registration?.guard.discard())
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Discover from script id…"]')?.value).toBe('')
+    expect(container.querySelector('.pp-create')).toBeNull()
+    await act(async () => { findButton('Discover from a script')!.click() })
+    expect(scriptSelect()?.value).toBe('')
   })
 })

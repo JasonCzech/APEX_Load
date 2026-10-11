@@ -34,7 +34,7 @@ describe('UnsavedChangesModal', () => {
     await act(async () => {
       root.render(
         <UnsavedChangesModal
-          label="Scenario Builder"
+          label="Scenario builder"
           onSave={onSave}
           onDiscard={onDiscard}
           onCancel={onCancel}
@@ -42,7 +42,7 @@ describe('UnsavedChangesModal', () => {
       )
     })
 
-    expect(container.textContent).toContain('Scenario Builder has unsaved changes')
+    expect(container.textContent).toContain('Scenario builder has unsaved changes')
 
     await click('Keep editing')
     await click('Discard changes')
@@ -79,7 +79,7 @@ describe('UnsavedChangesModal', () => {
     await act(async () => {
       root.render(
         <UnsavedChangesModal
-          label="Scenario Builder"
+          label="Scenario builder"
           onSave={() => {}}
           onDiscard={() => {}}
           onCancel={onCancel}

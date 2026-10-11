@@ -39,7 +39,7 @@ function isScenarioCreate(response: Response): boolean {
 }
 
 // Tier-0 journey step S5 (docs/qa/E2E_SUITES.md): traverse all five
-// Scenario Builder steps, prove state survives backward/forward navigation,
+// Scenario builder steps, prove state survives backward/forward navigation,
 // and require the Review step and stored API resource to agree with the draft.
 test('[U09] the five-step scenario builder preserves the draft and reviews the saved values', async ({ page, request }) => {
   test.setTimeout(120_000)
@@ -139,13 +139,13 @@ test('[U09] canceling unsaved navigation keeps the scenario draft in the builder
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Unsaved Changes' })
-  await expect(dialog).toContainText('Scenario Builder has unsaved changes')
+  await expect(dialog).toContainText('Scenario builder has unsaved changes')
   await dialog.getByRole('button', { name: 'Keep editing' }).click()
 
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(/#\/tests\?view=builder/)
   await expect(page.getByRole('heading', { level: 1, name: 'Scenarios' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Scenario Builder', pressed: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Scenario builder', pressed: true })).toBeVisible()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue(draftName)
 })
 
@@ -190,7 +190,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await page.unroute('**/api/v1/scenarios')
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scenarios', level: 1 })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Scenario Builder', pressed: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Scenario builder', pressed: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Review And Validate', level: 4 })).toBeVisible()
   await expect(page.locator('.scenario-save-notice')).toContainText('Saved Scenario audit regression')
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
@@ -217,7 +217,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await page.screenshot({ path: 'test-results/scenario-builder-review.png', fullPage: true })
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scenarios', level: 1 })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Scenario Library', pressed: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Scenario library', pressed: true })).toBeVisible()
   await page.goBack()
   await steps.getByRole('button', { name: /^Start/ }).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('')

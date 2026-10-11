@@ -24,7 +24,7 @@ const policy: DomainFeaturePolicy = {
   revision: 'revision-1',
   disabled_feature_ids: [],
   categories: [
-    { id: 'script_builder', name: 'Script Builder Workflows', description: 'Workflows' },
+    { id: 'script_builder', name: 'Script builder Workflows', description: 'Workflows' },
     { id: 'script_import', name: 'Imported Collections & Scripts', description: 'Sources' },
   ],
   features: [

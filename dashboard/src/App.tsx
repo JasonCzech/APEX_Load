@@ -3038,7 +3038,7 @@ function AppShell({
   // editor may refine its route (or an explicitly active scenario detour) title.
   const effectiveTopbarTitle = ((view.page === "scripts" && scriptsTopbarState?.editingId) || (view.page === "tests" && scenarioScriptWorkflow)) && activeTopbarContribution?.id === "script-editor"
     ? activeTopbarContribution?.title || topbarPageTitle
-    : view.page === "tests" && scenarioScriptWorkflow ? "Script Builder" : topbarPageTitle;
+    : view.page === "tests" && scenarioScriptWorkflow ? "Script builder" : topbarPageTitle;
   // The open script editor (editing or creating) names its script in place.
   const topbarTitleEditor = activeTopbarContribution?.id === "script-editor"
     && ((view.page === "scripts" && (scriptsTopbarState?.subView === "edit" || scriptsTopbarState?.subView === "create")) || (view.page === "tests" && scenarioScriptWorkflow))
@@ -3429,9 +3429,9 @@ function AppShell({
                         }
                       >
                         {recoverableRouteAsset.kind === "script"
-                          ? "Open Script Library"
+                          ? "Open script library"
                           : recoverableRouteAsset.kind === "scenario"
-                            ? "Open Scenario Library"
+                            ? "Open scenario library"
                             : "Open Results"}
                       </button>
                     </div>

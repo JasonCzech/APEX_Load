@@ -16,6 +16,7 @@ interface Props {
   projectId?: string
   policyRefreshSignal?: number
   onBack: () => void
+  onOpenAssets?: () => void
   onStartApiScript: () => void
   onStartSoapScript: () => void
   onStartJavaHttpScript: () => void
@@ -363,6 +364,7 @@ export default function ScriptCreateOptions({
   projectId,
   policyRefreshSignal,
   onBack,
+  onOpenAssets,
   onStartApiScript,
   onStartSoapScript,
   onStartJavaHttpScript,
@@ -689,10 +691,12 @@ export default function ScriptCreateOptions({
             className="script-page-toggle"
             onChange={view => {
               if (view === 'library') onBack()
+              else if (view === 'assets') onOpenAssets?.()
             }}
             options={[
-              { value: 'library', label: 'Script Library' },
-              { value: 'create-options', label: 'Script Builder' },
+              { value: 'library', label: 'Script library' },
+              { value: 'create-options', label: 'Script builder' },
+              ...(onOpenAssets ? [{ value: 'assets', label: 'Shared assets' }] : []),
             ]}
           />
         )}

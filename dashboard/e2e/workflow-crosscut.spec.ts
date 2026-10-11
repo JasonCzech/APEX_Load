@@ -107,6 +107,6 @@ test('nested script editor owns title and help and returns the scenario context'
   if (await discard.isVisible()) await discard.click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Retained scenario')
   await expect(page.locator('.main-topbar h1')).toHaveText('Scenarios')
-  await expect(page.getByRole('button', { name: 'Scenario Builder', pressed: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Scenario builder', pressed: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=scenarios/)
 })

@@ -1,7 +1,7 @@
 // Shared, framework-agnostic model for Browser/Script runtime overrides.
 //
 // These pure helpers back both the Script Editor-style summary formatting and the
-// Scenario Builder's per-group runtime editor: they format an override field for
+// Scenario builder's per-group runtime editor: they format an override field for
 // display, resolve which layer an effective value comes from (group override →
 // scenario default → script default), and mirror the backend's field-to-protocol
 // applicability rule (see pkg/api fieldApplicableForProtocol).
@@ -39,7 +39,7 @@ const ENGINE_FALLBACK_LABEL: Partial<Record<RuntimeFieldKey, string>> = {
   browser_emulation: 'None',
 }
 
-/** Override fields the Scenario Builder can manage per group (Phase 1 surface). */
+/** Override fields the scenario builder can manage per group (Phase 1 surface). */
 export type RuntimeFieldKey =
   | 'results'
   | 'iterations'
@@ -141,7 +141,7 @@ export function formatJavaVuserSummary(java?: RuntimeJavaVuserSettings): string 
 /**
  * isRuntimeFieldApplicable mirrors the backend fieldApplicableForProtocol (Phase 1):
  * browser device/runtime settings apply only to the browser protocol; every other
- * field is universal. The Scenario Builder uses this to render "Not applicable" rows
+ * field is universal. The scenario builder uses this to render "Not applicable" rows
  * and to gate apply-to-groups against a destination group's protocol.
  */
 function isHTTPProtocol(protocol?: string): boolean {

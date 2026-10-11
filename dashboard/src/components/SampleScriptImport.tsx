@@ -1385,7 +1385,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             reviewBusy={Object.values(assetUploads).some(upload => upload.pending)}
             onReviewBusyChange={setInternalReviewBusy}
             saveDisabled={Boolean(savedResult) || hasMissingFileAssets}
-            saveLabel={savedResult ? 'Saved to Script Library' : 'Save draft'}
+            saveLabel={savedResult ? 'Saved to script library' : 'Save draft'}
             saveDisabledReason={savedResult ? 'This script is already saved. Open it above or import more files.' : hasMissingFileAssets
               ? 'Upload every missing imported file asset before saving this script.'
               : undefined}

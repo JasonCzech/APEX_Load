@@ -3229,7 +3229,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               <span className={`new-test-step-index${step1Complete ? ' complete' : ''}`}>{step1Complete ? '✓' : '1'}</span>
               <div className="new-test-step-header-content">
                 <h3>Select Scenario</h3>
-                <p>Choose the reusable workload definition below, or choose Open Scenario Builder to create a new Scenario.</p>
+                <p>Choose the reusable workload definition below, or create a new scenario in the scenario builder.</p>
               </div>
               {onOpenScenarioBuilder && (
                 <button
@@ -3237,7 +3237,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   className="new-test-builder-button new-test-step-header-link"
                   onClick={onOpenScenarioBuilder}
                 >
-                  Open Scenario Builder
+                  Open scenario builder
                 </button>
               )}
             </div>
@@ -3419,7 +3419,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <div className="new-test-empty compact">
                       {scenarioFiltersActive
                         ? 'No scenarios match this search.'
-                        : 'No scenarios are available yet. Open Scenario Builder to create the first reusable workload.'}
+                        : 'No scenarios are available yet. Create the first reusable workload in the scenario builder.'}
                     </div>
                   )}
                 </div>

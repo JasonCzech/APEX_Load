@@ -157,7 +157,7 @@ AI-generated drafts from `POST /api/v1/ai/drafts` start as authoring sessions, n
 
 The ScriptEditor renders validation evidence for both reports after draft or saved-script validation. Authors see authoring health, data-source fit status, row-count context, and AI guardrail blockers in the same validation flow used before replay, save, or approval.
 
-The Script Library adds health filters for blocked drafts, replay evidence gaps, missing data, runtime parity warnings, and AI guardrail warnings. These filters use the same `authoring_health.inputs` payload returned by validation and stored with script records, so dashboard triage follows the backend scoring model rather than a separate UI-only taxonomy.
+The script library adds health filters for blocked drafts, replay evidence gaps, missing data, runtime parity warnings, and AI guardrail warnings. These filters use the same `authoring_health.inputs` payload returned by validation and stored with script records, so dashboard triage follows the backend scoring model rather than a separate UI-only taxonomy.
 
 The draft editor now carries a convergence checklist across manual, recorder, import, OpenAPI, WSDL, HAR, DevWeb, and repair flows: validate, repair, replay, and approve/save. Deterministic repair actions cover missing data sources, hard-coded bearer/session tokens, missing assertions, unstable browser waits, and brittle selectors. Repairs are auditable through the editor change log, reversible through guided history, and visible in Draft Diff Review before save.
 

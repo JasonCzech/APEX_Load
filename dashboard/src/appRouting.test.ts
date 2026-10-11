@@ -125,6 +125,9 @@ describe('appRouting', () => {
     const scope = { projectId: 'p1' }
     const route = (state: Parameters<typeof scriptsRouteForAuthoringState>[0]) => parseAppViewFromHash(viewToLocationHash(scriptsRouteForAuthoringState(state, scope)))
     expect(route({ subView: 'list', editingId: null })).toEqual({ page: 'scripts', mode: 'list', projectId: 'p1' })
+    expect(route({ subView: 'assets', editingId: null })).toEqual({ page: 'scripts', mode: 'assets', projectId: 'p1' })
+    expect(parseAppViewFromHash('#/scripts?mode=assets')).toEqual({ page: 'scripts', mode: 'assets' })
+    expect(resetProjectScopedAssetView({ page: 'scripts', mode: 'assets', projectId: 'p1' }, 'p2')).toEqual({ page: 'scripts', mode: 'assets', projectId: 'p2' })
     expect(route({ subView: 'edit', editingId: 'script-1' })).toEqual({ page: 'scripts', mode: 'edit', scriptId: 'script-1', projectId: 'p1' })
     expect(route({ subView: 'traffic_har', editingId: null, importLauncher: 'traffic_har', importMode: 'auto_detect' })).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p1' })
     // The recorder, an unsaved draft and the create options have no route of

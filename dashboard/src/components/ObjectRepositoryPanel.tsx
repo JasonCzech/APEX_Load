@@ -1,10 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useObjectRepositoryApi } from '../hooks/api/useObjectRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ObjectRepository, RepositoryObject } from '../types'
 import './parityPanels.css'
+import ScriptPicker, { type ScriptOption } from './ScriptPicker'
+import { useDisclosedFormFocus } from './useDisclosedFormFocus'
 import { formatDateTime } from '../utils/dateTime'
 
 const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
@@ -12,10 +14,16 @@ const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
 interface Props {
   projectId?: string
   canManage?: boolean
+  /** The project's scripts, when the page already holds them. */
+  scripts?: ScriptOption[]
 }
 
 const CATALOG_PAGE_SIZE = 100
 const MAX_CATALOG_PAGES = 1_000
+
+// A new repository starts from a script's recorded elements, or empty.
+interface NewRepositoryForm { source: 'script' | 'empty'; scriptId: string; name: string; description: string; bindScript: boolean }
+const blankNewRepository: NewRepositoryForm = { source: 'script', scriptId: '', name: '', description: '', bindScript: false }
 
 function snapshotCaughtUp(listed: ObjectRepository, committed: ObjectRepository): boolean {
   if (JSON.stringify(listed) === JSON.stringify(committed)) return true
@@ -32,17 +40,19 @@ function formatTimestamp(value?: string): string {
 }
 
 // Project-scoped catalog of reusable named UI element descriptors (the
-// LoadRunner/TruClient object-repository analog). Create empty, or seed from a
-// script's captured selectors.
-export default function ObjectRepositoryPanel({ projectId, canManage = false }: Props) {
+// LoadRunner/TruClient object-repository analog). Seed one from a script's
+// captured selectors, or create it empty.
+export default function ObjectRepositoryPanel({ projectId, canManage = false, scripts }: Props) {
   const api = useObjectRepositoryApi()
+  const titleId = useId()
+  const sourceName = useId()
   const mountedRef = useRef(false)
   const [repositories, setRepositories] = useState<ObjectRepository[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [createForm, setCreateForm] = useState({ name: '', description: '' })
-  const [importForm, setImportForm] = useState({ scriptId: '', name: '', bindScript: false })
+  const [newRepository, setNewRepository] = useState<NewRepositoryForm>(blankNewRepository)
+  const { openerRef, formRef } = useDisclosedFormFocus(showCreate)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ObjectRepository | null>(null)
   const [busy, setBusy] = useState(false)
@@ -72,8 +82,7 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
     setLoading(false)
     setError(null)
     setShowCreate(false)
-    setCreateForm({ name: '', description: '' })
-    setImportForm({ scriptId: '', name: '', bindScript: false })
+    setNewRepository(blankNewRepository)
     setExpanded(null)
     setDeleteTarget(null)
     setBusy(false)
@@ -165,30 +174,22 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
     }
   }
 
-  const handleCreate = (): Promise<boolean> => {
-    if (!projectId || !createForm.name.trim()) return Promise.resolve(false)
-    return runAction(
-      () => api.createObjectRepository({ project_id: projectId, name: createForm.name.trim(), description: createForm.description.trim() || undefined, objects: [] }),
-      committed => {
-        committedRepositoriesRef.current.set(committed.id, committed)
-        deletedRepositoryIDsRef.current.delete(committed.id)
-        setRepositories(current => [...current.filter(repository => repository.id !== committed.id), committed].sort((left, right) => left.name.localeCompare(right.name)))
-        setShowCreate(false)
-        setCreateForm({ name: '', description: '' })
-      },
-    )
-  }
+  const newRepositoryReady = newRepository.source === 'script' ? Boolean(newRepository.scriptId) : Boolean(newRepository.name.trim())
 
-  const handleImport = (): Promise<boolean> => {
+  const handleCreate = (): Promise<boolean> => {
     const requestedProject = projectId
-    if (!requestedProject || !importForm.scriptId.trim()) return Promise.resolve(false)
+    const form = newRepository
+    if (!requestedProject || !newRepositoryReady) return Promise.resolve(false)
     return runAction(
       async () => {
+        if (form.source === 'empty') {
+          return api.createObjectRepository({ project_id: requestedProject, name: form.name.trim(), description: form.description.trim() || undefined, objects: [] })
+        }
         const committed = await api.createObjectRepositoryFromScript({
           project_id: requestedProject,
-          script_id: importForm.scriptId.trim(),
-          name: importForm.name.trim() || undefined,
-          bind_script: importForm.bindScript || undefined,
+          script_id: form.scriptId,
+          name: form.name.trim() || undefined,
+          bind_script: form.bindScript || undefined,
         })
         if ((committed.project_id || '').trim() !== requestedProject) {
           throw new ApiError('The selected script belongs to a different project. Select a script from the active project.', 409)
@@ -199,7 +200,8 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
         committedRepositoriesRef.current.set(committed.id, committed)
         deletedRepositoryIDsRef.current.delete(committed.id)
         setRepositories(current => [...current.filter(repository => repository.id !== committed.id), committed].sort((left, right) => left.name.localeCompare(right.name)))
-        setImportForm({ scriptId: '', name: '', bindScript: false })
+        setShowCreate(false)
+        setNewRepository(blankNewRepository)
       },
     )
   }
@@ -253,25 +255,24 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
     )
   }
 
-  const draftDirty = Boolean(
-    (showCreate && (createForm.name.trim() || createForm.description.trim()))
-    || importForm.scriptId.trim()
-    || importForm.name.trim()
-    || importForm.bindScript,
-  )
+  // Only the fields of the chosen source count: they are the ones on screen.
+  const draftDirty = showCreate && (newRepository.source === 'script'
+    ? Boolean(newRepository.scriptId || newRepository.name.trim() || newRepository.bindScript)
+    : Boolean(newRepository.name.trim() || newRepository.description.trim()))
   const draftDirtyRef = useRef(draftDirty)
   draftDirtyRef.current = draftDirty
   const saveDraftRef = useRef<() => Promise<boolean>>(async () => false)
   saveDraftRef.current = async () => {
-    if (showCreate && (createForm.name.trim() || createForm.description.trim()) && !(await handleCreate())) return false
-    if ((importForm.scriptId.trim() || importForm.name.trim() || importForm.bindScript) && !(await handleImport())) return false
-    return true
+    if (!newRepositoryReady) {
+      setError(newRepository.source === 'script' ? 'Choose the script to seed the repository from, or cancel it.' : 'Name the repository, or cancel it.')
+      return false
+    }
+    return handleCreate()
   }
   const discardDraftRef = useRef<() => void>(() => undefined)
   discardDraftRef.current = () => {
     setShowCreate(false)
-    setCreateForm({ name: '', description: '' })
-    setImportForm({ scriptId: '', name: '', bindScript: false })
+    setNewRepository(blankNewRepository)
     setError(null)
   }
   const navigationGuard = useMemo<NavigationGuard>(() => ({
@@ -284,37 +285,68 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
   useNavigationGuard(navigationGuard, draftDirty)
 
   return (
-    <div className="pp-panel" aria-label="Object repositories">
+    <section className="pp-panel" aria-labelledby={titleId}>
       <div className="pp-toolbar">
-        <h3 className="pp-toolbar-title">Object Repositories</h3>
-        {canManage && projectId && (
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowCreate(value => !value)} disabled={busy}>
+        <div className="pp-toolbar-copy">
+          <h3 id={titleId} className="pp-panel-title">Object repositories</h3>
+          <p className="pp-muted">Named page elements that browser scripts share. When a page changes, fix the element here once instead of in every script.</p>
+        </div>
+        {/* The form closes through its own Cancel, so a draft is never hidden. The
+            opener stays enabled so focus can return to it when a create completes. */}
+        {canManage && projectId && !showCreate && (
+          <button ref={openerRef} type="button" className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>
             New repository
           </button>
         )}
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && <div className="pp-error" role="alert">{error}</div>}
       {!projectId && <div className="pp-empty">Select a project to view its object repositories.</div>}
 
       {canManage && projectId && showCreate && (
-        <div className="pp-field-row">
-          <input className="pp-field" aria-label="Repository name" placeholder="Repository name" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} />
-          <input className="pp-field" aria-label="Description (optional)" placeholder="Description (optional)" value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} />
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => { void handleCreate() }} disabled={busy || !createForm.name.trim()}>Create</button>
-        </div>
-      )}
-
-      {canManage && projectId && (
-        <div className="pp-field-row">
-          <input className="pp-field" aria-label="Seed from script id…" placeholder="Seed from script id…" value={importForm.scriptId} onChange={e => setImportForm(f => ({ ...f, scriptId: e.target.value }))} />
-          <input className="pp-field" aria-label="Repository name (optional)" placeholder="Repository name (optional)" value={importForm.name} onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))} />
-          <label className="pp-check" title="Rewrite the script's actions to reference the new repository by object_ref (keeps inline selectors as fallback).">
-            <input type="checkbox" checked={importForm.bindScript} onChange={e => setImportForm(f => ({ ...f, bindScript: e.target.checked }))} />
-            Bind script
-          </label>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { void handleImport() }} disabled={busy || !importForm.scriptId.trim()}>Import from script</button>
-        </div>
+        <form ref={formRef} className="pp-create" aria-label="New object repository" onSubmit={event => { event.preventDefault(); void handleCreate() }}>
+          <fieldset className="pp-choice">
+            <legend>Start from</legend>
+            <label><input type="radio" name={sourceName} checked={newRepository.source === 'script'} onChange={() => setNewRepository(form => ({ ...form, source: 'script' }))} /> A script&apos;s recorded elements</label>
+            <label><input type="radio" name={sourceName} checked={newRepository.source === 'empty'} onChange={() => setNewRepository(form => ({ ...form, source: 'empty' }))} /> An empty repository</label>
+          </fieldset>
+          {newRepository.source === 'script' ? (
+            <>
+              <ScriptPicker
+                projectId={projectId}
+                label="Script"
+                hint="Use a browser script: each of its actions' element selectors becomes an object."
+                value={newRepository.scriptId}
+                scripts={scripts}
+                disabled={busy}
+                onChange={scriptId => setNewRepository(form => ({ ...form, scriptId }))}
+              />
+              <label className="pp-field">
+                <span>Name (optional)</span>
+                <input placeholder="The script's name, then “objects”" value={newRepository.name} onChange={event => setNewRepository(form => ({ ...form, name: event.target.value }))} />
+              </label>
+              <label className="pp-check pp-check-block">
+                <input type="checkbox" checked={newRepository.bindScript} onChange={event => setNewRepository(form => ({ ...form, bindScript: event.target.checked }))} />
+                <span>Point the script&apos;s actions at this repository <span className="pp-muted">(each keeps its own selector as a fallback)</span></span>
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="pp-field">
+                <span>Name</span>
+                <input value={newRepository.name} onChange={event => setNewRepository(form => ({ ...form, name: event.target.value }))} />
+              </label>
+              <label className="pp-field">
+                <span>Description (optional)</span>
+                <input value={newRepository.description} onChange={event => setNewRepository(form => ({ ...form, description: event.target.value }))} />
+              </label>
+            </>
+          )}
+          <div className="pp-create-actions">
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !newRepositoryReady}>Create repository</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => discardDraftRef.current()}>Cancel</button>
+          </div>
+        </form>
       )}
 
       {loading && <p className="pp-muted">Loading…</p>}
@@ -410,6 +442,6 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
           />
         </Suspense>
       )}
-    </div>
+    </section>
   )
 }

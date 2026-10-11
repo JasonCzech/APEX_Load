@@ -577,7 +577,7 @@ export default function ScriptImportReview({
   onReviewBusyChange,
   onCredentialActionStart,
   progress,
-  saveLabel = 'Save to Script Library',
+  saveLabel = 'Save to script library',
   editLabel = 'Open in Visual Editor',
   previewTitle = 'Generated Script Preview',
   previewAside,
@@ -675,7 +675,7 @@ export default function ScriptImportReview({
   const configureLaterCount = preparedSecrets?.configureLaterCount ?? defaultConfigureLaterCount
   const selectedBindingCount = preparedSecrets?.selectedBindingCount
     ?? secretBindingRequirements.filter(requirement => requirement.destination_value_preserved !== true).length
-  const deferredSaveLabel = /^Save to Script Library$/i.test(saveLabel) ? 'Save' : saveLabel
+  const deferredSaveLabel = /^Save to script library$/i.test(saveLabel) ? 'Save' : saveLabel
   const resolvedSaveLabel = hasUnresolvedSecretBindings && configureLaterCount > 0
     ? `${deferredSaveLabel} with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure`
     : saveLabel

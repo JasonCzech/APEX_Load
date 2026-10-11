@@ -11,7 +11,7 @@ export default function ImportSaveConfirmation({ result, onImportMore, onOpen, d
   if (!result?.scripts.length) return null
   return (
     <div className="settings-notice">
-      <p role="status">Saved {result.scripts.length} script{result.scripts.length === 1 ? '' : 's'} to the Script Library.</p>
+      <p role="status">Saved {result.scripts.length} script{result.scripts.length === 1 ? '' : 's'} to the script library.</p>
       <div className="script-import-review-actions">
         <button type="button" className="btn btn-primary" disabled={disabled} onClick={onImportMore}>Import More Files</button>
         {result.scripts.map(script => (

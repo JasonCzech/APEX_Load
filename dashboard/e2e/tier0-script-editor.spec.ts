@@ -40,7 +40,7 @@ function isScriptUpdate(response: Response, scriptId: string): boolean {
 
 // Tier-0 journey step S4 (docs/qa/E2E_SUITES.md): an imported script opens
 // action-list-first, keeps unsaved edits across workbench tabs, persists them,
-// and can be reopened from the Script Library without losing its actions.
+// and can be reopened from the script library without losing its actions.
 test('[U21] the imported script editor preserves tab state and saved changes across reopen', async ({ page, request }) => {
   test.setTimeout(120_000)
   const workspace = await createWorkspace(request)

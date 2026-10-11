@@ -2424,8 +2424,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             )} </>}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
-            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the Script Library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to Script Library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
+            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to script library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}

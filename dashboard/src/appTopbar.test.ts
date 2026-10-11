@@ -40,6 +40,7 @@ describe('app topbar helpers', () => {
   it('maps script authoring substates to topbar page titles', () => {
     expect(pageTitleForScriptSubView('list')).toBe('Scripts')
     expect(pageTitleForScriptSubView('create-options')).toBe('Scripts')
+    expect(pageTitleForScriptSubView('assets')).toBe('Scripts')
     expect(pageTitleForScriptSubView('create')).toBe('Create script')
     expect(pageTitleForScriptSubView('edit')).toBe('Edit script')
     expect(pageTitleForScriptSubView('protocol-import', 'openapi')).toBe('Import OpenAPI / Swagger')

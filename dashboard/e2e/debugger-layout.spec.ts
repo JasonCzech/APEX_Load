@@ -4,7 +4,7 @@ test('keeps the debug parameter list below the action list when the bottom dock 
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto('/#/scripts')
 
-  await page.getByRole('button', { name: 'Script Builder' }).click()
+  await page.getByRole('button', { name: 'Script builder' }).click()
   await page.getByRole('tab', {name:'Starter Templates'}).click()
   await page.getByRole('button', { name: 'Use HTTP API Smoke' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Create script' })).toBeVisible()

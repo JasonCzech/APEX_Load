@@ -561,7 +561,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   await expect(page.getByRole('tab', { name: /^Credentials(,|$)/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: 'Cancel credentials', exact: true })).toHaveCount(0)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save to Script Library', exact: true }).click()
+  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save to script library', exact: true }).click()
   const savedResponse = await saved
   expect(savedResponse.ok(), await savedResponse.text()).toBeTruthy()
   const savedResult = await json(savedResponse)

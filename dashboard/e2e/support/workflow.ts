@@ -194,7 +194,7 @@ export async function seedScenario(request: APIRequestContext, workspace: Worksp
 export async function importOpenAPI(page: Page, name: string, target: string) {
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
   // Navigate through the actual creation entry rather than seeding the script.
-  await page.getByRole('button', { name: 'Script Builder', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Script builder', exact: true }).first().click()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
@@ -215,7 +215,7 @@ export async function importOpenAPI(page: Page, name: string, target: string) {
 }
 export async function buildScenarioUI(page: Page, scriptName: string, name: string) {
   await page.getByRole('button', { name: 'New Test', exact: true }).first().click()
-  await page.getByRole('button', { name: 'Open Scenario Builder' }).click()
+  await page.getByRole('button', { name: 'Open scenario builder' }).click()
   const steps = page.locator('[aria-label="Scenario builder steps"]')
   await page.getByPlaceholder('Scenario name').fill(name)
   await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
