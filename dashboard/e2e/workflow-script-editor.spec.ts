@@ -156,8 +156,8 @@ test('two editors preserve stale drafts and require explicit revision review bef
     await page.goto(route)
     await other.goto(route)
     if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') { await page.reload(); await other.reload() }
-    const firstName = page.locator('.side-panel-script-name input')
-    const staleName = other.locator('.side-panel-script-name input')
+    const firstName = page.getByRole('textbox', { name: 'Script name', exact: true })
+    const staleName = other.getByRole('textbox', { name: 'Script name', exact: true })
     await expect(firstName).toHaveValue('Revision fixture')
     await expect(staleName).toHaveValue('Revision fixture')
     await firstName.fill('First editor saved')
@@ -248,7 +248,7 @@ test('placement-only changes invalidate save authority and explicit reapply pres
   const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: { name: 'Placement fixture', version: '1', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'No execution', type: 'request', method: 'GET', target: '/' }] } } })))
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  const name = page.locator('.side-panel-script-name input')
+  const name = page.getByRole('textbox', { name: 'Script name', exact: true })
   await expect(name).toHaveValue('Placement fixture')
   await name.fill('My placement draft')
   await json(await request.patch(`/api/v1/scripts/${id}/move`, { data: { folder_id: folder } }))
@@ -275,7 +275,7 @@ test('uncertain successful writes retain drafts and revoke retry authority until
   const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: { name: 'Uncertain fixture', version: '1', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'No execution', type: 'request', method: 'GET', target: '/' }] } } })))
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  const name = page.locator('.side-panel-script-name input')
+  const name = page.getByRole('textbox', { name: 'Script name', exact: true })
   await expect(name).toHaveValue('Uncertain fixture')
   let writes = 0
   await page.route(`**/api/v1/scripts/${id}`, async route => {
@@ -399,7 +399,7 @@ test('library secret rebind retains exact revision authority and requires review
       await route.continue()
     })
     await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
-    const name = page.locator('.side-panel-script-name input')
+    const name = page.getByRole('textbox', { name: 'Script name', exact: true })
     await expect(name).toHaveValue('Externally updated library script')
     await page.getByRole('button', { name: 'Configure secrets', exact: true }).click()
     const editorDialog = page.locator('.script-secret-bindings-dialog')

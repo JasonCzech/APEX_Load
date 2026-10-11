@@ -5,7 +5,7 @@ import { ParameterDatasetWorkspace } from './ParameterDatasetWorkspace'
 import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import { handleTabKey } from './tabKeyboard'
-import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import type {
   ScriptDefinition,
@@ -124,6 +124,10 @@ function getSelectedParameterHeaderDetails(
 export interface ParameterDataDialogProps {
   onAddDataset?: () => void
   onInspectUsage?: (path: string) => void
+  /** Show every use of the named parameter in Source. */
+  onShowUsesInSource?: (name: string) => void
+  /** Further workspace tools (scans, imported parameter files), after Add Parameter. */
+  toolbarActions?: ReactNode
   onUndoStructure?: () => void
   canUndoStructure?: boolean
   onMergeSources?: () => void
@@ -265,6 +269,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
             <button type="button" className="btn btn-sm btn-secondary" disabled={!props.canUndoStructure} onClick={props.onUndoStructure}>Undo structural edit</button>
             <label>New parameter type<select aria-label="New parameter type" value={newParameterType} onChange={event => setNewParameterType(event.target.value)}>{PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <button type="button" className="btn btn-sm btn-primary" onClick={() => { setWorkspaceView('parameters'); onAddParameter(newParameterType) }}>+ Add Parameter</button>
+            {props.toolbarActions}
           </div>
         </div>
         {workspaceView === 'datasets' ? <ParameterDatasetWorkspace {...props} onShowParameter={index => { onSelectParameter(index); setWorkspaceView('parameters') }} /> : <div className="parameter-workspace-layout">
@@ -290,9 +295,10 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
             </h3>
             <p className="editor-dialog-subtitle">{headerDetails.details.join(' · ')}</p>
           </div>
-          {onClose && (
+          {(onClose || (props.onShowUsesInSource && selectedParameter?.name)) && (
             <div className="parameter-dialog-actions">
-              <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+              {props.onShowUsesInSource && selectedParameter?.name && <button type="button" className="btn btn-sm btn-secondary" onClick={() => props.onShowUsesInSource?.(selectedParameter.name)}>Show uses in Source</button>}
+              {onClose && <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>}
             </div>
           )}
         </div>

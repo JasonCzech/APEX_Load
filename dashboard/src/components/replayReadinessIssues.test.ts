@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ReplayPreflight } from '../types/scripts'
 import { templateVariableNames } from './replayPreflightUtils'
-import { replayReadinessIssues } from './replayReadinessIssues'
+import { openingEditorFocus, replayReadinessIssues } from './replayReadinessIssues'
 
 const preflight = (overrides: Partial<ReplayPreflight>): ReplayPreflight => ({ valid: false, action_count: 3, expected_action_count: 3, data_source_count: 0, parameter_count: 0, ...overrides })
 
@@ -87,5 +87,25 @@ describe('templateVariableNames', () => {
     expect(templateVariableNames('{"name":"c_storeid"}').size).toBe(0)
     expect(templateVariableNames('{"token":"{{secret.c_storeid}}"}').size).toBe(0)
     expect(templateVariableNames('{"x":"{{var.a.b}}"}').has('a.b')).toBe(true)
+  })
+})
+
+describe('openingEditorFocus', () => {
+  const row = (phase: 'init' | 'action' | 'teardown', actionIndex: number) => ({ phase, actionIndex })
+  const gate = replayReadinessIssues(preflight({ issues: ['init[1] "gate": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved'] }))
+  const rows = [row('init', 0), row('init', 1), row('action', 0), row('action', 1)]
+
+  it('opens on the first action with an authoring error, as Author Problems lists them', () => {
+    expect(openingEditorFocus([row('action', 1)], gate, rows)).toEqual({ phase: 'action', actionIndex: 1 })
+  })
+
+  it('then on the first replay gate, in any phase', () => {
+    expect(openingEditorFocus([], gate, rows)).toEqual({ phase: 'init', actionIndex: 1 })
+  })
+
+  it('else on the first action, Actions before Init and Teardown', () => {
+    expect(openingEditorFocus([], [], rows)).toEqual({ phase: 'action', actionIndex: 0 })
+    expect(openingEditorFocus([], [], [row('teardown', 0)])).toEqual({ phase: 'teardown', actionIndex: 0 })
+    expect(openingEditorFocus([], [], [])).toBeNull()
   })
 })

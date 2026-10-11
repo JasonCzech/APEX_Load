@@ -3034,6 +3034,11 @@ function AppShell({
   const effectiveTopbarTitle = ((view.page === "scripts" && scriptsTopbarState?.editingId) || (view.page === "tests" && scenarioScriptWorkflow)) && activeTopbarContribution?.id === "script-editor"
     ? activeTopbarContribution?.title || topbarPageTitle
     : view.page === "tests" && scenarioScriptWorkflow ? "Script Builder" : topbarPageTitle;
+  // The open script editor (editing or creating) names its script in place.
+  const topbarTitleEditor = activeTopbarContribution?.id === "script-editor"
+    && ((view.page === "scripts" && (scriptsTopbarState?.subView === "edit" || scriptsTopbarState?.subView === "create")) || (view.page === "tests" && scenarioScriptWorkflow))
+    ? activeTopbarContribution.titleNode
+    : undefined;
   const taskHelpHash = view.page === "tests" && scenarioScriptWorkflow ? "#/docs?guide=user-guide&article=authoring" : contextualHelpHash(view, view.page === "scripts" ? scriptsTopbarState?.subView : undefined);
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
@@ -3161,7 +3166,7 @@ function AppShell({
           >
             {effectiveTopbarTitle}
           </span>
-          <PageHeader title={effectiveTopbarTitle} contextual={Boolean(activeTopbarContribution)}>
+          <PageHeader title={effectiveTopbarTitle} titleEditor={topbarTitleEditor} contextual={Boolean(activeTopbarContribution)}>
 
             {topbarMeta.length > 0 && (
               <div className="topbar-meta-strip" aria-label="Current context">

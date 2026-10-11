@@ -155,7 +155,10 @@ open an existing one in the **Script Editor**, clone one, or import from an exte
 format.
 
 In **Author**, select a step in the outline to edit its properties in the main
-**Action editor**. **Overview & bulk** exposes multi-step selection and reusable
+**Action editor**. The editor opens on the first problem, or on the first action when
+there is none. Rename the script in place in the top bar. **Source**, **Runtime
+Settings**, **Parameters**, and, for imports, **Source Mapping** are always available
+as tabs above the editor. **Overview & bulk** exposes multi-step selection and reusable
 block tools. **Add Action** stages a new action or block: choose its phase and
 place it before, after, inside a supported block, or at the end of the phase.
 Canceling insertion leaves the script unchanged.
@@ -166,8 +169,9 @@ Cmd/Ctrl+Shift+Z; code editors retain their own text history. **Review changes**
 compares the current script with its last saved version. Saving retains the
 selected action.
 
-**Author Problems** collects current draft issues and links action errors to their
-fields, including nested steps. Validation and debug evidence are tracked
+**Author Problems** collects current draft issues, including what blocks or weakens
+replay (review gates, missing values, project secrets), lists blockers first, and links
+each one to the action or field it concerns, including nested steps. Validation and debug evidence are tracked
 separately from saved state; an earlier debug result does not validate later edits.
 
 The request body editor supports JSON, XML, and plain text, with syntax checks,

@@ -4,9 +4,9 @@ The Script Editor debugger runs a DSL script through the controller replay engin
 
 ## Author and Debug workspace
 
-The left outline navigates Init, Actions, Teardown, parameters/data, and import assets. Action names are searchable; expand a container to select a nested step. Bulk action operations live under **Bulk action tools** in the center Action List.
+The left outline lists the steps of Init, Actions, and Teardown, one line each, with transactions as collapsible groups (sub-transactions stay inside their transaction). Action names are searchable, including inside a collapsed transaction; expand a container to select a nested step. The script's documents are fixed tabs above the editor: **Action editor**, **Source**, **Runtime Settings** (including Script Configuration), **Parameters**, and, for imported scripts, **Source Mapping**. Rename the script in place in the top bar. Bulk action operations live under **Bulk action tools** in the center Action List.
 
-The right inspector follows the selected item. Action properties are grouped into **Request**, **Correlation & checks**, **Timing**, and **Metadata**. Large HTTP request bodies open in the center workspace, where selection-based parameterization remains available. Parameter summaries link to the single **Parameter Data** editing workspace; usage links open the correct location in full-script source.
+The right inspector follows the selected item. Action properties are grouped into **Request**, **Correlation & checks**, **Timing**, and **Metadata**. Large HTTP request bodies open in the center workspace, where selection-based parameterization remains available. Parameter summaries link to the single **Parameters** editing workspace; usage links open the correct location in full-script source.
 
 At narrow widths, use **Outline**, **Editor**, and **Inspector** to select a pane. Browser Debug keeps its integrated evidence in **Editor**, so it offers Outline and Editor. Debug action navigation remains available whether the logs/problems dock is expanded or collapsed. Arrow keys move focus through the visible action rows; Enter selects the focused action.
 

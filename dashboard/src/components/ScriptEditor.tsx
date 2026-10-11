@@ -76,7 +76,7 @@ import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, templateVariableNames } from './replayPreflightUtils'
-import { replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
+import { openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
 import {
   applyMigrationAssistantSuggestion,
   applyAuthoringComponentToScript,
@@ -146,6 +146,8 @@ import {
   actionTransactionName,
   actionTransactionMarker,
   computeTransactionBands,
+  groupOutlineByTransaction,
+  outlineNameTail,
   tagActionsTransaction,
   uniqueTransactionName,
   wrapActionsInTransactionMarkers,
@@ -156,6 +158,7 @@ import {
   scriptActionsForPhase,
   type CenterTabsState,
   type CenterWorkbenchTabId,
+  type OutlineTreeEntry,
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
@@ -198,7 +201,6 @@ import {
   ScriptJsonCompanionHeader,
   ScriptJsonDocument,
   ScriptJsonInsightsView,
-  ScriptJsonParameterOutline,
 } from './ScriptJsonAuthoringView'
 import {
   useJsonParameterMenu,
@@ -234,7 +236,6 @@ import {
 import { useScriptImportReviewController } from './useScriptImportReviewController'
 import {
   ImportReviewCommitPanel,
-  ImportReviewOutlineSection,
   ImportedMetadataUtilityPanel,
   ObjectDescriptorReviewDocument,
   ObjectDescriptorUtilityPanel,
@@ -1025,7 +1026,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     normalizedAutoParameterOccurrenceIndex,
     outlineActionFilter,
     outlineActionListCollapsed,
-    outlineParameterListCollapsed,
     parameterMatchRanges,
     parameterPaneShowAuto,
     parameterReferenceCounts,
@@ -1044,7 +1044,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorCodeFocus,
     setOutlineActionFilter,
     setOutlineActionListCollapsed,
-    setOutlineParameterListCollapsed,
     setParameterPaneShowAuto,
     setScriptJsonSidebarTab,
     setSelectedOutlineParameterName,
@@ -1105,6 +1104,40 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     () => buildDebugRailRenderRows(filteredActionRows, expandedAuthorContainers),
     [filteredActionRows, expandedAuthorContainers],
   )
+  // The outline tree: each phase's steps, with transactions as collapsible
+  // groups. Membership comes from every row, so a search that hides a
+  // transaction's markers still shows its matches inside the transaction.
+  const outlineTransactionBands = useMemo(() => computeTransactionBands(scriptPhaseActionRows), [scriptPhaseActionRows])
+  const outlineTreeByPhase = useMemo(() => {
+    const byPhase: Record<ScriptActionPhase, OutlineTreeEntry[]> = { init: [], action: [], teardown: [] }
+    for (const entry of groupOutlineByTransaction(authorRenderRows, outlineTransactionBands)) {
+      const row = entry.kind === 'step' ? entry.item.row : (entry.start || entry.items[0]).row
+      byPhase[row.phase as ScriptActionPhase].push(entry)
+    }
+    return byPhase
+  }, [authorRenderRows, outlineTransactionBands])
+  const [collapsedOutlineTransactions, setCollapsedOutlineTransactions] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleOutlineTransaction = (key: string) => setCollapsedOutlineTransactions(prev => {
+    const next = new Set(prev)
+    if (!next.delete(key)) next.add(key)
+    return next
+  })
+  // Selecting a step inside a collapsed transaction (from Author Problems, the
+  // debugger or the center list) opens the transaction so the step shows.
+  const outlineTreeRef = useRef(outlineTreeByPhase)
+  outlineTreeRef.current = outlineTreeByPhase
+  useEffect(() => {
+    if (!authorCodeFocus) return
+    const holder = outlineTreeRef.current[authorCodeFocus.phase].find(entry => entry.kind === 'transaction'
+      && (entry.start?.row.actionIndex === authorCodeFocus.actionIndex || entry.items.some(item => item.row.actionIndex === authorCodeFocus.actionIndex)))
+    if (holder?.kind !== 'transaction') return
+    setCollapsedOutlineTransactions(prev => {
+      if (!prev.has(holder.key)) return prev
+      const next = new Set(prev)
+      next.delete(holder.key)
+      return next
+    })
+  }, [authorCodeFocus])
   const selectedBlockScopes = useMemo(
     () => Array.from(blockSelection)
       .map(key => resolveAuthorJsonScopeByKey(script, key))
@@ -1192,7 +1225,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     importBaselineScript,
     onWorkspaceMaximizedChange: handleImportWorkspaceMaximizedChange,
     script,
-    scriptId,
   })
   const {
     focusSourceMappingForAction,
@@ -1204,40 +1236,49 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setShowMetadataJsonDialog,
     sourceReview,
   } = importReviewController
+  // The script's own documents are fixed tabs, always present in this order
+  // (the import, object-descriptor and browser ones when they apply); only the
+  // selected action's request body opens and closes as needed.
   const centerTabDescriptors = useMemo<CenterWorkbenchTabDescriptor[]>(() => {
     const descriptors: CenterWorkbenchTabDescriptor[] = [
       { id: ACTION_LIST_TAB_ID, label: 'Action editor', title: 'Action editor', closeable: false },
-      { id: 'request-body', label: 'Request body', title: 'Request body', closeable: true },
       { id: SCRIPT_JSON_TAB_ID, label: 'Source', title: 'Source JSON', closeable: false },
-      { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: true },
-      { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
+      ...(isBrowserScript ? [{ id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false }] : []),
+      { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: false },
+      { id: 'parameter-data', label: 'Parameters', title: 'Parameters', closeable: false },
+      // The full imported metadata JSON is not a tab: Source opens it on
+      // demand, so its multi-MB read-only editor never mounts unasked.
+      ...(importMetadata ? [{ id: 'imported-metadata' as const, label: 'Source Mapping', title: 'Source Mapping', closeable: false }] : []),
+      ...(objectDescriptorReview.rows.length > 0 ? [{ id: 'object-descriptors' as const, label: 'Object Descriptors', title: 'Object Descriptors', closeable: false }] : []),
+      ...(isBrowserScript ? [{ id: 'http-conversion' as const, label: 'HTTP Conversion', title: 'Browser To HTTP Conversion Review', closeable: false }] : []),
+      // Opened from an action's "Request body" and closed when done.
+      { id: 'request-body', label: 'Request body', title: 'Request body', closeable: true },
     ]
-    if (importMetadata) {
-      // Note: the full Metadata JSON is intentionally NOT a center tab — it is opened
-      // on demand from the left outline (Imported Metadata JSON) so its multi-MB read-only
-      // editor never mounts unless the user explicitly asks to see it.
-      descriptors.push(
-        { id: 'imported-metadata', label: 'Source Mapping', title: 'Source Mapping', closeable: true },
-      )
-    }
-    if (objectDescriptorReview.rows.length > 0) {
-      descriptors.push({ id: 'object-descriptors', label: 'Object Descriptors', title: 'Object Descriptors', closeable: true })
-    }
-    if (isBrowserScript) {
-      descriptors.splice(2, 0, { id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false })
-      descriptors.push({ id: 'http-conversion', label: 'HTTP Conversion', title: 'Browser To HTTP Conversion Review', closeable: true })
-    }
     return descriptors
   }, [importMetadata, isBrowserScript, objectDescriptorReview.rows.length])
   const centerTabDescriptorById = useMemo(() => {
     return new Map(centerTabDescriptors.map(tab => [tab.id, tab]))
   }, [centerTabDescriptors])
   const availableCenterTabIds = useMemo(() => new Set(centerTabDescriptors.map(tab => tab.id)), [centerTabDescriptors])
-  const visibleCenterTabs = useMemo(() => {
-    return centerTabsState.tabs
+  const visibleCenterTabs = useMemo(() => [
+    ...centerTabDescriptors.filter(tab => !tab.closeable),
+    ...centerTabsState.tabs
       .map(tabId => centerTabDescriptorById.get(tabId))
-      .filter((tab): tab is CenterWorkbenchTabDescriptor => Boolean(tab))
-  }, [centerTabDescriptorById, centerTabsState.tabs])
+      .filter((tab): tab is CenterWorkbenchTabDescriptor => Boolean(tab?.closeable)),
+  ], [centerTabDescriptorById, centerTabDescriptors, centerTabsState.tabs])
+  // A fixed tab's document mounts the first time the tab is shown and then
+  // stays mounted, as an opened tab always has; one never shown costs nothing.
+  // Runtime Settings (home of the script configuration) and an import's Source
+  // Mapping were always open by default, so they mount from the start.
+  const [visitedCenterTabIds, setVisitedCenterTabIds] = useState<ReadonlySet<CenterWorkbenchTabId>>(() => new Set())
+  const unvisitedCenterTabIds = [centerTabsState.activeTabId, 'runtime-settings' as const, ...(importMetadata ? ['imported-metadata' as const] : [])]
+    .filter(tabId => !visitedCenterTabIds.has(tabId))
+  if (unvisitedCenterTabIds.length) setVisitedCenterTabIds(new Set([...visitedCenterTabIds, ...unvisitedCenterTabIds]))
+  const centerTabMountTarget = (tabId: CenterWorkbenchTabId) => {
+    const descriptor = centerTabDescriptorById.get(tabId)
+    const mounted = descriptor && (descriptor.closeable ? centerTabsState.tabs.includes(tabId) : visitedCenterTabIds.has(tabId))
+    return mounted ? centerTabPanelElements[tabId] || null : null
+  }
   const selectCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (!availableCenterTabIds.has(tabId)) return
     setNarrowAuthorPane('editor')
@@ -1264,7 +1305,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     openCenterTab(SCRIPT_JSON_TAB_ID)
   }, [openCenterTab, setParameterPaneShowAuto, setScriptJsonSidebarTab, setSelectedOutlineParameterName, setShowFullScriptJson, setDebugDetailCollapsed, setDebuggerTab, setAuthorRightSidebarCollapsed])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
-    if (tabId === ACTION_LIST_TAB_ID || tabId === SCRIPT_JSON_TAB_ID || tabId === BROWSER_REPLAY_TAB_ID) return
+    if (!centerTabDescriptorById.get(tabId)?.closeable) return
     setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
     setCenterTabsState(prev => {
       if (!prev.tabs.includes(tabId)) return prev
@@ -1272,7 +1313,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const activeTabId = prev.activeTabId === tabId ? ACTION_LIST_TAB_ID : prev.activeTabId
       return { tabs: nextTabs.length > 0 ? nextTabs : [ACTION_LIST_TAB_ID, SCRIPT_JSON_TAB_ID], activeTabId }
     })
-  }, [])
+  }, [centerTabDescriptorById])
   const setCenterTabPanelElement = useCallback((tabId: CenterWorkbenchTabId, element: HTMLDivElement | null) => {
     setCenterTabPanelElements(prev => {
       if (prev[tabId] === element) return prev
@@ -1322,24 +1363,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         SCRIPT_JSON_TAB_ID,
         ...prev.tabs.filter(tabId => tabId !== ACTION_LIST_TAB_ID && tabId !== SCRIPT_JSON_TAB_ID && availableCenterTabIds.has(tabId)),
       ]
-      const activeTabId = nextTabs.includes(prev.activeTabId) ? prev.activeTabId : ACTION_LIST_TAB_ID
+      // A fixed tab is active without being in the open list; any tab this
+      // script offers may stay active.
+      const activeTabId = availableCenterTabIds.has(prev.activeTabId) ? prev.activeTabId : ACTION_LIST_TAB_ID
       if (activeTabId === prev.activeTabId && nextTabs.length === prev.tabs.length && nextTabs.every((tabId, index) => tabId === prev.tabs[index])) {
         return prev
       }
       return { tabs: nextTabs, activeTabId }
     })
   }, [availableCenterTabIds])
-  useEffect(() => {
-    if (!importMetadata && !sourceReview) return
-    setCenterTabsState(prev => {
-      const nextTabs = [...prev.tabs]
-      if (importMetadata && !nextTabs.includes('imported-metadata')) {
-        nextTabs.push('imported-metadata')
-      }
-      if (nextTabs.length === prev.tabs.length && nextTabs.every((tabId, index) => tabId === prev.tabs[index])) return prev
-      return { ...prev, tabs: nextTabs }
-    })
-  }, [importMetadata, sourceReview])
   useEffect(() => {
     if (workspaceTab === 'debug' && isBrowserScript && (centerTabsState.activeTabId === ACTION_LIST_TAB_ID || DEBUG_HIDDEN_CENTER_TABS.has(centerTabsState.activeTabId))) openCenterTab(BROWSER_REPLAY_TAB_ID)
     if (workspaceTab === 'author' && centerTabsState.activeTabId === BROWSER_REPLAY_TAB_ID) openCenterTab(ACTION_LIST_TAB_ID)
@@ -1792,6 +1824,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setEditorHistory({ past: [], future: [] })
   }, [scriptId, setEditorHistory])
   const hydratedInitialScriptRef = useRef<{ script: ScriptData; scriptId?: string | null } | null>(null)
+  // The hydrated script still waiting for its opening selection.
+  const pendingOpeningFocusRef = useRef<ScriptData | null>(null)
 
   // Imperative refetch used after a user saves/deletes a reusable block; the catalog
   // is keyed by protocol + project so saved blocks surface alongside the built-ins.
@@ -1937,6 +1971,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       hydrateEditorState(initialRetainedDraft)
       markBaseline(initialScript)
       if (initialRetainedJsonText !== undefined) { setJsonText(initialRetainedJsonText); setJsonDirty(true) }
+      pendingOpeningFocusRef.current = initialRetainedDraft
       return
     }
     hydrateEditorState(initialScript)
@@ -1971,6 +2006,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       openCenterTab('parameter-data')
       setOpenDataEditor(focusedDataSourceIndex)
     }
+
+    // Nothing asked for: open on the first problem once this script's
+    // problems are known (see the effect after Author Problems).
+    pendingOpeningFocusRef.current = focusedActionIndex === null && !initialFocusedSection && !initialFocusedRuntimeArea && focusedDataSourceIndex === null
+      ? initialScript
+      : null
   }, [initialScriptDocumentKey, editorOwnsSavedEcho, initialRetainedDraft, initialRetainedJsonText, setJsonDirty, setJsonText, markBaseline, baselineJsonRef, hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, openCenterTab, openImportedRuntimeSettings, scriptId, setActiveAction, setAuthorCodeFocus, setOpenDataEditor, setOpenSections, setScriptJsonSidebarTab, setShowFullScriptJson])
 
   const selectAuthorPhaseIndex = (phase: ScriptActionPhase, index: number | null) => {
@@ -5350,6 +5391,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const railAdditionalIssues = editorIssueDetails.filter(issue => !authoringIssueIds.has(issue.id))
   const editorIssueDetailsRef = useRef(editorIssueDetails)
   editorIssueDetailsRef.current = editorIssueDetails
+  // Open a script on the first problem Author Problems lists, else the first
+  // action, rather than an empty "select an action" pane: from the problems
+  // already computed for the hydrated script, so a large import pays nothing
+  // extra. Selection only; keyboard focus stays, and Source keeps the whole
+  // script, positioned on that action.
+  useEffect(() => {
+    if (!pendingOpeningFocusRef.current || pendingOpeningFocusRef.current !== script) return
+    pendingOpeningFocusRef.current = null
+    if (authorCodeFocus) return
+    const opening = openingEditorFocus(
+      actionProblemRows.filter(({ issue }) => issue.severity === 'error').map(({ row }) => row),
+      readinessIssues,
+      scriptPhaseActionRows,
+    )
+    if (!opening) return
+    setActiveAction(opening.phase === 'action' ? opening.actionIndex : null)
+    setAuthorCodeFocus(opening)
+    setShowFullScriptJson(true)
+  }, [actionProblemRows, authorCodeFocus, readinessIssues, script, scriptPhaseActionRows, setActiveAction, setAuthorCodeFocus, setShowFullScriptJson])
   const toggleSelectedBreakpoint = () => {
     const authorSelectedAction = authorCodeFocus && !authorCodeFocus.stepPath?.length
       ? {
@@ -5410,11 +5470,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     handleSave,
     setBreakOnFailure,
   }
+  // The script is renamed in place in the top bar (the outline keeps only the
+  // steps); the handler goes through a ref so typing does not rebuild it.
+  const renameScriptRef = useRef((name: string) => updateField('name', name))
+  renameScriptRef.current = (name: string) => updateField('name', name)
+  const duplicateScriptNameNotice = `Another script in this folder is already named “${script.name.trim()}”. Both are kept; rename this one to tell them apart.`
   const scriptTopbarContribution = useMemo<TopbarContribution>(() => ({
     id: 'script-editor',
     priority: 80,
     title: currentDraftScript.name || (scriptId ? 'Edit script' : 'Create script'),
+    titleNode: (
+      <input
+        className="topbar-title-input"
+        aria-label="Script name"
+        placeholder="Name this script"
+        value={script.name}
+        title={duplicateScriptName ? duplicateScriptNameNotice : script.name}
+        onChange={event => renameScriptRef.current(event.target.value)}
+      />
+    ),
     meta: [
+      {
+        id: 'duplicate-name',
+        label: 'Name in use',
+        tone: 'warning',
+        title: duplicateScriptNameNotice,
+        hidden: !duplicateScriptName,
+      },
       {
         id: 'problems',
         label: `${problemCount} issue${problemCount === 1 ? '' : 's'}`,
@@ -5454,7 +5536,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
       },
     ],
-  }), [currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, problemCount, problemErrorCount, replayBlockedByMissingSecrets, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
+  }), [currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, replayBlockedByMissingSecrets, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
   // The step controls belong to the debug session, beside its evidence: the
   // top bar keeps Save and the one action that starts a debug run, so it
@@ -6175,9 +6257,52 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         onOpenParameterEditor={openJsonParameterEditor}
         onOpenExistingParameter={openJsonExistingParameterChooser}
         onOpenOccurrenceReview={openJsonParameterOccurrenceReview}
+        sourceActions={importMetadata && workspaceTab !== 'debug'
+          ? <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowMetadataJsonDialog(true)}>Imported metadata JSON</button>
+          : undefined}
       />
     )
   }
+  const scriptNameField = (
+    <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
+      <label className="script-name-field">
+        <span>Script name</span>
+        <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" aria-describedby={duplicateScriptName ? 'script-name-duplicate' : undefined} />
+      </label>
+      {duplicateScriptName && <small id="script-name-duplicate" className="script-name-duplicate">{duplicateScriptNameNotice}</small>}
+    </div>
+  )
+  // One line per step: the name (a long one keeps its last part, where VuGen
+  // names differ), its type, and marks for a breakpoint or a problem.
+  const renderOutlineSelect = (item: DebugRailRenderRow, label?: string, meta?: string) => {
+    const phase = item.row.phase
+    const action = item.kind === 'leaf' ? item.childAction : item.row.action
+    const name = (item.kind === 'leaf' || item.kind === 'container' ? item.name || action.name : action.name) || `${item.row.phaseLabel} ${item.row.actionIndex + 1}`
+    const marker = item.kind === 'action' ? actionTransactionMarker(item.row.action) : null
+    // VuGen names a sub-transaction "Parent||child"; inside its parent the child part says it.
+    const markerName = marker?.sub ? marker.name.split('||').pop() || marker.name : marker?.name
+    const text = label || (marker ? (marker.role === 'end' ? `End ${markerName}` : markerName || '') : name)
+    // Imported LoadRunner calls are all "source_*" types; the prefix says nothing here.
+    const type = meta ?? (marker ? (marker.role === 'start' ? 'Sub-transaction' : '') : humanActionType(item.kind === 'container' ? item.containerType : action.method || action.type).replace(/^Source /, ''))
+    const selected = !selectedOutlineParameterName && authorCodeFocus?.phase === phase && authorCodeFocus.actionIndex === item.row.actionIndex && (authorCodeFocus.stepPath || []).join('/') === ('stepPath' in item ? item.stepPath || [] : []).join('/')
+    const tail = outlineNameTail(text)
+    return (
+      <TooltipButton type="button" data-outline-select aria-current={selected ? 'true' : undefined} title={text} onClick={() => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}>
+        <span className="script-outline-name"><span>{tail ? text.slice(0, -tail.length) : text}</span>{tail && <span>{tail}</span>}</span>
+        {type && <>{' '}<small>{type}</small></>}
+        {debugBreakpointKeys.has(item.key) && <span className="script-outline-flag breakpoint"><span className="sr-only">Breakpoint</span></span>}
+        {(actionIssueBuckets[phase]?.[item.row.actionIndex] || []).length > 0 && <span className="script-outline-flag attention"><span className="sr-only">Needs attention</span></span>}
+      </TooltipButton>
+    )
+  }
+  const renderOutlineItem = (item: DebugRailRenderRow) => (
+    <div key={item.key} className="script-outline-row" style={{ paddingLeft: `${Math.min(item.depth, 8) * 12}px` }}>
+      {item.kind === 'container'
+        ? <button type="button" className="script-outline-toggle" aria-label={`${expandedAuthorContainers.has(item.key) ? 'Collapse' : 'Expand'} ${item.name}`} aria-expanded={expandedAuthorContainers.has(item.key)} onClick={() => toggleAuthorContainer(item.key)}>{expandedAuthorContainers.has(item.key) ? '▾' : '▸'}</button>
+        : <span className="script-outline-toggle" aria-hidden="true" />}
+      {renderOutlineSelect(item)}
+    </div>
+  )
   const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
     const workbenchTabs = mode === 'debug'
       ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
@@ -6924,16 +7049,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           />
           )}
 
-          {objectDescriptorReview.rows.length > 0 && centerTabPanelElements['object-descriptors'] && createPortal(
+          {objectDescriptorReview.rows.length > 0 && centerTabMountTarget('object-descriptors') && createPortal(
             renderStructuredCenterDocument('Object Descriptors', (
               <ObjectDescriptorReviewDocument
                 controller={importReviewController}
                 onApplyCandidate={applyObjectDescriptorCandidate}
                 onSelectAction={selectAuthorAction}
               />
-            )), centerTabPanelElements['object-descriptors'])}
+            )), centerTabMountTarget('object-descriptors')!)}
 
-          {isBrowserScript && centerTabPanelElements['http-conversion'] && createPortal(
+          {isBrowserScript && centerTabMountTarget('http-conversion') && createPortal(
             renderStructuredCenterDocument('Browser To HTTP Conversion Review', (
               <section className="center-document config-panel center-document-conversion" style={{ padding: 0 }} aria-label="Browser To HTTP Conversion Review">
                 <div className="center-document-header">
@@ -7075,10 +7200,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 </div>
               </div>
               </section>
-            )), centerTabPanelElements['http-conversion'])}
+            )), centerTabMountTarget('http-conversion')!)}
 
           {/* Runtime Settings Panels */}
-          {centerTabPanelElements['runtime-settings'] && createPortal(
+          {centerTabMountTarget('runtime-settings') && createPortal(
             renderStructuredCenterDocument('Runtime Settings', (
               <ScriptRuntimeSettingsView
                 hideSave
@@ -7099,7 +7224,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 saving={saving}
                 script={script}
               />
-            )), centerTabPanelElements['runtime-settings'])}
+            )), centerTabMountTarget('runtime-settings')!)}
 
           {/* Actions List + Detail */}
           {workspaceTab === 'author' && (
@@ -7135,65 +7260,41 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     </div>
                   </div>
                 </div>
-                <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
-                  <label className="script-name-field">
-                    <span>Script Name</span>
-                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" aria-describedby={duplicateScriptName ? 'script-name-duplicate' : undefined} />
-                  </label>
-                  {duplicateScriptName && <small id="script-name-duplicate" className="script-name-duplicate">Another script in this folder is already named “{script.name.trim()}”. Both are kept; rename this one to tell them apart.</small>}
-                </div>
-                <nav className="script-action-navigator" aria-label="Script outline" onKeyDown={handleOutlineKeys}>
-                  <label>Find action<input type="search" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} /></label>
-                  {(['init', 'action', 'teardown'] as const).map(phase => <section key={phase}>
-                    <h4>{phase === 'action' ? 'Actions' : phase === 'init' ? 'Init' : 'Teardown'}</h4>
-                    {authorRenderRows.filter(item => item.row.phase === phase).map(item => {
-                      const action = item.kind === 'leaf' ? item.childAction : item.row.action
-                      const name = item.kind === 'leaf' || item.kind === 'container' ? item.name || action.name : action.name
-                      const selected = !selectedOutlineParameterName && authorCodeFocus?.phase === phase && authorCodeFocus.actionIndex === item.row.actionIndex && (authorCodeFocus.stepPath || []).join('/') === ('stepPath' in item ? item.stepPath || [] : []).join('/')
-                      return <div key={item.key} className="script-outline-row" style={{ paddingLeft: `${Math.min(item.depth, 8) * 12}px` }}>
-                        {item.kind === 'container' && <button type="button" aria-label={`${expandedAuthorContainers.has(item.key) ? 'Collapse' : 'Expand'} ${name}`} aria-expanded={expandedAuthorContainers.has(item.key)} onClick={() => toggleAuthorContainer(item.key)}>{expandedAuthorContainers.has(item.key) ? '▾' : '▸'}</button>}
-                        <TooltipButton type="button" data-outline-select aria-current={selected ? 'true' : undefined} title={name} onClick={() => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}>
-                          <strong>{name || `${phase} ${item.row.actionIndex + 1}`}</strong><small>{humanActionType(item.kind === 'container' ? item.containerType : action.method || action.type)} · {item.depth > 0 ? `Nested step ${('stepPath' in item ? item.stepPath?.join(' › ') : '') || ''}` : `${item.row.phaseLabel} ${item.row.actionIndex + 1}`}{debugBreakpointKeys.has(item.key) ? ' · Breakpoint' : ''}{(actionIssueBuckets[phase]?.[item.row.actionIndex] || []).length ? ' · Needs attention' : ''}</small>
-                        </TooltipButton>
-                      </div>
-                    })}
-                    {!authorRenderRows.some(item => item.row.phase === phase) && <small>{outlineActionFilter ? 'No matching actions' : 'No actions'}</small>}
-                  </section>)}
+                {!hasTopbarContributionProvider && scriptNameField}
+                <input className="script-outline-filter" type="search" aria-label="Find action" placeholder="Find action" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} />
+                <nav className="script-action-navigator script-outline-tree" aria-label="Script outline" onKeyDown={handleOutlineKeys}>
+                  {(['init', 'action', 'teardown'] as const).map(phase => {
+                    const entries = outlineTreeByPhase[phase]
+                    // An empty Init or Teardown takes no room; Actions always shows.
+                    if (!entries.length && phase !== 'action') return null
+                    const label = phase === 'action' ? 'Actions' : phase === 'init' ? 'Init' : 'Teardown'
+                    return <section key={phase} aria-label={label}>
+                      <h4>{label} <span>{scriptPhaseActionRows.filter(row => row.phase === phase).length}<span className="sr-only"> steps</span></span></h4>
+                      {entries.map(entry => {
+                        if (entry.kind === 'step') return renderOutlineItem(entry.item)
+                        // A search shows its matches inside collapsed transactions too.
+                        const collapsed = !outlineActionFilter.trim() && collapsedOutlineTransactions.has(entry.key)
+                        return <div key={entry.key} className="script-outline-group" role="group" aria-label={`Transaction ${entry.name}`}>
+                          <div className="script-outline-row script-outline-group-head">
+                            <button type="button" className="script-outline-toggle" aria-label={`${collapsed ? 'Expand' : 'Collapse'} transaction ${entry.name}`} aria-expanded={!collapsed} onClick={() => toggleOutlineTransaction(entry.key)}>{collapsed ? '▸' : '▾'}</button>
+                            {entry.start
+                              ? renderOutlineSelect(entry.start, entry.name, `${entry.stepCount} step${entry.stepCount === 1 ? '' : 's'}`)
+                              : <span className="script-outline-group-label" title={entry.name}><span className="script-outline-name"><span>{entry.name}</span></span> <small>{entry.stepCount} step{entry.stepCount === 1 ? '' : 's'}</small></span>}
+                          </div>
+                          {!collapsed && entry.items.map(renderOutlineItem)}
+                        </div>
+                      })}
+                      {!entries.length && <small>{outlineActionFilter ? 'No matching actions' : 'No actions'}</small>}
+                    </section>
+                  })}
                 </nav>
-                <details className="author-data-tools"><summary>Parameters &amp; data ({script.parameters?.length || 0})</summary>
-                <ScriptJsonParameterOutline
-                  collapsed={outlineParameterListCollapsed}
-                  deepScanning={deepScanning}
-                  isEditingExisting={isEditingExisting}
-                  parameters={script.parameters || []}
-                  referenceCounts={parameterReferenceCounts}
-                  selectedParameterName={selectedOutlineParameterName}
-                  onRunServerScan={runServerParameterization}
-                  onScan={scanForAutoParameters}
-                  onSelectParameter={selectOutlineParameter}
-                  onToggle={() => setOutlineParameterListCollapsed(collapsed => !collapsed)}
-                />
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Open parameter data</button>
-                </details>
-                {importedParameterFileMappings.length > 0 && <ImportReviewOutlineSection controller={importReviewController} />}
-                <div className="editor-outline-nav editor-outline-nav-bottom">
-                  <div className="editor-outline-list">
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
-                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Source Mapping</button>}
-                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => setShowMetadataJsonDialog(true)}>Imported Metadata JSON</button>}
-                    {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
-                    {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
-                  </div>
-                </div>
                 </>
                 )}
               </div>
 
               {renderCenterWorkbench('author-code-center', 'Author center workbench', 'author')}
 
-              {importMetadata && centerTabPanelElements['imported-metadata'] && createPortal(
+              {importMetadata && centerTabMountTarget('imported-metadata') && createPortal(
                 renderStructuredCenterDocument('Source Mapping', (
                   <SourceMappingReviewDocument
                     controller={importReviewController}
@@ -7210,7 +7311,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     onSelectAction={selectAuthorAction}
                     script={script}
                   />
-                )), centerTabPanelElements['imported-metadata'])}
+                )), centerTabMountTarget('imported-metadata')!)}
 
               <div id="script-details-panel" className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (
@@ -7283,11 +7384,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           </div>
           )}
 
-          {centerTabPanelElements['parameter-data'] && createPortal(
+          {centerTabMountTarget('parameter-data') && createPortal(
             <ParameterDataCellDraftProvider onDraftChange={stageParameterDataCellEdit}>
-              {renderStructuredCenterDocument('Parameter Data', (
+              {renderStructuredCenterDocument('Parameters', (
                 <ParameterDataDialog
               onAddDataset={addParameterDataset}
+              onShowUsesInSource={selectOutlineParameter}
+              toolbarActions={<>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={scanForAutoParameters} title="Quick scan for hardcoded values to externalize">Auto Params</button>
+                {isEditingExisting && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { void runServerParameterization() }} disabled={deepScanning} title="Server scan of the saved script; also flags secrets">{deepScanning ? 'Scanning…' : 'Deep Scan'}</button>}
+                {importedParameterFileMappings.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => importReviewController.setShowImportedParameterMappingsDialog(true)} title="How the source tool's parameter files mapped into data sources">Imported parameter files ({importedParameterFileMappings.length})</button>}
+              </>}
               onInspectUsage={path => {
                 const match = /^(init|actions|teardown)\[(\d+)\]/.exec(path)
                 if (match) {
@@ -7335,7 +7442,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 variant="document"
               />
               ))}
-            </ParameterDataCellDraftProvider>, centerTabPanelElements['parameter-data'])}
+            </ParameterDataCellDraftProvider>, centerTabMountTarget('parameter-data')!)}
 
           {replayScreenshotSelection && !runtimeVariablesUnavailable && (
             <ReplayScreenshotDialog

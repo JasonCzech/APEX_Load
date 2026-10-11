@@ -15,7 +15,6 @@ import { EditorSelection, StateEffect, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { openSearchPanel } from '@codemirror/search'
 
-import type { ScriptParameterDefinition } from '../types/scripts'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 import { ActionParameterMenu } from './ScriptEditorActionEditor'
@@ -309,14 +308,17 @@ export function ScriptJsonScopeBar({
   showFullScriptJson,
   unavailable,
   onShowFullScriptJson,
+  children,
 }: {
   fullScriptOnly?: boolean
   scope: AuthorJsonScope | null
   showFullScriptJson: boolean
   unavailable: boolean
   onShowFullScriptJson: (show: boolean) => void
+  /** Further Source actions, at the end of the bar. */
+  children?: ReactNode
 }) {
-  if (!scope) return null
+  if (!scope) return children ? <div className="script-json-scope-bar" aria-label="Script JSON display scope"><div className="script-json-scope-actions">{children}</div></div> : null
   const selectedLabel = scope.subAction ? 'Selected Sub-action' : 'Selected Action'
   return (
     <div className="script-json-scope-bar" aria-label="Script JSON display scope">
@@ -344,6 +346,7 @@ export function ScriptJsonScopeBar({
           Full Script JSON
         </button>
       </div>
+      {children && <div className="script-json-scope-actions">{children}</div>}
     </div>
   )
 }
@@ -363,6 +366,7 @@ export function ScriptJsonDocument({
   onOpenParameterEditor,
   onOpenExistingParameter,
   onOpenOccurrenceReview,
+  sourceActions,
 }: {
   fullScriptOnly?: boolean
   scope: AuthorJsonScope | null
@@ -378,6 +382,8 @@ export function ScriptJsonDocument({
   onOpenParameterEditor: (nextExistingName?: string | null) => void
   onOpenExistingParameter: () => void
   onOpenOccurrenceReview: () => void
+  /** Further actions on the script's source (e.g. imported metadata), shown in the scope bar. */
+  sourceActions?: ReactNode
 }) {
   const scopeBar = (
     <ScriptJsonScopeBar
@@ -386,7 +392,7 @@ export function ScriptJsonDocument({
       showFullScriptJson={showFullScriptJson}
       unavailable={selectedJsonUnavailable}
       onShowFullScriptJson={onShowFullScriptJson}
-    />
+    >{sourceActions}</ScriptJsonScopeBar>
   )
   if (showSelectedActionJson && scope) {
     const selectedTitle = scope.subAction ? 'Selected Sub-action JSON' : 'Selected Action JSON'
@@ -458,83 +464,6 @@ export function ScriptJsonCompanionHeader({
         )}
       </TabList>
     </div>
-  )
-}
-
-export function ScriptJsonParameterOutline({
-  collapsed,
-  deepScanning,
-  isEditingExisting,
-  parameters,
-  referenceCounts,
-  selectedParameterName,
-  onRunServerScan,
-  onScan,
-  onSelectParameter,
-  onToggle,
-}: {
-  collapsed: boolean
-  deepScanning: boolean
-  isEditingExisting: boolean
-  parameters: ScriptParameterDefinition[]
-  referenceCounts: Map<string, number>
-  selectedParameterName: string | null
-  onRunServerScan: () => void
-  onScan: () => void
-  onSelectParameter: (name: string) => void
-  onToggle: () => void
-}) {
-  return (
-    <section className="outline-section parameter-outline-section">
-      <div className="actions-sidebar-header outline-section-header">
-        <button type="button" className="outline-section-toggle" aria-expanded={!collapsed} onClick={onToggle}>
-          <span aria-hidden="true" className="outline-section-chevron">{collapsed ? '▸' : '▾'}</span>
-          <span>
-            <strong>Parameter List</strong>
-            <small>{parameters.length} defined</small>
-          </span>
-        </button>
-        <div className="parameter-header-actions">
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onScan} title="Auto Parameterization — quick scan for hardcoded values to externalize">Auto Params</button>
-          {isEditingExisting && (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onRunServerScan} disabled={deepScanning} title="Deep scan (server) — backend engine also flags secrets">
-              {deepScanning ? 'Scanning…' : 'Deep Scan'}
-            </button>
-          )}
-        </div>
-      </div>
-      {!collapsed && (
-        <>
-          <div className="parameter-outline-list">
-            {parameters.map((parameter, index) => {
-              const parameterName = parameter.name || `Parameter ${index + 1}`
-              const referenceCount = parameter.name ? referenceCounts.get(parameter.name) || 0 : 0
-              const selected = selectedParameterName === parameter.name
-              return (
-                <button
-                  key={`${parameter.name || 'parameter'}-${index}`}
-                  type="button"
-                  className={`parameter-outline-item ${selected ? 'selected' : ''}`}
-                  onClick={() => parameter.name && onSelectParameter(parameter.name)}
-                  disabled={!parameter.name}
-                >
-                  <strong>{parameterName}</strong>
-                  <span>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</span>
-                </button>
-              )
-            })}
-            {parameters.length === 0 && <div className="action-empty parameter-outline-empty">No parameters defined yet.</div>}
-          </div>
-          <div className="parameter-outline-actions">
-            <p className="parameter-outline-hint">
-              {isEditingExisting
-                ? 'Quick scan finds hardcoded values; deep scan also flags secrets via the server engine.'
-                : 'Build your requests, then scan to externalize hardcoded values as you go.'}
-            </p>
-          </div>
-        </>
-      )}
-    </section>
   )
 }
 

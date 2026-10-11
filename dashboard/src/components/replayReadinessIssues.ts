@@ -98,3 +98,21 @@ export function replayReadinessIssues(preflight: ReadinessFacts | null | undefin
   }
   return issues
 }
+
+/**
+ * Where the editor opens a script: the first step Author Problems lists (an
+ * authoring error, then a replay gate), else the first action (Actions before
+ * Init and Teardown); null for a script with no steps.
+ */
+export function openingEditorFocus(
+  authoringErrorRows: readonly { phase: ScriptActionPhase; actionIndex: number }[],
+  readiness: readonly ReadinessIssue[],
+  rows: readonly { phase: ScriptActionPhase; actionIndex: number }[],
+): { phase: ScriptActionPhase; actionIndex: number } | null {
+  const pick = (row?: { phase: ScriptActionPhase; actionIndex: number }) => row ? { phase: row.phase, actionIndex: row.actionIndex } : undefined
+  return pick(authoringErrorRows[0])
+    ?? readiness.find(issue => issue.location)?.location
+    ?? pick(rows.find(row => row.phase === 'action'))
+    ?? pick(rows[0])
+    ?? null
+}

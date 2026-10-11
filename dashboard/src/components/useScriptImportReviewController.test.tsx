@@ -75,11 +75,9 @@ describe('useScriptImportReviewController', () => {
       importBaselineScript: baseline,
       onWorkspaceMaximizedChange: vi.fn(),
       script,
-      scriptId: 'script-1',
     })
 
     const controller = getController()
-    expect(controller.importReviewCollapsed).toBe(true)
     expect(controller.importedParameterFileMappings).toMatchObject([{
       section: { file: 'Users.prm', name: 'Login' },
       sourceName: 'users',
@@ -100,7 +98,6 @@ describe('useScriptImportReviewController', () => {
       importBaselineScript: null,
       onWorkspaceMaximizedChange,
       script: importedScript(),
-      scriptId: null,
     })
 
     act(() => {
@@ -116,7 +113,7 @@ describe('useScriptImportReviewController', () => {
     const script = importedScript()
     const review = script.metadata!.import!.preserved!.source_review as { target_domain?: string; mappings: { id: string; source_file: string; target_path: string; status: string }[] }
     review.target_domain = 'original_import'
-    const get = renderController({ activeCenterTabId: 'imported-metadata', editorHistory: { past: [], future: [] }, importBaselineScript: null, onWorkspaceMaximizedChange: vi.fn(), script, scriptId: 'native' })
+    const get = renderController({ activeCenterTabId: 'imported-metadata', editorHistory: { past: [], future: [] }, importBaselineScript: null, onWorkspaceMaximizedChange: vi.fn(), script })
     expect(get().importedCorrelationFocusTargets[0].foundAtActionIndex).toBeNull()
     act(() => { get().focusSourceMappingForAction(0) })
     expect(get().sourceMappingFocus).toEqual({ mappingId: '', requestId: 0 })
@@ -130,7 +127,7 @@ describe('useScriptImportReviewController', () => {
     const script = importedScript()
     script.metadata!.import!.source = 'salesforce'
     script.metadata!.import!.preserved!.salesforce_review = { native_preview: { correlations: [] } }
-    const get = renderController({ activeCenterTabId: 'imported-metadata', editorHistory: { past: [], future: [] }, importBaselineScript: null, onWorkspaceMaximizedChange: vi.fn(), script, scriptId: 'legacy-native' })
+    const get = renderController({ activeCenterTabId: 'imported-metadata', editorHistory: { past: [], future: [] }, importBaselineScript: null, onWorkspaceMaximizedChange: vi.fn(), script })
     expect(get().sourceReview?.target_domain).toBe('original_import')
     expect(get().importedCorrelationFocusTargets[0].foundAtActionIndex).toBeNull()
     act(() => { get().focusSourceMappingForAction(0) })

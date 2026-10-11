@@ -269,7 +269,7 @@ test('native correlation review preserves exact original source navigation throu
   await expect(reopened).not.toContainText('Historical annotation')
   const authorPanes = page.getByRole('group', { name: 'Author panes', exact: true })
   if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Script Name', exact: true }).fill('Reviewed native correlation draft')
+  await page.getByRole('textbox', { name: 'Script name', exact: true }).fill('Reviewed native correlation draft')
   const edited = mutation(page, 'PUT', `/api/v1/scripts/${stored.id}`)
   await page.getByRole('button', { name: 'Save script', exact: true }).click()
   const editedResponse = await edited

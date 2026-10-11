@@ -223,45 +223,6 @@ export function ScriptImportReviewDialogs({
   )
 }
 
-export function ImportReviewOutlineSection({ controller }: { controller: ImportReviewController }) {
-  const count = controller.importedParameterFileMappings.length
-  if (count === 0) return null
-  return (
-    <section className="outline-section import-review-section">
-      <div className="actions-sidebar-header outline-section-header">
-        <button
-          type="button"
-          className="outline-section-toggle"
-          aria-expanded={!controller.importReviewCollapsed}
-          onClick={() => controller.setImportReviewCollapsed(collapsed => !collapsed)}
-        >
-          <span aria-hidden="true" className="outline-section-chevron">{controller.importReviewCollapsed ? '▸' : '▾'}</span>
-          <span>
-            <strong>Import Review</strong>
-            <small>{count} parameter file{count === 1 ? '' : 's'}</small>
-          </span>
-        </button>
-      </div>
-      {!controller.importReviewCollapsed && (
-        <div className="starter-blocks-panel parameter-mappings-launcher">
-          <div className="starter-blocks-header">
-            <strong>Parameter File Mappings</strong>
-            <span>{count}</span>
-          </div>
-          <p>Review how the source tool&apos;s parameter files mapped into APEX data sources. Most useful right after import.</p>
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary parameter-mappings-launcher-button"
-            onClick={() => controller.setShowImportedParameterMappingsDialog(true)}
-          >
-            Open Mapping List
-          </button>
-        </div>
-      )}
-    </section>
-  )
-}
-
 export function ImportedMetadataUtilityPanel({
   activeAction,
   controller,

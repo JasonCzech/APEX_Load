@@ -221,7 +221,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
   const authorPanes = page.getByRole('group', { name: 'Author panes' })
   if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Script Name', exact: true })).toHaveValue(scripts[0].name)
+  await expect(page.getByRole('textbox', { name: 'Script name', exact: true })).toHaveValue(scripts[0].name)
   await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
 })
 
@@ -914,7 +914,7 @@ test('LoadRunner Java JAR attachment follows policy and survives review-session 
   const sessionCard = page.locator('.authoring-session-card').filter({ has: page.getByRole('heading', { name: String(saved.name), exact: true }) })
   await sessionCard.getByRole('button', { name: 'Resume', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
-  const resumedName = page.getByRole('textbox', { name: 'Script Name', exact: true })
+  const resumedName = page.getByRole('textbox', { name: 'Script name', exact: true })
   if (!await resumedName.isVisible()) {
     await page.getByRole('group', { name: 'Author panes' }).getByRole('button', { name: 'Outline', exact: true }).click()
   }

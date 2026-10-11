@@ -22,7 +22,6 @@ interface UseScriptImportReviewControllerOptions {
   importBaselineScript: ScriptDefinition | null
   onWorkspaceMaximizedChange: (maximized: boolean) => void
   script: ScriptDefinition
-  scriptId?: string | null
 }
 
 export function useScriptImportReviewController({
@@ -31,9 +30,7 @@ export function useScriptImportReviewController({
   importBaselineScript,
   onWorkspaceMaximizedChange,
   script,
-  scriptId,
 }: UseScriptImportReviewControllerOptions) {
-  const [importReviewCollapsed, setImportReviewCollapsed] = useState(Boolean(scriptId))
   const [showImportedParameterMappingsDialog, setShowImportedParameterMappingsDialog] = useState(false)
   const [showMetadataJsonDialog, setShowMetadataJsonDialog] = useState(false)
   const [sourceMappingWorkspaceMaximized, setSourceMappingWorkspaceMaximized] = useState(false)
@@ -124,13 +121,11 @@ export function useScriptImportReviewController({
     importedCorrelationFocusTargets,
     importedDataSourceSummaries,
     importedParameterFileMappings,
-    importReviewCollapsed,
     importSummary,
     objectDescriptorReview,
     reviewBaselineScript,
     runtimeSettingParitySummary,
     runtimeSettingReadinessSummary,
-    setImportReviewCollapsed,
     setShowImportedParameterMappingsDialog,
     setShowMetadataJsonDialog,
     showImportedParameterMappingsDialog,

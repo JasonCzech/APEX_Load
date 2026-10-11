@@ -147,7 +147,6 @@ export function useScriptJsonNavigationController({
   const [showFullScriptJson, setShowFullScriptJson] = useState(false)
   const [outlineActionListCollapsed, setOutlineActionListCollapsed] = useState(false)
   const [outlineActionFilter, setOutlineActionFilter] = useState('')
-  const [outlineParameterListCollapsed, setOutlineParameterListCollapsed] = useState(false)
   const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
   const [parameterPaneShowAuto, setParameterPaneShowAuto] = useState(false)
   const [scriptJsonSidebarTab, setScriptJsonSidebarTab] = useState<ScriptJsonSidebarTab>(SCRIPT_JSON_DEFAULT_COMPANION_TAB)
@@ -285,7 +284,6 @@ export function useScriptJsonNavigationController({
     normalizedAutoParameterOccurrenceIndex,
     outlineActionFilter,
     outlineActionListCollapsed,
-    outlineParameterListCollapsed,
     parameterMatchRanges,
     parameterPaneShowAuto,
     parameterReferenceCounts,
@@ -305,7 +303,6 @@ export function useScriptJsonNavigationController({
     setAuthorCodeFocus,
     setOutlineActionFilter,
     setOutlineActionListCollapsed,
-    setOutlineParameterListCollapsed,
     setParameterPaneShowAuto,
     setScriptJsonSidebarTab,
     setSelectedOutlineParameterName,
