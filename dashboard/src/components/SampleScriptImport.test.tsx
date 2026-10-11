@@ -686,6 +686,7 @@ describe('SampleScriptImport', () => {
       includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const versionMode = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('HTTP version in generated script'))?.querySelector('select') as HTMLSelectElement | undefined
+    expect(versionMode).toBeTruthy()
     expect(versionMode?.value).toBe('upgrade')
     if (!versionMode) return
     await act(async () => {

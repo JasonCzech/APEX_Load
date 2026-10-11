@@ -506,6 +506,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(onUpdateField).toHaveBeenCalledWith('config.http', { version: '' })
     expect(container.textContent).not.toContain('runs need HTTP/3 execution enabled')
     act(() => {
+      expect(version).toBeTruthy()
       if (!version) return
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
       setter?.call(version, '3')
