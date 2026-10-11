@@ -94,6 +94,7 @@ import {
 } from './scriptAuthoringAssist'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import { loadObjectRefSuggestions } from './scriptObjectRefCatalog'
+import { summarizeActionContext } from './scriptActionContext'
 import {
   defaultAssertionForProtocol,
   defaultExtractorForProtocol,
@@ -237,6 +238,7 @@ import { useScriptImportReviewController } from './useScriptImportReviewControll
 import {
   ImportReviewCommitPanel,
   ImportedMetadataUtilityPanel,
+  ImportedRuntimeParityReview,
   ObjectDescriptorReviewDocument,
   ObjectDescriptorUtilityPanel,
   ScriptImportReviewDialogs,
@@ -370,6 +372,8 @@ interface CenterTabbedPaneProps {
   activeTabId: CenterWorkbenchTabId
   ariaLabel: string
   className?: string
+  /** What the app's skip link calls this pane, e.g. "Skip to editor". */
+  skipLabel: string
   onCloseTab: (tabId: CenterWorkbenchTabId) => void
   onPanelElement: (tabId: CenterWorkbenchTabId, element: HTMLDivElement | null) => void
   onSelectTab: (tabId: CenterWorkbenchTabId) => void
@@ -410,6 +414,7 @@ function CenterTabbedPane({
   activeTabId,
   ariaLabel,
   className = '',
+  skipLabel,
   onCloseTab,
   onPanelElement,
   onSelectTab,
@@ -444,7 +449,7 @@ function CenterTabbedPane({
   }
 
   return (
-    <section className={`center-tabbed-pane ${className}`} aria-label={ariaLabel}>
+    <section className={`center-tabbed-pane ${className}`} aria-label={ariaLabel} tabIndex={-1} data-skip-target data-skip-label={skipLabel}>
       <TabList className="center-tab-strip" role="tablist" aria-label={`${ariaLabel} tabs`} onKeyDown={handleTabKey}>
         {tabs.map((tab, index) => {
           const selected = tab.id === activeTab.id
@@ -452,7 +457,8 @@ function CenterTabbedPane({
           const panelId = `center-tab-panel-${tab.id}`
           return (
             <div key={tab.id} role="presentation" className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
-              <TooltipButton
+              {/* The label is the whole name, so no tooltip repeats it. */}
+              <button
                 type="button"
                 id={tabButtonId}
                 role="tab"
@@ -461,13 +467,11 @@ function CenterTabbedPane({
                 aria-keyshortcuts={tab.closeable ? 'Delete' : undefined}
                 className="center-tab-button"
                 tabIndex={selected ? 0 : -1}
-                title={tab.title}
                 onClick={() => onSelectTab(tab.id)}
                 onKeyDown={event => handleTabKeyDown(event, index)}
               >
-                <span className="center-tab-dot" aria-hidden="true" />
                 <span className="center-tab-label">{tab.label}</span>
-              </TooltipButton>
+              </button>
               {tab.closeable && (
                 <button
                   type="button"
@@ -3712,13 +3716,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }
 
-  const replayStatusLabel = replaying && replayReport && !replayReport.completed_at
-    ? browserReplaySession?.status === 'paused' ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running'
-    : replayReport?.stopped
-      ? 'Stopped'
-      : replayReport?.success
-      ? 'Success'
-      : 'Failed'
   const replayLatestActivity = replayActivity[replayActivity.length - 1]
   const currentRuntimeSnapshot = runtimeVariablesUnavailable ? null : runtimeAdmission.runtime?.snapshot || null
   const replayVariableInspector = runtimeVariablesUnavailable ? null : runtimeInspectionMode === 'current'
@@ -5268,9 +5265,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     && replayEvidenceMatchesCurrentDraft
     && errorCount === 0
   )
-  const validationEvidenceLabel = validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'
-  // The status row shows these as one truncating line; the tooltip keeps all of it.
-  const scriptEvidenceSummary = `Saved: ${scriptEditorDirty ? 'unsaved changes' : 'up to date'} · Validation evidence: ${validationEvidenceLabel} · Debugged: ${debugEvidenceStatus} · Approval readiness: ${approvalReady ? 'ready for review' : 'needs evidence'}`
+  // The status row shows each state as a quiet chip: a mark and a word, with
+  // the full sentence in its tooltip and for screen readers. In Debug the
+  // session bar owns the run's status, so the debug chip steps aside there.
+  const scriptStatusChips: Array<{ key: string; tone: 'ok' | 'warn' | 'bad' | 'none'; word: string; detail: string }> = [
+    { key: 'saved', tone: scriptEditorDirty ? 'warn' : 'ok', word: scriptEditorDirty ? 'Unsaved' : 'Saved', detail: scriptEditorDirty ? 'This draft has unsaved changes.' : 'All changes are saved.' },
+    {
+      key: 'checked',
+      tone: !validationEvidence ? 'none' : !validationEvidenceMatchesCurrentDraft ? 'warn' : validationPassed ? 'ok' : 'bad',
+      word: !validationEvidence ? 'Unchecked' : !validationEvidenceMatchesCurrentDraft ? 'Recheck' : validationPassed ? 'Checked' : 'Checks failed',
+      detail: `Validation evidence: ${!validationEvidence ? 'not yet' : !validationEvidenceMatchesCurrentDraft ? 'stale; recheck this draft' : validationPassed ? 'passed' : 'needs changes'}. Checks & readiness has the details.`,
+    },
+    ...(workspaceTab === 'debug' ? [] : [{
+      key: 'debugged',
+      tone: debugEvidenceStatus === 'passed' ? 'ok' as const : debugEvidenceStatus === 'failed' ? 'bad' as const : debugEvidenceStatus === 'missing' ? 'none' as const : 'warn' as const,
+      word: debugEvidenceStatus === 'passed' ? 'Debugged' : debugEvidenceStatus === 'failed' ? 'Debug failed' : debugEvidenceStatus === 'stale' ? 'Debug stale' : debugEvidenceStatus === 'stopped' ? 'Debug stopped' : debugEvidenceStatus === 'in progress' ? 'Debugging' : 'Not debugged',
+      detail: `Last debug run: ${debugEvidenceStatus}.`,
+    }]),
+    { key: 'ready', tone: approvalReady ? 'ok' : 'none', word: approvalReady ? 'Ready' : 'Not ready', detail: approvalReady ? 'Approval readiness: ready for review.' : 'Approval readiness: needs a passing check and debug run of this draft.' },
+  ]
   const debugWorkspaceStatusLabel = replaying
     ? (isReplayPaused ? 'Paused' : 'Running')
     : replayReport?.completed_at
@@ -6149,8 +6162,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const renderActionListCenterDocument = () => renderStructuredCenterDocument('Action editor', (
     <section className="center-document author-main-action" aria-label="Action editor">
       <div className="author-edit-toolbar">
-        <button type="button" className="btn btn-sm btn-secondary" aria-pressed={!authorOverview} onClick={() => setAuthorOverview(false)}>Edit selected action</button>
-        <button type="button" className="btn btn-sm btn-secondary" aria-pressed={authorOverview} onClick={() => setAuthorOverview(true)}>Overview & bulk</button>
+        {/* Selecting an action in the outline leaves the overview. */}
+        <button type="button" className="btn btn-sm btn-secondary" aria-pressed={authorOverview} onClick={() => setAuthorOverview(open => !open)}>Overview & bulk</button>
         <button type="button" className="btn btn-sm btn-primary" onClick={() => addAction(authorCodeFocus?.phase || 'action')}>+ Add Action</button>
       </div>
       {<div hidden={!authorOverview}>{renderBulkActionTools()}</div>}
@@ -6324,12 +6337,46 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         activeTabId={centerTabsState.activeTabId}
         ariaLabel={ariaLabel}
         className={className}
+        skipLabel={mode === 'debug' ? 'Skip to debugger' : 'Skip to editor'}
         onCloseTab={closeCenterTab}
         onPanelElement={setCenterTabPanelElement}
         onSelectTab={selectCenterTab}
         renderTabPanel={renderCenterTabPanel}
         tabs={workbenchTabs.length > 0 ? workbenchTabs : fallbackTabs.slice(0, 1)}
       />
+    )
+  }
+  // The rail tells what the form does not: what the action reads, what it
+  // extracts, who reads that, and how its last debug run went.
+  const renderActionContextCard = () => {
+    if (!activeInspectorScope) return null
+    const context = summarizeActionContext(script, activeInspectorScope.phase, activeInspectorScope.actionIndex, replayReport?.events, activeInspectorScope.subAction ? activeInspectorScope.action : undefined)
+    if (!context) return null
+    const references = (items: string[], empty: string) => items.length
+      ? <ul className="action-context-tokens">{items.map(item => <li key={item}><code>{item}</code></li>)}</ul>
+      : <p className="action-context-empty">{empty}</p>
+    const debug = context.lastDebug
+    return (
+      <div className="utility-card action-context-card">
+        <h3>{activeInspectorScope.label}</h3>
+        <dl>
+          <dt>Reads</dt>
+          <dd>{references(context.uses, 'No parameters or variables')}</dd>
+          <dt>Extracts</dt>
+          <dd>{references(context.produces, 'Nothing')}</dd>
+          {context.produces.length > 0 && <>
+            <dt>Read by</dt>
+            <dd>{context.usedBy.length ? <ul className="action-context-links">{context.usedBy.map(location => {
+              const row = scriptPhaseActionRows.find(item => item.phase === location.phase && item.actionIndex === location.actionIndex)
+              return <li key={`${location.phase}:${location.actionIndex}`}>{row ? <button type="button" className="link-button" onClick={() => selectAuthorPhaseAction(row)}>{location.name || `${row.phaseLabel} ${location.actionIndex + 1}`}</button> : location.name}</li>
+            })}</ul> : <p className="action-context-empty">No other action reads these yet</p>}</dd>
+          </>}
+          <dt>{context.debugOfEnclosingAction ? 'Last debug of its block' : 'Last debug'}</dt>
+          <dd>{debug
+            ? <p className={`action-context-debug ${debug.success ? 'passed' : 'failed'}`}>{debug.success ? 'Passed' : 'Failed'}{debug.statusCode ? ` · HTTP ${debug.statusCode}` : ''} · {Math.round(debug.durationMs)} ms{!replayEvidenceMatchesCurrentDraft ? ' · before your latest edits' : ''}{!debug.success && debug.error ? <span>{debug.error}</span> : null}</p>
+            : <p className="action-context-empty">Not debugged yet</p>}</dd>
+        </dl>
+      </div>
     )
   }
   const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
@@ -6517,7 +6564,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           />
         )
       case 'inspector':
-        return <div className="utility-card"><h3>Selected action</h3><p>{activeInspectorScope?.action.name}</p><p>Edit properties in the main workbench. Inspect Source for the serialized action.</p><button type="button" className="btn btn-sm btn-secondary" onClick={() => { setShowFullScriptJson(false); openCenterTab(SCRIPT_JSON_TAB_ID) }}>Inspect action source</button><button type="button" className="btn btn-sm btn-secondary" onClick={() => { setNarrowAuthorPane('editor'); openCenterTab(ACTION_LIST_TAB_ID) }}>Edit action</button></div>
+        return renderActionContextCard()
       case 'imported-metadata':
         return (
           <ImportedMetadataUtilityPanel
@@ -6623,7 +6670,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       event.preventDefault()
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
     }}>
-      {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onClose={() => setInsertSeed(null)} library={renderActionLibrary()} />}
+      {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onClose={() => setInsertSeed(null)} onOpenThinkTime={() => { setInsertSeed(null); openCenterTab('runtime-settings'); selectRuntimeSettingsSection('think') }} library={renderActionLibrary()} />}
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
       {showAuthorProblems && <IssueDetailsDialog title="Author Problems" issues={editorIssueDetails} onClose={() => setShowAuthorProblems(false)} />}
       {datasetChange && <DatasetChangeReview change={datasetChange} affected={(script.parameters || []).filter(parameter => parameter.data_source?.trim().toLowerCase() === datasetChange.before.name.trim().toLowerCase()).map(parameter => parameter.name)} error={datasetChangeError} onApply={applyDatasetChange} onCancel={() => setDatasetChange(null)} />}
@@ -6635,12 +6682,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={jsonDirty || editorHistory.future.length === 0} title="Redo document change" aria-label="Redo document change"><EditorRailActionIcon kind="redo" /></TooltipButton>
         </>}
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowSavedDiff(true)}>Review changes</button>
-        <span className="script-evidence-summary" title={scriptEvidenceSummary}>
-          <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
-          <span>Validation evidence: {validationEvidenceLabel}</span>
-          <span>Debugged: {debugEvidenceStatus}</span>
-          <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
-        </span>
+        <ul className="script-status-chips" aria-label="Script status">
+          {scriptStatusChips.map(chip => <li key={chip.key} className={`script-status-chip ${chip.tone}`} title={chip.detail}>
+            <span className="script-status-mark" aria-hidden="true" />{chip.word}<span className="sr-only">: {chip.detail}</span>
+          </li>)}
+        </ul>
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowAuthorProblems(true)}>Author Problems ({problemCount})</button>
         <details className="script-health-summary"><summary>Checks &amp; readiness</summary><div className="author-readiness-popover">
           <p>Static checks inspect the draft. Runtime prerequisites are verified when debugging starts. Replay evidence belongs to its recorded revision.</p>
@@ -6653,7 +6699,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         </RowActions>
       </div>
       {showHistory && scriptId && <ObjectHistoryDialog title={`History · ${currentDraftScript.name || 'Script'}`} projectId={projectId} resourceType="script" resourceId={scriptId} activity={activity} onClose={() => setShowHistory(false)} />}
-      {workspaceTab === 'author' && !isParameterDataTabActive && centerTabsState.activeTabId !== 'runtime-settings' && <div className="script-pane-switch" role="group" aria-label="Author panes">
+      {/* Tabs swap the center only: the outline and context panes stay for
+          every tab, so the frame never reflows. */}
+      {workspaceTab === 'author' && <div className="script-pane-switch" role="group" aria-label="Author panes">
         {(['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowAuthorPane === pane} onClick={() => { setNarrowAuthorPane(pane); if (pane === 'outline') setAuthorOutlineCollapsed(false); if (pane === 'inspector') setAuthorRightSidebarCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Context'}</button>)}
       </div>}
       <datalist id="object-ref-suggestions">
@@ -7006,7 +7054,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 await performDebugMutation(() => api.resumeScriptDebugSession(activeReplaySessionId))
               } catch (cause) { setError(getErrorMessage(cause, 'Could not run to the selected action')) }
             }}
-            replayStatusLabel={replayStatusLabel}
             replayVariableDiffs={replayVariableDiffs}
             replayVariableInspector={replayVariableInspector}
             runtimeVariablesUnavailable={runtimeVariablesUnavailable}
@@ -7215,7 +7262,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
           {/* Runtime Settings Panels */}
           {centerTabMountTarget('runtime-settings') && createPortal(
-            renderStructuredCenterDocument('Runtime Settings', (
+            renderStructuredCenterDocument('Runtime Settings', (<>
+              {importMetadata && <ImportedRuntimeParityReview controller={importReviewController} onOpenRuntimeSettings={openImportedRuntimeSettings} />}
               <ScriptRuntimeSettingsView
                 hideSave
                 debugContext={replayOptions}
@@ -7235,13 +7283,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 saving={saving}
                 script={script}
               />
-            )), centerTabMountTarget('runtime-settings')!)}
+            </>)), centerTabMountTarget('runtime-settings')!)}
 
           {/* Actions List + Detail */}
           {workspaceTab === 'author' && (
           <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
             <div
-              className={`actions-content-grid ${isParameterDataTabActive || centerTabsState.activeTabId === 'runtime-settings' ? 'settings-workspace-expanded' : ''} ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}
+              className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}
               style={!authorOutlineCollapsed && authorRailWidth != null ? ({ ['--author-rail-width']: `${authorRailWidth}px` } as React.CSSProperties) : undefined}
             >
               {!authorOutlineCollapsed && (
@@ -7318,7 +7366,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                       else if (path.startsWith('config.')) openImportedRuntimeSettings()
                       else { setNarrowAuthorPane('editor'); setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) }
                     }}
-                    onOpenRuntimeSettings={openImportedRuntimeSettings}
                     onSelectAction={selectAuthorAction}
                     script={script}
                   />

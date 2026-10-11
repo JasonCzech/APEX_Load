@@ -912,6 +912,23 @@ select option:checked {
 :where(a[href]), :where(a[href]:visited) { color: var(--accent-text); }
 :where(a[href]:hover) { text-decoration: underline; text-underline-offset: 3px; }
 
+/* An inline action inside running text: reads as a link, behaves as a
+   button. Defined once here; pages used to get it only from TestHub.css. */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-button:disabled {
+  color: inherit;
+  text-decoration: none;
+  cursor: default;
+}
+
 /* Screen-reader-only text. Defined globally: it used to live only in the Run
    Results stylesheet, so hidden captions showed until that page had loaded. */
 .sr-only {

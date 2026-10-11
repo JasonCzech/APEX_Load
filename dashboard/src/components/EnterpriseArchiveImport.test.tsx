@@ -985,6 +985,7 @@ describe('EnterpriseArchiveImport', () => {
     // Once reviewed, saving lives only in the review header.
     expect(container.querySelectorAll('.lr-import-action-buttons button')).toHaveLength(1)
     const reviewSaveButton = findButton(container, 'Save to Script Library')
+    expect(reviewSaveButton).toBeTruthy()
     expect(reviewSaveButton?.closest('.script-import-review-actions')).toBeTruthy()
     expect(reviewSaveButton?.disabled).toBe(false)
     if (!reviewSaveButton) return
@@ -1030,7 +1031,9 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('web_set_max_html_param_len')
     expect(container.textContent).toContain('Demo.usr')
     expect(container.textContent).toContain('Requires decision')
-    expect(container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Mapped"]')?.checked).toBe(true)
+    // Runtime settings open on what needs a decision.
+    expect(container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Requires decision"]')?.checked).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Mapped"]')?.checked).toBe(false)
     expect(container.textContent).toContain('Correlation suggestions')
     expect(container.textContent).toContain('SessionId')
     expect(container.textContent).toContain('Found in Step 1')
@@ -5862,6 +5865,8 @@ describe('EnterpriseArchiveImport', () => {
       .find(label => label.textContent?.includes('unconfigured APEX settings'))?.querySelector('input') as HTMLInputElement | undefined
     expect(showUnconfigured).toBeDefined()
     await act(async () => showUnconfigured?.click())
+    const additional = container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Additional APEX settings"]')
+    if (additional && !additional.checked) await act(async () => additional.click())
     const editHTTP = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit HTTP')
     expect(editHTTP?.disabled).toBe(true)
     expect(onEdit).not.toHaveBeenCalled()

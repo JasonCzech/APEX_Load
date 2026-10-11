@@ -17,7 +17,7 @@ test('script sidebars preserve selection, source scope, body editing and Debug o
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   const outline = page.getByRole('navigation', { name: 'Script outline', exact: true })
   await outline.getByRole('button', { name: /Create order/ }).click()
-  await expect(page.getByRole('group', { name: 'Action property sections' })).toBeVisible()
+  await expect(page.getByRole('tablist', { name: 'Action property sections' })).toBeVisible()
   await page.getByRole('button', { name: 'Edit request body in center' }).click()
   const body = page.getByRole('region', { name: 'Request body editor' })
   await body.getByRole('textbox', { name: 'Request body' }).fill('{"customer":"{{param.customer}}","edited":true}')

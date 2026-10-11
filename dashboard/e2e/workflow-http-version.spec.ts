@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { Socket } from 'node:net'
 import type { Page, TestInfo } from '@playwright/test'
 import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // Protocol provenance sits in a closed "Protocol evidence" disclosure under the response.
@@ -155,10 +155,10 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await expect(control.locator('option:checked')).toContainText('HTTP/2')
     await control.selectOption('1.1')
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     await control.selectOption('inherit')
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     const inherited = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
     expect(inherited.actions[1].params).toEqual(initial.actions[1].params)
     await control.selectOption('1.1')
@@ -168,7 +168,7 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await selectLeaf(page, 'Exact H2 sibling'); await control.selectOption('2')
     await selectLeaf(page, 'Auto on H1 only'); await control.selectOption('auto')
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     const saved = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
     expect(saved.actions[1].params).toEqual({ ...initial.actions[1].params, requests: children.map((child, index) => ({ ...child, http_version: index === 0 ? '1.1' : '2' })) })
     expect(saved.actions[2]).toEqual({ ...initial.actions[2], http_version: 'auto' })
@@ -196,7 +196,7 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Auto on H1 only' })).toBeVisible()
     expect(target.stats.completed).toEqual([2, 1]); expect(target.stats.autoCalls).toBe(0)
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    await expectDebugOutcome(page, 'passed')
     expect(target.stats.autoCalls).toBe(1); expect(target.stats.acceptedAuto).toBe(1)
     expect(target.stats.consumerCalls).toBe(1); expect(target.stats.acceptedConsumers).toBe(1)
     const download = page.waitForEvent('download')

@@ -273,46 +273,21 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-.script-code-status {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
-  font-size: 11px;
-  font-weight: 700;
-}
-.script-code-status.synced {
-  border-color: rgba(var(--success-rgb), 0.34);
-  color: var(--success-text);
-  background: rgba(var(--success-rgb), 0.1);
-}
+.script-code-status,
 .script-code-readonly-pill {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: var(--bg-primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: default;
 }
-.script-code-status.dirty {
-  border-color: rgba(var(--warning-rgb), 0.34);
-  color: var(--warning-text);
-  background: rgba(var(--warning-rgb), 0.1);
-}
-.script-code-status.invalid {
-  border-color: rgba(var(--danger-rgb), 0.34);
-  color: var(--danger-text);
-  background: rgba(var(--danger-rgb), 0.1);
-}
+.script-code-readonly-pill { color: var(--text-muted); }
+.script-code-status.synced { color: var(--success-text); }
+.script-code-status.dirty { color: var(--warning-text); }
+.script-code-status.invalid { color: var(--danger-text); }
 .script-code-editor,
 .script-code-editor > div,
 .script-code-editor .cm-editor {
@@ -389,11 +364,7 @@
   align-items: center;
   min-width: 0;
   max-width: 220px;
-  border-right: 1px solid rgba(148, 163, 184, 0.16);
   background: transparent;
-}
-.center-tab-item.active {
-  background: var(--bg-primary);
 }
 .center-tab-button {
   display: inline-flex;
@@ -402,13 +373,13 @@
   min-width: 0;
   max-width: 100%;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 0;
-  color: var(--text-secondary);
+  color: var(--tab-link, var(--text-secondary));
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 700;
 }
 .center-tab-button:hover,
 .center-tab-button:focus-visible {
@@ -416,21 +387,13 @@
   outline: none;
 }
 .center-tab-button:focus-visible {
-  box-shadow: inset 0 -2px 0 var(--accent);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
+/* The same underline as every other tab row (topbarNavigation.css). */
 .center-tab-item.active .center-tab-button {
   color: var(--text-primary);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-.center-tab-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.62);
-}
-.center-tab-item.pinned .center-tab-dot {
-  background: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--brand-highlight, var(--accent));
 }
 .center-tab-label {
   min-width: 0;
@@ -4823,7 +4786,10 @@ details.replay-code-block > summary,
 .action-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; color: var(--text-muted); font-size: 14px; }
 .action-editor-panel { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
 .action-editor-top { display: flex; align-items: center; gap: 12px; }
-.action-badge { padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; font-family: 'SF Mono', monospace; }
+/* The type's colour is a text token, so it colours the label and outline on
+   the card instead of filling the badge: a fill under white text fails
+   contrast in the dark themes, where those tokens are light. */
+.action-badge { padding: 2px 9px; border: 1px solid currentColor; border-radius: 4px; background: transparent; font-size: 11px; font-weight: 700; font-family: 'SF Mono', monospace; }
 .action-badge-review {
   color: var(--warning-text);
   background: var(--warning-bg);
@@ -7185,7 +7151,7 @@ details.replay-code-block > summary,
   align-items: flex-end;
   gap: 4px;
   flex-shrink: 0;
-  padding: 8px 10px 0;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
 }
 .debugger-center-tabs {
@@ -7196,23 +7162,16 @@ details.replay-code-block > summary,
   min-width: 0;
   gap: 4px;
 }
-.debugger-center-tabs button,
-.debugger-bottom-tabs button {
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
+/* Tabs here use the shared underline tabs (.ux-underline-tabs); this styles
+   the dock's Expand/Collapse button beside them. */
+.debugger-bottom-tabs > button {
+  border: 0;
   background: transparent;
   color: var(--text-secondary);
   padding: 7px 12px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-}
-.debugger-center-tabs button.active,
-.debugger-bottom-tabs button.active {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
 }
 .debugger-center-tabs .debugger-pane-close,
 .debugger-pane-close {
@@ -7867,14 +7826,6 @@ button.debugger-problem-row:hover {
 .selected-evidence-repair-description { display: block; margin: 6px 0; }
 .debugger-action-row-main strong { white-space: normal; overflow-wrap: anywhere; }
 
-/* Settings own their navigation; incidental editor panes must not squeeze forms and data. */
-.actions-content-grid.settings-workspace-expanded {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "author-code";
-}
-.settings-workspace-expanded > .actions-sidebar,
-.settings-workspace-expanded > .author-rail-resize,
-.settings-workspace-expanded > .editor-utility-sidebar { display: none; }
 .parameter-workspace-toolbar { padding: 20px; border-bottom: 1px solid var(--border); }
 .parameter-workspace-toolbar h3 { margin: 0 0 6px; }
 .parameter-workspace-toolbar p { color: var(--text-secondary); margin: 0 0 12px; }
@@ -8037,10 +7988,6 @@ button.debugger-problem-row:hover {
 .parameter-grid-head { min-width: 200px; width: 240px; padding-right: 20px; box-sizing: border-box; resize: horizontal; overflow: auto; }
 .parameter-grid-head input { min-width: 0; flex: 1 1 0; }
 .parameter-grid-head-actions { flex: 0 0 auto; }
-@container (max-width: 700px) {
-  .settings-workspace-expanded .author-code-center { max-height: none; min-height: 640px; }
-  .settings-workspace-expanded { overflow-y: auto; }
-}
 
 /* Sidebar ownership: navigation, document, selected-item inspector. */
 .script-action-navigator { padding: 12px; overflow: auto; min-height: 180px; }
@@ -8082,9 +8029,6 @@ button.debugger-problem-row:hover {
   [data-author-pane="outline"] .actions-content-grid > .actions-sidebar,
   [data-author-pane="editor"] .actions-content-grid > .author-code-center,
   [data-author-pane="inspector"] .actions-content-grid > .editor-utility-sidebar { display: flex; flex-direction: column; }
-  .script-editor .settings-workspace-expanded > .actions-sidebar,
-  .script-editor .settings-workspace-expanded > .editor-utility-sidebar { display: none; }
-  .script-editor .settings-workspace-expanded > .author-code-center { display: flex; flex-direction: column; }
   .author-rail-resize, .debugger-resizer { display: none; }
   .debugger-shell, .debugger-shell.debug-dock-collapsed, .debugger-shell.browser-evidence-workspace, .debugger-shell.browser-evidence-workspace.debug-dock-collapsed { display: flex; flex-direction: column; min-height: 460px; height: auto; overflow: visible; }
   .debugger-shell > .debugger-rail, .debugger-shell > .debugger-code-center, .debugger-shell > .debugger-center { display: none; min-height: 360px; height: 60vh; flex: 0 0 auto; width: 100%; }
@@ -8095,9 +8039,7 @@ button.debugger-problem-row:hover {
   .debugger-shell > .debugger-bottom { flex: 0 0 auto; height: 260px; min-height: 0; }
   .debugger-shell.debug-dock-collapsed > .debugger-bottom { height: auto; min-height: 42px; }
 }
-.inspector-section-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; position: sticky; top: 0; z-index: 1; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
-.inspector-section-tabs button { border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--bg-secondary); padding: 8px; cursor: pointer; }
-.inspector-section-tabs [aria-pressed="true"] { background: var(--bg-hover); border-color: var(--accent); }
+.inspector-section-tabs { position: sticky; top: 0; z-index: 1; padding: 0 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
 .action-editor-panel [hidden] { display: none !important; }
 .request-body-workspace { display: block; width: 100%; min-height: 50vh; box-sizing: border-box; resize: vertical; font-family: var(--font-mono, monospace); }
 
@@ -8157,6 +8099,7 @@ button.debugger-problem-row:hover {
 .inspector-selection-path small { display: block; font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .author-insert-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 24px; }
 .author-insert-dialog > label, .author-body-toolbar label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.author-insert-group label { display: flex; flex-direction: column; gap: 6px; }
 .author-insert-dialog input, .author-insert-dialog select { min-height: 36px; }
 .author-body-document .cm-editor { min-height: 320px; border: 1px solid var(--border); }
 .author-body-document .cm-scroller { max-height: 60vh; }
@@ -8172,7 +8115,7 @@ button.debugger-problem-row:hover {
 .author-main-action .advanced-action-tools > summary { display: none; }
 .script-health-summary[open] { flex-basis: auto; }
 .author-readiness-popover { position: absolute; z-index: 30; top: 100%; right: 0; width: min(600px, 80vw); max-height: 60vh; overflow: auto; padding: 16px; background: var(--bg-secondary, #171923); border: 1px solid var(--border); box-shadow: 0 8px 28px #0008; }
-.actions-content-grid:not(.settings-workspace-expanded) { --author-utility-width: minmax(220px, 24%); }
+.script-editor .actions-content-grid { --author-utility-width: minmax(220px, 24%); }
 .author-main-action .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 700px) { .author-main-action .form-grid { grid-template-columns: minmax(0, 1fr); } .author-readiness-popover { position: fixed; top: 160px; right: 16px; width: calc(100vw - 32px); } }
 .issue-details-copy > span { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -8269,8 +8212,14 @@ button.debugger-problem-row:hover {
    second row; History and Reset layout live in the More menu. */
 .script-evidence-states { flex-wrap: nowrap; align-items: center; gap: 8px; padding: 6px 12px; min-height: 44px; box-sizing: border-box; }
 .script-evidence-states > * { flex: 0 0 auto; }
-.script-evidence-states > .script-evidence-summary { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-secondary); font-size: 12px; }
-.script-evidence-summary > span + span::before { content: ' · '; }
+/* Status reads as quiet text with a mark, never as a button: no border, no fill. */
+.script-status-chips { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-width: 0; margin: 0; padding: 0; list-style: none; color: var(--text-secondary); font-size: 12px; }
+.script-status-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: default; }
+.script-status-mark { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.script-status-chip.ok .script-status-mark { background: var(--success); }
+.script-status-chip.warn .script-status-mark { background: var(--warning); }
+.script-status-chip.bad .script-status-mark { background: var(--danger); }
+.script-status-chip.none .script-status-mark { box-sizing: border-box; border: 1.5px solid var(--text-muted); background: transparent; }
 .script-health-summary > summary { white-space: nowrap; }
 .author-readiness-popover { max-width: calc(100vw - 32px); }
 /* When the row wraps, the details may sit at its start: open the panel in the row, under its summary, instead of floating it off the editor's edge. */
@@ -8284,8 +8233,7 @@ button.debugger-problem-row:hover {
 .author-edit-toolbar { margin-bottom: 8px; }
 .author-main-action .inspector-selection-path { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .author-main-action .inspector-selection-path small { display: inline; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.inspector-section-tabs { padding: 6px 0; }
-.inspector-section-tabs button { min-height: 30px; padding: 4px 10px; }
+.inspector-section-tabs { padding: 0; }
 /* Debug frame: one session bar (status, step controls, options) and one row
    of selection tools and disclosures above the panes. */
 .debug-options-toolbar.debug-session-bar { flex-wrap: nowrap; gap: 8px; padding: 6px 12px; min-height: 48px; box-sizing: border-box; }
@@ -8363,3 +8311,27 @@ button.debugger-problem-row:hover {
 .debug-preview-value { border-radius: 3px; background: var(--accent-soft); color: var(--text-primary); }
 .debug-preview-unresolved { text-decoration: underline dotted var(--warning); text-underline-offset: 3px; color: var(--warning-text, var(--warning)); }
 .debug-preview-secret, .debug-preview-generated { color: var(--text-secondary); font-style: italic; }
+
+/* Rail: what the selected action reads, extracts and last did. */
+.action-context-card h3 { margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
+.action-context-card dl { display: grid; gap: 4px 0; margin: 0; }
+.action-context-card dt { margin-top: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.action-context-card dd { margin: 0; }
+.action-context-card ul { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.action-context-tokens code { font-size: 12px; overflow-wrap: anywhere; }
+.action-context-links { font-size: 13px; }
+.action-context-empty { margin: 2px 0 0; color: var(--text-muted); font-size: 13px; }
+.action-context-debug { margin: 2px 0 0; font-size: 13px; font-weight: 600; }
+.action-context-debug.passed { color: var(--success-text); }
+.action-context-debug.failed { color: var(--danger-text); }
+.action-context-debug span { display: block; margin-top: 4px; color: var(--text-secondary); font-weight: 400; overflow-wrap: anywhere; }
+
+/* One breakpoint toggle per row: quiet at rest, clear while the row is
+   hovered or focused (F9 toggles it from the keyboard). */
+.debugger-action-row:hover .debugger-gutter:not(.active) .debugger-breakpoint-dot,
+.debugger-action-row:focus-within .debugger-gutter:not(.active) .debugger-breakpoint-dot { border-color: rgba(var(--danger-rgb), 0.7); }
+
+/* Insert action: type, then name, then place, each its own group. */
+.author-insert-group { display: grid; gap: 10px; margin: 0 0 14px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--border); }
+.author-insert-group > legend { padding: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.author-insert-group .author-insert-hint { margin: 0; }

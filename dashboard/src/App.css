@@ -79,9 +79,10 @@
 }
 
 .main-topbar-page {
-  flex: 0 0 auto;
+  /* The title takes the room it needs, and shrinks only when the bar is full. */
+  flex: 0 1 auto;
   min-width: 132px;
-  max-width: 260px;
+  max-width: 480px;
   display: flex;
   align-items: center;
 }
@@ -734,3 +735,26 @@
   gap: 8px;
   margin-top: 10px;
 }
+
+/* Skip link: off screen until it receives focus, then the first thing seen. */
+.app-skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--bg-card, var(--bg-primary));
+  color: var(--accent-text);
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  transform: translateY(-200%);
+}
+.app-skip-link:focus,
+.app-skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.center-tabbed-pane:focus { outline: none; }
+.center-tabbed-pane:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }

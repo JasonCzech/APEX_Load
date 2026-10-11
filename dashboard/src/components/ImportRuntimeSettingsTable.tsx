@@ -12,8 +12,11 @@ export default function ImportRuntimeSettingsTable({ script, onReviewTLSMigratio
 function RuntimeSettingsWorkspace({ script, onReviewTLSMigration }: { script: ScriptDefinition; onReviewTLSMigration?: () => void }) {
  const context = useImportSettings()
  const countsId = useId()
- const [selected, setSelected] = useState(() => script.protocol?.startsWith('jms') ? 'JMS' : script.protocol === 'kafka' ? 'Kafka' : 'HTTP')
- const [hiddenStatuses, setHiddenStatuses] = useState<string[]>([])
+ // Open on what needs a decision, across every category, when anything does;
+ // otherwise on the protocol's settings with the not-applicable ones folded away.
+ const [decisionsFirst] = useState(() => (runtimeSettingRows(script)['Requires decision'] || []).length > 0)
+ const [selected, setSelected] = useState(() => decisionsFirst ? 'All categories' : script.protocol?.startsWith('jms') ? 'JMS' : script.protocol === 'kafka' ? 'Kafka' : 'HTTP')
+ const [hiddenStatuses, setHiddenStatuses] = useState<string[]>(() => decisionsFirst ? ['Mapped for replay', 'Additional APEX settings', 'Preserved only', 'Not applicable'] : ['Not applicable'])
  const [showUnconfigured, setShowUnconfigured] = useState(false)
  const [search, setSearch] = useState('')
  const groups = useMemo(() => {
@@ -46,7 +49,8 @@ function RuntimeSettingsWorkspace({ script, onReviewTLSMigration }: { script: Sc
  const visible = (name: string, rows: RuntimeSettingRow[]) => rows.filter(row => matches(row) && (query || showUnconfigured || isVisibleByDefault(name, row)) && (query || active === 'All categories' || active === row.category))
  const enabledGroups = orderedGroups.filter(([name]) => !hiddenStatuses.includes(name))
  const enabledRows = enabledGroups.flatMap(([name, rows]) => rows.filter(row => showUnconfigured || isVisibleByDefault(name, row)))
- const shownGroups = enabledGroups.map(([name, rows]) => [name, visible(name, rows)] as const).filter(([, rows]) => rows.length)
+ // A search finds a setting by name whatever its status, like it ignores the category.
+ const shownGroups = (query ? orderedGroups : enabledGroups).map(([name, rows]) => [name, visible(name, rows)] as const).filter(([, rows]) => rows.length)
  const pending = Object.keys(context?.editors || {}).filter(category => !category.startsWith('parameters:'))
  function table(rows: RuntimeSettingRow[], group: string) {
   return <div className="lr-table-wrap"><table className="import-settings-table import-runtime-table" data-table-pagination="off"><thead><tr><th>Setting</th><th>Imported value</th><th>Current draft value</th><th>Details</th></tr></thead>{[...new Set(rows.map(row => row.category))].map(category => <tbody key={category}>
@@ -62,7 +66,7 @@ function RuntimeSettingsWorkspace({ script, onReviewTLSMigration }: { script: Sc
   <div className="import-review-toolbar"><label>Find a setting<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search all categories" /></label></div>
   <div className="import-runtime-layout"><nav className="import-category-nav" aria-label="Runtime categories">{['All categories', ...categories].map(category => <button type="button" key={category} aria-pressed={active === category && !query} onClick={() => { setSelected(category); setSearch('') }}>{category}<small>{category === 'All categories' ? enabledRows.length : enabledRows.filter(row => row.category === category).length}{context?.editors[category] ? ' · Editing' : ''}</small></button>)}</nav>
    <div className="import-runtime-content">
-    <p className="import-settings-hint" role="status">{query ? 'Search across all categories' : active} · {shownGroups.reduce((count, [, rows]) => count + rows.length, 0)} settings shown</p>
+    <p className="import-settings-hint" role="status">{query ? 'Search across all categories and statuses' : active} · {shownGroups.reduce((count, [, rows]) => count + rows.length, 0)} settings shown</p>
     <div className="import-category-editbar">{[...new Set([...shownGroups.flatMap(([, rows]) => rows).filter(row => row.field).map(row => row.category), ...pending])].map(category => <span key={category}>{pending.includes(category) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSelected(category); setSearch(''); setHiddenStatuses([]) }}>Review {category} edits{Object.keys(context?.editors[category]?.errors || {}).length ? ' · Errors' : ''}</button>}<CategoryActions category={category} /></span>)}</div>
     {!shownGroups.length && <p className="import-review-empty" role="status">{enabledGroups.length > 0 && unconfiguredCount > 0 && !showUnconfigured && !query ? 'No configured settings in this category. Show unconfigured APEX settings to inspect the full inventory.' : 'No settings match these filters. Enable a mapping status, choose another category, or change your search.'}</p>}
     {shownGroups.map(([name, rows]) => <section className="import-settings-section" aria-label={name} key={name}><h3>{name} <small>({rows.length})</small></h3>{name === 'Additional APEX settings' && <p className="import-settings-hint">Draft settings without a reported source mapping.</p>}{table(rows, name)}</section>)}

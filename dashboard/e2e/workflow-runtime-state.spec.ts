@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { APIRequestContext, Locator, Page, TestInfo } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, idOf, json, login, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // These receipts come from real isolated controllers and a loopback target.
@@ -249,7 +249,7 @@ test('current paused values and parameter receipts survive inspection without co
   }
   await stableInspections(request, afterRequest)
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page, 'passed')
   const terminal = await getSession(request, initial.id)
   expectEnvelope(terminal)
   expect(terminal.runtime_state).toMatchObject({ state: 'unavailable', reason: 'session_terminal', snapshot: null })
@@ -370,7 +370,7 @@ test('Run To continues after its breakpoint socket precedes the HTTP acknowledge
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Selected target' })).toBeVisible()
     expect(observed.slice(startCount)).toEqual(['/run-to/first'])
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    await expectDebugOutcome(page, 'passed')
     expect(observed.slice(startCount)).toEqual(['/run-to/first', '/run-to/target', '/run-to/finish'])
   } finally { releaseAcknowledgement() }
 })

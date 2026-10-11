@@ -6437,7 +6437,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
-    expect(container.querySelector('.debugger-statusbar')?.textContent).toContain('Stopped')
+    // The session bar's badge is the one place the outcome is shown.
+    expect(container.querySelector('.debugger-statusbar')?.textContent).not.toContain('Stopped')
     expect(container.textContent).toContain('Restart in step mode')
     expect(container.textContent).not.toContain('Stopping debugger…')
     expect(container.querySelector('.replay-live-badge')?.textContent).toBe('Stopped')

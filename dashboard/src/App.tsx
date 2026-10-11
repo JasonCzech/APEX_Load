@@ -337,6 +337,11 @@ function AppShell({
     pending: PendingGuardedHistoryTraversal;
   } | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
+  // The first stop on every page skips the navigation. A page can offer a
+  // nearer target, such as the script editor's workbench, by marking a
+  // visible element with data-skip-target and naming it in data-skip-label.
+  const [skipLinkLabel, setSkipLinkLabel] = useState("Skip to main content");
+  const skipTarget = () => Array.from(document.querySelectorAll<HTMLElement>("[data-skip-target]")).find(element => element.getClientRects().length > 0);
   const commandRunViewMemory = useRef(new Map<string, Map<string, unknown>>());
   const [settingsFocusRequest, setSettingsFocusRequest] = useState<{ destination: string; control: string } | null>(null);
   const clearSettingsFocusRequest = useCallback(() => setSettingsFocusRequest(null), []);
@@ -3125,6 +3130,17 @@ function AppShell({
       applicationValue={scopedApplicationContextValue}
     >
       <div className="app-layout">
+        <a
+          className="app-skip-link"
+          href="#app-main"
+          onFocus={() => setSkipLinkLabel(skipTarget()?.dataset.skipLabel || "Skip to main content")}
+          onClick={event => {
+            event.preventDefault();
+            (skipTarget() || mainContentRef.current)?.focus();
+          }}
+        >
+          {skipLinkLabel}
+        </a>
         <Sidebar
           active={activePage}
           onNavigate={handleNavigate}
@@ -3152,6 +3168,7 @@ function AppShell({
           onDevPreviewLogout={onDevPreviewLogout}
         />
         <main
+          id="app-main"
           ref={mainContentRef}
           className={mainContentClassName}
           tabIndex={-1}

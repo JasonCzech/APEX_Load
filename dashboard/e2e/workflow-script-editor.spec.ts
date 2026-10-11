@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { ScriptDebugRuntimeState } from '../src/types/replay'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { idOf, json, login, mutation } from './support/workflow'
+import { idOf, json, login, mutation, expectEditorSaved, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('operator edits the failed nested browser assertion and reruns without losing source fields', async ({ page }, testInfo) => {
@@ -50,11 +50,11 @@ test('operator edits the failed nested browser assertion and reruns without losi
   await expected.fill('Hello')
   await expect(page.getByLabel('Script evidence states')).toContainText('stale')
   await page.getByRole('button', { name: 'Save script', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+  await expectEditorSaved(page)
   const saved = await (await request.get(`/api/v1/scripts/${id}`)).json()
   expect(saved.script.actions[0].control.steps[0]).toMatchObject({ metadata: { audit_marker: 'preserve' }, wait_for: leaf.wait_for, assertions: [{ type: 'element_text_contains', value: '#result', expected: 'Hello' }] })
   await page.locator('.topbar-debug-action-run').click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page, 'passed')
   expect(runs).toBe(2)
   expect(replayExpected).toBe('Hello')
   await page.screenshot({ path: testInfo.outputPath('script-debug-evidence.png'), fullPage: true })

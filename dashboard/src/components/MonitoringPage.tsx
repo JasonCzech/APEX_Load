@@ -109,7 +109,7 @@ function formatReadinessStatus(status?: string): string {
     case 'degraded':
       return 'Degraded'
     case 'not_ready':
-      return 'Not Ready'
+      return 'Not ready'
     default:
       return status || 'checking'
   }
@@ -190,7 +190,7 @@ function infrastructureReadinessStatusLabel(state: InfrastructureReadinessState)
   switch (state) {
     case 'ready': return 'Ready'
     case 'degraded': return 'Degraded'
-    case 'not_ready': return 'Not Ready'
+    case 'not_ready': return 'Not ready'
     case 'not_configured': return 'Not applicable'
     case 'not_reported': return 'Not Reported'
     case 'checking': return 'Checking'
@@ -705,7 +705,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     : readinessFetchState === 'error' && !systemReadiness
       ? 'Unavailable'
       : reportedReadinessSeverity === 'danger'
-        ? 'Not Ready'
+        ? 'Not ready'
         : reportedReadinessSeverity === 'warning'
           ? 'Degraded'
           : readinessFetchState === 'stale'

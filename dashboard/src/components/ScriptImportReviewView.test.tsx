@@ -88,7 +88,7 @@ describe('saved recording environment review', () => {
   afterEach(() => { act(() => root.unmount()); container.remove() })
   it('shows the HTTP recording receipt independently of source-review existence and preserves importer provenance', () => {
     const controller = { importMetadata: script.metadata?.import, sourceReview: null, trueClientPromotionReview: null, importSummary: { runtimeSettingsParity: [], correlationSuggestions: [] }, importedCorrelationFocusTargets: [], focusSourceMapping: () => {} } as unknown as Parameters<typeof SourceMappingReviewDocument>[0]['controller']
-    act(() => root.render(<SourceMappingReviewDocument controller={controller} script={script} onOpenRuntimeSettings={() => {}} onSelectAction={() => {}} />))
+    act(() => root.render(<SourceMappingReviewDocument controller={controller} script={script} onSelectAction={() => {}} />))
     const panel = container.querySelector('[aria-label="Recording environment"]')!
     expect(panel).not.toBeNull()
     expect(panel.textContent).toContain('Chromium')

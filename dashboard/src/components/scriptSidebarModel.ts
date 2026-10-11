@@ -14,6 +14,16 @@ export function handleOutlineKeys(event: KeyboardEvent<HTMLElement>) {
   rows[next].scrollIntoView({ block: 'nearest' })
 }
 
+/** F9 toggles the breakpoint of the focused debugger row, as in VuGen. */
+export function toggleFocusedRowBreakpoint(event: KeyboardEvent<HTMLElement>): boolean {
+  if (event.key !== 'F9' || !(event.target instanceof HTMLElement)) return false
+  const gutter = event.target.closest('.debugger-action-row')?.querySelector<HTMLButtonElement>('button.debugger-gutter')
+  if (!gutter || gutter.disabled) return false
+  event.preventDefault()
+  gutter.click()
+  return true
+}
+
 export function sessionVariablesError(text: string): string | null {
   try { parseReplayVariablesText(text); return null }
   catch (error) { return error instanceof Error ? error.message : 'Enter valid JSON before starting Debug.' }

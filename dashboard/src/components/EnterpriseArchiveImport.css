@@ -19,8 +19,6 @@
 .lr-drop-content { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .lr-drop-content p { color: var(--text-secondary); font-size: 14px; margin: 0; }
 .lr-drop-hint { color: var(--text-muted); font-size: 12px; }
-.lr-drop-hint .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
-.lr-drop-hint .link-button:disabled { color: inherit; text-decoration: none; cursor: default; }
 .lr-file-queue {
   display: flex;
   flex-direction: column;
@@ -827,8 +825,14 @@
 .java-classpath-resolver-row .chip-remove:hover,
 .java-env-classpath-asset-chip .chip-remove:hover { color: var(--danger-text); }
 
-.lr-import-steps { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 0; list-style: none; color: var(--text-secondary); }
-.lr-import-steps [aria-current="step"] { color: var(--text-primary); font-weight: 600; }
+.lr-import-steps { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 0; list-style: none; color: var(--text-secondary); }
+.lr-import-step { display: inline-flex; align-items: center; gap: 8px; }
+.lr-import-step small { color: var(--text-secondary); font-weight: 400; }
+.lr-import-step-mark { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 22px; height: 22px; border: 1.5px solid var(--border); border-radius: 50%; font-size: 12px; font-weight: 700; }
+.lr-import-step.current { color: var(--text-primary); font-weight: 600; }
+.lr-import-step.current .lr-import-step-mark { border-color: var(--accent); color: var(--accent-text); }
+.lr-import-step.done .lr-import-step-mark { border-color: var(--success); color: var(--success-text); }
+.lr-import-step.blocked .lr-import-step-mark { border-color: var(--warning); color: var(--warning-text); }
 .lr-advanced-policy, .lr-options-grid > .lr-har-panel { grid-column: 1 / -1; }
 .lr-advanced-policy summary, .lr-har-panel summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 .lr-advanced-policy .lr-checkbox { margin-top: 10px; }
@@ -849,7 +853,6 @@
 .main-content:has(.lr-import) > .main-topbar { background: var(--bg-primary); backdrop-filter: none; }
 
 /* The post-validation surface prioritizes the current repair task. */
-.lr-import-reviewed .lr-import-header .lr-subtitle { display: none; }
 .lr-import-reviewed .lr-dropzone { padding: 12px 16px; text-align: left; }
 .lr-import-reviewed .lr-file-queue { gap: 8px; }
 .lr-import-reviewed .lr-file-info { justify-content: flex-start; }
@@ -970,7 +973,6 @@
 .lr-validation-review-panel :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 @media (max-width: 900px) { .lr-preview-toolbar select { max-width: 100%; } .lr-allocation-form label { flex: 1 1 180px; } }
 .lr-import-reviewed .lr-import-header { margin-bottom: 8px; }
-.lr-import-reviewed .lr-import-header h2 { font-size: 18px; margin: 0; }
 .lr-import-reviewed .lr-import-steps { margin: 8px 0; padding-block: 4px; font-size: 14px; }
 .lr-import-reviewed .lr-dropzone.has-file { padding: 12px; margin-bottom: 10px; }
 .lr-import-reviewed .lr-file-list { max-height: 140px; overflow: auto; }

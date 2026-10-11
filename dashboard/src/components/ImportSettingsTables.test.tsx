@@ -57,6 +57,27 @@ it('explains parity and source-only fallbacks while retaining importer-provided 
  expect(groups['Not applicable'][0].note).toContain('Replaced by a newer setting.')
 })
 
+it('opens runtime settings on what needs a decision, across every category', () => {
+ const draft = script()
+ draft.metadata = { import: { preserved: {
+  runtime_files: { 'default.cfg': { WEB: { ReceiveTimeout: '3', UnmappedLimit: '4', Superseded: '5' } } },
+  runtime_setting_dispositions: { 'default.cfg': { WEB: {
+   ReceiveTimeout: { status: 'mapped', parity_id: 'timeout', fields: ['config.http.request_timeout_ms'] },
+   UnmappedLimit: { status: 'unmapped' },
+   Superseded: { status: 'non_applicable', note: 'Replaced by a newer setting.' },
+  } } },
+  runtime_settings_parity: [{ id: 'timeout', area: 'HTTP', concept: 'Receive timeout', status: 'executed', fields: ['config.http.request_timeout_ms'] }],
+ } } }
+ const container = document.createElement('div'); const root = createRoot(container)
+ try {
+  act(() => root.render(<ImportRuntimeSettingsTable script={draft} />))
+  const checked = [...container.querySelectorAll<HTMLInputElement>('.import-runtime-summary input')].filter(input => input.checked).map(input => input.getAttribute('aria-label'))
+  expect(checked).toEqual(['Requires decision'])
+  expect([...container.querySelectorAll('.import-runtime-content > section')].map(section => section.getAttribute('aria-label'))).toEqual(['Requires decision'])
+  expect(container.querySelector('.import-category-nav button[aria-pressed="true"]')?.textContent).toMatch(/^All categories/)
+ } finally { act(() => root.unmount()) }
+})
+
 it('shows idle timeout seconds beside editable milliseconds and keeps superseded pacing inactive', () => {
  const draft = script()
  draft.config.http = { keep_alive: true, idle_timeout_ms: 60000 }
@@ -335,6 +356,10 @@ it('includes source-only categories in navigation and filters every status consi
  try {
   act(() => root.render(<ImportRuntimeSettingsTable script={draft} />))
   expect(container.querySelector('section[aria-label="Not applicable"]')).toBeNull()
+  // Not-applicable settings start folded away; the rest of this inspects the full inventory.
+  const notApplicable = container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Not applicable"]')!
+  expect(notApplicable.checked).toBe(false)
+  act(() => notApplicable.click())
   const summary = container.querySelector('.import-runtime-summary')!
   const overall = summary.textContent
   expect(overall).toContain('Preserved only2')

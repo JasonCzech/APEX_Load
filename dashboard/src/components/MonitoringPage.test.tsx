@@ -1202,9 +1202,9 @@ describe('MonitoringPage', () => {
     const readinessCard = container.querySelector<HTMLElement>('[data-card-id="production-readiness"]')
     const readinessCardBadge = readinessCard?.querySelector('.monitor-header-badge')
     expect(readinessCardBadge?.classList.contains('danger')).toBe(true)
-    expect(readinessCardBadge?.textContent).toContain('Not Ready · 1 unreported')
+    expect(readinessCardBadge?.textContent).toContain('Not ready · 1 unreported')
     expect(readinessCard?.textContent).toContain('PostgreSQL query failed')
-    expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Not Ready · 1 unreported.')
+    expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Not ready · 1 unreported.')
   })
 
   it('does not report an empty readiness response as all passing', async () => {
@@ -1450,7 +1450,7 @@ describe('MonitoringPage', () => {
         await vi.advanceTimersByTimeAsync(5000)
       })
 
-      expect(liveSummary?.textContent).toBe('Readiness Not Ready. Kubernetes API Ready. Metadata Store Ready. Cache Backend Not Ready.')
+      expect(liveSummary?.textContent).toBe('Readiness Not ready. Kubernetes API Ready. Metadata Store Ready. Cache Backend Not ready.')
     } finally {
       vi.useRealTimers()
     }
@@ -1544,7 +1544,7 @@ describe('MonitoringPage', () => {
     const valkeyRow = infrastructureReadinessRow('Valkey Cache')
     expect(valkeyRow).not.toBeUndefined()
     expect(valkeyRow!.textContent).toContain('cache backend probe failed')
-    expect(valkeyRow!.textContent).toContain('Not Ready')
+    expect(valkeyRow!.textContent).toContain('Not ready')
     expect(valkeyRow!.querySelector('.monitor-infrastructure-status-not-ready')).not.toBeNull()
   })
 

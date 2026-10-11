@@ -149,7 +149,7 @@ for (const status of [200,503]) {
    await expect(page.locator('.replay-code-block').filter({ has: page.locator('#debug-captured-response') })).toContainText('Service unavailable')
    await expect(page.getByText('Investigate target availability and the response evidence.',{exact:false})).toBeVisible()
    await expect(page.getByText('narrow the assertion',{exact:false})).toHaveCount(0)
-  } else await expect(evidence).toContainText('Response body: captured')
+  } else await expect(evidence).toContainText('Body captured')
  })
 }
 
@@ -171,6 +171,30 @@ test('first-use screens meet automated WCAG AA checks in dark and light themes',
     return result.violations.map(violation=>({id:violation.id,nodes:violation.nodes.map(node=>({target:node.target,summary:node.failureSummary}))}))
    })
    expect(violations,`${route} in ${theme}`).toEqual([])
+  }
+ }
+})
+
+test('the script editor meets automated WCAG AA checks in Author and Debug, dark and light', async ({ page, request }) => {
+ // The action-type badge regressed to white on a light fill in dark themes once.
+ await page.addInitScript({ content: axe.source })
+ const workspace = await createWorkspace(request)
+ const scriptId = await seedScript(request, workspace, 'Axe_Editor')
+ for (const theme of ['dark', 'light']) {
+  await page.addInitScript(value => { try { localStorage.setItem('apexload.theme', value) } catch { /* private mode */ } }, theme)
+  for (const mode of ['Author', 'Debug']) {
+   await page.goto(`/#/scripts?mode=edit&scriptId=${scriptId}&${scopeQuery(workspace)}`)
+   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+   // The editor reopens in the last mode used, so pick each one explicitly.
+   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: mode, exact: true }).click()
+   await expect(page.getByRole('tab', { name: mode === 'Author' ? 'Action editor' : 'Action evidence', exact: true })).toBeVisible()
+   await page.addStyleTag({ content: '* {animation:none!important;transition:none!important}' })
+   const violations = await page.evaluate(async () => {
+    const scanner = (window as unknown as { axe: typeof import('axe-core') }).axe
+    const result = await scanner.run(document.querySelector('.script-editor') || document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] } })
+    return result.violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => ({ target: node.target, summary: node.failureSummary })) }))
+   })
+   expect(violations, `script editor ${mode} in ${theme}`).toEqual([])
   }
  }
 })

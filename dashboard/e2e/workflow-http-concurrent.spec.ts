@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scripts'
 import type { ScriptDebugRuntimeState } from '../src/types/replay'
-import { test, expect, idOf, json, login, mutation, showAccountCard } from './support/workflow'
+import { test, expect, idOf, json, login, mutation, showAccountCard, expectEditorSaved, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // A real loopback barrier, independent of engine timing: both siblings must
@@ -159,7 +159,7 @@ async function runGroup(page: Page, target: Awaited<ReturnType<typeof groupTarge
     expect(target.stats.consumeCount).toBe(0)
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
   }
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page, 'passed')
   expect(target.stats.completed).toEqual([2, 1])
   expect(target.stats.consumeCount).toBe(1)
   expect(target.stats.acceptedConsumers).toBe(1)
@@ -209,7 +209,7 @@ test('HTTP sequence authoring preserves children and steps a concurrent parent-s
     await capturePanel(page, panel, info, 'concurrent-group-narrow.png')
     await page.setViewportSize({ width: 1600, height: 1050 })
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     const after = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
     expect(after.actions[1].params).toEqual({ ...before.actions[1].params, execution_mode: 'concurrent', max_concurrency: 2 })
     expect(after.actions[1].metadata).toEqual(before.actions[1].metadata)
@@ -252,7 +252,7 @@ for (const protocol of ['http/1.1', 'http/2'] as const) {
     await limit.fill('2')
     await expect(panel).toContainText('up to 2 requests in flight')
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     const after = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
     expect(after.protocol).toBe(protocol)
     expect(after.actions[0].params).toEqual(before.actions[0].params)

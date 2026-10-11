@@ -146,6 +146,18 @@ export async function json(response: APIResponse | Response): Promise<Record<str
 export function idOf(payload: Record<string, unknown>, key?: string): string {
   return responseID(payload, 'resource', key)
 }
+/** The script editor's save state, as its status row shows it. */
+export async function expectEditorSaved(page: Page) {
+  await expect(page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: /^Saved/ })).toBeVisible()
+}
+
+/** The last debug run's outcome: Debug's session bar owns it, Author's status row repeats it. */
+export async function expectDebugOutcome(page: Page, outcome: 'passed' | 'failed') {
+  const badge = page.locator('.debug-session-bar .replay-live-badge').filter({ hasText: outcome === 'passed' ? /^Passed$/ : /^Failed$/ })
+  const chip = page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: outcome === 'passed' ? /^Debugged/ : /^Debug failed/ })
+  await expect(badge.or(chip).first()).toBeVisible()
+}
+
 export function mutation(page: Page, method: string, path: string) {
   return page.waitForResponse(r => r.request().method() === method && new URL(r.url()).pathname === path)
 }

@@ -34,6 +34,16 @@ export function executionLabel(replaying: boolean, session: ScriptDebugSession |
   }
   return action ? `Executing: ${name}` : session ? 'Running · waiting for next action' : 'Starting debugger'
 }
+/** One plain line for a response body that is not shown, and whether Debug options can change that. */
+export function responseBodyMessage(state?: string): { text: string; capturable: boolean } {
+  switch (state) {
+    case 'empty': return { text: 'Empty body: the target returned no content.', capturable: false }
+    case 'redacted': return { text: 'Body removed by the credential-redaction policy.', capturable: false }
+    case 'expired': return { text: 'Body expired under the evidence-retention policy.', capturable: false }
+    case 'not_retained': return { text: 'Body dropped by the evidence-retention limit.', capturable: false }
+    default: return { text: 'Body not captured. In Debug options, set Evidence capture to Diagnostic and run again.', capturable: true }
+  }
+}
 export function eventLocation(event: BrowserReplayEvent): string {
   return `${event.phase || 'action'} ${(event.action_index ?? 0) + 1}${event.step_path?.length ? ` › ${event.step_path.join(' › ')}` : event.request_index != null ? ` › request ${event.request_index + 1}` : ''}${event.iteration_path?.length ? ` · iteration ${event.iteration_path.join('.')}` : event.iteration != null ? ` · iteration ${event.iteration}` : ''}`
 }

@@ -1,5 +1,4 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
-import { importSourceName } from '../appTopbar'
 import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
@@ -4325,25 +4324,45 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     </select>
   </label>
 
+  // Each step says where it stands: done, current, blocked, or still to come.
+  const importStepper = (() => {
+    const counted = Boolean(importedScript) && !repairCheckPending
+    const blockers = counted ? tabIssues.filter(issue => issue.blocking).length : 0
+    const reviewNotes = counted ? tabIssues.length - blockers : 0
+    const saved = Boolean(savedReviewScript) || selectedResultScriptSaved
+    const saveBlocked = Boolean(result) && !saved && workingMode !== 'convert' && reviewSaveDisabled && Boolean(reviewSaveDisabledReason)
+    const steps: Array<{ label: string; state: 'done' | 'current' | 'blocked' | 'upcoming'; detail?: string }> = [
+      { label: 'Upload archives', state: result ? 'done' : 'current' },
+      {
+        label: 'Review and resolve',
+        state: !result ? 'upcoming' : saved || workingMode === 'convert' ? 'done' : 'current',
+        detail: !result || saved ? undefined : !counted ? 'checking' : blockers ? `${blockers} blocking` : reviewNotes ? `${reviewNotes} to review` : 'nothing to resolve',
+      },
+      { label: 'Save script or review draft', state: saved ? 'done' : workingMode === 'convert' ? 'current' : saveBlocked ? 'blocked' : 'upcoming', detail: saveBlocked ? 'unavailable' : undefined },
+      { label: 'Debug one iteration', state: blockers > 0 ? 'blocked' : saved ? 'current' : 'upcoming', detail: blockers > 0 ? 'resolve blockers first' : undefined },
+    ]
+    return <ol className="lr-import-steps" aria-label="Import workflow">{steps.map((step, index) => (
+      <li key={step.label} className={`lr-import-step ${step.state}`} aria-current={step.state === 'current' ? 'step' : undefined} title={reviewSaveDisabledReason && step.state === 'blocked' && index === 2 ? reviewSaveDisabledReason : undefined}>
+        <span className="lr-import-step-mark" aria-hidden="true">{step.state === 'done' ? '✓' : step.state === 'blocked' ? '!' : index + 1}</span>
+        <span>{step.label}{step.detail && <small> · {step.detail}</small>}{step.state === 'done' ? <span className="sr-only"> (done)</span> : step.state === 'blocked' ? <span className="sr-only"> (blocked{index === 2 && reviewSaveDisabledReason ? `: ${reviewSaveDisabledReason}` : ''})</span> : null}</span>
+      </li>
+    ))}</ol>
+  })()
+
   return (
     <div className={`lr-import ${result ? 'lr-import-reviewed' : ''}`}>
+      {/* The top bar already names this page. Before a review the header
+          explains the import; after it, the stepper takes that row. */}
       <div className="lr-import-header">
-        <div>
-          <h2>{importSourceName('enterprise_archive')}</h2>
+        {result ? importStepper : <div>
           <p className="lr-subtitle">Choose an uncompressed VuGen script folder or a LoadRunner ZIP or USZ archive, including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
-        </div>
+        </div>}
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
           invalidateOperationScopes()
           onClose()
         }}>Back</button>}
       </div>
-
-      <ol className="lr-import-steps" aria-label="Import workflow">
-        <li aria-current={!result ? 'step' : undefined}>1. Upload archives</li>
-        <li aria-current={result && workingMode !== 'convert' ? 'step' : undefined}>2. Review and resolve</li>
-        <li aria-current={workingMode === 'convert' ? 'step' : undefined}>3. Save script or review draft</li>
-        <li>4. Debug one iteration</li>
-      </ol>
+      {!result && importStepper}
       {/* Drop zone */}
       <div ref={dropzoneRef} className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
         style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
@@ -4465,8 +4484,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         )}
       </div>
 
+      {/* Each archive row shows its own status; the batch totals are still
+          announced, for screen readers only. */}
       {queuedFileCount > 0 && (
-        <p role="status">{savedArchiveScripts.length} script{savedArchiveScripts.length === 1 ? '' : 's'} saved · {savedReviewSessionCount} review session{savedReviewSessionCount === 1 ? '' : 's'} saved · {pendingReviewScriptCount} draft{pendingReviewScriptCount === 1 ? '' : 's'} awaiting save · {validatedAwaitingSaveCount} archive{validatedAwaitingSaveCount === 1 ? '' : 's'} validated, awaiting save · {failedFileCount} archive{failedFileCount === 1 ? '' : 's'} failed</p>
+        <p role="status" className="sr-only">{savedArchiveScripts.length} script{savedArchiveScripts.length === 1 ? '' : 's'} saved · {savedReviewSessionCount} review session{savedReviewSessionCount === 1 ? '' : 's'} saved · {pendingReviewScriptCount} draft{pendingReviewScriptCount === 1 ? '' : 's'} awaiting save · {validatedAwaitingSaveCount} archive{validatedAwaitingSaveCount === 1 ? '' : 's'} validated, awaiting save · {failedFileCount} archive{failedFileCount === 1 ? '' : 's'} failed</p>
       )}
       <ImportSaveConfirmation
         result={savedArchiveScripts.length ? { scripts: savedArchiveScripts } : null}

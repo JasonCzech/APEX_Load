@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { createGzip, constants, gzipSync } from 'node:zlib'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login, mutation } from './support/workflow'
+import { test, expect, idOf, json, login, mutation, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 const capturedToken = 'captured-response-token-abcdef123456'
@@ -319,7 +319,7 @@ test('HAR decoded base64 content retains its correlations and real gzip replay e
     await reopenSavedScript(page, workspace, id)
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    await expectDebugOutcome(page, 'passed')
     expect(target.stats).toMatchObject({ formCalls: 1, submitCalls: 1, accepted: 1 })
     expect(target.stats.encodedBytes).toBeGreaterThan(0)
     const downloaded = page.waitForEvent('download')
@@ -421,7 +421,7 @@ test('gzip SSE collection extracts sampled events and visibly qualifies the part
     await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
     await options.getByRole('button', { name: 'Done', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    await expectDebugOutcome(page, 'passed')
     expect(target.stats).toMatchObject({ streamCalls: 1, streamConsumerCalls: 1, acceptedStreamConsumers: 1, streamEndCalls: 0 })
     await selectReplayAction(page, 'Collect compressed events')
     await openProtocolEvidence(page)

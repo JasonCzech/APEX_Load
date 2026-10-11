@@ -144,7 +144,7 @@ export function formatReadinessStatus(status?: string): string {
     case 'degraded':
       return 'Degraded'
     case 'not_ready':
-      return 'Not Ready'
+      return 'Not ready'
     default:
       return status || 'Unknown'
   }

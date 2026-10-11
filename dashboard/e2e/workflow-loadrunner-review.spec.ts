@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
@@ -157,6 +158,13 @@ for (const scenario of [
     }
     await page.screenshot({ path: testInfo.outputPath('loadrunner-review.png'), fullPage: true })
   })
+}
+
+// Runtime settings open on what needs a decision; these checks inspect the rest.
+async function showAllRuntimeStatuses(page: Page) {
+  for (const toggle of await page.getByRole('group', { name: 'Overall runtime setting counts' }).getByRole('checkbox').all()) {
+    if (!await toggle.isChecked()) await toggle.check()
+  }
 }
 
 // The real converter and store must persist every ready archive even when
@@ -574,6 +582,7 @@ test('LoadRunner percentage think time shows source bounds and saves edited perc
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
+  await showAllRuntimeStatuses(page)
   await page.getByRole('navigation', { name: 'Runtime categories' }).getByRole('button', { name: /^Think time/ }).click()
   const mapped = page.getByRole('region', { name: 'Mapped for replay', exact: true })
   await expect(mapped).toContainText('ThinkTimeRandomLow: 50')
@@ -619,6 +628,7 @@ test('LoadRunner runtime context explains inactive settings and repairs an overs
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
+  await showAllRuntimeStatuses(page)
   const mappedTable = page.getByRole('region', { name: 'Mapped for replay', exact: true }).getByRole('table')
   const originalViewport = page.viewportSize()!
   await page.setViewportSize({ width: 1920, height: 1080 })
@@ -712,6 +722,7 @@ test('LoadRunner run-logic sections share one category and retain searchable sou
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
+  await showAllRuntimeStatuses(page)
   const categories = page.getByRole('navigation', { name: 'Runtime categories' })
   await expect(categories.getByRole('button', { name: /^Run logic/ })).toHaveCount(1)
   await expect(categories.getByRole('button', { name: /RunLogic|Profile Actions/ })).toHaveCount(0)
