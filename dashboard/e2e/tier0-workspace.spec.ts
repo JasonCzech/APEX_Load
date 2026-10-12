@@ -77,6 +77,19 @@ test('the repository view renders a freshly created project', async ({ page, req
   ).toBeVisible({ timeout: 15_000 })
 })
 
+test('a link to a project created after the app loaded opens it', async ({ page, request }) => {
+  const first = await createWorkspace(request)
+  await page.goto(`/#/repository?${scopeQuery(first)}`)
+  await expect(page.locator('main').getByText(`${first.label} project`, { exact: false }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
+
+  // The app listed projects before this one existed: following a link to it
+  // must look again rather than call the project missing.
+  const later = await createWorkspace(request)
+  await page.evaluate(hash => { window.location.hash = hash }, `#/repository?${scopeQuery(later)}`)
+  await expect(page.locator('main').getByText(`${later.label} project`, { exact: false }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('is not available to you or no longer exists', { exact: false })).toHaveCount(0)
+})
+
 test('the UI creates and scopes the complete workspace hierarchy', async ({ page, request }) => {
   test.setTimeout(120_000)
   const label = `tier0-ui-${Date.now()}`

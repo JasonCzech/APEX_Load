@@ -22,6 +22,9 @@ var (
 	ErrScriptAuthoringOutcomeUnknown = errors.New("script authored content commit outcome unknown")
 	// ErrScriptInUse refuses deleting a script that a scenario still uses.
 	ErrScriptInUse = errors.New("script is used by a scenario")
+	// ErrScriptRefKeyTaken refuses creating a script whose reference key
+	// another script already holds (a copy carries its original's key).
+	ErrScriptRefKeyTaken = errors.New("script reference key is already in use")
 )
 
 // ScriptAuthoringSnapshot pairs persisted executable content and authored

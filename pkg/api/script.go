@@ -657,6 +657,15 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	if existing != nil && strings.TrimSpace(script.RefKey) == "" {
 		script.RefKey = existing.RefKey
 	}
+	if existing == nil && current == nil && strings.TrimSpace(script.RefKey) != "" {
+		// A new script keeps a key it brings only while no other script holds it.
+		tr.mu.RLock()
+		held := tr.scriptRefKeyHeldElsewhereLocked(script.RefKey, scriptID)
+		tr.mu.RUnlock()
+		if held {
+			script.RefKey = ""
+		}
+	}
 	if script.RefKey == "" {
 		sequence, err := tr.nextScriptSeqOutsideRunnerLock()
 		if err != nil {
@@ -706,6 +715,15 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 					return nil, fmt.Errorf("durable script store does not support atomic create-only persistence")
 				}
 				created, err := store.CreateScriptIfAbsent(script)
+				if errors.Is(err, storage.ErrScriptRefKeyTaken) {
+					sequence, seqErr := tr.nextScriptSeqOutsideRunnerLock()
+					if seqErr != nil {
+						return nil, fmt.Errorf("allocate script reference key: %w", seqErr)
+					}
+					script.RefKey = refkey.Script(envCode, sequence, 1)
+					stored.RefKey = script.RefKey
+					created, err = store.CreateScriptIfAbsent(script)
+				}
 				if err != nil {
 					return nil, err
 				}
@@ -879,14 +897,17 @@ func (tr *TestRunner) createScriptDurable(
 	persisted := script
 	var authored *StoredScript
 	if store, supported := tr.scriptStore.(storage.ScriptAuthoringStore); supported && ordinaryCreate {
-		if strings.TrimSpace(script.RefKey) == "" {
-			sequence, err := tr.nextScriptSeqLocked()
-			if err != nil {
-				return nil, false, fmt.Errorf("allocate script reference key: %w", err)
-			}
-			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
+		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
+			return nil, false, err
 		}
 		mutation, err := store.CreateScriptAuthoringIfAbsent(script)
+		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
+			// Another replica took the key since this one indexed its scripts.
+			if err := tr.assignNextScriptRefKeyLocked(script); err != nil {
+				return nil, false, err
+			}
+			mutation, err = store.CreateScriptAuthoringIfAbsent(script)
+		}
 		if err != nil {
 			return nil, false, err
 		}
@@ -908,14 +929,16 @@ func (tr *TestRunner) createScriptDurable(
 		// Shared storage is authoritative. A replica can have an equivalent but
 		// stale cached script after another replica edited or replaced the durable
 		// row, so never let the cache bypass the create-only ownership fence.
-		if strings.TrimSpace(script.RefKey) == "" {
-			sequence, err := tr.nextScriptSeqLocked()
-			if err != nil {
-				return nil, false, fmt.Errorf("allocate script reference key: %w", err)
-			}
-			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
+		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
+			return nil, false, err
 		}
 		created, err = store.CreateScriptIfAbsent(script)
+		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
+			if err := tr.assignNextScriptRefKeyLocked(script); err != nil {
+				return nil, false, err
+			}
+			created, err = store.CreateScriptIfAbsent(script)
+		}
 		if err != nil {
 			return nil, false, err
 		}
@@ -951,12 +974,8 @@ func (tr *TestRunner) createScriptDurable(
 			}
 			return cloneStoredScriptForReadLocked(existing), false, nil
 		}
-		if strings.TrimSpace(script.RefKey) == "" {
-			sequence, err := tr.nextScriptSeqLocked()
-			if err != nil {
-				return nil, false, fmt.Errorf("allocate script reference key: %w", err)
-			}
-			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
+		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
+			return nil, false, err
 		}
 		if err := tr.saveStoredScriptWithImportTrust(script, nil, trustedImport, sourceProfile); err != nil {
 			return nil, false, err

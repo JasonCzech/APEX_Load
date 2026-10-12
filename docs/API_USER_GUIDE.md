@@ -497,6 +497,15 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 - `GET /api/v1/tests/{id}/archive/comparison` — Baseline comparison
 - `GET /api/v1/tests/{id}/archive/files/{name}` — Download one archive artifact
 
+The archive report's `overview`, `by_action` and `by_group` count every retained
+event together, requests and the transactions that wrap them: this is the mixed
+legacy population. A script with per-action auto transactions therefore counts each
+request twice, once as the request and once as its transaction. For counts that
+match what the target received, read `metric_populations` (`action` for requests,
+`transaction` for business transactions, `unknown` for older events that recorded
+neither) or the `by_request` and `by_transaction` maps; the dashboard's report pages
+read these.
+
 Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|analysis_zip|pdf|docx|jsonl|parquet` and `profile=executive|engineer|audit`. `analysis_zip` on the archive report endpoint downloads row-based CSV tables plus a data guide while the original four-column report CSV remains available.
 
 Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array when run attribution exists. Each bucket follows the same usage bucket shape used by project and protocol summaries; historical runs without attribution are grouped as `unattributed`.

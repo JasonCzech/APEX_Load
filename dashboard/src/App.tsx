@@ -1256,17 +1256,28 @@ function AppShell({
   const routeProjectScopePending = Boolean(
     requestedRouteProjectID && activeProject?.id !== requestedRouteProjectID,
   );
-  const routeProjectMissing = Boolean(
+  const routeProjectUnlisted = Boolean(
     requestedRouteProjectID &&
       !projectsLoading &&
       !requestedRouteProject,
   );
-  const routeProjectDomainMissing = Boolean(
+  const routeProjectDomainUnlisted = Boolean(
     requestedRouteProject &&
       requestedRouteDomainID &&
       domainsLoaded &&
       !domains.some((domain) => domain.id === requestedRouteDomainID),
   );
+  // A link can name a project, or a domain, created after this app loaded its
+  // lists, so they are fetched again once (see the effect after
+  // refreshDomains) before the link's project is called missing.
+  const [routeScopeRecheck, setRouteScopeRecheck] = useState<{ projectId: string; done: boolean } | null>(null);
+  const routeScopeRechecked = Boolean(
+    requestedRouteProjectID &&
+      routeScopeRecheck?.projectId === requestedRouteProjectID &&
+      routeScopeRecheck.done,
+  );
+  const routeProjectMissing = routeProjectUnlisted && routeScopeRechecked;
+  const routeProjectDomainMissing = routeProjectDomainUnlisted && routeScopeRechecked;
   const routeProjectScopeMissing =
     routeProjectMissing || routeProjectDomainMissing;
   const routeWorkspaceHierarchyError = requestedRouteApplicationID && !requestedRouteProjectID
@@ -2856,6 +2867,26 @@ function AppShell({
   useEffect(() => {
     void refreshDomains().catch(() => undefined);
   }, [refreshDomains]);
+
+  // Fetch the project and domain lists again before a link's project is called
+  // missing. Once the route's project and its domain are listed (or there is
+  // no route project), a later unlisted link is checked afresh; a check in
+  // flight is never restarted, since the refetch itself flips the lists.
+  const routeScopeUnlisted = routeProjectUnlisted || routeProjectDomainUnlisted;
+  const routeScopeListed = Boolean(requestedRouteProject) && !routeProjectDomainUnlisted;
+  useEffect(() => {
+    if (routeScopeRecheck && !routeScopeRecheck.done) return;
+    if (!requestedRouteProjectID || routeScopeListed) {
+      if (routeScopeRecheck) setRouteScopeRecheck(null);
+      return;
+    }
+    if (!routeScopeUnlisted || routeScopeRecheck?.projectId === requestedRouteProjectID) return;
+    const projectId = requestedRouteProjectID;
+    setRouteScopeRecheck({ projectId, done: false });
+    void Promise.allSettled([refreshProjects(), refreshDomains()]).then(() =>
+      setRouteScopeRecheck((current) => current?.projectId === projectId ? { projectId, done: true } : current),
+    );
+  }, [refreshDomains, refreshProjects, requestedRouteProjectID, routeScopeListed, routeScopeRecheck, routeScopeUnlisted]);
 
   useEffect(() => {
     void refreshRepository().catch(() => undefined);

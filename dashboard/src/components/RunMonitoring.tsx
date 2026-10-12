@@ -25,6 +25,7 @@ import { monitorMetricCatalog, monitorSourceSelectionComplete, nativeMonitorProv
 import type { MonitorSource, RunMonitorJob } from '../types/runMonitoring'
 import { request } from '../hooks/apiClient'
 import type { JsonSuccessResponseBody } from '../types/generated/openapi'
+import { useMonitoringCapabilities, useMonitoringEnabled } from './useMonitoringCapabilities'
 import type { AnalysisPoint } from '../types/analysis'
 import type { MetricsHistoryPoint, MonitoringCollectorListResponse } from '../types'
 
@@ -39,12 +40,6 @@ const emptySource = (): Source => ({ project_id: '', id: '', name: '', revision:
 const sourcePacks = ['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc', 'cloudwatch', 'azure-monitor', 'dynatrace', 'prometheus-query', 'elastic']
 const sourcesPath = (project: string) => `/projects/${encodeURIComponent(project)}/monitor-sources`
 
-function useMonitoringCapabilities(projectId?: string) {
-  const [capabilities, setCapabilities] = useState<JsonSuccessResponseBody<'handleAnalysisCapabilities', '200'>>()
-  useEffect(() => { const c = new AbortController(); setCapabilities(undefined); if (projectId) void request<JsonSuccessResponseBody<'handleAnalysisCapabilities', '200'>>(`/analysis/capabilities?project_id=${encodeURIComponent(projectId)}`, { signal: c.signal }).then(caps => { if (!c.signal.aborted) setCapabilities(caps) }).catch(() => {}); return () => c.abort() }, [projectId])
-  return capabilities
-}
-function useMonitoringEnabled(projectId?: string) { return useMonitoringCapabilities(projectId)?.monitoring_enabled === true }
 
 export function RunMonitorSources({ projectId, canManage = false, showEnableHint = false }: { projectId?: string; canManage?: boolean; /** Tell an administrator how the project gate is enabled. */ showEnableHint?: boolean }) {
   const capabilities = useMonitoringCapabilities(projectId)

@@ -183,6 +183,8 @@ test('Scenario criteria retain invalid drafts across steps and require correctio
   const script = await seedScript(request, workspace)
   const scenario = await seedScenario(request, workspace, script, 'Criterion workflow')
   const original = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+  // Criteria list sources only for a project with run monitoring on.
+  await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { monitoring_enabled: true } }))
   await page.route(`**/api/v1/projects/${workspace.projectId}/monitor-sources`, route => route.fulfill({ json: [{ id: 'elastic-metrics', name: 'Elastic criteria', enabled: true, pack: 'elastic', elastic: { metrics: [{ name: 'interval_count', statistic: 'count', unit: 'count', bucket_seconds: 10 }] } }] }))
   const saved: Record<string, unknown>[] = []
   await page.route(`**/api/v1/scenarios/${scenario}`, route => {

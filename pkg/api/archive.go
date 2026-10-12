@@ -602,7 +602,7 @@ type RunArchiveReport struct {
 	ArtifactInventory                 []RunArchiveArtifact                   `json:"artifact_inventory,omitempty"`
 	Integrity                         *RunArchiveIntegrityReport             `json:"integrity,omitempty"`
 	Manifest                          *RunArchiveManifest                    `json:"manifest"`
-	Overview                          RunArchiveOverview                     `json:"overview"`
+	Overview                          RunArchiveOverview                     `json:"overview"` // the mixed legacy population (requests and their transactions together, as are ByAction and ByGroup); MetricPopulations, ByRequest and ByTransaction keep them apart
 	Verdict                           *ReportVerdict                         `json:"verdict,omitempty"`
 	GeneratedFindings                 []ReportFinding                        `json:"generated_findings,omitempty"` // the derived F-01… list the exports show without analyst findings
 	SLARows                           map[string]SLAComplianceRow            `json:"sla_rows,omitempty"`
