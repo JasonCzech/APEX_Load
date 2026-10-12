@@ -172,6 +172,12 @@ func validateExecutionPlanDataPoolProjects(store storage.Store, projectID string
 	}
 	expectedProjectID := normalizeProjectID(projectID)
 	for _, binding := range bindings {
+		if binding.Scope == "project" {
+			if err := validateProjectLiveTableReference(store, expectedProjectID, binding); err != nil {
+				return err
+			}
+			continue
+		}
 		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
 			continue
 		}

@@ -884,6 +884,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -3414,6 +3417,7 @@ export interface operations {
                   "source"?: string;
                 }>) | null;
                 "project_id"?: string;
+                "project_live_tables"?: Array<Record<string, unknown>>;
                 "protocol_mix"?: (Record<string, unknown>) | null;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -3598,6 +3602,7 @@ export interface operations {
                   "source"?: string;
                 }>) | null;
                 "project_id"?: string;
+                "project_live_tables"?: Array<Record<string, unknown>>;
                 "protocol_mix"?: (Record<string, unknown>) | null;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -4948,7 +4953,9 @@ export interface operations {
               }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy"?: string;
               "updated_at"?: string;
             }>;
@@ -5666,6 +5673,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -6499,6 +6509,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -7234,6 +7247,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -12626,6 +12642,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -13521,6 +13540,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -14233,6 +14255,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -14910,6 +14935,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -15469,6 +15497,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -16105,6 +16136,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -16757,6 +16791,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -17399,6 +17436,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -18074,7 +18114,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -18937,6 +18979,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -19540,6 +19585,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -19749,6 +19795,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -20164,6 +20211,8 @@ export interface operations {
                   "id": string;
                   "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
+                  "project_table_id"?: string;
+                  "scope"?: string;
                   "selection_strategy": string;
                 }>;
                 "duration": string;
@@ -20286,7 +20335,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -21282,6 +21333,8 @@ export interface operations {
                   "id": string;
                   "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
+                  "project_table_id"?: string;
+                  "scope"?: string;
                   "selection_strategy": string;
                 }>;
                 "duration": string;
@@ -21404,7 +21457,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -22417,6 +22472,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -22940,6 +22996,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -23493,6 +23552,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -24016,6 +24076,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -24844,6 +24907,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -26256,6 +26322,7 @@ export interface operations {
               "jms"?: Record<string, unknown>;
               "kafka"?: Record<string, unknown>;
               "log"?: Record<string, unknown>;
+              "native_services"?: (Record<string, unknown>) | null;
               "network"?: Record<string, unknown>;
               "observability"?: Record<string, unknown>;
               "pacing"?: Record<string, unknown>;
@@ -26766,6 +26833,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -27408,6 +27478,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -27828,6 +27901,7 @@ export interface operations {
               "jms"?: Record<string, unknown>;
               "kafka"?: Record<string, unknown>;
               "log"?: Record<string, unknown>;
+              "native_services"?: (Record<string, unknown>) | null;
               "network"?: Record<string, unknown>;
               "observability"?: Record<string, unknown>;
               "pacing"?: Record<string, unknown>;
@@ -28404,6 +28478,12 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<{
+                  "alias": string;
+                  "operations": Array<string>;
+                }>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -29505,6 +29585,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -30229,6 +30312,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -33195,7 +33281,9 @@ export interface operations {
               "live_options"?: (Record<string, unknown>) | null;
               "pool_id"?: string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy"?: string;
               "updated_at"?: string;
             }>;
@@ -33233,7 +33321,9 @@ export interface operations {
                 "live_options"?: (Record<string, unknown>) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -34202,6 +34292,97 @@ export interface operations {
       };
     };
   };
+  "handleCreateProjectLiveTable": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, unknown>;
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "attachments"?: Array<{
+              "alias": string;
+              "group_name": string;
+              "id": string;
+              "run_id": string;
+              "state": string;
+            }>;
+            "columns": Array<string>;
+            "config_revision": string;
+            "id": string;
+            "instance_id": string;
+            "name": string;
+            "permissions": {
+              "can_admin": boolean;
+              "can_mutate": boolean;
+              "can_view": boolean;
+            };
+            "profile": string;
+            "project_id": string;
+            "state": string;
+            "stats"?: ({
+              "capacity": {
+                "columns": Array<string>;
+                "lease_ttl_ms": number;
+                "max_bytes": number;
+                "max_delivery_attempts": number;
+                "max_lease_lifetime_ms": number;
+                "max_receipts": number;
+                "max_result_bytes": number;
+                "max_rows": number;
+                "profile": string;
+                "retry_window_ms": number;
+              };
+              "counts"?: ({
+                "acknowledged": number;
+                "available": number;
+                "delivery_attempts": number;
+                "discarded": number;
+                "leased": number;
+                "popped": number;
+                "pushed": number;
+                "quarantined": number;
+                "redeliveries": number;
+                "seeded": number;
+              }) | null;
+              "data_bytes": number;
+              "revision": string;
+            }) | null;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateProjectRelease": {
     parameters: {
       "path": {
@@ -34856,7 +35037,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -35257,7 +35440,9 @@ export interface operations {
               }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy"?: string;
               "updated_at"?: string;
             }>;
@@ -36043,7 +36228,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -38306,7 +38493,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -39149,6 +39338,8 @@ export interface operations {
                   "id": string;
                   "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
+                  "project_table_id"?: string;
+                  "scope"?: string;
                   "selection_strategy": string;
                 }>;
                 "duration": string;
@@ -39271,7 +39462,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -40774,6 +40967,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -41356,6 +41552,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -41879,6 +42076,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -42445,7 +42645,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -43803,7 +44005,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -49702,7 +49906,9 @@ export interface operations {
               }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy"?: string;
               "updated_at"?: string;
             }>;
@@ -50390,7 +50596,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -51000,7 +51208,9 @@ export interface operations {
               }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy"?: string;
               "updated_at"?: string;
             }>;
@@ -51688,7 +51898,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -54084,7 +54296,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -56036,6 +56250,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -56481,6 +56698,26 @@ export interface operations {
         };
       };
       "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleExportProjectLiveTable": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
         content?: never;
       };
     };
@@ -58063,6 +58300,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -61315,7 +61555,9 @@ export interface operations {
                 "live_options"?: (Record<string, unknown>) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -65371,6 +65613,89 @@ export interface operations {
       };
     };
   };
+  "handleGetProjectLiveTable": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "attachments"?: Array<{
+              "alias": string;
+              "group_name": string;
+              "id": string;
+              "run_id": string;
+              "state": string;
+            }>;
+            "columns": Array<string>;
+            "config_revision": string;
+            "id": string;
+            "instance_id": string;
+            "name": string;
+            "permissions": {
+              "can_admin": boolean;
+              "can_mutate": boolean;
+              "can_view": boolean;
+            };
+            "profile": string;
+            "project_id": string;
+            "state": string;
+            "stats"?: ({
+              "capacity": {
+                "columns": Array<string>;
+                "lease_ttl_ms": number;
+                "max_bytes": number;
+                "max_delivery_attempts": number;
+                "max_lease_lifetime_ms": number;
+                "max_receipts": number;
+                "max_result_bytes": number;
+                "max_rows": number;
+                "profile": string;
+                "retry_window_ms": number;
+              };
+              "counts"?: ({
+                "acknowledged": number;
+                "available": number;
+                "delivery_attempts": number;
+                "discarded": number;
+                "leased": number;
+                "popped": number;
+                "pushed": number;
+                "quarantined": number;
+                "redeliveries": number;
+                "seeded": number;
+              }) | null;
+              "data_bytes": number;
+              "revision": string;
+            }) | null;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetPrometheusConnection": {
     parameters: {
       "path": {
@@ -66434,7 +66759,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -69787,6 +70114,15 @@ export interface operations {
                 "source": string;
               }>) | null;
               "project_id"?: string;
+              "project_live_tables"?: Array<{
+                "alias": string;
+                "attachment_id": string;
+                "group": string;
+                "instance_id": string;
+                "revision": number;
+                "state": string;
+                "table_id": string;
+              }>;
               "protocol_mix"?: ({
                 "max_fallback_ratio"?: (number) | null;
                 "max_quic_failure_ratio"?: (number) | null;
@@ -70772,6 +71108,15 @@ export interface operations {
                 "source": string;
               }>) | null;
               "project_id"?: string;
+              "project_live_tables"?: Array<{
+                "alias": string;
+                "attachment_id": string;
+                "group": string;
+                "instance_id": string;
+                "revision": number;
+                "state": string;
+                "table_id": string;
+              }>;
               "protocol_mix"?: ({
                 "max_fallback_ratio"?: (number) | null;
                 "max_quic_failure_ratio"?: (number) | null;
@@ -74131,6 +74476,15 @@ export interface operations {
                   "source": string;
                 }>) | null;
                 "project_id"?: string;
+                "project_live_tables"?: Array<{
+                  "alias": string;
+                  "attachment_id": string;
+                  "group": string;
+                  "instance_id": string;
+                  "revision": number;
+                  "state": string;
+                  "table_id": string;
+                }>;
                 "protocol_mix"?: ({
                   "max_fallback_ratio"?: (number) | null;
                   "max_quic_failure_ratio"?: (number) | null;
@@ -74627,6 +74981,15 @@ export interface operations {
                   "source": string;
                 }>) | null;
                 "project_id"?: string;
+                "project_live_tables"?: Array<{
+                  "alias": string;
+                  "attachment_id": string;
+                  "group": string;
+                  "instance_id": string;
+                  "revision": number;
+                  "state": string;
+                  "table_id": string;
+                }>;
                 "protocol_mix"?: ({
                   "max_fallback_ratio"?: (number) | null;
                   "max_quic_failure_ratio"?: (number) | null;
@@ -76308,6 +76671,8 @@ export interface operations {
                   "id": string;
                   "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
+                  "project_table_id"?: string;
+                  "scope"?: string;
                   "selection_strategy": string;
                 }>;
                 "duration": string;
@@ -76430,7 +76795,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -77314,6 +77681,8 @@ export interface operations {
                   "wait_ms"?: number;
                 }) | null;
                 "pool_id": string;
+                "project_table_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
               }>;
               "duration": string;
@@ -77913,6 +78282,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -78436,6 +78806,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -79152,6 +79525,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -82086,7 +82462,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -90928,6 +91306,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -91644,6 +92025,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -92780,6 +93164,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -95417,6 +95802,85 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListProjectLiveTables": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "tables": Array<{
+              "attachments"?: Array<{
+                "alias": string;
+                "group_name": string;
+                "id": string;
+                "run_id": string;
+                "state": string;
+              }>;
+              "columns": Array<string>;
+              "config_revision": string;
+              "id": string;
+              "instance_id": string;
+              "name": string;
+              "permissions": {
+                "can_admin": boolean;
+                "can_mutate": boolean;
+                "can_view": boolean;
+              };
+              "profile": string;
+              "project_id": string;
+              "state": string;
+              "stats"?: ({
+                "capacity": {
+                  "columns": Array<string>;
+                  "lease_ttl_ms": number;
+                  "max_bytes": number;
+                  "max_delivery_attempts": number;
+                  "max_lease_lifetime_ms": number;
+                  "max_receipts": number;
+                  "max_result_bytes": number;
+                  "max_rows": number;
+                  "profile": string;
+                  "retry_window_ms": number;
+                };
+                "counts"?: ({
+                  "acknowledged": number;
+                  "available": number;
+                  "delivery_attempts": number;
+                  "discarded": number;
+                  "leased": number;
+                  "popped": number;
+                  "pushed": number;
+                  "quarantined": number;
+                  "redeliveries": number;
+                  "seeded": number;
+                }) | null;
+                "data_bytes": number;
+                "revision": string;
+              }) | null;
+            }>;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -99438,6 +99902,59 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMutateProjectLiveTable": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, unknown>;
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "expires_at": string;
+            "replayed": boolean;
+            "result": {
+              "count"?: string;
+              "revision": string;
+              "row"?: ({
+                "id"?: string;
+                "state"?: string;
+                "values": Record<string, string>;
+                "version": string;
+              }) | null;
+              "status": string;
+              "value"?: string;
+            };
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -103498,7 +104015,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -107382,7 +107901,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -109797,6 +110318,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -110743,6 +111267,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -111468,6 +111995,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -112262,6 +112792,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -113235,6 +113768,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -113947,6 +114483,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -114624,6 +115163,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -115183,6 +115725,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -115911,6 +116456,113 @@ export interface operations {
         };
       };
       "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleProjectLiveTableLifecycle": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, unknown>;
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "attachments"?: Array<{
+              "alias": string;
+              "group_name": string;
+              "id": string;
+              "run_id": string;
+              "state": string;
+            }>;
+            "columns": Array<string>;
+            "config_revision": string;
+            "id": string;
+            "instance_id": string;
+            "name": string;
+            "permissions": {
+              "can_admin": boolean;
+              "can_mutate": boolean;
+              "can_view": boolean;
+            };
+            "profile": string;
+            "project_id": string;
+            "state": string;
+            "stats"?: ({
+              "capacity": {
+                "columns": Array<string>;
+                "lease_ttl_ms": number;
+                "max_bytes": number;
+                "max_delivery_attempts": number;
+                "max_lease_lifetime_ms": number;
+                "max_receipts": number;
+                "max_result_bytes": number;
+                "max_rows": number;
+                "profile": string;
+                "retry_window_ms": number;
+              };
+              "counts"?: ({
+                "acknowledged": number;
+                "available": number;
+                "delivery_attempts": number;
+                "discarded": number;
+                "leased": number;
+                "popped": number;
+                "pushed": number;
+                "quarantined": number;
+                "redeliveries": number;
+                "seeded": number;
+              }) | null;
+              "data_bytes": number;
+              "revision": string;
+            }) | null;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleProjectLiveTableRows": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
         content?: never;
       };
     };
@@ -117268,6 +117920,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -117984,6 +118639,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -118693,6 +119351,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -119758,7 +120419,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -121813,7 +122476,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -123868,7 +124533,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -125923,7 +126590,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -127978,7 +128647,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -130143,6 +130814,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -130965,6 +131639,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -132177,7 +132854,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -138385,6 +139064,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -140402,6 +141084,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -141042,6 +141727,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -141512,6 +142200,7 @@ export interface operations {
               "jms"?: Record<string, unknown>;
               "kafka"?: Record<string, unknown>;
               "log"?: Record<string, unknown>;
+              "native_services"?: (Record<string, unknown>) | null;
               "network"?: Record<string, unknown>;
               "observability"?: Record<string, unknown>;
               "pacing"?: Record<string, unknown>;
@@ -142623,7 +143312,9 @@ export interface operations {
                 }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -143600,6 +144291,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -145069,6 +145763,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -146615,6 +147312,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -148183,6 +148883,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -149752,6 +150455,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -151320,6 +152026,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -157469,7 +158178,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -161571,6 +162282,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -162294,6 +163008,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -163998,7 +164715,9 @@ export interface operations {
               "live_options"?: (Record<string, unknown>) | null;
               "pool_id"?: string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy"?: string;
               "updated_at"?: string;
             }>;
@@ -164036,7 +164755,9 @@ export interface operations {
                 "live_options"?: (Record<string, unknown>) | null;
                 "pool_id": string;
                 "pool_name"?: string;
+                "project_table_id"?: string;
                 "scenario_id"?: string;
+                "scope"?: string;
                 "selection_strategy": string;
                 "updated_at"?: string;
               }>;
@@ -165922,7 +166643,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -166764,6 +167487,8 @@ export interface operations {
                   "id": string;
                   "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
+                  "project_table_id"?: string;
+                  "scope"?: string;
                   "selection_strategy": string;
                 }>;
                 "duration": string;
@@ -166886,7 +167611,9 @@ export interface operations {
               }) | null;
               "pool_id": string;
               "pool_name"?: string;
+              "project_table_id"?: string;
               "scenario_id"?: string;
+              "scope"?: string;
               "selection_strategy": string;
               "updated_at"?: string;
             }>;
@@ -167810,7 +168537,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -168529,6 +169258,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -169109,6 +169841,7 @@ export interface operations {
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
+                  "native_services"?: (Record<string, unknown>) | null;
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
@@ -169632,6 +170365,9 @@ export interface operations {
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
+                "native_services"?: ({
+                  "live_tables"?: Array<Record<string, unknown>>;
+                }) | null;
                 "network"?: {
                   "address"?: string;
                   "base_dn"?: string;
@@ -174986,6 +175722,9 @@ export interface operations {
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
+              "native_services"?: ({
+                "live_tables"?: Array<Record<string, unknown>>;
+              }) | null;
               "network"?: {
                 "address"?: string;
                 "base_dn"?: string;
@@ -175792,7 +176531,9 @@ export interface operations {
             }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
+            "project_table_id"?: string;
             "scenario_id"?: string;
+            "scope"?: string;
             "selection_strategy"?: string;
             "updated_at"?: string;
           }>;
@@ -178404,6 +179145,25 @@ export interface paths {
   };
   "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}/test": {
     "post": operations["handleTestConfluenceConnection"];
+  };
+  "/api/v1/projects/{id}/live-tables": {
+    "get": operations["handleListProjectLiveTables"];
+    "post": operations["handleCreateProjectLiveTable"];
+  };
+  "/api/v1/projects/{id}/live-tables/{tableID}": {
+    "get": operations["handleGetProjectLiveTable"];
+  };
+  "/api/v1/projects/{id}/live-tables/{tableID}/export": {
+    "get": operations["handleExportProjectLiveTable"];
+  };
+  "/api/v1/projects/{id}/live-tables/{tableID}/lifecycle": {
+    "post": operations["handleProjectLiveTableLifecycle"];
+  };
+  "/api/v1/projects/{id}/live-tables/{tableID}/mutations": {
+    "post": operations["handleMutateProjectLiveTable"];
+  };
+  "/api/v1/projects/{id}/live-tables/{tableID}/rows": {
+    "get": operations["handleProjectLiveTableRows"];
   };
   "/api/v1/projects/{id}/monitor-sources": {
     "get": operations["handleMonitorSources"];

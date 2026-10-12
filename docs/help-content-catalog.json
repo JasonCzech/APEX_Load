@@ -50,6 +50,34 @@
     ]
   },
   {
+    "id": "live-data-tables",
+    "area": "user-guide",
+    "title": "Run live tables",
+    "path": "docs/LIVE_DATA_TABLES_RUNTIME.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "project-live-tables",
+    "area": "user-guide",
+    "title": "Project live tables",
+    "path": "docs/PROJECT_LIVE_TABLES.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "native-script-data-services",
+    "area": "user-guide",
+    "title": "Native script data services",
+    "path": "docs/NATIVE_SCRIPT_DATA_SERVICES.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "distributed-rendezvous",
+    "area": "user-guide",
+    "title": "Distributed rendezvous",
+    "path": "docs/DISTRIBUTED_RENDEZVOUS.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "replay",
     "area": "user-guide",
     "title": "Validate & replay",

@@ -2527,6 +2527,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -9536,6 +9546,12 @@ paths:
                               nullable: true
                             project_id:
                               type: string
+                            project_live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveProjectLiveTableAttachment'
+                                additionalProperties: true
                             protocol_mix:
                               type: object
                               additionalProperties: true
@@ -10036,6 +10052,12 @@ paths:
                               nullable: true
                             project_id:
                               type: string
+                            project_live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveProjectLiveTableAttachment'
+                                additionalProperties: true
                             protocol_mix:
                               type: object
                               additionalProperties: true
@@ -13601,7 +13623,11 @@ paths:
                             type: string
                           pool_name:
                             type: string
+                          project_table_id:
+                            type: string
                           scenario_id:
+                            type: string
+                          scope:
                             type: string
                           selection_strategy:
                             type: string
@@ -15521,6 +15547,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -17653,6 +17689,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -19597,6 +19643,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -52222,6 +52278,24 @@ paths:
                           redact_run_evidence:
                             type: boolean
                             nullable: true
+                      native_services:
+                        type: object
+                        properties:
+                          live_tables:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                alias:
+                                  type: string
+                                operations:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - alias
+                                - operations
+                        nullable: true
                       network:
                         type: object
                         properties:
@@ -52951,7 +53025,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -53035,7 +53113,11 @@ paths:
                                 type: string
                               pool_name:
                                 type: string
+                              project_table_id:
+                                type: string
                               scenario_id:
+                                type: string
+                              scope:
                                 type: string
                               selection_strategy:
                                 type: string
@@ -53242,7 +53324,11 @@ paths:
                                 type: string
                               pool_name:
                                 type: string
+                              project_table_id:
+                                type: string
                               scenario_id:
+                                type: string
+                              scope:
                                 type: string
                               selection_strategy:
                                 type: string
@@ -53375,7 +53461,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -53460,7 +53550,11 @@ paths:
                                 type: string
                               pool_name:
                                 type: string
+                              project_table_id:
+                                type: string
                               scenario_id:
+                                type: string
+                              scope:
                                 type: string
                               selection_strategy:
                                 type: string
@@ -59137,6 +59231,11 @@ paths:
                                   type: object
                                   description: 'Go type: LogConfig'
                                   additionalProperties: true
+                                native_services:
+                                  type: object
+                                  description: 'Go type: NativeServicesConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 network:
                                   type: object
                                   description: 'Go type: NetworkConfig'
@@ -70088,6 +70187,1016 @@ paths:
       tags:
         - Projects
       x-handler: handleTestConfluenceConnection
+  /api/v1/projects/{id}/live-tables:
+    get:
+      summary: List Project Live Tables
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListProjectLiveTables
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        attachments:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              alias:
+                                type: string
+                              group_name:
+                                type: string
+                              id:
+                                type: string
+                              run_id:
+                                type: string
+                              state:
+                                type: string
+                            required:
+                              - alias
+                              - group_name
+                              - id
+                              - run_id
+                              - state
+                        columns:
+                          type: array
+                          items:
+                            type: string
+                        config_revision:
+                          type: string
+                        id:
+                          type: string
+                        instance_id:
+                          type: string
+                        name:
+                          type: string
+                        permissions:
+                          type: object
+                          properties:
+                            can_admin:
+                              type: boolean
+                            can_mutate:
+                              type: boolean
+                            can_view:
+                              type: boolean
+                          required:
+                            - can_admin
+                            - can_mutate
+                            - can_view
+                        profile:
+                          type: string
+                        project_id:
+                          type: string
+                        state:
+                          type: string
+                        stats:
+                          type: object
+                          properties:
+                            capacity:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - columns
+                                - lease_ttl_ms
+                                - max_bytes
+                                - max_delivery_attempts
+                                - max_lease_lifetime_ms
+                                - max_receipts
+                                - max_result_bytes
+                                - max_rows
+                                - profile
+                                - retry_window_ms
+                            counts:
+                              type: object
+                              properties:
+                                acknowledged:
+                                  type: integer
+                                  format: int64
+                                available:
+                                  type: integer
+                                  format: int64
+                                delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                discarded:
+                                  type: integer
+                                  format: int64
+                                leased:
+                                  type: integer
+                                  format: int64
+                                popped:
+                                  type: integer
+                                  format: int64
+                                pushed:
+                                  type: integer
+                                  format: int64
+                                quarantined:
+                                  type: integer
+                                  format: int64
+                                redeliveries:
+                                  type: integer
+                                  format: int64
+                                seeded:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - acknowledged
+                                - available
+                                - delivery_attempts
+                                - discarded
+                                - leased
+                                - popped
+                                - pushed
+                                - quarantined
+                                - redeliveries
+                                - seeded
+                              nullable: true
+                            data_bytes:
+                              type: integer
+                              format: int64
+                            revision:
+                              type: string
+                          required:
+                            - capacity
+                            - data_bytes
+                            - revision
+                          nullable: true
+                      required:
+                        - columns
+                        - config_revision
+                        - id
+                        - instance_id
+                        - name
+                        - permissions
+                        - profile
+                        - project_id
+                        - state
+                required:
+                  - tables
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleListProjectLiveTables
+    post:
+      summary: Create Project Live Table
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleCreateProjectLiveTable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Handler-defined JSON request object.
+              additionalProperties: true
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alias:
+                          type: string
+                        group_name:
+                          type: string
+                        id:
+                          type: string
+                        run_id:
+                          type: string
+                        state:
+                          type: string
+                      required:
+                        - alias
+                        - group_name
+                        - id
+                        - run_id
+                        - state
+                  columns:
+                    type: array
+                    items:
+                      type: string
+                  config_revision:
+                    type: string
+                  id:
+                    type: string
+                  instance_id:
+                    type: string
+                  name:
+                    type: string
+                  permissions:
+                    type: object
+                    properties:
+                      can_admin:
+                        type: boolean
+                      can_mutate:
+                        type: boolean
+                      can_view:
+                        type: boolean
+                    required:
+                      - can_admin
+                      - can_mutate
+                      - can_view
+                  profile:
+                    type: string
+                  project_id:
+                    type: string
+                  state:
+                    type: string
+                  stats:
+                    type: object
+                    properties:
+                      capacity:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - columns
+                          - lease_ttl_ms
+                          - max_bytes
+                          - max_delivery_attempts
+                          - max_lease_lifetime_ms
+                          - max_receipts
+                          - max_result_bytes
+                          - max_rows
+                          - profile
+                          - retry_window_ms
+                      counts:
+                        type: object
+                        properties:
+                          acknowledged:
+                            type: integer
+                            format: int64
+                          available:
+                            type: integer
+                            format: int64
+                          delivery_attempts:
+                            type: integer
+                            format: int64
+                          discarded:
+                            type: integer
+                            format: int64
+                          leased:
+                            type: integer
+                            format: int64
+                          popped:
+                            type: integer
+                            format: int64
+                          pushed:
+                            type: integer
+                            format: int64
+                          quarantined:
+                            type: integer
+                            format: int64
+                          redeliveries:
+                            type: integer
+                            format: int64
+                          seeded:
+                            type: integer
+                            format: int64
+                        required:
+                          - acknowledged
+                          - available
+                          - delivery_attempts
+                          - discarded
+                          - leased
+                          - popped
+                          - pushed
+                          - quarantined
+                          - redeliveries
+                          - seeded
+                        nullable: true
+                      data_bytes:
+                        type: integer
+                        format: int64
+                      revision:
+                        type: string
+                    required:
+                      - capacity
+                      - data_bytes
+                      - revision
+                    nullable: true
+                required:
+                  - columns
+                  - config_revision
+                  - id
+                  - instance_id
+                  - name
+                  - permissions
+                  - profile
+                  - project_id
+                  - state
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCreateProjectLiveTable
+  /api/v1/projects/{id}/live-tables/{tableID}:
+    get:
+      summary: Get Project Live Table
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleGetProjectLiveTable
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alias:
+                          type: string
+                        group_name:
+                          type: string
+                        id:
+                          type: string
+                        run_id:
+                          type: string
+                        state:
+                          type: string
+                      required:
+                        - alias
+                        - group_name
+                        - id
+                        - run_id
+                        - state
+                  columns:
+                    type: array
+                    items:
+                      type: string
+                  config_revision:
+                    type: string
+                  id:
+                    type: string
+                  instance_id:
+                    type: string
+                  name:
+                    type: string
+                  permissions:
+                    type: object
+                    properties:
+                      can_admin:
+                        type: boolean
+                      can_mutate:
+                        type: boolean
+                      can_view:
+                        type: boolean
+                    required:
+                      - can_admin
+                      - can_mutate
+                      - can_view
+                  profile:
+                    type: string
+                  project_id:
+                    type: string
+                  state:
+                    type: string
+                  stats:
+                    type: object
+                    properties:
+                      capacity:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - columns
+                          - lease_ttl_ms
+                          - max_bytes
+                          - max_delivery_attempts
+                          - max_lease_lifetime_ms
+                          - max_receipts
+                          - max_result_bytes
+                          - max_rows
+                          - profile
+                          - retry_window_ms
+                      counts:
+                        type: object
+                        properties:
+                          acknowledged:
+                            type: integer
+                            format: int64
+                          available:
+                            type: integer
+                            format: int64
+                          delivery_attempts:
+                            type: integer
+                            format: int64
+                          discarded:
+                            type: integer
+                            format: int64
+                          leased:
+                            type: integer
+                            format: int64
+                          popped:
+                            type: integer
+                            format: int64
+                          pushed:
+                            type: integer
+                            format: int64
+                          quarantined:
+                            type: integer
+                            format: int64
+                          redeliveries:
+                            type: integer
+                            format: int64
+                          seeded:
+                            type: integer
+                            format: int64
+                        required:
+                          - acknowledged
+                          - available
+                          - delivery_attempts
+                          - discarded
+                          - leased
+                          - popped
+                          - pushed
+                          - quarantined
+                          - redeliveries
+                          - seeded
+                        nullable: true
+                      data_bytes:
+                        type: integer
+                        format: int64
+                      revision:
+                        type: string
+                    required:
+                      - capacity
+                      - data_bytes
+                      - revision
+                    nullable: true
+                required:
+                  - columns
+                  - config_revision
+                  - id
+                  - instance_id
+                  - name
+                  - permissions
+                  - profile
+                  - project_id
+                  - state
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetProjectLiveTable
+  /api/v1/projects/{id}/live-tables/{tableID}/export:
+    get:
+      summary: Export Project Live Table
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleExportProjectLiveTable
+      responses:
+        2XX:
+          description: Successful response; the exact status and representation are operation-specific.
+        4XX:
+          description: Request, authentication, authorization, resource, or state error.
+        5XX:
+          description: Controller-side failure.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleExportProjectLiveTable
+  /api/v1/projects/{id}/live-tables/{tableID}/lifecycle:
+    post:
+      summary: Project Live Table Lifecycle
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleProjectLiveTableLifecycle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Handler-defined JSON request object.
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alias:
+                          type: string
+                        group_name:
+                          type: string
+                        id:
+                          type: string
+                        run_id:
+                          type: string
+                        state:
+                          type: string
+                      required:
+                        - alias
+                        - group_name
+                        - id
+                        - run_id
+                        - state
+                  columns:
+                    type: array
+                    items:
+                      type: string
+                  config_revision:
+                    type: string
+                  id:
+                    type: string
+                  instance_id:
+                    type: string
+                  name:
+                    type: string
+                  permissions:
+                    type: object
+                    properties:
+                      can_admin:
+                        type: boolean
+                      can_mutate:
+                        type: boolean
+                      can_view:
+                        type: boolean
+                    required:
+                      - can_admin
+                      - can_mutate
+                      - can_view
+                  profile:
+                    type: string
+                  project_id:
+                    type: string
+                  state:
+                    type: string
+                  stats:
+                    type: object
+                    properties:
+                      capacity:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - columns
+                          - lease_ttl_ms
+                          - max_bytes
+                          - max_delivery_attempts
+                          - max_lease_lifetime_ms
+                          - max_receipts
+                          - max_result_bytes
+                          - max_rows
+                          - profile
+                          - retry_window_ms
+                      counts:
+                        type: object
+                        properties:
+                          acknowledged:
+                            type: integer
+                            format: int64
+                          available:
+                            type: integer
+                            format: int64
+                          delivery_attempts:
+                            type: integer
+                            format: int64
+                          discarded:
+                            type: integer
+                            format: int64
+                          leased:
+                            type: integer
+                            format: int64
+                          popped:
+                            type: integer
+                            format: int64
+                          pushed:
+                            type: integer
+                            format: int64
+                          quarantined:
+                            type: integer
+                            format: int64
+                          redeliveries:
+                            type: integer
+                            format: int64
+                          seeded:
+                            type: integer
+                            format: int64
+                        required:
+                          - acknowledged
+                          - available
+                          - delivery_attempts
+                          - discarded
+                          - leased
+                          - popped
+                          - pushed
+                          - quarantined
+                          - redeliveries
+                          - seeded
+                        nullable: true
+                      data_bytes:
+                        type: integer
+                        format: int64
+                      revision:
+                        type: string
+                    required:
+                      - capacity
+                      - data_bytes
+                      - revision
+                    nullable: true
+                required:
+                  - columns
+                  - config_revision
+                  - id
+                  - instance_id
+                  - name
+                  - permissions
+                  - profile
+                  - project_id
+                  - state
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleProjectLiveTableLifecycle
+  /api/v1/projects/{id}/live-tables/{tableID}/mutations:
+    post:
+      summary: Mutate Project Live Table
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleMutateProjectLiveTable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Handler-defined JSON request object.
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expires_at:
+                    type: string
+                    format: date-time
+                  replayed:
+                    type: boolean
+                  result:
+                    type: object
+                    properties:
+                      count:
+                        type: string
+                      revision:
+                        type: string
+                      row:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          state:
+                            type: string
+                          values:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          version:
+                            type: string
+                        required:
+                          - values
+                          - version
+                        nullable: true
+                      status:
+                        type: string
+                      value:
+                        type: string
+                    required:
+                      - revision
+                      - status
+                required:
+                  - expires_at
+                  - replayed
+                  - result
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleMutateProjectLiveTable
+  /api/v1/projects/{id}/live-tables/{tableID}/rows:
+    get:
+      summary: Project Live Table Rows
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleProjectLiveTableRows
+      responses:
+        2XX:
+          description: Successful response; the exact status and representation are operation-specific.
+        4XX:
+          description: Request, authentication, authorization, resource, or state error.
+        5XX:
+          description: Controller-side failure.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleProjectLiveTableRows
   /api/v1/projects/{id}/monitor-sources:
     get:
       summary: Monitor Sources
@@ -83722,7 +84831,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -84819,7 +85932,11 @@ paths:
                             type: string
                           pool_name:
                             type: string
+                          project_table_id:
+                            type: string
                           scenario_id:
+                            type: string
+                          scope:
                             type: string
                           selection_strategy:
                             type: string
@@ -87042,7 +88159,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -93401,7 +94522,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -99761,7 +100886,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -106133,7 +107262,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -112505,7 +113638,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -118877,7 +120014,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -125249,7 +126390,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -146561,7 +147706,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -148784,6 +149933,10 @@ paths:
                                   nullable: true
                                 pool_id:
                                   type: string
+                                project_table_id:
+                                  type: string
+                                scope:
+                                  type: string
                                 selection_strategy:
                                   type: string
                               required:
@@ -149181,7 +150334,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -152050,6 +153207,10 @@ paths:
                                       nullable: true
                                     pool_id:
                                       type: string
+                                    project_table_id:
+                                      type: string
+                                    scope:
+                                      type: string
                                     selection_strategy:
                                       type: string
                                   required:
@@ -152447,7 +153608,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -154927,6 +156092,10 @@ paths:
                                   nullable: true
                                 pool_id:
                                   type: string
+                                project_table_id:
+                                  type: string
+                                scope:
+                                  type: string
                                 selection_strategy:
                                   type: string
                               required:
@@ -156218,7 +157387,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -158441,6 +159614,10 @@ paths:
                                   nullable: true
                                 pool_id:
                                   type: string
+                                project_table_id:
+                                  type: string
+                                scope:
+                                  type: string
                                 selection_strategy:
                                   type: string
                               required:
@@ -158838,7 +160015,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -161605,6 +162786,10 @@ paths:
                                   nullable: true
                                 pool_id:
                                   type: string
+                                project_table_id:
+                                  type: string
+                                scope:
+                                  type: string
                                 selection_strategy:
                                   type: string
                               required:
@@ -162002,7 +163187,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -164802,7 +165991,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -165629,6 +166822,10 @@ paths:
                                   nullable: true
                                 pool_id:
                                   type: string
+                                project_table_id:
+                                  type: string
+                                scope:
+                                  type: string
                                 selection_strategy:
                                   type: string
                               required:
@@ -166026,7 +167223,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -168959,7 +170160,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -172481,7 +173686,11 @@ paths:
                             type: string
                           pool_name:
                             type: string
+                          project_table_id:
+                            type: string
                           scenario_id:
+                            type: string
+                          scope:
                             type: string
                           selection_strategy:
                             type: string
@@ -174376,7 +175585,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -176506,7 +177719,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -178264,7 +179481,11 @@ paths:
                             type: string
                           pool_name:
                             type: string
+                          project_table_id:
+                            type: string
                           scenario_id:
+                            type: string
+                          scope:
                             type: string
                           selection_strategy:
                             type: string
@@ -180159,7 +181380,11 @@ paths:
                               type: string
                             pool_name:
                               type: string
+                            project_table_id:
+                              type: string
                             scenario_id:
+                              type: string
+                            scope:
                               type: string
                             selection_strategy:
                               type: string
@@ -181814,7 +183039,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -199903,6 +201132,15 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -201457,6 +202695,10 @@ paths:
                               log:
                                 type: object
                                 additionalProperties: true
+                              native_services:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 additionalProperties: true
@@ -202926,6 +204168,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -204560,6 +205812,10 @@ paths:
                                   log:
                                     type: object
                                     additionalProperties: true
+                                  native_services:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   network:
                                     type: object
                                     additionalProperties: true
@@ -206029,6 +207285,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -207978,6 +209244,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -210171,6 +211447,15 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -211723,6 +213008,10 @@ paths:
                               log:
                                 type: object
                                 additionalProperties: true
+                              native_services:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 additionalProperties: true
@@ -213192,6 +214481,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -214754,6 +216053,10 @@ paths:
                               log:
                                 type: object
                                 additionalProperties: true
+                              native_services:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 additionalProperties: true
@@ -216223,6 +217526,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -218404,6 +219717,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -222706,6 +224029,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -227685,6 +229018,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -229868,6 +231211,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -233430,6 +234783,10 @@ paths:
                               log:
                                 type: object
                                 additionalProperties: true
+                              native_services:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 additionalProperties: true
@@ -234899,6 +236256,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -238675,6 +240042,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -240640,6 +242017,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -242696,6 +244083,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -244667,6 +246064,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -246570,6 +247977,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -248277,6 +249694,10 @@ paths:
                               log:
                                 type: object
                                 additionalProperties: true
+                              native_services:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 additionalProperties: true
@@ -248969,6 +250390,10 @@ paths:
                               log:
                                 type: object
                                 additionalProperties: true
+                              native_services:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 additionalProperties: true
@@ -250552,6 +251977,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -252917,6 +254352,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -256886,6 +258331,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -258801,6 +260256,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -260964,6 +262429,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -263187,6 +264662,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -267207,6 +268692,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -268749,6 +270244,10 @@ paths:
                         log:
                           type: object
                           additionalProperties: true
+                        native_services:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           additionalProperties: true
@@ -270067,6 +271566,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -271859,6 +273368,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -274090,6 +275609,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -275858,6 +277387,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -278054,6 +279593,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -279618,6 +281167,10 @@ paths:
                         log:
                           type: object
                           additionalProperties: true
+                        native_services:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           additionalProperties: true
@@ -281111,6 +282664,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -283523,6 +285086,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -284840,6 +286413,10 @@ paths:
                         log:
                           type: object
                           additionalProperties: true
+                        native_services:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           additionalProperties: true
@@ -287067,6 +288644,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -289003,6 +290590,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -290870,6 +292467,16 @@ paths:
                                     redact_run_evidence:
                                       type: boolean
                                       nullable: true
+                                native_services:
+                                  type: object
+                                  properties:
+                                    live_tables:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: NativeLiveTableRequirement'
+                                        additionalProperties: true
+                                  nullable: true
                                 network:
                                   type: object
                                   properties:
@@ -292460,6 +294067,16 @@ paths:
                                     redact_run_evidence:
                                       type: boolean
                                       nullable: true
+                                native_services:
+                                  type: object
+                                  properties:
+                                    live_tables:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: NativeLiveTableRequirement'
+                                        additionalProperties: true
+                                  nullable: true
                                 network:
                                   type: object
                                   properties:
@@ -294493,6 +296110,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -296429,6 +298056,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -298296,6 +299933,16 @@ paths:
                                     redact_run_evidence:
                                       type: boolean
                                       nullable: true
+                                native_services:
+                                  type: object
+                                  properties:
+                                    live_tables:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: NativeLiveTableRequirement'
+                                        additionalProperties: true
+                                  nullable: true
                                 network:
                                   type: object
                                   properties:
@@ -299886,6 +301533,16 @@ paths:
                                     redact_run_evidence:
                                       type: boolean
                                       nullable: true
+                                native_services:
+                                  type: object
+                                  properties:
+                                    live_tables:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: NativeLiveTableRequirement'
+                                        additionalProperties: true
+                                  nullable: true
                                 network:
                                   type: object
                                   properties:
@@ -301962,6 +303619,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -303852,6 +305519,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -305872,6 +307549,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -307608,6 +309295,16 @@ paths:
                               redact_run_evidence:
                                 type: boolean
                                 nullable: true
+                          native_services:
+                            type: object
+                            properties:
+                              live_tables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativeLiveTableRequirement'
+                                  additionalProperties: true
+                            nullable: true
                           network:
                             type: object
                             properties:
@@ -309255,6 +310952,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -311300,6 +313007,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -313465,6 +315182,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -317489,6 +319216,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -319408,6 +321145,16 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: NativeLiveTableRequirement'
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -321292,6 +323039,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -323220,6 +324977,16 @@ paths:
                                   redact_run_evidence:
                                     type: boolean
                                     nullable: true
+                              native_services:
+                                type: object
+                                properties:
+                                  live_tables:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: NativeLiveTableRequirement'
+                                      additionalProperties: true
+                                nullable: true
                               network:
                                 type: object
                                 properties:
@@ -325448,6 +327215,15 @@ paths:
                             redact_run_evidence:
                               type: boolean
                               nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          nullable: true
                         network:
                           type: object
                           properties:
@@ -335918,7 +337694,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -339909,7 +341689,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -353395,7 +355179,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -369692,6 +371480,34 @@ paths:
                         nullable: true
                       project_id:
                         type: string
+                      project_live_tables:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            alias:
+                              type: string
+                            attachment_id:
+                              type: string
+                            group:
+                              type: string
+                            instance_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            state:
+                              type: string
+                            table_id:
+                              type: string
+                          required:
+                            - alias
+                            - attachment_id
+                            - group
+                            - instance_id
+                            - revision
+                            - state
+                            - table_id
                       protocol_mix:
                         type: object
                         properties:
@@ -372663,6 +374479,34 @@ paths:
                         nullable: true
                       project_id:
                         type: string
+                      project_live_tables:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            alias:
+                              type: string
+                            attachment_id:
+                              type: string
+                            group:
+                              type: string
+                            instance_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            state:
+                              type: string
+                            table_id:
+                              type: string
+                          required:
+                            - alias
+                            - attachment_id
+                            - group
+                            - instance_id
+                            - revision
+                            - state
+                            - table_id
                       protocol_mix:
                         type: object
                         properties:
@@ -384161,6 +386005,34 @@ paths:
                             nullable: true
                           project_id:
                             type: string
+                          project_live_tables:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                alias:
+                                  type: string
+                                attachment_id:
+                                  type: string
+                                group:
+                                  type: string
+                                instance_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                state:
+                                  type: string
+                                table_id:
+                                  type: string
+                              required:
+                                - alias
+                                - attachment_id
+                                - group
+                                - instance_id
+                                - revision
+                                - state
+                                - table_id
                           protocol_mix:
                             type: object
                             properties:
@@ -385733,6 +387605,34 @@ paths:
                             nullable: true
                           project_id:
                             type: string
+                          project_live_tables:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                alias:
+                                  type: string
+                                attachment_id:
+                                  type: string
+                                group:
+                                  type: string
+                                instance_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                state:
+                                  type: string
+                                table_id:
+                                  type: string
+                              required:
+                                - alias
+                                - attachment_id
+                                - group
+                                - instance_id
+                                - revision
+                                - state
+                                - table_id
                           protocol_mix:
                             type: object
                             properties:
@@ -398326,7 +400226,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -411756,7 +413660,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -431067,7 +432975,11 @@ paths:
                           type: string
                         pool_name:
                           type: string
+                        project_table_id:
+                          type: string
                         scenario_id:
+                          type: string
+                        scope:
                           type: string
                         selection_strategy:
                           type: string
@@ -463740,7 +465652,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string
@@ -467306,7 +469222,11 @@ paths:
                         type: string
                       pool_name:
                         type: string
+                      project_table_id:
+                        type: string
                       scenario_id:
+                        type: string
+                      scope:
                         type: string
                       selection_strategy:
                         type: string

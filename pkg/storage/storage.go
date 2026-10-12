@@ -1096,6 +1096,8 @@ type ScenarioDataPoolBinding struct {
 	AccessMode        string            `json:"access_mode"`
 	SelectionStrategy string            `json:"selection_strategy"`
 	LiveOptions       *LiveTableOptions `json:"live_options,omitempty"`
+	Scope             string            `json:"scope,omitempty"`
+	ProjectTableID    string            `json:"project_table_id,omitempty"`
 	CreatedAt         time.Time         `json:"created_at,omitempty"`
 	UpdatedAt         time.Time         `json:"updated_at,omitempty"`
 }

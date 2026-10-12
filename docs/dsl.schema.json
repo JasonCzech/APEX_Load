@@ -5230,6 +5230,54 @@
             "properties": {
               "type": {
                 "enum": [
+                  "native_javascript"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Executes literal JavaScript in an isolated host worker with declared native data services. Requires native_javascript_v1 on the execution host. Linux memory/CPU limits, four concurrent workers, bounded source and results. No filesystem, environment or network APIs; compose target actions in the surrounding DSL.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "inputs": {
+                    "description": "JSON object resolved once before execution, at most 64 KiB and depth 16. Guest strings remain literal.",
+                    "type": "object"
+                  },
+                  "result_prefix": {
+                    "description": "Static output variable prefix. Return a JSON object of at most 64 KiB and 128 fields; fields are stored beneath this prefix.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Literal JavaScript function body receiving input and apex. Never template-expanded. At most 128 KiB.",
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Whole-worker wall time, including service waits; default 5000 ms.",
+                    "maximum": 120000,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "source"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ],
+            "x-execution-posture": "supported"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "network_health"
                 ]
               }
@@ -5315,6 +5363,30 @@
                   "count": {
                     "description": "Participants to wait for; defaults to all VUsers. Must be greater than zero.",
                     "type": "integer"
+                  },
+                  "key": {
+                    "description": "Unique static action identity required for distributed_group.",
+                    "type": "string"
+                  },
+                  "on_timeout": {
+                    "description": "Required explicit timeout outcome for distributed_group.",
+                    "enum": [
+                      "fail",
+                      "continue"
+                    ],
+                    "type": "string"
+                  },
+                  "percent": {
+                    "description": "Distributed participant percentage (1..100), rounded up; mutually exclusive with count.",
+                    "type": "integer"
+                  },
+                  "scope": {
+                    "description": "Local by default; distributed_group uses the admitted group across generators.",
+                    "enum": [
+                      "local",
+                      "distributed_group"
+                    ],
+                    "type": "string"
                   },
                   "timeout_ms": {
                     "description": "Maximum wait in milliseconds; zero or greater.",
@@ -7038,6 +7110,7 @@
             "loadrunner_transaction",
             "loadrunner_verification",
             "loadrunner_xml",
+            "native_javascript",
             "network_health",
             "ping",
             "pop3_command",
@@ -8860,6 +8933,33 @@
       },
       "type": "object"
     },
+    "NativeLiveTableRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "operations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "NativeServicesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "live_tables": {
+          "items": {
+            "$ref": "#/$defs/NativeLiveTableRequirement"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "NetworkConfig": {
       "additionalProperties": false,
       "properties": {
@@ -9601,6 +9701,9 @@
         },
         "log": {
           "$ref": "#/$defs/LogConfig"
+        },
+        "native_services": {
+          "$ref": "#/$defs/NativeServicesConfig"
         },
         "network": {
           "$ref": "#/$defs/NetworkConfig"

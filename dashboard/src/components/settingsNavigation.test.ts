@@ -3,6 +3,11 @@ import { SETTINGS_DESTINATIONS, settingsDestination, settingsHref, settingsOwner
 import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
 
 describe('settings task navigation', () => {
+  it('opens project live tables as a separate repository destination', () => {
+    expect(settingsOwner('live-tables')).toBe('repository')
+    expect(parseAppViewFromHash(settingsHref('live-tables', '#/repository?projectId=p'))).toMatchObject({ page: 'repository', setting: 'live-tables', projectId: 'p' })
+    expect(settingsDestination('test-data')?.title).toBe('Shared data pools')
+  })
   it('gives every destination one address with preserved workspace context', () => {
     expect(new Set(SETTINGS_DESTINATIONS.map(item => item.id)).size).toBe(SETTINGS_DESTINATIONS.length)
     for (const destination of SETTINGS_DESTINATIONS) {

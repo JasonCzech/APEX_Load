@@ -148,3 +148,18 @@ it('uses an explicit current snapshot when a retained summary has no revision', 
   expect(request).toHaveBeenLastCalledWith('/tests/run/live-tables/t/rows?offset=0&limit=100&revision=0', expect.anything())
   expect(container.textContent).toContain('Preview revision 7')
 })
+
+
+it('shows project-only attachment references without fetching values or attributing global counts', async () => {
+  request.mockResolvedValue({ tables: [], project_tables: [{ table_id: 'shared/table', instance_id: 'original-instance', attachment_id: 'attachment', alias: 'work', group: 'Consumers', state: 'active', revision: '9007199254740993', counts: { available: 92345 }, values: { id: 'never-disclose' } }] })
+  await act(async () => root.render(<LiveTablesPanel testId="run" projectId="project" />))
+  expect(container.textContent).not.toContain('No live tables yet')
+  expect(container.textContent).toContain('original-instance')
+  expect(container.textContent).toContain('Recorded revision 9007199254740993')
+  expect(container.textContent).not.toContain('92345')
+  expect(container.textContent).not.toContain('never-disclose')
+  const link = container.querySelector('a')!
+  expect(link.getAttribute('href')).toBe('#/repository?setting=live-tables&projectId=project&resourceId=shared%2Ftable')
+  expect(container.querySelector('dl')).toBeNull()
+  expect(request).toHaveBeenCalledTimes(1)
+})

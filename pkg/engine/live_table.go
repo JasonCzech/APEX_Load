@@ -31,6 +31,14 @@ type LiveTableBinding struct {
 	OpTimeout     time.Duration     `json:"op_timeout"`
 }
 
+func cloneLiveTableBindings(bindings []LiveTableBinding) []LiveTableBinding {
+	cloned := append([]LiveTableBinding(nil), bindings...)
+	for index := range cloned {
+		cloned[index].Columns = append([]string(nil), cloned[index].Columns...)
+	}
+	return cloned
+}
+
 type liveTableLane struct {
 	mu       sync.Mutex
 	id       string
@@ -52,16 +60,19 @@ type liveTableAcquisition struct {
 }
 
 type liveTableRuntime struct {
-	ownerID  string
-	client   livetable.Client
-	bindings map[string]LiveTableBinding
-	mu       sync.Mutex
-	leases   map[string]liveTableAcquisition
-	failed   bool
-	branches map[liveTableBranchSlot]*liveTableLane
-	renew    *liveTableLane
-	cancel   context.CancelFunc
-	done     chan struct{}
+	ownerID            string
+	client             livetable.Client
+	bindings           map[string]LiveTableBinding
+	mu                 sync.Mutex
+	leases             map[string]liveTableAcquisition
+	nativeLeasePending int
+	failed             bool
+	branches           map[liveTableBranchSlot]*liveTableLane
+	renew              *liveTableLane
+	settle             *liveTableLane
+	lost               chan struct{}
+	cancel             context.CancelFunc
+	done               chan struct{}
 }
 
 // A parent runs one parallel block at a time and joins all branches before
@@ -158,7 +169,7 @@ func (vu *VUser) prepareLiveTables() error {
 		return nil
 	}
 	owner := vu.LiveTableClientID + ":" + uuid.NewString()
-	runtime := &liveTableRuntime{ownerID: owner, client: vu.LiveTableClient, bindings: make(map[string]LiveTableBinding), leases: make(map[string]liveTableAcquisition), renew: &liveTableLane{id: owner + ":renew"}}
+	runtime := &liveTableRuntime{ownerID: owner, client: vu.LiveTableClient, bindings: make(map[string]LiveTableBinding), leases: make(map[string]liveTableAcquisition), renew: &liveTableLane{id: owner + ":renew"}, settle: &liveTableLane{id: owner + ":settle"}, lost: make(chan struct{})}
 	for _, binding := range vu.LiveTableBindings {
 		binding.Columns = append([]string(nil), binding.Columns...)
 		if binding.Strategy == "manual" {
@@ -179,14 +190,23 @@ func (vu *VUser) prepareLiveTables() error {
 	return nil
 }
 
+// failLocked wakes active native invocations immediately; callers hold mu.
+func (runtime *liveTableRuntime) failLocked() {
+	if !runtime.failed {
+		runtime.failed = true
+		if runtime.lost != nil {
+			close(runtime.lost)
+		}
+	}
+}
+
 func safeLiveTableError(err error) error {
 	var typed *livetable.Error
 	if errors.As(err, &typed) {
 		return &livetable.Error{Code: typed.Code, Message: "live table operation failed: " + string(typed.Code), OutcomeUnknown: typed.OutcomeUnknown}
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
+	// This helper is called only after dispatch. A raw transport cancellation
+	// cannot establish nonacceptance; pre-dispatch cancellation returns directly.
 	return &livetable.Error{Code: livetable.CodeUnavailable, Message: "live table operation outcome is unknown", OutcomeUnknown: true}
 }
 
@@ -229,7 +249,7 @@ func (runtime *liveTableRuntime) execute(ctx context.Context, lane *liveTableLan
 		if uncertainLiveTableError(err) {
 			lane.failed = true
 			runtime.mu.Lock()
-			runtime.failed = true
+			runtime.failLocked()
 			runtime.mu.Unlock()
 		}
 		return livetable.Result{}, safeLiveTableError(err)
@@ -282,7 +302,7 @@ func (vu *VUser) startLiveTableRenewal(ctx context.Context) {
 				current, exists = runtime.leases[key]
 				if exists && current.lease.Token == acquisition.lease.Token {
 					if err != nil || result.Lease == nil {
-						runtime.failed = true
+						runtime.failLocked()
 					} else {
 						current.lease = *result.Lease
 						runtime.leases[key] = current
@@ -308,7 +328,7 @@ func (vu *VUser) liveTableLeaseError() error {
 	defer vu.liveTables.mu.Unlock()
 	for _, acquisition := range vu.liveTables.leases {
 		if !acquisition.lease.ExpiresAt.After(time.Now()) {
-			vu.liveTables.failed = true
+			vu.liveTables.failLocked()
 		}
 	}
 	if vu.liveTables.failed {
@@ -374,7 +394,7 @@ func (vu *VUser) bindLiveResult(prefix string, result livetable.Result) error {
 	return vu.mergeExtractions(&protocol.Result{Extractions: values})
 }
 
-func (vu *VUser) liveValuesAllowed(values map[string]string) bool {
+func (vu *VUser) liveRequestValuesAllowed(request livetable.Request) bool {
 	config := vu.resultPublicationRedactionConfig()
 	if config == nil {
 		return true
@@ -384,6 +404,17 @@ func (vu *VUser) liveValuesAllowed(values map[string]string) bool {
 	}
 	all := allRuntimeSecretValues(config)
 	scriptSourced := allRuntimeScriptSourcedValues(config)
+	// Column names and named cursor identities are persisted just like cell
+	// values. Native callers can compute every semantic string at runtime.
+	values := make([]string, 0, 2+len(request.Columns)+2*len(request.Values)+2*len(request.Expected))
+	values = append(values, request.RecordID, request.Cursor)
+	values = append(values, request.Columns...)
+	for key, value := range request.Values {
+		values = append(values, key, value)
+	}
+	for key, value := range request.Expected {
+		values = append(values, key, value)
+	}
 	for _, value := range values {
 		for secret := range all {
 			if _, imported := scriptSourced[secret]; !imported && strings.Contains(value, secret) {
@@ -439,17 +470,41 @@ func (vu *VUser) executeLiveTableAction(ctx context.Context, action dsl.Action) 
 	for key, value := range parsed.Expected {
 		request.Expected[key] = vu.interpolate(value)
 	}
-	if !vu.liveValuesAllowed(request.Values) || !vu.liveValuesAllowed(request.Expected) {
-		return fmt.Errorf("live_table cannot store or compare managed secret values")
+	vu.clearLiveOutput(parsed.ResultPrefix)
+	result, err := vu.executeLiveTableLiteral(ctx, binding, request, parsed.LeaseRef, parsed.ResultPrefix)
+	if err != nil {
+		return err
 	}
-	leaseKey := vu.liveTableLane.id + ":" + parsed.LeaseRef
+	if err := vu.bindLiveResult(parsed.ResultPrefix, result); err != nil {
+		return err
+	}
+	if result.Status == livetable.StatusEmpty && parsed.OnEmpty != "skip" {
+		return fmt.Errorf("live_table returned no available result")
+	}
+	if result.Status == livetable.StatusConditionFailed && parsed.OnCondition != "skip" {
+		return fmt.Errorf("live_table condition was not met")
+	}
+	return nil
+}
+
+// executeLiveTableLiteral is the single semantic execution path. Inputs have
+// already been resolved by the DSL caller; native callers pass literal strings.
+// It does not read or write VUser variables or publish result values.
+func (vu *VUser) executeLiveTableLiteral(ctx context.Context, binding LiveTableBinding, request livetable.Request, leaseRef, acquireRef string) (livetable.Result, error) {
+	if err := vu.liveTableLeaseError(); err != nil {
+		return livetable.Result{}, err
+	}
+	if !vu.liveRequestValuesAllowed(request) {
+		return livetable.Result{}, fmt.Errorf("live_table cannot store or compare managed secret values")
+	}
+	leaseKey := vu.liveTableLane.id + ":" + leaseRef
 	var acquisitionGuard *sync.Mutex
-	if parsed.LeaseRef != "" {
+	if leaseRef != "" {
 		vu.liveTables.mu.Lock()
 		acquisition, ok := vu.liveTables.leases[leaseKey]
 		vu.liveTables.mu.Unlock()
 		if !ok || acquisition.binding.TableID != binding.TableID {
-			return fmt.Errorf("live_table lease reference is missing or belongs to another table")
+			return livetable.Result{}, fmt.Errorf("live_table lease reference is missing or belongs to another table")
 		}
 		acquisitionGuard = acquisition.guard
 		if acquisitionGuard != nil {
@@ -460,23 +515,22 @@ func (vu *VUser) executeLiveTableAction(ctx context.Context, action dsl.Action) 
 		current, stillHeld := vu.liveTables.leases[leaseKey]
 		vu.liveTables.mu.Unlock()
 		if !stillHeld || current.lease.Token != acquisition.lease.Token {
-			return fmt.Errorf("live_table acquisition was already settled")
+			return livetable.Result{}, fmt.Errorf("live_table acquisition was already settled")
 		}
 		request.LeaseToken, request.RecordID = acquisition.lease.Token, acquisition.lease.RecordID
 	}
-	if parsed.Operation == "lease" {
-		leaseKey = vu.liveTableLane.id + ":" + parsed.ResultPrefix
+	if string(request.Operation) == "lease" {
+		leaseKey = vu.liveTableLane.id + ":" + acquireRef
 		vu.liveTables.mu.Lock()
 		_, exists := vu.liveTables.leases[leaseKey]
 		vu.liveTables.mu.Unlock()
 		if exists {
-			return fmt.Errorf("live_table lease reference is already held; acknowledge or release it first")
+			return livetable.Result{}, fmt.Errorf("live_table lease reference is already held; acknowledge or release it first")
 		}
 	}
-	vu.clearLiveOutput(parsed.ResultPrefix)
 	result, err := vu.liveTables.execute(ctx, vu.liveTableLane, binding, request)
 	if err != nil {
-		return err
+		return livetable.Result{}, err
 	}
 	if result.Lease != nil {
 		if request.LeaseDuration > 0 {
@@ -489,21 +543,12 @@ func (vu *VUser) executeLiveTableAction(ctx context.Context, action dsl.Action) 
 		vu.liveTables.leases[leaseKey] = liveTableAcquisition{guard: acquisitionGuard, binding: binding, lease: *result.Lease, laneID: vu.liveTableLane.id}
 		vu.liveTables.mu.Unlock()
 	}
-	if parsed.Operation == "ack" || parsed.Operation == "release" {
+	if string(request.Operation) == "ack" || string(request.Operation) == "release" {
 		vu.liveTables.mu.Lock()
 		delete(vu.liveTables.leases, leaseKey)
 		vu.liveTables.mu.Unlock()
 	}
-	if err := vu.bindLiveResult(parsed.ResultPrefix, result); err != nil {
-		return err
-	}
-	if result.Status == livetable.StatusEmpty && parsed.OnEmpty != "skip" {
-		return fmt.Errorf("live_table returned no available result")
-	}
-	if result.Status == livetable.StatusConditionFailed && parsed.OnCondition != "skip" {
-		return fmt.Errorf("live_table condition was not met")
-	}
-	return nil
+	return result, nil
 }
 
 var errLiveTableSkipIteration = errors.New("live table iteration skipped: no row available")
@@ -600,7 +645,7 @@ func (vu *VUser) settleLiveTableLeases(ctx context.Context, success bool, laneOn
 		if acquisition.auto && success && !failed {
 			operation = livetable.OpAck
 		}
-		result, err := runtime.execute(ctx, vu.liveTableLane, acquisition.binding, livetable.Request{Operation: operation, RecordID: acquisition.lease.RecordID, LeaseToken: acquisition.lease.Token})
+		result, err := runtime.execute(ctx, runtime.settle, acquisition.binding, livetable.Request{Operation: operation, RecordID: acquisition.lease.RecordID, LeaseToken: acquisition.lease.Token})
 		if err == nil && result.Status != livetable.StatusOK {
 			err = fmt.Errorf("live table lease settlement was rejected")
 		}

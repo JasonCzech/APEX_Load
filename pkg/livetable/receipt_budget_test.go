@@ -166,14 +166,14 @@ func TestLeaseReservationsProtectCheckpointCapacity(t *testing.T) {
 		}
 	})
 	t.Run("settlement client can use reserved recovery metadata", func(t *testing.T) {
-		table := tableFor(t, ProfileNative, []Row{row("work", "1")}, Limits{MaxSnapshotBytes: 32 << 10, MaxResultBytes: 1024})
+		table := tableFor(t, ProfileNative, []Row{row("work", "1")}, Limits{MaxSnapshotBytes: 96 << 10, MaxResultBytes: 1024})
 		grant := execute(t, table, Request{ClientID: "worker", Sequence: 1, Operation: OpLease})
 		for seq := uint64(1); ; seq++ {
 			_, err := table.Execute(context.Background(), Request{ClientID: "producer", Sequence: seq, Operation: OpPop})
 			if CodeOf(err) == CodeCapacity {
 				break
 			}
-			if err != nil || seq > 30 {
+			if err != nil || seq > 100 {
 				t.Fatalf("checkpoint pressure: %v", err)
 			}
 		}
@@ -182,4 +182,85 @@ func TestLeaseReservationsProtectCheckpointCapacity(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestLeaseRenewalAndSettlementSurviveCheckpointSaturation(t *testing.T) {
+	for _, restore := range []bool{false, true} {
+		t.Run(fmt.Sprint(restore), func(t *testing.T) {
+			table := tableFor(t, ProfileNative, []Row{row("work", "1")}, Limits{MaxSnapshotBytes: 128 << 10, MaxResultBytes: 1024})
+			grant := execute(t, table, Request{ClientID: "worker", Sequence: 1, Operation: OpLease})
+			for seq := uint64(1); ; seq++ {
+				_, err := table.Execute(t.Context(), Request{ClientID: "producer", Sequence: seq, Operation: OpPop})
+				if CodeOf(err) == CodeCapacity {
+					if !strings.Contains(err.Error(), "checkpoint") {
+						t.Fatalf("fixture hit a different budget: %v", err)
+					}
+					break
+				}
+				if err != nil || seq > 200 {
+					t.Fatalf("checkpoint pressure: %v", err)
+				}
+			}
+			if restore {
+				snapshot, err := table.Snapshot()
+				if err != nil {
+					t.Fatal(err)
+				}
+				table, err = Restore(snapshot, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			execute(t, table, Request{ClientID: "renewal", OwnerID: "worker", Sequence: 1, Operation: OpRenew, RecordID: grant.Row.ID, LeaseToken: grant.Lease.Token})
+			execute(t, table, Request{ClientID: "settlement", OwnerID: "worker", Sequence: 1, Operation: OpAck, RecordID: grant.Row.ID, LeaseToken: grant.Lease.Token})
+			if _, err := table.Snapshot(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestPendingLeaseCheckpointReservationSurvivesCancellationAtCapacity(t *testing.T) {
+	table := tableFor(t, ProfileNative, nil, Limits{MaxSnapshotBytes: 512 << 10, MaxResultBytes: 1024, MaxReceipts: 128})
+	type waiter struct {
+		request Request
+		cancel  context.CancelFunc
+		done    chan error
+	}
+	var waiting []waiter
+	for i := 0; i < 64; i++ {
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+		r := Request{ClientID: fmt.Sprintf("worker-%d", i), Sequence: 1, Operation: OpLease, Wait: time.Minute}
+		done := make(chan error, 1)
+		go func() { _, err := table.Execute(ctx, r); done <- err }()
+		waitFor(t, func() bool { return table.Stats().Waiters == len(waiting)+1 || len(done) > 0 })
+		select {
+		case err := <-done:
+			if CodeOf(err) != CodeCapacity {
+				t.Fatalf("admission: %v", err)
+			}
+			cancel()
+			if len(waiting) < 2 {
+				t.Fatal("fixture admitted too few waits")
+			}
+			goto cancelWaits
+		default:
+			waiting = append(waiting, waiter{r, cancel, done})
+		}
+	}
+	t.Fatal("fixture never reached checkpoint capacity")
+cancelWaits:
+	for _, w := range waiting {
+		w.cancel()
+		if err := <-w.done; CodeOf(err) != CodeCanceled {
+			t.Fatalf("accepted wait could not persist cancellation: %v", err)
+		}
+		if _, err := table.Execute(t.Context(), w.request); CodeOf(err) != CodeCanceled {
+			t.Fatalf("cancellation retry changed: %v", err)
+		}
+	}
+	if _, err := table.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 }

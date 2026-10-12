@@ -137,6 +137,16 @@ func admitScenarioSourcesTx(tx *storeTx, admission *ScenarioSourceAdmission, poo
 		return ErrScenarioSourceAdmissionUnavailable
 	}
 	for _, pool := range pools {
+		if pool.Scope == "project" {
+			var owner string
+			if err := tx.QueryRow(`SELECT project_id FROM project_live_tables WHERE id=?`, pool.ProjectTableID).Scan(&owner); err != nil || owner != admission.ProjectID {
+				return ErrScenarioSourceAdmissionUnavailable
+			}
+			continue
+		}
+		if pool.PoolID == "" && liveBindingHasNoSeedPool(pool) {
+			continue
+		}
 		if pool.PoolID == "" || strings.TrimSpace(pool.PoolID) != pool.PoolID {
 			return ErrScenarioSourceAdmissionUnavailable
 		}

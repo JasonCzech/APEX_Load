@@ -26,6 +26,7 @@ type dedicatedBrokerSession interface {
 // bind target to the frozen broker profile before construction. This is not an
 // automatically selectable script backend; it never claims or renews leases.
 type DedicatedBrokerProtocol struct {
+	nativeServiceBinding
 	session                                                     dedicatedBrokerSession
 	reservationID, profileID, policySHA256, configurationSHA256 string
 	target                                                      string
@@ -119,6 +120,11 @@ func (p *DedicatedBrokerProtocol) ExecuteStream(ctx context.Context, a *protocol
 	}
 	call, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	call, closeNative, e := p.nativeContext(call, "broker-invoke")
+	if e != nil {
+		return fail("native_service_unavailable")
+	}
+	defer closeNative()
 	out, e := p.session.Execute(call, method, params)
 	if e != nil {
 		p.terminal.Store(true)

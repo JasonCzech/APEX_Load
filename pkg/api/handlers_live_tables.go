@@ -127,8 +127,13 @@ func (s *Server) handleListLiveTables(w http.ResponseWriter, r *http.Request) {
 			views = append(views, view)
 		}
 	}
+	projectTables, err := s.runner.projectLiveTableRunMetadata(r.Context(), test)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "project table attachment metadata is unavailable")
+		return
+	}
 	sort.Slice(views, func(i, j int) bool { return views[i].Alias < views[j].Alias })
-	writeJSON(w, http.StatusOK, map[string]any{"tables": views, "updated_at": time.Now().UTC()})
+	writeJSON(w, http.StatusOK, map[string]any{"tables": views, "project_tables": projectTables, "updated_at": time.Now().UTC()})
 }
 
 // Inspect never dispatches a runtime operation and never registers an operation

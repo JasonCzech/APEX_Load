@@ -869,6 +869,7 @@ export type ScriptGoalConfig = Pick<GoalConfig,
 >
 
 export interface ScriptConfig {
+  native_services?: { live_tables?: { alias: string; operations: string[] }[] }
   jmeter?: {
     profile: string
     source_plan_id: string

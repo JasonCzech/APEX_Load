@@ -102,8 +102,9 @@ type RuntimePreflightProvider interface {
 }
 
 type RuntimePreflightRequest struct {
-	Config  map[string]any           `json:"config,omitempty"`
-	Targets []RuntimePreflightTarget `json:"targets,omitempty"`
+	RequiredFeatures []string                 `json:"required_features,omitempty"`
+	Config           map[string]any           `json:"config,omitempty"`
+	Targets          []RuntimePreflightTarget `json:"targets,omitempty"`
 }
 
 type RuntimePreflightTarget struct {

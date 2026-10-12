@@ -21,6 +21,8 @@ export interface SharedDataPoolRow {
 }
 
 export interface ScenarioDataPoolBinding {
+  scope?: 'run' | 'project'
+  project_table_id?: string
   id?: string
   scenario_id?: string
   pool_id: string

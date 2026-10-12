@@ -38,6 +38,7 @@ type BrokerFacadeClient struct {
 	terminal        atomic.Bool
 }
 type BrokerFacadeRun struct {
+	nativeData    bool
 	client        *BrokerFacadeClient
 	id, token     string
 	profile       broker.BrokerProfileCapability
@@ -238,6 +239,7 @@ func (r *BrokerFacadeRun) Ready(ctx context.Context) (bool, error) {
 	}
 	if out.State == "ready" {
 		r.phase = "ready"
+		r.nativeData = out.NativeData
 	}
 	return r.phase == "ready", nil
 }
@@ -501,7 +503,7 @@ func (c *BrokerFacadeClient) exchange(ctx context.Context, q BrokerFacadeRequest
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
-	response, e := c.http.Do(req)
+	response, e := javarunner.DoNativeHTTP(c.http, req, broker.MaxSupervisorResponse)
 	if e != nil {
 		// A caller-cancelled request with a known reservation is contained by
 		// that run/session. Claim/reserve have unknown authority on lost replies
@@ -568,6 +570,9 @@ func validFacadeResponseShape(op string, out BrokerFacadeResponse) bool {
 		base.State = out.State
 		base.LeaseMS = out.LeaseMS
 	case "ready", "commit", "abort":
+		if op == "ready" {
+			base.NativeData = out.NativeData
+		}
 		base.RunID = out.RunID
 		base.State = out.State
 	case "renew_run":
@@ -611,4 +616,10 @@ func validFacadeResult(out *ExecutionResponse) bool {
 		}
 	}
 	return true
+}
+
+func (r *BrokerFacadeRun) NativeDataAvailable() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.phase == "ready" && r.nativeData && !r.client.terminal.Load()
 }

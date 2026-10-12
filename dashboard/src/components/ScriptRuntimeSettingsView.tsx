@@ -1,4 +1,5 @@
 import PropertyAnalyticsFields from './PropertyAnalyticsFields'
+import NativeServicesEditor from './NativeServicesEditor'
 import AuthHostsField from './AuthHostsField'
 import { requiresScriptBaseURL } from './scriptAuthoringAssist'
 import { MessageDetailFields } from './MessageDetailFields'
@@ -358,6 +359,7 @@ export function ScriptRuntimeSettingsView({
     </button>
     {runtimeSectionIsActive('script_config') && (
       <div className="section-body">
+        <NativeServicesEditor declarations={script.config.native_services?.live_tables} onChange={live_tables => updateField('config.native_services', { ...script.config.native_services, live_tables })} />
         <div className="form-grid">
           <label>
             <span>Protocol</span>

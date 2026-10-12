@@ -26,6 +26,9 @@ func (t *Table) validateRequest(r Request) error {
 	if r.Wait < 0 || r.Wait > t.s.Limits.MaxWait || r.Wait > 0 && !canWait(r.Operation) {
 		return fail(CodeInvalid, "invalid wait policy")
 	}
+	if r.ExpectedRevision != nil && r.Wait > 0 {
+		return fail(CodeInvalid, "revision-conditional operations cannot wait")
+	}
 	if r.Position < 0 || r.Position > t.s.Limits.MaxRows || r.Limit < 0 || r.Limit > t.s.Limits.MaxRows {
 		return fail(CodeInvalid, "row range exceeds supported bounds")
 	}
@@ -177,6 +180,7 @@ func (t *Table) native(r Request, now time.Time, d *transition) (Result, error) 
 			counts.Acknowledged++
 		case OpRelease:
 			rec.Lease = nil
+			rec.ControlClients = nil
 			rec.Row.Version++
 			counts.Leased--
 			if rec.Attempts >= t.s.Limits.MaxDeliveryAttempts {
@@ -187,6 +191,9 @@ func (t *Table) native(r Request, now time.Time, d *transition) (Result, error) 
 			}
 			d.Upsert = []record{rec}
 		case OpRenew:
+			if _, exists := t.s.Clients[r.ClientID]; !exists && len(rec.ControlClients) < 2 {
+				rec.ControlClients = append(rec.ControlClients, r.ClientID)
+			}
 			ttl := r.LeaseDuration
 			if ttl == 0 {
 				ttl = t.s.Limits.DefaultLeaseDuration
@@ -286,6 +293,7 @@ func (t *Table) native(r Request, now time.Time, d *transition) (Result, error) 
 		if ttl == 0 {
 			ttl = t.s.Limits.DefaultLeaseDuration
 		}
+		rec.ControlClients = nil
 		rec.Lease = &Lease{Token: newToken(), RecordID: rec.Row.ID, ClientID: owner, ExpiresAt: now.Add(ttl), MaxExpiresAt: now.Add(t.s.Limits.MaxLeaseLifetime), DeliveryAttempt: rec.Attempts}
 		d.Upsert = []record{rec}
 		counts.Available--

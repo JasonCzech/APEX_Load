@@ -20,7 +20,7 @@ var errLiveTableHAContinuationUnavailable = errors.New("live controller continua
 func validateLiveTableContinuation(bindings []storage.ScenarioDataPoolBinding, assignment *GeneratorAssignmentSettings) error {
 	if effectiveFailoverPolicy(assignment) == failoverPolicyContinue {
 		for _, binding := range bindings {
-			if binding.AccessMode == "live" && (binding.LiveOptions == nil || !strings.EqualFold(strings.TrimSpace(binding.LiveOptions.Durability), "durable")) {
+			if binding.AccessMode == "live" && binding.Scope != "project" && (binding.LiveOptions == nil || !strings.EqualFold(strings.TrimSpace(binding.LiveOptions.Durability), "durable")) {
 				return errLiveTableHAContinuationUnavailable
 			}
 		}

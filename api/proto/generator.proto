@@ -52,6 +52,10 @@ service GeneratorControl {
   // generator requests flow on the response side, separately from telemetry.
   rpc LiveTableChannel(stream LiveTableReply) returns (stream LiveTableRequest);
 
+  // Bounded per-generator rendezvous batches and round watches. This channel
+  // does not share operation slots with live tables or supervision.
+  rpc RendezvousChannel(stream RendezvousReply) returns (stream RendezvousRequest);
+
   // Heartbeat is a bidirectional keepalive stream.
   rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatPong);
 
@@ -266,6 +270,8 @@ message WorkAssignment {
   JointEvidenceProjection joint_evidence_projection = 47;
   // Bounded versioned engine binding descriptors. Sent only to live_tables_v1.
   bytes live_table_bindings_json = 48;
+  // Frozen group contracts; send only to distributed_rendezvous_v1 peers.
+  bytes rendezvous_config_json = 49;
 }
 
 // JointEvidenceProjection chooses up to three dimensions of one population
@@ -1064,5 +1070,20 @@ message LiveTableReply {
   string group_name = 4;
   uint64 request_id = 5;
   bytes result_json = 6;
+  string error_code = 7;
+}
+
+message RendezvousRequest {
+  string group_name = 1;
+  uint64 request_id = 2;
+  bytes batch_json = 3;
+}
+message RendezvousReply {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  bytes run_supervision_token = 3;
+  string group_name = 4;
+  uint64 request_id = 5;
+  bytes outcome_json = 6;
   string error_code = 7;
 }

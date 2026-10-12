@@ -28,6 +28,35 @@ func javaHostPlacementFixture(t *testing.T) (TestGroup, generatorLoadSnapshot) {
 	return TestGroup{Name: "buyers", Protocol: "java_vuser", VUsers: 2, script: script, Assignment: &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto, JavaHost: &JavaHostAssignmentSettings{ProfileID: "approved", PreparationMS: 120000, RunLifetimeMS: 600000}}}, generatorLoadSnapshot{Target: "gen-a", HeartbeatOK: true, AvailableCapacity: 100, CompatibleFeatures: features, JavaHost: javaHostCapabilitySummary(caps, features)}
 }
 
+func TestJavaHostNativePlacementRequiresSelectedModeAndRendezvousCapabilities(t *testing.T) {
+	group, load := javaHostPlacementFixture(t)
+	group.script.Config.NativeServices = &dsl.NativeServicesConfig{LiveTables: []dsl.NativeLiveTableRequirement{{Alias: "jobs", Operations: []string{"pop"}}}}
+	group.script.Actions = append(group.script.Actions, dsl.Action{Type: "rendezvous", Params: map[string]any{"scope": "distributed_group", "key": "checkout", "timeout_ms": 1000, "on_timeout": "fail"}})
+	digest, err := engine.JavaPooledScriptSHA256(group.script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	load.JavaHost.Profiles[0].ScriptSHA256 = digest
+	// A working local JVM does not prove the selected dedicated callback path.
+	load.CompatibleFeatures = append(load.CompatibleFeatures, protocol.FeatureNativeDataServicesV1, protocol.FeatureNativeDataJavaV1)
+	if _, err := javaHostPlacementForGroup(group, load); err == nil || !strings.Contains(err.Error(), protocol.FeatureNativeDataBrokerV1) {
+		t.Fatalf("wrong Java mode admitted: %v", err)
+	}
+	load.CompatibleFeatures = append(load.CompatibleFeatures, protocol.FeatureNativeDataBrokerV1)
+	if _, err := javaHostPlacementForGroup(group, load); err == nil || !strings.Contains(err.Error(), dsl.FeatureDistributedRendezvousV1) {
+		t.Fatalf("missing barrier transport admitted: %v", err)
+	}
+	load.CompatibleFeatures = append(load.CompatibleFeatures, dsl.FeatureDistributedRendezvousV1)
+	if _, err := javaHostPlacementForGroup(group, load); err != nil {
+		t.Fatal(err)
+	}
+	group.Assignment.JavaHost = nil
+	required := groupRequiredRuntimeFeature(group)
+	if !strings.Contains(required, protocol.FeatureNativeDataJavaV1) || strings.Contains(required, protocol.FeatureNativeDataBrokerV1) {
+		t.Fatalf("ordinary Java inherited broker authority: %s", required)
+	}
+}
+
 func TestJavaHostGroupSettingsRoundTripAndScope(t *testing.T) {
 	g, _ := javaHostPlacementFixture(t)
 	if _, err := normalizeGeneratorAssignmentSettings(g.Assignment); err == nil {

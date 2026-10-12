@@ -32,7 +32,7 @@ it('validates empty seed, profile and save policies without changing existing re
   expect(dataBindingErrors([{ ...binding, live_options: { end_mode: 'save_as_new' } }]).join()).toContain('enter a name')
 })
 it('includes nested live action aliases and columns in scenario requirements', () => {
-  const script = { script: { init: [{ type: 'control_parallel', control: { branches: [[{ type: 'live_table', params: { alias: 'work', operation: 'push', values: { id: '1' } } }]] } }], teardown: [{ type: 'live_table', params: { alias: 'empty', operation: 'pop' } }] } } as unknown as StoredScript
+  const script = { script: { init: [{ type: 'control_parallel', control: { branches: [{ name: 'producer', steps: [{ type: 'live_table', params: { alias: 'work', operation: 'push', values: { id: '1' } } }] }] } }], teardown: [{ type: 'live_table', params: { alias: 'empty', operation: 'pop' } }] } } as unknown as StoredScript
   const requirements = scenarioDataRequirements([script]); expect([...requirements.get('work')!]).toEqual(['id']); expect(requirements.has('empty')).toBe(true)
 })
 

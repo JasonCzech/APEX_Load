@@ -7,6 +7,7 @@ import ImportDropzone from './ImportDropzone'
 import { dataBindingErrors, scenarioDataRequirements, DEFAULT_LIVE_TABLE_OPTIONS } from './scenarioDataBindingModel'
 import ScenarioScriptData from './ScenarioScriptData'
 import LiveTableBindingOptions from './LiveTableBindingOptions'
+import ProjectLiveTableBinding from './ProjectLiveTableBinding'
 
 function PoolPreview({ binding, required, canManage }: { binding: ScenarioDataPoolBinding; required: string[]; canManage: boolean }) {
   const api = useApi()
@@ -63,7 +64,8 @@ function PoolPreview({ binding, required, canManage }: { binding: ScenarioDataPo
     </>}
   </details>
 }
-export default function ScenarioDataBindings({ bindings, pools, scripts, onChange, canManage, canManageLiveOutput = false }: {
+export default function ScenarioDataBindings({ bindings, pools, scripts, onChange, canManage, canManageLiveOutput = false, projectId }: {
+  projectId?: string
   bindings: ScenarioDataPoolBinding[]; pools: SharedDataPool[]; scripts: StoredScript[];
   onChange: (bindings: ScenarioDataPoolBinding[]) => void; canManage: boolean; canManageLiveOutput?: boolean
 }) {
@@ -90,24 +92,25 @@ export default function ScenarioDataBindings({ bindings, pools, scripts, onChang
   const update = (index: number, patch: Partial<ScenarioDataPoolBinding>) => onChange(bindings.map((binding, i) => i === index ? { ...binding, ...patch } : binding))
   return <div className="scenario-data-editor">
     {!currentDetails ? <p role="status">Checking script data references…</p> : currentDetails.unavailable > 0 && <p role="status">Data requirements could not be inspected for {currentDetails.unavailable} scripts. Review them in Scripts before running.</p>}
-    <p>Bindings are shared across scenario groups. Reference a column with <code>{'{{data.customers.email}}'}</code>. Each alias identifies one pool.</p>
+    <p>Bindings are shared across scenario groups. Reference a column with <code>{'{{data.customers.email}}'}</code>. Each alias identifies one data binding.</p>
     {(currentDetails?.scripts || []).flatMap(script => [...scenarioDataRequirements([script]).keys()]
       .filter(alias => !bindings.some(binding => binding.alias === alias) && !script.script?.data_sources?.some(source => source.name === alias))
       .map(alias => <p key={`${script.id}:${alias}`} role="status">{script.name} references <code>{alias}</code>, but no script source or scenario pool supplies it.</p>))}
     {dataBindingErrors(bindings).map(error => <p key={error} role="alert" className="settings-error-inline">{error}</p>)}
     {bindings.length === 0 && <label className="scenario-field"><span>Data Pool</span><select value="" onChange={event => { if (event.target.value) onChange([{ pool_id: event.target.value, alias: pools.find(pool => pool.id === event.target.value)?.name.toLowerCase().replace(/\W+/g, '_') || 'data', access_mode: 'read_only', selection_strategy: 'sequential' }]) }}><option value="">No data pool</option>{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>}
     {bindings.map((binding, index) => <fieldset key={index}><legend>Data binding {index + 1}</legend><div className="settings-grid">
-      <label><span>Data Pool</span><select disabled={binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')} value={binding.pool_id} onChange={event => event.target.value ? update(index, { pool_id: event.target.value }) : onChange(bindings.filter((_, i) => i !== index))}><option value="">Select a pool</option>{!pools.some(pool => pool.id === binding.pool_id) && binding.pool_id && <option value={binding.pool_id}>Unavailable pool — choose a replacement</option>}{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
+      {binding.scope !== 'project' && <label><span>Data Pool</span><select disabled={binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')} value={binding.pool_id} onChange={event => event.target.value ? update(index, { pool_id: event.target.value }) : onChange(bindings.filter((_, i) => i !== index))}><option value="">Select a pool</option>{!pools.some(pool => pool.id === binding.pool_id) && binding.pool_id && <option value={binding.pool_id}>Unavailable pool — choose a replacement</option>}{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>}
       <label><span>Pool Alias</span><input value={binding.alias} onChange={event => update(index, { alias: event.target.value })} placeholder="customers" /></label>
       <label><span>Access mode</span><select value={binding.access_mode === 'live' ? 'live' : 'read_only'} onChange={event => update(index, event.target.value === 'live'
         ? { access_mode: 'live', selection_strategy: 'manual', live_options: { ...DEFAULT_LIVE_TABLE_OPTIONS, columns: Object.keys(pools.find(pool => pool.id === binding.pool_id)?.schema || {}) } }
-        : { access_mode: 'read_only', selection_strategy: 'sequential', live_options: undefined })}><option value="read_only">Read-only run snapshot</option><option value="live">Shared live table</option></select></label>
+        : { access_mode: 'read_only', scope: undefined, project_table_id: undefined, selection_strategy: 'sequential', live_options: undefined })}><option value="read_only">Read-only run snapshot</option><option value="live">Shared live table</option></select></label>
+      {binding.access_mode === 'live' && <label>Table scope<select value={binding.scope || 'run'} onChange={event => update(index, event.target.value === 'project' ? { scope: 'project', project_table_id: '', pool_id: '', selection_strategy: 'manual', live_options: { empty_policy: 'error', operation_timeout_ms: 120000 } } : { scope: 'run', project_table_id: undefined, selection_strategy: 'manual', live_options: { ...DEFAULT_LIVE_TABLE_OPTIONS, seed_policy: 'empty', columns: [] } })}><option value="run">This run only</option><option value="project">Shared across project runs</option></select></label>}
       {binding.access_mode !== 'live' && <label><span>Selection Strategy</span><select value={binding.selection_strategy} onChange={event => update(index, { selection_strategy: event.target.value as ScenarioDataPoolBinding['selection_strategy'] })}><option value="sequential">Sequential rows</option><option value="random">Random rows</option><option value="unique">Unique rows</option></select></label>}
-      </div>{binding.access_mode === 'live' ? <LiveTableBindingOptions binding={binding} canManage={canManageLiveOutput} onChange={patch => update(index, patch)} /> : <p>{binding.selection_strategy === 'unique' ? 'Unique selection assigns a stable row per VUser, reused across its iterations. The runtime wraps when rows are insufficient; scenario validation blocks known unique-row shortages. Validate the pool against peak VUsers before running.' : 'Sequential and random selection can reuse rows. Use unique selection when identities must not be reused.'} Rows are snapshotted when the run is created.</p>}
+      </div>{binding.access_mode === 'live' ? binding.scope === 'project' ? <ProjectLiveTableBinding projectId={projectId} binding={binding} onChange={patch => update(index, patch)} /> : <LiveTableBindingOptions binding={binding} canManage={canManageLiveOutput} onChange={patch => update(index, patch)} /> : <p>{binding.selection_strategy === 'unique' ? 'Unique selection assigns a stable row per VUser, reused across its iterations. The runtime wraps when rows are insufficient; scenario validation blocks known unique-row shortages. Validate the pool against peak VUsers before running.' : 'Sequential and random selection can reuse rows. Use unique selection when identities must not be reused.'} Rows are snapshotted when the run is created.</p>}
       <button type="button" className="btn btn-ghost" onClick={() => onChange(bindings.filter((_, i) => i !== index))}>Remove binding {index + 1}</button>
       {binding.pool_id && !(binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')) && <PoolPreview canManage={canManage} key={binding.pool_id} binding={binding} required={[...(requirements.get(binding.alias) || [])]} />}
     </fieldset>)}
     <button type="button" className="btn btn-secondary" onClick={() => onChange([...bindings, { pool_id: '', alias: '', access_mode: 'read_only', selection_strategy: 'sequential' }])}>Add data pool binding</button>
-    {!bindings.some(binding => binding.pool_id) && <ScenarioScriptData scripts={scripts} details={currentDetails?.scripts || []} loading={!currentDetails} unavailable={currentDetails?.unavailable || 0} onRetry={() => { setScriptDetails(null); setRetry(value => value + 1) }} />}
+    {!bindings.some(binding => binding.pool_id || binding.project_table_id) && <ScenarioScriptData scripts={scripts} details={currentDetails?.scripts || []} loading={!currentDetails} unavailable={currentDetails?.unavailable || 0} onRetry={() => { setScriptDetails(null); setRetry(value => value + 1) }} />}
   </div>
 }

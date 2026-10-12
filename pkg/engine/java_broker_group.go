@@ -25,15 +25,16 @@ type JavaBrokerGroupOptions struct {
 	PreparationTimeout, RunLifetime                 time.Duration
 }
 type javaBrokerGroup struct {
-	execution javaBrokerExecution
-	options   JavaBrokerGroupOptions
-	contexts  []javarunner.DedicatedHostContext
-	offset    int
-	mu        sync.Mutex
-	life      context.Context
-	cancel    context.CancelFunc
-	started   bool
-	taken     map[int]bool
+	nativeRequired bool
+	execution      javaBrokerExecution
+	options        JavaBrokerGroupOptions
+	contexts       []javarunner.DedicatedHostContext
+	offset         int
+	mu             sync.Mutex
+	life           context.Context
+	cancel         context.CancelFunc
+	started        bool
+	taken          map[int]bool
 }
 
 func newJavaBrokerGroup(group *GroupConfig, duration time.Duration) error {
@@ -58,7 +59,7 @@ func newJavaBrokerGroup(group *GroupConfig, duration time.Duration) error {
 		return errors.New("java_broker_identity_invalid")
 	}
 	life, cancel := context.WithCancel(context.Background())
-	b := &javaBrokerGroup{options: o, offset: group.VUserIDOffset, life: life, cancel: cancel, taken: map[int]bool{}}
+	b := &javaBrokerGroup{nativeRequired: script.Config.NativeServices != nil && len(script.Config.NativeServices.LiveTables) > 0, options: o, offset: group.VUserIDOffset, life: life, cancel: cancel, taken: map[int]bool{}}
 	b.execution.options = cfg
 	b.execution.runtime = o.Runtime
 	b.contexts = make([]javarunner.DedicatedHostContext, prepared)
@@ -88,6 +89,11 @@ func (b *javaBrokerGroup) prepare(ctx context.Context) error {
 	if err != nil {
 		b.cancel()
 		return err
+	}
+	if b.nativeRequired && !run.NativeDataAvailable() {
+		run.Cancel()
+		b.cancel()
+		return errors.New("native_data_broker_v1 capability unavailable")
 	}
 	b.execution.run = run
 	context.AfterFunc(b.life, run.Cancel)

@@ -825,6 +825,12 @@ func (s *Server) validateScenarioDataPoolProjects(projectID string, bindings []s
 	}
 	expectedProjectID := normalizeProjectID(projectID)
 	for _, binding := range bindings {
+		if binding.Scope == "project" {
+			if err := validateProjectLiveTableReference(s.store, expectedProjectID, binding); err != nil {
+				return err
+			}
+			continue
+		}
 		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
 			continue
 		}

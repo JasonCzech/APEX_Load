@@ -1,4 +1,5 @@
 import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
+import { nativeJavaScriptTemplate } from './nativeServicesModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
@@ -1665,7 +1666,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const errorCount = authoringIssues.filter((issue) => issue.severity === 'error').length
   const warningCount = authoringIssues.filter((issue) => issue.severity === 'warning').length
   const starterTemplates = useMemo(
-    () => buildProtocolStarterTemplates(script.protocol, script.actions.length),
+    () => [...buildProtocolStarterTemplates(script.protocol, script.actions.length), ...(['producer', 'consumer', 'update', 'lease'] as const).map(kind => ({ key: `native-js-${kind}`, label: `Host JavaScript ${kind}`, description: `Native work-table ${kind} example. Declare the work alias and allowed operations in Runtime settings.`, action: nativeJavaScriptTemplate(kind) })), { key: 'distributed-rendezvous', label: 'Distributed rendezvous', description: 'Coordinate a fixed group across load generators.', action: { name: `Barrier_${script.actions.length + 1}`, type: 'rendezvous', params: { scope: 'distributed_group', key: `barrier_${script.actions.length + 1}`, timeout_ms: 30000, on_timeout: 'fail' } } }],
     [script.protocol, script.actions.length],
   )
   const migrationSuggestions = useMemo(() => buildMigrationAssistantSuggestions(script), [script])

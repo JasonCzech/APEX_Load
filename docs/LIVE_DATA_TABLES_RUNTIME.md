@@ -1,6 +1,6 @@
 # Live data tables at runtime
 
-Live tables are an explicit scenario binding mode. Existing `read_only` data-pool bindings keep their run snapshot behavior. A live binding creates one shared runtime table per run and alias; all admitted groups and load generators use that table. Another run gets another table. A value already copied into a VUser variable remains a snapshot until another table action reads it.
+Live tables are an explicit scenario binding mode. Existing `read_only` data-pool bindings keep their run snapshot behavior. By default, a live binding creates one shared runtime table per run and alias; all admitted groups and load generators use that table. Another run gets another table. Explicit [project scope](PROJECT_LIVE_TABLES.md) instead shares a durable project-owned instance across admitted runs. A value already copied into a VUser variable remains a snapshot until another table action reads it.
 
 This guide describes the implemented runtime contract. The generated [DSL action reference](DSL_ACTION_REFERENCE.md) and [API endpoint catalog](api-endpoint-catalog.json) provide the complete authoring and HTTP field references. Shared columns (`vts_columns` in the existing wire contract) is an independent native positional data model. Native authoring does not depend on LoadRunner or an external VTS server. See the [VTS compatibility and import matrix](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) for supported behavior and blocked source calls.
 

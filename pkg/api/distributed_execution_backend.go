@@ -1303,7 +1303,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		failStartup("initialize live tables: " + err.Error())
 		return
 	}
-	liveBindingsJSON := tr.liveBindingJSON(test.ID)
+	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: executionLeaseOwnerID, generation: executionGeneration})
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
 	initialLoadByTarget := make(map[string]generatorLoadSnapshot, len(loadByTarget))
 	for target, snapshot := range loadByTarget {
@@ -1405,6 +1405,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			shards[i].RuntimeResourceClaim = claim
 		}
 		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
+		if err := tr.prepareGroupRendezvous(executionCtx, test, group, shards, false, executionLeaseTerm{ownerID: executionLeaseOwnerID, generation: executionGeneration}); err != nil {
+			failStartup("initialize distributed rendezvous: " + err.Error())
+			return
+		}
+		liveBindingsJSON := tr.liveBindingJSONForGroup(test.ID, group.Name)
 
 		secretProjectID := group.script.ProjectID
 		if strings.TrimSpace(secretProjectID) == "" {
@@ -1497,6 +1502,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			generatorrpc.Assignment{PrepareOnly: test.preparationID != "",
 				SourcePlan:                 sourcePlan,
 				LiveTableBindingsJSON:      liveBindingsJSON,
+				RendezvousConfigJSON:       tr.rendezvousAssignment(test.ID, group.Name),
 				TerminationMode:            test.TerminationMode,
 				TestID:                     test.ID,
 				ExecutionGeneration:        executionGeneration,
@@ -1619,6 +1625,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		stopRunSupervisionKeeper = b.startRunSupervisionKeeper(executionCtx, tr, test, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
 	}
 	if err := tr.openLiveTableChannels(remoteLifecycleCtx, test.ID, executionGeneration, runSupervisionTokenBytes, activeGroupShards, assignedClients); err != nil {
+		failStartup(err.Error())
+		return
+	}
+	if err := tr.openRendezvousChannels(remoteLifecycleCtx, test.ID, executionGeneration, runSupervisionTokenBytes, activeGroupShards, assignedClients); err != nil {
 		failStartup(err.Error())
 		return
 	}

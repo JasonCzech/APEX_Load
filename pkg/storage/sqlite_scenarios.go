@@ -700,6 +700,22 @@ func validateScenarioDataPoolProjectsTx(tx *storeTx, scenarioID string, bindings
 		return fmt.Errorf("scenario %q does not exist", scenarioID)
 	}
 	for _, binding := range bindings {
+		if binding.Scope == "project" {
+			if binding.AccessMode != "live" || binding.PoolID != "" || binding.ProjectTableID == "" {
+				return errors.New("invalid project live table binding")
+			}
+			var owner, state string
+			if err := tx.QueryRow(`SELECT project_id,state FROM project_live_tables WHERE id=?`, binding.ProjectTableID).Scan(&owner, &state); err != nil {
+				return err
+			}
+			if owner != scenarioProjectID || state == "archived" {
+				return errors.New("project live table is unavailable in this scenario project")
+			}
+			continue
+		}
+		if binding.Scope != "" && binding.Scope != "run" || binding.ProjectTableID != "" {
+			return errors.New("invalid data binding scope")
+		}
 		poolID := strings.TrimSpace(binding.PoolID)
 		if poolID == "" {
 			if liveBindingHasNoSeedPool(binding) {
@@ -756,8 +772,8 @@ func saveScenarioDataPoolBindingsTx(tx *storeTx, scenarioID string, bindings []S
 		if err != nil {
 			return fmt.Errorf("encode live table options: %w", err)
 		}
-		if _, err := tx.Exec(`INSERT INTO scenario_data_pool_bindings (id, scenario_id, pool_id, alias, access_mode, selection_strategy, created_at, updated_at, live_options_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, binding.ID, scenarioID, nullableLiveBindingPoolID(binding), binding.Alias, binding.AccessMode, binding.SelectionStrategy, binding.CreatedAt, binding.UpdatedAt, string(liveOptions)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO scenario_data_pool_bindings (id, scenario_id, pool_id, alias, access_mode, selection_strategy, created_at, updated_at, live_options_json, scope, project_table_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, binding.ID, scenarioID, nullableLiveBindingPoolID(binding), binding.Alias, binding.AccessMode, binding.SelectionStrategy, binding.CreatedAt, binding.UpdatedAt, string(liveOptions), binding.Scope, binding.ProjectTableID); err != nil {
 			return err
 		}
 	}
@@ -765,7 +781,7 @@ func saveScenarioDataPoolBindingsTx(tx *storeTx, scenarioID string, bindings []S
 }
 
 func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error) {
-	rows, err := s.db.Query(`SELECT b.id, b.scenario_id, COALESCE(b.pool_id,''), COALESCE(p.name, ''), b.alias, b.access_mode, b.selection_strategy, b.created_at, b.updated_at, COALESCE(b.live_options_json,'null')
+	rows, err := s.db.Query(`SELECT b.id, b.scenario_id, COALESCE(b.pool_id,''), COALESCE(p.name, ''), b.alias, b.access_mode, b.selection_strategy, b.created_at, b.updated_at, COALESCE(b.live_options_json,'null'), COALESCE(b.scope,''), COALESCE(b.project_table_id,'')
 		FROM scenario_data_pool_bindings b
 		LEFT JOIN shared_data_pools p ON p.id = b.pool_id
 		WHERE b.scenario_id = ?
@@ -778,7 +794,7 @@ func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]Scenari
 	for rows.Next() {
 		var binding ScenarioDataPoolBinding
 		var liveOptions string
-		if err := rows.Scan(&binding.ID, &binding.ScenarioID, &binding.PoolID, &binding.PoolName, &binding.Alias, &binding.AccessMode, &binding.SelectionStrategy, &binding.CreatedAt, &binding.UpdatedAt, &liveOptions); err != nil {
+		if err := rows.Scan(&binding.ID, &binding.ScenarioID, &binding.PoolID, &binding.PoolName, &binding.Alias, &binding.AccessMode, &binding.SelectionStrategy, &binding.CreatedAt, &binding.UpdatedAt, &liveOptions, &binding.Scope, &binding.ProjectTableID); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(liveOptions), &binding.LiveOptions); err != nil {

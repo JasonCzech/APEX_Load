@@ -205,6 +205,7 @@ const ApplicationRepositoryPage = lazy(
 const AccessPage = lazy(() => import("./components/AccessPage"));
 const UserSettingsPage = lazy(() => import("./components/UserSettingsPage"));
 const SharedTestDataReadOnly = lazy(() => import("./components/SharedTestDataReadOnly"));
+const ProjectLiveTablesPage = lazy(() => import("./components/ProjectLiveTablesPage"));
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRecorderControlPanel = lazy(
   () => import("./components/BrowserRecorderControlPanel"),
@@ -3737,7 +3738,10 @@ function AppShell({
                   accessReviewRefreshSignal={accessReviewSignal}
                 />
               )}
-              {(view.page === "settings" || ((view.page === "access" || view.page === "repository") && view.setting)) && !routeAssetScopeBlocked && (
+              {view.page === "repository" && view.setting === "live-tables" && !routeAssetScopeBlocked && (
+                <ProjectLiveTablesPage key={activeProject?.id || "unscoped"} projectId={activeProject?.id} projectName={activeProject?.name} canCreate={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_data_pools", false)} />
+              )}
+              {(view.page === "settings" || ((view.page === "access" || view.page === "repository") && view.setting && view.setting !== "live-tables")) && !routeAssetScopeBlocked && (
                 (!isDevUserPreview && effectiveAccessLoaded && !effectiveAccessError &&
                   (["manage_system", "manage_domains", "manage_projects"] as const).some(operation => isEffectiveOperationAllowed(effectiveAccessResources, operation, false)) && !view.setting?.startsWith("personal-")) ? <SettingsPage
                   destinationId={view.setting}

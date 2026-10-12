@@ -516,6 +516,11 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 		for _, execution := range service.executions[request.GetTestId()] {
 			if execution.stagedConfig != nil {
 				for _, group := range execution.stagedConfig.Groups {
+					if proxy, ok := group.DistributedRendezvousClient.(*rendezvousProxy); ok && !proxy.ready() {
+						service.mu.Unlock()
+						service.metricsBroker.unlockPublication()
+						return nil, status.Error(codes.Unavailable, "distributed rendezvous channel is not ready")
+					}
 					if proxy, ok := group.LiveTableClient.(*liveTableProxy); ok && !proxy.ready() {
 						service.mu.Unlock()
 						service.metricsBroker.unlockPublication()

@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/livetable"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -59,6 +60,9 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
+	liveTableClient    livetable.Client
+	liveTableClientID  string
+	liveTableBindings  []LiveTableBinding
 	runtimeResources   *engineRuntimeResources
 	runtimePause       *engineRuntimePause
 	pooledPilot        *javaPooledPilot
@@ -91,6 +95,12 @@ type Engine struct {
 
 // Config contains configuration for Engine creation.
 type Config struct {
+	// Live table capabilities are trusted caller wiring, never DSL configuration.
+	// Governed single-group Java runtimes use the same admitted client boundary
+	// as GroupConfig; an unmanaged script cannot manufacture a binding.
+	LiveTableClient            livetable.Client
+	LiveTableClientID          string
+	LiveTableBindings          []LiveTableBinding
 	RuntimeResourcePeakVUsers  int
 	RuntimeResourceReservation protocol.RuntimeResourceReservation
 	// EvidenceSchedule is trusted benchmark wiring, never DSL/API configuration.
@@ -134,10 +144,18 @@ type RunResult struct {
 //
 // The returned engine is not yet running; call Run() to start it.
 func New(cfg Config) (*Engine, error) {
+	if barriers, err := dsl.ScriptDistributedRendezvous(cfg.Script); err != nil {
+		return nil, err
+	} else if len(barriers) > 0 {
+		return nil, fmt.Errorf("distributed rendezvous requires an admitted multi-group run")
+	}
 	if aliases, err := dsl.ScriptLiveTableAliases(cfg.Script); err != nil {
 		return nil, err
-	} else if len(aliases) > 0 {
-		return nil, fmt.Errorf("live_table requires an admitted multi-group run or explicitly seeded isolated replay")
+	} else if len(aliases) > 0 && cfg.LiveTableClient == nil {
+		return nil, fmt.Errorf("live_table requires an admitted client and bindings or explicitly seeded isolated replay")
+	}
+	if err := validateLiveTableBindings(cfg.Script, cfg.LiveTableClient, cfg.LiveTableClientID, cfg.LiveTableBindings); err != nil {
+		return nil, err
 	}
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")
@@ -210,10 +228,13 @@ func New(cfg Config) (*Engine, error) {
 	metrics.timingObserver = cfg.TimingObserver
 	metrics.initializationObserver = cfg.InitializationObserver
 	return &Engine{
-		runtimeResources: runtimeResources,
-		runtimePause:     newEngineRuntimePause(runtimeResources, false),
-		evidenceSchedule: append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
-		evidenceStarted:  cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
+		liveTableClient:   cfg.LiveTableClient,
+		liveTableClientID: cfg.LiveTableClientID,
+		liveTableBindings: cloneLiveTableBindings(cfg.LiveTableBindings),
+		runtimeResources:  runtimeResources,
+		runtimePause:      newEngineRuntimePause(runtimeResources, false),
+		evidenceSchedule:  append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
+		evidenceStarted:   cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
 		script:              cfg.Script,
 		vusers:              cfg.VUsers,
 		duration:            cfg.Duration,
@@ -241,6 +262,9 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	}
 	defer e.runtimeResources.release()
 	defer e.runtimePause.close()
+	if err := nativeScriptExecutionHostError(e.script); err != nil {
+		return nil, err
+	}
 	// Re-check durable import gates at the actual execution boundary. Engine
 	// construction and execution are intentionally separate, and callers retain
 	// the Script pointer, so a draft can acquire a blocker after New returns.
@@ -336,8 +360,9 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			return nil, fmt.Errorf("protocol runtime preflight: %s", scrubSensitiveTextWithConfig(targetErr.Error(), e.redaction))
 		}
 		preflight, _, preflightErr := protocol.RunRuntimePreflight(ctx, proto, protocol.RuntimePreflightRequest{
-			Config:  protoConfig,
-			Targets: targets,
+			RequiredFeatures: dsl.RequiredNativeRuntimeFeatures(e.script),
+			Config:           protoConfig,
+			Targets:          targets,
 		})
 		if preflightErr != nil {
 			return nil, fmt.Errorf("protocol runtime preflight: %s", scrubSensitiveTextWithConfig(preflightErr.Error(), e.redaction))
@@ -520,6 +545,9 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			defer func() { e.metrics.SetActiveVUsers(activeVUsers.Add(-1)) }()
 
 			vu = &VUser{
+				LiveTableClient:              e.liveTableClient,
+				LiveTableClientID:            e.liveTableClientID,
+				LiveTableBindings:            e.liveTableBindings,
 				ID:                           vuserID,
 				TotalVUsers:                  e.vusers,
 				ParameterAllocation:          &ParameterAllocation{Population: e.vusers, Offset: vuserID, Iterations: e.script.Config.RunLogic.Iterations},
@@ -780,6 +808,9 @@ func (e *Engine) runOpenWorkload(
 			initializedWorkers.Add(1)
 
 			vu = &VUser{
+				LiveTableClient:              e.liveTableClient,
+				LiveTableClientID:            e.liveTableClientID,
+				LiveTableBindings:            e.liveTableBindings,
 				ID:                           workerID,
 				Proto:                        vuProto,
 				Script:                       iterationScript,

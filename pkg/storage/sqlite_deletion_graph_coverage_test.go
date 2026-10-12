@@ -36,7 +36,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"scenario_scripts", "script_recordings", "scripts", "shared_data_pool_rows",
 	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "tests",
 	"usage_accounting_snapshots", "import_assets",
-	"live_tables", "live_table_finalizations",
+	"live_tables", "live_table_finalizations", "run_rendezvous", "project_live_tables", "project_live_table_instances", "project_live_table_attachments",
 )
 
 // Cleanup jobs and audit history intentionally outlive their owner. The former
@@ -62,12 +62,13 @@ var manuallyHandledTestTables = stringSet(
 	"powerbi_publishes", "run_archives", "scenario_schedule_occurrences",
 	"runtime_secret_provisioning_attempts", "scenario_schedules", "test_history",
 	"test_interval_summaries", "test_notes",
-	"live_tables",
+	"live_tables", "run_rendezvous",
 )
 
 var retainedAfterTestDeletionTables = stringSet(
-	"pod_capacity_reservations", // Reconciler also drains claims whose test record has been deleted.
-	"run_evidence_receipts",     // Tombstoned in deleteTestGraphTx; they outlive the run so a late upload is refused.
+	"project_live_table_attachments", // Detached bounded retry tombstones are reconciled by the project service.
+	"pod_capacity_reservations",      // Reconciler also drains claims whose test record has been deleted.
+	"run_evidence_receipts",          // Tombstoned in deleteTestGraphTx; they outlive the run so a late upload is refused.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "capacity_instance_intents",
 )
 

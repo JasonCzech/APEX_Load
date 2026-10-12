@@ -550,6 +550,13 @@ func networkProfileLabel(config dsl.NetworkSimulationConfig) string {
 }
 
 func (vu *VUser) waitAtRendezvous(ctx context.Context, action dsl.Action) error {
+	spec, err := dsl.ParseDistributedRendezvous(action)
+	if err != nil {
+		return err
+	}
+	if spec != nil {
+		return vu.waitAtDistributedRendezvous(ctx, *spec)
+	}
 	participants := vu.TotalVUsers
 	if participants <= 0 {
 		participants = 1

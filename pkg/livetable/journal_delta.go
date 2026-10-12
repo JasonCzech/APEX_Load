@@ -15,11 +15,12 @@ type columnSplice struct {
 }
 
 type recordPatch struct {
-	ID          string `json:"id"`
-	Version     uint64 `json:"version"`
-	Lease       *Lease `json:"lease,omitempty"`
-	Attempts    uint32 `json:"attempts"`
-	Quarantined bool   `json:"quarantined,omitempty"`
+	ControlClients []string `json:"control_clients,omitempty"`
+	ID             string   `json:"id"`
+	Version        uint64   `json:"version"`
+	Lease          *Lease   `json:"lease,omitempty"`
+	Attempts       uint32   `json:"attempts"`
+	Quarantined    bool     `json:"quarantined,omitempty"`
 }
 
 func (t *Table) compactTransition(d transition) transition {
@@ -40,7 +41,7 @@ func (t *Table) compactTransition(d transition) transition {
 	upserts := make([]record, 0, len(d.Upsert))
 	for _, rec := range d.Upsert {
 		if old, ok := t.s.Records[rec.Row.ID]; ok && maps.Equal(old.Row.Values, rec.Row.Values) {
-			d.RecordPatches = append(d.RecordPatches, recordPatch{ID: rec.Row.ID, Version: rec.Row.Version, Lease: rec.Lease, Attempts: rec.Attempts, Quarantined: rec.Quarantined})
+			d.RecordPatches = append(d.RecordPatches, recordPatch{ControlClients: rec.ControlClients, ID: rec.Row.ID, Version: rec.Row.Version, Lease: rec.Lease, Attempts: rec.Attempts, Quarantined: rec.Quarantined})
 		} else {
 			upserts = append(upserts, rec)
 		}
@@ -64,6 +65,17 @@ func (s columnSplice) apply(cells []Cell) []Cell {
 }
 
 func (t *Table) validateTransitionPatches(d transition) error {
+	if d.RetireScope != "" {
+		if !validOwnerScope(d.RetireScope) || d.Receipt != nil || len(d.Upsert) > 0 || len(d.RecordPatches) > 0 || len(d.Delete) > 0 || len(d.Cursors) > 0 || d.Close || d.Counts != nil || d.DataBytes != t.s.DataBytes || d.Fields != t.s.Fields {
+			return fail(CodeInvalid, "invalid scope retirement transition")
+		}
+		for _, rec := range t.s.Records {
+			if rec.Lease != nil && inOwnerScope(rec.Lease.ClientID, d.RetireScope) {
+				return fail(CodeInvalid, "cannot retire an owned lease")
+			}
+		}
+	}
+
 	if (d.ReleaseOnClose || d.DiscardAll) && (!d.Close || (d.ReleaseOnClose && d.DiscardAll) || len(d.Upsert) != 0 || len(d.Delete) != 0 || len(d.RecordPatches) != 0) {
 		return fail(CodeInvalid, "invalid terminal journal transition")
 	}

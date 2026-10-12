@@ -138,6 +138,10 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 		fingerprintWriteString(h, FeatureLiveTablesV1)
 		fingerprintWriteBytes(h, body)
 	}
+	if body := assignment.GetRendezvousConfigJson(); len(body) > 0 {
+		fingerprintWriteString(h, "distributed_rendezvous_v1")
+		fingerprintWriteBytes(h, body)
+	}
 	fingerprintWriteBool(h, assignment.GetRequireTestExecutionLease())
 	fingerprintWriteBytes(h, assignment.GetRunSupervisionToken())
 	return fingerprintDigest(h)

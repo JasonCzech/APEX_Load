@@ -1,3 +1,5 @@
+import ProjectLiveTableReferences from './ProjectLiveTableReferences'
+import type { ProjectLiveTableRunReference } from '../types/projectLiveTables'
 import { LiveTableFinalizationOutcome, LiveTableOperationSummary } from './LiveTableReportSummary'
 import type { LiveTableOperationStats } from '../types/dataPools'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -105,7 +107,7 @@ function LiveTableFinalization({ testId, projectId, table, onSaved }: { testId: 
 }
 
 export default function LiveTablesPanel({ testId, projectId }: { testId: string; projectId?: string }) {
-  const [snapshot, setSnapshot] = useState<{ testId: string; tables: LiveTableSummary[]; updatedAt?: string } | null>(null)
+  const [snapshot, setSnapshot] = useState<{ testId: string; tables: LiveTableSummary[]; projectTables: ProjectLiveTableRunReference[]; updatedAt?: string } | null>(null)
   const [error, setError] = useState('')
   const refreshRequest = useRef<(() => void) | null>(null)
   const retry = useCallback(() => refreshRequest.current?.(), [])
@@ -140,9 +142,9 @@ export default function LiveTablesPanel({ testId, projectId }: { testId: string;
       const controller = new AbortController()
       pending = controller
       try {
-        const result = await request<{ tables: LiveTableSummary[]; updated_at?: string }>(basePath(testId), { signal: controller.signal })
+        const result = await request<{ tables: LiveTableSummary[]; project_tables?: ProjectLiveTableRunReference[]; updated_at?: string }>(basePath(testId), { signal: controller.signal })
         if (controller.signal.aborted) return
-        setSnapshot({ testId, tables: result.tables || [], updatedAt: result.updated_at }); setError('')
+        setSnapshot({ testId, tables: result.tables || [], projectTables: result.project_tables || [], updatedAt: result.updated_at }); setError('')
       } catch {
         if (controller.signal.aborted) return
         setSnapshot(null); setError('Live table status is unavailable. Previously displayed row values have been cleared.')
@@ -166,11 +168,12 @@ export default function LiveTablesPanel({ testId, projectId }: { testId: string;
   const current = snapshot?.testId === testId ? snapshot : null
   return <section className="live-tables-panel" aria-label="Live data tables">
     <div className="section-header"><h2>Live data tables</h2><button type="button" className="btn btn-secondary" onClick={retry}>Refresh tables</button></div>
-    <p>Runtime data is shared within this run. Live notifications refresh counts, with a 2-second refresh to recover missed updates.</p>
+    <p>Run tables share runtime data within this run. Project table references identify data shared across runs. Live notifications refresh counts, with a 2-second refresh to recover missed updates.</p>
     <p role="status">{connectionState === 'connected' ? 'Live updates connected.' : connectionState === 'connecting' ? 'Connecting live updates. Counts may be stale until refreshed.' : 'Reconnecting live updates. Counts may be stale; previous row previews have been cleared.'}{current?.updatedAt && <> Last sampled: <time dateTime={current.updatedAt}>{new Date(current.updatedAt).toLocaleTimeString()}</time>.</>}</p>
     {error && <p role="alert">{error}</p>}
     {!current && !error && <LoadingState what="live tables" inline />}
-    {current?.tables.length === 0 && <EmptyState compact title="No live tables yet." hint="Tables become available when the run starts." />}
+    {current?.tables.length === 0 && current.projectTables.length === 0 && <EmptyState compact title="No live tables yet." hint="Tables become available when the run starts." />}
+    <ProjectLiveTableReferences tables={current?.projectTables} projectId={projectId} />
     {current?.tables.map(table => <article key={table.id} aria-label={`Live table ${table.alias}`}>
       <h3>{table.alias}</h3><p>{table.profile === 'vts_columns' ? 'Shared columns' : 'Native work queue'} · {table.durability === 'durable' ? 'Durable recovery' : 'Memory only'} · {table.state === 'recovering' ? 'Recovering table state' : table.state === 'closed' ? 'Closed' : table.state === 'unavailable' ? 'Unavailable on this controller' : table.counts?.available === 0 ? 'Empty — waiting for producers' : 'Active'} · Revision {table.revision ?? 'Unknown'}</p>
       <dl className="live-table-stats">{(['available', 'leased', 'acknowledged', 'popped', 'quarantined', 'discarded', 'delivery_attempts'] as const).map(key => <div key={key}><dt>{({ available: 'Available', leased: 'Leased', acknowledged: 'Acknowledged', popped: 'Removed', quarantined: 'Quarantined', discarded: 'Discarded', delivery_attempts: 'Delivery attempts' })[key]}</dt><dd>{table.counts?.[key] ?? 'Unknown'}</dd></div>)}</dl>

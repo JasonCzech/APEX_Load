@@ -667,6 +667,17 @@ func normalizeDataPoolBindingIntentWithLegacy(bindings []storage.ScenarioDataPoo
 	for index, original := range bindings {
 		binding := original
 		binding.PoolID = strings.TrimSpace(binding.PoolID)
+		binding.Scope = strings.TrimSpace(binding.Scope)
+		binding.ProjectTableID = strings.TrimSpace(binding.ProjectTableID)
+		if binding.Scope != "" && binding.Scope != "run" && binding.Scope != "project" {
+			return nil, fmt.Errorf("unsupported data binding scope")
+		}
+		if binding.Scope != "project" && binding.ProjectTableID != "" {
+			return nil, fmt.Errorf("project_table_id requires project scope")
+		}
+		if binding.Scope == "project" && binding.AccessMode != "live" {
+			return nil, fmt.Errorf("project scope requires live access")
+		}
 		binding.Alias = strings.TrimSpace(binding.Alias)
 		binding.AccessMode = strings.TrimSpace(binding.AccessMode)
 		binding.SelectionStrategy = strings.TrimSpace(binding.SelectionStrategy)

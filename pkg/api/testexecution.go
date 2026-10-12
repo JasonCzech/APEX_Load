@@ -4310,6 +4310,11 @@ func (tr *TestRunner) vuserScaleProposalWithEvidenceLocked(test *ManagedTest, gr
 			continue
 		}
 		found = true
+		if barriers, err := dsl.ScriptDistributedRendezvous(proposal.Groups[i].script); err != nil {
+			return nil, err
+		} else if len(barriers) > 0 && targetVUsers != proposal.Groups[i].VUsers {
+			return nil, fmt.Errorf("distributed rendezvous freezes this group at %d VUsers", proposal.Groups[i].VUsers)
+		}
 		if proposal.Groups[i].RuntimeState == "ended" && targetVUsers > 0 {
 			return nil, fmt.Errorf("group %q has ended and cannot be restarted", groupName)
 		}
@@ -5636,7 +5641,8 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 		if index < len(resourcePeaks) {
 			groups[index].RuntimeResourcePeakVUsers = resourcePeaks[index].VUsers
 		}
-		groups[index].LiveTableBindings = tr.liveBindings(test.ID)
+		groups[index].DistributedRendezvousClient = tr.localRendezvousClient(test.ID, groups[index].Name)
+		groups[index].LiveTableBindings = tr.liveBindingsForGroup(test.ID, groups[index].Name)
 		groups[index].LiveTableClient = tr.liveClient(test.ID, "local/"+groups[index].Name)
 		groups[index].LiveTableClientID = test.ID + "/" + groups[index].Name
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)

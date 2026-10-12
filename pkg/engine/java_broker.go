@@ -123,6 +123,9 @@ func (b *javaBrokerExecution) stage(ctx context.Context, stop context.CancelFunc
 	if err != nil {
 		return err
 	}
+	if e.script.Config.NativeServices != nil && len(e.script.Config.NativeServices.LiveTables) > 0 && !b.run.NativeDataAvailable() {
+		return errors.New("native_data_broker_v1 capability unavailable")
+	}
 	keeper, kcancel := context.WithCancel(ctx)
 	b.cancel = kcancel
 	b.done = make(chan struct{})

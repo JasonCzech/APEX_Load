@@ -246,33 +246,43 @@ type TestRunner struct {
 	// readinessRuntime is a fixed-size immutable projection published only
 	// while mu is held. readinessScheduler is the mutable counter source for
 	// that combined projection and is likewise guarded by mu.
-	readinessRuntime            atomic.Pointer[runnerReadinessSnapshot]
-	readinessScheduler          schedulerReadinessProjection
-	scriptStore                 scriptPersistence
-	testStore                   testPersistence
-	startAdmissionRevisionStore startAdmissionRevisionPersistence
-	scenarioStore               scenarioPersistence
-	dataPoolStore               dataPoolPersistence
-	liveTablesMu                sync.Mutex
-	liveTablesRecoveryReserved  int64
-	liveTablesRecoveryByProject map[string]int64
-	liveTablesInspectMu         sync.Mutex
-	liveTablesResponseMu        sync.Mutex
-	liveTables                  map[string]*runLiveTables
-	projectStore                projectPersistence
-	releaseStore                releasePersistence
-	historyStore                historyPersistence
-	storedHistoryCache          *storedTestHistoryCache
-	archiveStore                archivePersistence
-	githubCheckStore            storage.GitHubEnterpriseStore
-	testNotesStore              testNotesPersistence
-	auditStore                  auditPersistence
-	settingsStore               settingsPersistence
-	usageStore                  usageSnapshotPersistence
-	projectSecretStore          secretstore.Store
-	applicationSecretStore      secretstore.Store
-	applicationStore            applicationPersistence
-	libraryAssignmentStore      storage.LibraryAssignmentStore
+	readinessRuntime             atomic.Pointer[runnerReadinessSnapshot]
+	readinessScheduler           schedulerReadinessProjection
+	scriptStore                  scriptPersistence
+	testStore                    testPersistence
+	startAdmissionRevisionStore  startAdmissionRevisionPersistence
+	scenarioStore                scenarioPersistence
+	dataPoolStore                dataPoolPersistence
+	rendezvousMu                 sync.Mutex
+	rendezvousGroups             map[string]*runGroupRendezvous
+	liveTablesMu                 sync.Mutex
+	liveTablesRecoveryReserved   int64
+	liveTablesRecoveryByProject  map[string]int64
+	liveTablesInspectMu          sync.Mutex
+	liveTablesResponseMu         sync.Mutex
+	liveTables                   map[string]*runLiveTables
+	projectLiveTables            map[string]*projectLiveTableRuntime
+	projectLiveMaintenanceMu     sync.Mutex
+	projectLiveMaintenanceCursor string
+	projectLiveLeaseMu           sync.Mutex
+	projectLiveLeadership        *executionLeadership
+	projectLiveLeaseCancel       context.CancelFunc
+	projectLiveLeaseDone         chan struct{}
+
+	projectStore           projectPersistence
+	releaseStore           releasePersistence
+	historyStore           historyPersistence
+	storedHistoryCache     *storedTestHistoryCache
+	archiveStore           archivePersistence
+	githubCheckStore       storage.GitHubEnterpriseStore
+	testNotesStore         testNotesPersistence
+	auditStore             auditPersistence
+	settingsStore          settingsPersistence
+	usageStore             usageSnapshotPersistence
+	projectSecretStore     secretstore.Store
+	applicationSecretStore secretstore.Store
+	applicationStore       applicationPersistence
+	libraryAssignmentStore storage.LibraryAssignmentStore
 	// continuityKeyWrapper seals the run-supervision token into HA run-continuity
 	// checkpoints (run_continuity.go). Nil disables arming.
 	continuityKeyWrapper  keywrap.KeyWrapper

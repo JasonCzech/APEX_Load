@@ -23,6 +23,18 @@ describe('Help catalogue and content contracts', () => {
     const documentSource = await loadHelpSource(document)
     expect(documentSource).toContain('No-interaction INP is unavailable.')
   })
+  it('bundles project table recovery and links its runtime and native service guides', async () => {
+    const article = helpArticles.find(value => value.id === 'project-live-tables')!
+    const source = await loadHelpSource(article)
+    expect(searchHelp([{ article, source }], 'reset archive retry')).toHaveLength(1)
+    for (const path of ['LIVE_DATA_TABLES_RUNTIME.md', 'NATIVE_SCRIPT_DATA_SERVICES.md']) {
+      const target = helpArticles.find(value => value.path === `docs/${path}`)!
+      expect(await loadHelpSource(target)).not.toBe('')
+      expect(resolveHelpLink(path, article, source)).toBe(helpArticleHash(target))
+    }
+    const apiGuide = helpArticles.find(value => value.id === 'api-workflows')!
+    expect(resolveHelpLink('PROJECT_LIVE_TABLES.md', apiGuide, await loadHelpSource(apiGuide))).toBe(helpArticleHash(article))
+  })
   it('loads every catalogue source and every selected task section', async () => {
     expect(new Set(helpArticles.map(a => a.id)).size).toBe(helpArticles.length)
     for (const article of helpArticles) {
@@ -30,6 +42,18 @@ describe('Help catalogue and content contracts', () => {
       const headings = parseMarkdown(source).filter(block => block.kind === 'heading').map(block => block.text)
       for (const section of article.sections || []) expect(headings, `${article.id}: ${section}`).toContain(section)
       expect(articleBlocks(article, source).length, article.id).toBeGreaterThan(0)
+    }
+  })
+  it('bundles distributed rendezvous and resolves its native data guide links', async () => {
+    const article = helpArticles.find(value => value.id === 'distributed-rendezvous')!
+    const source = await loadHelpSource(article)
+    expect(searchHelp([{ article, source }], 'fixed timeout')).toHaveLength(1)
+    expect(resolveHelpLink('#admission-and-lifecycle', article, source)).toBe(helpArticleHash(article, 'admission-and-lifecycle'))
+    expect(articleForSection(article.path, 'admission-and-lifecycle', source)?.id).toBe(article.id)
+    for (const path of ['LIVE_DATA_TABLES_RUNTIME.md', 'NATIVE_SCRIPT_DATA_SERVICES.md']) {
+      const target = helpArticles.find(value => value.path === `docs/${path}`)!
+      expect(source).toContain(`](${path})`)
+      expect(resolveHelpLink(path, article, source)).toBe(helpArticleHash(target))
     }
   })
   it('bundles qualified workload-shape guardrail ownership without claiming the remaining AUTH work', async () => {

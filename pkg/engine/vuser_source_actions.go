@@ -30,6 +30,8 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, err
 	}
 	switch dsl.CanonicalActionType(action.Type) {
+	case "native_javascript":
+		return true, vu.executeNativeJavaScript(ctx, action)
 	case "live_table":
 		return true, vu.executeLiveTableAction(ctx, action)
 	case "rendezvous":

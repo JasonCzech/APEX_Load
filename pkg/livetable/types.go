@@ -1,4 +1,4 @@
-// Package livetable implements bounded, run-scoped shared data state machines.
+// Package livetable implements bounded shared data state machines for run and project scopes.
 // Authentication, execution-term fencing, encryption, and transport belong to
 // callers. Durable Committers must fence and persist an Entry atomically.
 package livetable
@@ -74,22 +74,23 @@ type Lease struct {
 }
 
 type Request struct {
-	ClientID        string            `json:"client_id,omitempty"`
-	OwnerID         string            `json:"owner_id,omitempty"`
-	Sequence        uint64            `json:"sequence,omitempty"`
-	Operation       Operation         `json:"operation"`
-	RecordID        string            `json:"record_id,omitempty"`
-	Position        int               `json:"position,omitempty"`
-	Columns         []string          `json:"columns,omitempty"`
-	Values          map[string]string `json:"values,omitempty"`
-	Expected        map[string]string `json:"expected,omitempty"`
-	ExpectedVersion *uint64           `json:"expected_version,omitempty"`
-	Delta           int64             `json:"delta,omitempty"`
-	LeaseToken      string            `json:"lease_token,omitempty"`
-	LeaseDuration   time.Duration     `json:"lease_duration,omitempty"`
-	Wait            time.Duration     `json:"wait,omitempty"`
-	Limit           int               `json:"limit,omitempty"`
-	Cursor          string            `json:"cursor,omitempty"`
+	ClientID         string            `json:"client_id,omitempty"`
+	OwnerID          string            `json:"owner_id,omitempty"`
+	Sequence         uint64            `json:"sequence,omitempty"`
+	Operation        Operation         `json:"operation"`
+	RecordID         string            `json:"record_id,omitempty"`
+	Position         int               `json:"position,omitempty"`
+	Columns          []string          `json:"columns,omitempty"`
+	Values           map[string]string `json:"values,omitempty"`
+	Expected         map[string]string `json:"expected,omitempty"`
+	ExpectedVersion  *uint64           `json:"expected_version,omitempty"`
+	ExpectedRevision *uint64           `json:"expected_revision,omitempty"`
+	Delta            int64             `json:"delta,omitempty"`
+	LeaseToken       string            `json:"lease_token,omitempty"`
+	LeaseDuration    time.Duration     `json:"lease_duration,omitempty"`
+	Wait             time.Duration     `json:"wait,omitempty"`
+	Limit            int               `json:"limit,omitempty"`
+	Cursor           string            `json:"cursor,omitempty"`
 }
 
 type Result struct {
@@ -172,8 +173,12 @@ type Limits struct {
 }
 
 type Config struct {
-	ID        string
-	RunID     string
+	ID    string
+	RunID string
+	// Project instances have Scope=project, ScopeID=project ID and no RunID.
+	Scope     string
+	ScopeID   string
+	Authorize func(Request) error
 	Profile   Profile
 	Columns   []string
 	Rows      []Row
@@ -201,13 +206,27 @@ type Entry struct {
 	PreviousRevision uint64          `json:"previous_revision"`
 	At               time.Time       `json:"at"`
 	Payload          json.RawMessage `json:"payload"`
+	// Outcome identifies the exact command committed by this transition. It is
+	// runtime-only metadata for transactional operator audit/receipt writers;
+	// expiry and waiter transitions must not inherit another caller's identity.
+	Outcome *CommittedOutcome `json:"-"`
+	Counts  Counts            `json:"-"`
+}
+
+type CommittedOutcome struct {
+	ClientID string
+	Sequence uint64
+	Result   Result
+	Error    *Error
 }
 
 type Snapshot struct {
 	Observations  Observations    `json:"observations,omitempty"`
 	FormatVersion int             `json:"format_version"`
 	TableID       string          `json:"table_id"`
-	RunID         string          `json:"run_id"`
+	RunID         string          `json:"run_id,omitempty"`
+	Scope         string          `json:"scope,omitempty"`
+	ScopeID       string          `json:"scope_id,omitempty"`
 	Revision      uint64          `json:"revision"`
 	Payload       json.RawMessage `json:"payload"`
 }

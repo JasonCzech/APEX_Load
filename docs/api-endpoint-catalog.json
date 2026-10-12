@@ -3367,6 +3367,76 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/live-tables",
+      "operationId": "handleListProjectLiveTables",
+      "summary": "List Project Live Tables",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/live-tables",
+      "operationId": "handleCreateProjectLiveTable",
+      "summary": "Create Project Live Table",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/live-tables/{tableID}",
+      "operationId": "handleGetProjectLiveTable",
+      "summary": "Get Project Live Table",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/live-tables/{tableID}/export",
+      "operationId": "handleExportProjectLiveTable",
+      "summary": "Export Project Live Table",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/live-tables/{tableID}/lifecycle",
+      "operationId": "handleProjectLiveTableLifecycle",
+      "summary": "Project Live Table Lifecycle",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/live-tables/{tableID}/mutations",
+      "operationId": "handleMutateProjectLiveTable",
+      "summary": "Mutate Project Live Table",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/live-tables/{tableID}/rows",
+      "operationId": "handleProjectLiveTableRows",
+      "summary": "Project Live Table Rows",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/monitor-sources",
       "operationId": "handleMonitorSources",
       "summary": "Monitor Sources",

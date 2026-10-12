@@ -119,12 +119,15 @@ fi
 echo "Building controller..." >&2
 go build -trimpath -o "$controller_bin" ./cmd/controller
 
+# Public test fixture key, scoped to this disposable controller only. This
+# exercises encrypted durable state without modifying a developer key store.
 start_controller() {
   require_free_port
   echo "Starting controller on ${base_url} (profile=$profile, throwaway DB in $workdir)..." >&2
   APEXLOAD_ADDR="127.0.0.1:${port}" \
     APEXLOAD_DB="$workdir/apexload-e2e.db" \
     APEXLOAD_ARCHIVE_DIR="$workdir/archives" \
+    APEXLOAD_WRAPPING_MASTER_KEY="${APEXLOAD_WRAPPING_MASTER_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}" \
     "$controller_bin" >>"$controller_log" 2>&1 &
   pid=$!
 

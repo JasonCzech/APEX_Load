@@ -209,6 +209,8 @@ const SCENARIO_DATA_POOL_BINDING_CONTRACT = {
     'live_options',
     'pool_id',
     'pool_name',
+    'project_table_id',
+    'scope',
     'scenario_id',
     'selection_strategy',
     'updated_at',

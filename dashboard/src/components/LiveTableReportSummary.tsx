@@ -1,3 +1,5 @@
+import ProjectLiveTableReferences from './ProjectLiveTableReferences'
+import type { ProjectLiveTableRunReference } from '../types/projectLiveTables'
 import type { LiveTableOperationStats, RunArchiveLiveTableSummary } from '../types/dataPools'
 import { metricHeader } from '../metricLabels'
 import './LiveTables.css'
@@ -34,11 +36,12 @@ export function LiveTableOperationSummary({ stats }: { stats: LiveTableOperation
   </>
 }
 
-export default function LiveTableReportSummary({ tables }: { tables?: RunArchiveLiveTableSummary[] }) {
-  if (!tables?.length) return null
+export default function LiveTableReportSummary({ tables, projectTables, projectId }: { tables?: RunArchiveLiveTableSummary[]; projectTables?: ProjectLiveTableRunReference[]; projectId?: string }) {
+  if (!tables?.length && !projectTables?.length) return null
   return <section className="report-section" aria-label="Live table run summary"><h2>Live data tables</h2>
     <p>Retained metadata and finalization outcomes. Row values and lease capabilities are excluded.</p>
-    {tables.map(table => <article key={table.table_id}><h3>{table.alias}</h3>
+    <ProjectLiveTableReferences tables={projectTables} projectId={projectId} />
+    {tables?.map(table => <article key={table.table_id}><h3>{table.alias}</h3>
       <p>{table.profile === 'native_queue' ? 'Native work queue' : table.profile === 'vts_columns' ? 'Shared columns' : table.profile} · {table.durability === 'durable' ? 'Durable recovery' : 'Memory only'} · {table.state} · Revision {table.state === 'unavailable' ? 'Unknown' : table.revision} · End policy: {({ discard: 'Discard runtime changes', save_as_new: 'Save as a new data pool', write_back: 'Write back to the source pool' } as Record<string, string>)[table.end_mode] || table.end_mode}</p>
       <p>Lease redeliveries: {table.counts?.redeliveries ?? 'Not recorded'}.</p>
       <div className="data-table"><table className="report-table"><caption>Record reconciliation for {table.alias}</caption><thead><tr>{['Seeded', 'Added', 'Available', 'Leased', 'Acknowledged', 'Removed', 'Quarantined', 'Discarded', 'Delivery attempts'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>

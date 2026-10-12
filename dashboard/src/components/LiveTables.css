@@ -90,3 +90,5 @@
   cursor: pointer;
   margin: 12px 0;
 }
+
+.project-live-table-references code { overflow-wrap: anywhere; }

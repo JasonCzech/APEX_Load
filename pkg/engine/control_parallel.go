@@ -212,6 +212,10 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	defer branchVU.closeErrorLogs()
 	branchVU.ensureImportedCredentialInspection()
 	branchVU.bindRuntimeTextRedactor()
+	if err := branchVU.prepareNativeServices(); err != nil {
+		result.err, result.failed = err, true
+		return
+	}
 	config := vuserProtoConfig(buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", branchVU.secretResolver()), vu.ID)
 	if vu.sourceSamplers != nil {
 		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)

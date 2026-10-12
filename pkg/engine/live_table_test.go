@@ -49,8 +49,72 @@ func TestLiveTableSandboxRejectsBoundsAndKnownManagedSecretSeeds(t *testing.T) {
 	}
 }
 
+func TestLiveTableReplaySeedSchemaAndIdentityRejectManagedSecrets(t *testing.T) {
+	for _, field := range []string{"alias", "column", "row_id", "cell_key"} {
+		t.Run(field, func(t *testing.T) {
+			for _, value := range []string{"managed-private-value", "{{secret.API_KEY}}"} {
+				seed := LiveTableSandboxSeed{Alias: "work", Columns: []string{"id"}, Rows: []livetable.Row{{ID: "safe-row", Values: map[string]string{"id": "safe"}}}}
+				switch field {
+				case "alias":
+					seed.Alias = value
+				case "column":
+					seed.Columns = append(seed.Columns, value)
+				case "row_id":
+					seed.Rows[0].ID = value
+				case "cell_key":
+					seed.Rows[0].Values[value] = "safe"
+				}
+				_, err := ReplayScript(t.Context(), &dsl.Script{Name: "private seed", Protocol: "http", Actions: []dsl.Action{liveAction("pop", nil)}}, ReplayOptions{
+					LiveTableSeeds: []LiveTableSandboxSeed{seed}, Variables: map[string]string{"token": "managed-private-value"},
+				})
+				if err == nil || !strings.Contains(err.Error(), "managed secrets cannot seed") || strings.Contains(err.Error(), value) {
+					t.Fatalf("managed %s rejection was not private: %v", field, err)
+				}
+			}
+		})
+	}
+}
+
 func liveTestVU(client livetable.Client) *VUser {
 	return &VUser{ID: 1, Script: &dsl.Script{Name: "live", Protocol: "http"}, Variables: map[string]string{}, LiveTableClient: client, LiveTableClientID: "assignment-incarnation", LiveTableBindings: []LiveTableBinding{{Alias: "work", TableID: "table", Strategy: "none", Profile: livetable.ProfileNative, Columns: []string{"id"}, LeaseDuration: time.Second, OpTimeout: time.Second}}}
+}
+
+func TestLiveTableSingleEngineRequiresAndCopiesTrustedBindings(t *testing.T) {
+	script := &dsl.Script{Name: "trusted single engine", Protocol: "http", Actions: []dsl.Action{
+		liveAction("push", map[string]any{"values": map[string]string{"id": "single-engine-value"}}),
+		liveAction("pop", nil),
+	}}
+	script.Config.RunLogic.Iterations = 1
+	cfg := Config{Script: script, VUsers: 2, TerminationMode: dsl.TerminationIterations}
+	if _, err := New(cfg); err == nil {
+		t.Fatal("unmanaged live script was admitted")
+	}
+	manager := livetable.NewManager()
+	if _, err := manager.Create(livetable.Config{ID: "table", RunID: "run", Profile: livetable.ProfileNative, Columns: []string{"id"}}); err != nil {
+		t.Fatal(err)
+	}
+	vu := liveTestVU(manager)
+	cfg.LiveTableClient, cfg.LiveTableClientID, cfg.LiveTableBindings = manager, vu.LiveTableClientID, vu.LiveTableBindings
+	engine, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Caller edits after admission cannot redirect the table or mutate schema.
+	cfg.LiveTableBindings[0].TableID = "redirected-table"
+	cfg.LiveTableBindings[0].Columns[0] = "changed"
+	if engine.liveTableBindings[0].TableID != "table" || engine.liveTableBindings[0].Columns[0] != "id" {
+		t.Fatal("admitted binding retained caller-owned data")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := engine.Run(ctx)
+	if err != nil || result.CompletedIterations != 2 || result.TotalErrors != 0 {
+		t.Fatalf("trusted live binding did not reach VUsers: %+v %v", result, err)
+	}
+	remaining, err := manager.Execute(ctx, "table", livetable.Request{Operation: livetable.OpRead, Position: 1})
+	if err != nil || remaining.Status != livetable.StatusEmpty {
+		t.Fatalf("single engine did not consume the actual rows: %+v %v", remaining, err)
+	}
 }
 
 func TestLiveTableLostReplyRetriesSameIdentityAndUnknownBlocksNewWork(t *testing.T) {

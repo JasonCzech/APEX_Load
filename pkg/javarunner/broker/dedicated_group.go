@@ -305,3 +305,19 @@ func parallelHostControl(ctx context.Context, hosts map[string]*SupervisorClient
 	}
 	return errors.Join(failures...)
 }
+
+// NativeDataAvailable is authenticated readiness of every prepared host. It
+// never infers SDK support from the broker's own transport version.
+func (g *DedicatedGroup) NativeDataAvailable() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.hosts) == 0 || len(g.hosts) != len(g.reservationIDs) {
+		return false
+	}
+	for _, client := range g.hosts {
+		if client.terminal.Load() || !client.nativeCapable.Load() {
+			return false
+		}
+	}
+	return true
+}

@@ -17,6 +17,9 @@ const (
 var liveTableAliasPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,63}$`)
 
 func liveTableBindingHasNoPool(binding storage.ScenarioDataPoolBinding) bool {
+	if binding.Scope == "project" {
+		return binding.PoolID == "" && binding.AccessMode == "live" && binding.ProjectTableID != ""
+	}
 	if binding.PoolID != "" || binding.AccessMode != "live" || binding.LiveOptions == nil {
 		return false
 	}
@@ -30,6 +33,9 @@ func liveTableBindingUsesFrozenSeed(binding storage.ScenarioDataPoolBinding) boo
 }
 
 func normalizeLiveTableBinding(binding storage.ScenarioDataPoolBinding) (storage.ScenarioDataPoolBinding, error) {
+	if binding.Scope == "project" {
+		return normalizeProjectLiveTableBinding(binding)
+	}
 	if !liveTableAliasPattern.MatchString(binding.Alias) {
 		return binding, fmt.Errorf("live table alias must be a 1–64 character identifier")
 	}

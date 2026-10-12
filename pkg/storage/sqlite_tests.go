@@ -1800,10 +1800,18 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	// Keep the independently owned instance and an attachment cleanup tombstone.
+	// One hour is the maximum project retry window, so deletion cannot shorten it.
+	if _, err := tx.Exec(`UPDATE project_live_table_attachments SET state='detached',detached_at=?,retire_after=? WHERE test_id=? AND state='active'`, time.Now().UTC(), time.Now().UTC().Add(time.Hour), id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM live_table_journal WHERE table_id IN (SELECT id FROM live_tables WHERE test_id=?)`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM live_table_finalizations WHERE table_id IN (SELECT id FROM live_tables WHERE test_id=?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM run_rendezvous WHERE run_id=?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM live_tables WHERE test_id=?`, id); err != nil {

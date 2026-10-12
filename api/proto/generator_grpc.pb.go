@@ -31,6 +31,7 @@ const (
 	GeneratorControl_StopTest_FullMethodName              = "/apexload.v1.GeneratorControl/StopTest"
 	GeneratorControl_StreamMetrics_FullMethodName         = "/apexload.v1.GeneratorControl/StreamMetrics"
 	GeneratorControl_LiveTableChannel_FullMethodName      = "/apexload.v1.GeneratorControl/LiveTableChannel"
+	GeneratorControl_RendezvousChannel_FullMethodName     = "/apexload.v1.GeneratorControl/RendezvousChannel"
 	GeneratorControl_Heartbeat_FullMethodName             = "/apexload.v1.GeneratorControl/Heartbeat"
 	GeneratorControl_DistributeScript_FullMethodName      = "/apexload.v1.GeneratorControl/DistributeScript"
 	GeneratorControl_GetArchiveArtifact_FullMethodName    = "/apexload.v1.GeneratorControl/GetArchiveArtifact"
@@ -78,6 +79,9 @@ type GeneratorControlClient interface {
 	// Authoritative live-table operations. The controller opens the stream;
 	// generator requests flow on the response side, separately from telemetry.
 	LiveTableChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LiveTableReply, LiveTableRequest], error)
+	// Bounded per-generator rendezvous batches and round watches. This channel
+	// does not share operation slots with live tables or supervision.
+	RendezvousChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RendezvousReply, RendezvousRequest], error)
 	// Heartbeat is a bidirectional keepalive stream.
 	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error)
 	// DistributeScript sends a compiled script to a generator for caching.
@@ -236,9 +240,22 @@ func (c *generatorControlClient) LiveTableChannel(ctx context.Context, opts ...g
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GeneratorControl_LiveTableChannelClient = grpc.BidiStreamingClient[LiveTableReply, LiveTableRequest]
 
+func (c *generatorControlClient) RendezvousChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RendezvousReply, RendezvousRequest], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[2], GeneratorControl_RendezvousChannel_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RendezvousReply, RendezvousRequest]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GeneratorControl_RendezvousChannelClient = grpc.BidiStreamingClient[RendezvousReply, RendezvousRequest]
+
 func (c *generatorControlClient) Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[2], GeneratorControl_Heartbeat_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[3], GeneratorControl_Heartbeat_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +288,7 @@ func (c *generatorControlClient) GetArchiveArtifact(ctx context.Context, in *Arc
 
 func (c *generatorControlClient) StreamArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ArchiveArtifactChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[3], GeneratorControl_StreamArchiveArtifact_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[4], GeneratorControl_StreamArchiveArtifact_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -347,6 +364,9 @@ type GeneratorControlServer interface {
 	// Authoritative live-table operations. The controller opens the stream;
 	// generator requests flow on the response side, separately from telemetry.
 	LiveTableChannel(grpc.BidiStreamingServer[LiveTableReply, LiveTableRequest]) error
+	// Bounded per-generator rendezvous batches and round watches. This channel
+	// does not share operation slots with live tables or supervision.
+	RendezvousChannel(grpc.BidiStreamingServer[RendezvousReply, RendezvousRequest]) error
 	// Heartbeat is a bidirectional keepalive stream.
 	Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error
 	// DistributeScript sends a compiled script to a generator for caching.
@@ -414,6 +434,9 @@ func (UnimplementedGeneratorControlServer) StreamMetrics(grpc.BidiStreamingServe
 }
 func (UnimplementedGeneratorControlServer) LiveTableChannel(grpc.BidiStreamingServer[LiveTableReply, LiveTableRequest]) error {
 	return status.Error(codes.Unimplemented, "method LiveTableChannel not implemented")
+}
+func (UnimplementedGeneratorControlServer) RendezvousChannel(grpc.BidiStreamingServer[RendezvousReply, RendezvousRequest]) error {
+	return status.Error(codes.Unimplemented, "method RendezvousChannel not implemented")
 }
 func (UnimplementedGeneratorControlServer) Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error {
 	return status.Error(codes.Unimplemented, "method Heartbeat not implemented")
@@ -648,6 +671,13 @@ func _GeneratorControl_LiveTableChannel_Handler(srv interface{}, stream grpc.Ser
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GeneratorControl_LiveTableChannelServer = grpc.BidiStreamingServer[LiveTableReply, LiveTableRequest]
 
+func _GeneratorControl_RendezvousChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GeneratorControlServer).RendezvousChannel(&grpc.GenericServerStream[RendezvousReply, RendezvousRequest]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GeneratorControl_RendezvousChannelServer = grpc.BidiStreamingServer[RendezvousReply, RendezvousRequest]
+
 func _GeneratorControl_Heartbeat_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(GeneratorControlServer).Heartbeat(&grpc.GenericServerStream[HeartbeatPing, HeartbeatPong]{ServerStream: stream})
 }
@@ -812,6 +842,12 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "LiveTableChannel",
 			Handler:       _GeneratorControl_LiveTableChannel_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "RendezvousChannel",
+			Handler:       _GeneratorControl_RendezvousChannel_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

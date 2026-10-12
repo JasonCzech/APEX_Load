@@ -8,6 +8,7 @@ import { useRecorderApi } from './api/useRecorderApi'
 import { useProjectApi } from './api/useProjectApi'
 import { useRepositoryApi } from './api/useRepositoryApi'
 import { useScriptApi } from './api/useScriptApi'
+import { useProjectLiveTablesApi } from './api/useProjectLiveTablesApi'
 import { useSystemApi } from './api/useSystemApi'
 import { useTestApi } from './api/useTestApi'
 import { useLibraryApi } from './api/useLibraryApi'
@@ -28,6 +29,7 @@ function useApiServices() {
   const projects = useProjectApi()
   const repository = useRepositoryApi()
   const scripts = useScriptApi()
+  const projectLiveTables = useProjectLiveTablesApi()
   const system = useSystemApi()
   const recorder = useRecorderApi()
   const browserRecorder = useBrowserRecorderApi()
@@ -53,6 +55,7 @@ function useApiServices() {
         projects,
         repository,
         scripts,
+        projectLiveTables,
         system,
         recorder,
         browserRecorder,
@@ -68,7 +71,7 @@ function useApiServices() {
 		elkConnections,
 		dynatraceConnections,
       }),
-    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections],
+    [tests, applications, projects, repository, scripts, projectLiveTables, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections],
   )
 }
 

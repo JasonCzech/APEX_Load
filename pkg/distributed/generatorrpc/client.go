@@ -32,6 +32,7 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	RendezvousConfigJSON  []byte
 	LiveTableBindingsJSON []byte
 	RuntimeResourceClaim  *pb.RuntimeResourceClaim
 	PrepareOnly           bool
@@ -1832,6 +1833,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
+		RendezvousConfigJson:      append([]byte(nil), assignment.RendezvousConfigJSON...),
 		LiveTableBindingsJson:     append([]byte(nil), assignment.LiveTableBindingsJSON...),
 		RuntimeResourceClaim:      CloneRuntimeResourceClaim(assignment.RuntimeResourceClaim),
 		SourcePlan:                assignment.SourcePlan,

@@ -51,17 +51,7 @@ func (t *Table) receiptCapacity(now time.Time, request Request) error {
 	if request.Wait > 0 {
 		// A waiting request may need a durable cancellation receipt even when
 		// no producer arrives. Reserve recovery space before accepting it.
-		clients := len(t.s.Clients) + len(t.pendingClients) + 1
-		settlements := t.s.Counts.Leased
-		for _, pending := range t.pending {
-			if pending.request.Operation == OpLease {
-				settlements++
-			}
-		}
-		if request.Operation == OpLease {
-			settlements++
-		}
-		bound := t.s.DataBytes + bytes + (int64(clients)+int64(settlements))*2048 + int64(len(t.s.Cursors))*2048 + int64(count)*1024 + int64(len(t.s.Columns))*2048 + 16384
+		bound := t.s.DataBytes + bytes + int64(t.clientReservationUsage(request, nil))*2048 + int64(len(t.s.Cursors))*2048 + int64(count)*1024 + int64(len(t.s.Columns))*2048 + 16384
 		if bound > int64(t.s.Limits.MaxSnapshotBytes) {
 			return fail(CodeCapacity, "checkpoint reservation budget exhausted")
 		}

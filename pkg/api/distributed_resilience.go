@@ -184,6 +184,12 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 	tr.mu.RUnlock()
 	defer clear(runSupervisionToken)
+	for _, group := range groups {
+		specs, err := dsl.ScriptDistributedRendezvous(group.script)
+		if err != nil || len(specs) > 0 {
+			return nil, fmt.Errorf("distributed rendezvous cannot evacuate participants without a VUser progress checkpoint")
+		}
+	}
 	if executionCtx == nil {
 		executionCtx = context.Background()
 	}
@@ -1349,7 +1355,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				touchedTargets[shard.Target] = struct{}{}
 				assignment, assignErr := client.AssignWork(ctx, generatorrpc.Assignment{
 					ArchiveSourceTarget:        archiveSourceTarget,
-					LiveTableBindingsJSON:      tr.liveBindingJSON(testID),
+					LiveTableBindingsJSON:      tr.liveBindingJSONForGroup(testID, group.Name),
 					TestID:                     testID,
 					ExecutionGeneration:        executionGeneration,
 					ScenarioID:                 scenarioID,

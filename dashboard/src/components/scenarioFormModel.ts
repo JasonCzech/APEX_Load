@@ -335,6 +335,8 @@ export function scenarioFormStateFromStoredScenario(
     assignment: cloneAssignment(scenario.assignment),
     data_pools: scenario.data_pools?.map(binding => cloneDraft ? {
       pool_id: binding.pool_id,
+      scope: binding.scope,
+      project_table_id: binding.project_table_id,
       pool_name: binding.pool_name,
       alias: binding.alias,
       access_mode: binding.access_mode === 'live' ? 'live' : 'read_only',

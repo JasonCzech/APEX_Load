@@ -177,12 +177,29 @@ Execution posture: `supported` — Requires an admitted live-table binding. Unma
 | `params.on_empty` | enum |  | Empty/missing result policy; defaults to error. Outputs are cleared in either case. One of: `error`, `skip`. |
 | `params.on_condition` | enum |  | Failed comparison policy; defaults to error. One of: `error`, `skip`. |
 
+### `native_javascript`
+
+Executes literal JavaScript in an isolated host worker with declared native data services.
+
+Execution posture: `supported` — Requires native_javascript_v1 on the execution host. Linux memory/CPU limits, four concurrent workers, bounded source and results. No filesystem, environment or network APIs; compose target actions in the surrounding DSL.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.source` | string | yes | Literal JavaScript function body receiving input and apex. Never template-expanded. At most 128 KiB. |
+| `params.inputs` | object |  | JSON object resolved once before execution, at most 64 KiB and depth 16. Guest strings remain literal. |
+| `params.result_prefix` | string |  | Static output variable prefix. Return a JSON object of at most 64 KiB and 128 fields; fields are stored beneath this prefix. |
+| `params.timeout_ms` | int |  | Whole-worker wall time, including service waits; default 5000 ms. |
+
 ### `rendezvous`
 
 Synchronization barrier: VUsers wait until the rendezvous point is reached.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
+| `params.scope` | enum |  | Local by default; distributed_group uses the admitted group across generators. One of: `local`, `distributed_group`. |
+| `params.key` | string |  | Unique static action identity required for distributed_group. |
+| `params.percent` | int |  | Distributed participant percentage (1..100), rounded up; mutually exclusive with count. |
+| `params.on_timeout` | enum |  | Required explicit timeout outcome for distributed_group. One of: `fail`, `continue`. |
 | `params.count` | int |  | Participants to wait for; defaults to all VUsers. Must be greater than zero. |
 | `params.timeout_ms` | int |  | Maximum wait in milliseconds; zero or greater. |
 

@@ -31,6 +31,12 @@ func (t *Table) Execute(ctx context.Context, r Request) (result Result, resultEr
 		t.mu.Unlock()
 		return Result{}, err
 	}
+	if t.authorize != nil {
+		if err := t.authorize(r); err != nil {
+			t.mu.Unlock()
+			return Result{}, err
+		}
+	}
 	if err := t.validateRequest(r); err != nil {
 		t.mu.Unlock()
 		return Result{}, err
@@ -85,9 +91,9 @@ func (t *Table) Execute(ctx context.Context, r Request) (result Result, resultEr
 			t.mu.Unlock()
 			return Result{}, fail(CodeSequence, "serialize outstanding mutations for this client")
 		}
-		if _, ok := t.s.Clients[r.ClientID]; !ok && len(t.s.Clients)+len(t.pendingClients) >= t.s.Limits.MaxClients {
+		if err := t.clientCapacity(r, nil); err != nil {
 			t.mu.Unlock()
-			return Result{}, fail(CodeCapacity, "client retirement budget exhausted")
+			return Result{}, err
 		}
 		if err := t.receiptCapacity(now, r); err != nil {
 			t.mu.Unlock()
@@ -98,6 +104,10 @@ func (t *Table) Execute(ctx context.Context, r Request) (result Result, resultEr
 	if err := t.fulfill(ctx, now); err != nil {
 		t.mu.Unlock()
 		return Result{}, err
+	}
+	if r.ExpectedRevision != nil && *r.ExpectedRevision != t.s.Revision {
+		t.mu.Unlock()
+		return Result{}, fail(CodeConflict, "table revision changed")
 	}
 	result, d, err := t.evaluate(r, now)
 	if err != nil {
@@ -153,6 +163,9 @@ func (t *Table) commitResult(ctx context.Context, r Request, digest string, resu
 	if len(encoded) > t.s.Limits.MaxResultBytes {
 		return Result{}, fail(CodeCapacity, "encoded result byte limit exceeded before mutation")
 	}
+	if err := t.clientCapacity(r, &d); err != nil {
+		return Result{}, err
+	}
 	rec := &receipt{ClientID: r.ClientID, Sequence: r.Sequence, Digest: digest, ExpiresAt: now.Add(t.s.Limits.ReceiptRetention), Result: cloneResult(result), Error: cloneError(outcomeErr)}
 	rec.Bytes = int64(len(encoded) + len(r.ClientID) + len(digest) + 256)
 	if outcomeErr != nil {
@@ -167,10 +180,6 @@ func (t *Table) commitResult(ctx context.Context, r Request, digest string, resu
 	if receiptCount > t.s.Limits.MaxReceipts || receiptBytes > t.s.Limits.MaxReceiptBytes {
 		return Result{}, fail(CodeCapacity, "protected operation receipt or lease settlement budget exhausted")
 	}
-	clients := len(t.s.Clients)
-	if _, ok := t.s.Clients[r.ClientID]; !ok {
-		clients++
-	}
 	cursors := len(t.s.Cursors)
 	for cursor := range d.Cursors {
 		if _, ok := t.s.Cursors[cursor]; !ok {
@@ -180,16 +189,16 @@ func (t *Table) commitResult(ctx context.Context, r Request, digest string, resu
 	// Keep every admitted state checkpointable. These conservative metadata
 	// reservations include JSON keys, sequence tombstones, queue order and
 	// structure overhead; data costs already include JSON string escaping.
-	settlementClients := t.s.Counts.Leased
-	if d.Counts != nil {
-		settlementClients = d.Counts.Leased
+	// The first renewal spends a reserved identity; do not count it a second
+	// time after it becomes a client. Ordinary operations also leave recovery
+	// space for the renewal receipts reserved by admission.
+	checkpointReceiptCount, checkpointReceiptBytes := receiptCount, receiptBytes
+	if !isLeaseControl(r.Operation) {
+		count, bytes := t.renewalReservation()
+		checkpointReceiptCount += count
+		checkpointReceiptBytes += bytes
 	}
-	for key, pending := range t.pending {
-		if key != requestKey(r.ClientID, r.Sequence) && pending.request.Operation == OpLease {
-			settlementClients++
-		}
-	}
-	checkpointBound := d.DataBytes + receiptBytes + (int64(clients+len(t.pendingClients))+int64(settlementClients))*2048 + int64(cursors)*2048 + int64(receiptCount)*1024 + int64(len(t.s.Columns))*2048 + 16384
+	checkpointBound := d.DataBytes + checkpointReceiptBytes + int64(t.clientReservationUsage(r, &d))*2048 + int64(cursors)*2048 + int64(checkpointReceiptCount)*1024 + int64(len(t.s.Columns))*2048 + 16384
 	if checkpointBound > int64(t.s.Limits.MaxSnapshotBytes) {
 		return Result{}, fail(CodeCapacity, "checkpoint reservation budget exhausted")
 	}
@@ -222,6 +231,13 @@ func (t *Table) commit(ctx context.Context, d transition, now time.Time) error {
 		return fail(CodeCapacity, "transition byte budget exceeded")
 	}
 	entry := Entry{TableID: t.s.ID, PreviousRevision: t.s.Revision, Revision: t.s.Revision + 1, At: now, Payload: payload}
+	entry.Counts = t.s.Counts
+	if d.Counts != nil {
+		entry.Counts = *d.Counts
+	}
+	if d.Receipt != nil {
+		entry.Outcome = &CommittedOutcome{ClientID: d.Receipt.ClientID, Sequence: d.Receipt.Sequence, Result: cloneResult(d.Receipt.Result), Error: cloneError(d.Receipt.Error)}
+	}
 	if t.committer != nil {
 		if err = t.committer.Commit(ctx, entry); err != nil {
 			t.unavailable = true
@@ -250,6 +266,7 @@ func (t *Table) apply(d transition, revision uint64) {
 		for id, rec := range t.s.Records {
 			if rec.Lease != nil {
 				rec.Lease = nil
+				rec.ControlClients = nil
 				rec.Row.Version++
 				t.s.Records[id] = rec
 			}
@@ -259,6 +276,7 @@ func (t *Table) apply(d transition, revision uint64) {
 	for _, patch := range d.RecordPatches {
 		rec := t.s.Records[patch.ID]
 		rec.Row.Version = patch.Version
+		rec.ControlClients = append([]string(nil), patch.ControlClients...)
 		rec.Lease, rec.Attempts, rec.Quarantined = patch.Lease, patch.Attempts, patch.Quarantined
 		d.Upsert = append(d.Upsert, rec)
 	}
@@ -304,6 +322,9 @@ func (t *Table) apply(d transition, revision uint64) {
 			delete(t.s.Receipts, key)
 			delete(t.recoveryReceipts, key)
 		}
+	}
+	if d.RetireScope != "" {
+		t.applyRetireScope(d.RetireScope)
 	}
 	if rec := d.Receipt; rec != nil {
 		t.s.Receipts[requestKey(rec.ClientID, rec.Sequence)] = *rec
@@ -356,6 +377,7 @@ func (t *Table) expire(ctx context.Context, now time.Time) error {
 		}
 		rec = copyRecord(rec)
 		rec.Lease = nil
+		rec.ControlClients = nil
 		rec.Row.Version++
 		counts.Leased--
 		if rec.Attempts >= t.s.Limits.MaxDeliveryAttempts {
@@ -380,6 +402,12 @@ func (t *Table) fulfill(ctx context.Context, now time.Time) error {
 		var result Result
 		var d transition
 		var err error
+		if t.authorize != nil {
+			if err := t.authorize(p.request); err != nil {
+				t.finishPending(i, p, Result{}, err)
+				continue
+			}
+		}
 		if !p.deadline.After(now) {
 			d = transition{FormatVersion: formatVersion, DataBytes: t.s.DataBytes, Fields: t.s.Fields}
 			result = Result{Status: StatusEmpty}
@@ -468,6 +496,12 @@ func (t *Table) await(ctx context.Context, p *pending, initiator bool) (Result, 
 			for i, candidate := range t.waiters {
 				if candidate != p {
 					continue
+				}
+				if t.authorize != nil {
+					if authErr := t.authorize(p.request); authErr != nil {
+						t.finishPending(i, p, Result{}, authErr)
+						break
+					}
 				}
 				code := CodeOf(ctx.Err())
 				d := transition{FormatVersion: formatVersion, DataBytes: t.s.DataBytes, Fields: t.s.Fields}
@@ -593,6 +627,7 @@ func (t *Table) Close(ctx context.Context, discardOption ...bool) error {
 			} else if rec.Lease != nil {
 				rec = copyRecord(rec)
 				rec.Lease = nil
+				rec.ControlClients = nil
 				rec.Row.Version++
 				d.Upsert = append(d.Upsert, rec)
 				counts.Leased--

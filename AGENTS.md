@@ -39,7 +39,7 @@ cmd/
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation
-  livetable/     — Bounded run-scoped native queues and VTS column tables with exact operation receipts
+  livetable/     — Bounded run- and project-scoped native queues and Shared columns tables with exact operation receipts
   engine/        — VUser goroutine engine, metrics collection, pacing
   dsl/           — JSON DSL parser, type definitions, action catalog
   controller/    — Test orchestration, scheduling, distribution, aggregation

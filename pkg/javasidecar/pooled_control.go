@@ -107,6 +107,7 @@ type PooledPlacement struct {
 }
 
 type PooledControlResponse struct {
+	NativeData            bool                        `json:"native_data,omitempty"`
 	Diagnostics           *javarunner.HostDiagnostics `json:"diagnostics,omitempty"`
 	Invocation            *PooledInvocationResult     `json:"invocation,omitempty"`
 	Contract              string                      `json:"contract"`
@@ -183,6 +184,10 @@ func validPooledControlRequest(q PooledControlRequest) bool {
 }
 
 func (s *Server) handlePooledControl(w http.ResponseWriter, r *http.Request) {
+	if javarunner.ServeNativeHTTP(w, r, MaxResponseBytes, s.handlePooledControl) {
+		return
+	}
+
 	if !s.pooledControlEnabled() {
 		writeError(w, http.StatusPreconditionFailed, "pooled_control_disabled")
 		return

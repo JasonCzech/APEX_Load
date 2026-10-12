@@ -17,10 +17,11 @@ import (
 const formatVersion = 1
 
 type record struct {
-	Row         Row    `json:"row"`
-	Lease       *Lease `json:"lease,omitempty"`
-	Attempts    uint32 `json:"attempts"`
-	Quarantined bool   `json:"quarantined,omitempty"`
+	ControlClients []string `json:"control_clients,omitempty"`
+	Row            Row      `json:"row"`
+	Lease          *Lease   `json:"lease,omitempty"`
+	Attempts       uint32   `json:"attempts"`
+	Quarantined    bool     `json:"quarantined,omitempty"`
 }
 
 type receipt struct {
@@ -35,7 +36,9 @@ type receipt struct {
 
 type state struct {
 	ID           string             `json:"id"`
-	RunID        string             `json:"run_id"`
+	RunID        string             `json:"run_id,omitempty"`
+	Scope        string             `json:"scope,omitempty"`
+	ScopeID      string             `json:"scope_id,omitempty"`
 	Profile      Profile            `json:"profile"`
 	Limits       Limits             `json:"limits"`
 	Revision     uint64             `json:"revision"`
@@ -67,6 +70,7 @@ type transition struct {
 	Cursors        map[string]uint64 `json:"cursors,omitempty"`
 	Receipt        *receipt          `json:"receipt,omitempty"`
 	Retire         []string          `json:"retire,omitempty"`
+	RetireScope    string            `json:"retire_scope,omitempty"`
 	Counts         *Counts           `json:"counts,omitempty"`
 	DataBytes      int64             `json:"data_bytes"`
 	Fields         int               `json:"fields"`
@@ -91,6 +95,7 @@ type Table struct {
 	activeAttempts       atomic.Int64
 	s                    state
 	committer            Committer
+	authorize            func(Request) error
 	now                  func() time.Time
 	unavailable          bool
 	waiters              []*pending
@@ -183,8 +188,8 @@ func (m *Manager) Remove(id string) error {
 }
 
 func New(c Config) (*Table, error) {
-	if !validName(c.ID) || !validName(c.RunID) {
-		return nil, fail(CodeInvalid, "table and run identities are required and bounded")
+	if !validName(c.ID) || !validScope(c.RunID, c.Scope, c.ScopeID) {
+		return nil, fail(CodeInvalid, "table and scope identities are required and bounded")
 	}
 	if c.Profile == "" {
 		c.Profile = ProfileNative
@@ -212,7 +217,7 @@ func New(c Config) (*Table, error) {
 		}
 		seen[col] = true
 	}
-	t := &Table{s: state{ID: c.ID, RunID: c.RunID, Profile: c.Profile, Limits: l, Columns: append([]string(nil), c.Columns...), Records: map[string]record{}, Data: map[string][]Cell{}, Cursors: map[string]uint64{}, Clients: map[string]uint64{}, Receipts: map[string]receipt{}}, committer: c.Committer, now: c.Now, pending: map[string]*pending{}, pendingClients: map[string]string{}, leaseDeadlines: map[string]time.Time{}}
+	t := &Table{s: state{ID: c.ID, RunID: c.RunID, Scope: c.Scope, ScopeID: c.ScopeID, Profile: c.Profile, Limits: l, Columns: append([]string(nil), c.Columns...), Records: map[string]record{}, Data: map[string][]Cell{}, Cursors: map[string]uint64{}, Clients: map[string]uint64{}, Receipts: map[string]receipt{}}, committer: c.Committer, authorize: c.Authorize, now: c.Now, pending: map[string]*pending{}, pendingClients: map[string]string{}, leaseDeadlines: map[string]time.Time{}}
 	t.observations.Version = 1
 	if t.now == nil {
 		t.now = time.Now
@@ -326,6 +331,7 @@ func copyValues(v map[string]string) map[string]string {
 	return out
 }
 func copyRecord(r record) record {
+	r.ControlClients = append([]string(nil), r.ControlClients...)
 	r.Row = copyRow(r.Row)
 	if r.Lease != nil {
 		l := *r.Lease

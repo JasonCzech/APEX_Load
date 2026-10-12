@@ -45,6 +45,8 @@ type ScenarioAuthoringDataPoolBinding struct {
 	AccessMode        string                    `json:"access_mode"`
 	SelectionStrategy string                    `json:"selection_strategy"`
 	LiveOptions       *storage.LiveTableOptions `json:"live_options,omitempty"`
+	Scope             string                    `json:"scope,omitempty"`
+	ProjectTableID    string                    `json:"project_table_id,omitempty"`
 }
 
 // ScenarioAuthoringDocument holds only persisted authored fields, with
@@ -167,7 +169,7 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 		document.DataPools = append(document.DataPools, ScenarioAuthoringDataPoolBinding{
 			ID: binding.ID, PoolID: binding.PoolID, Alias: binding.Alias,
 			AccessMode: binding.AccessMode, SelectionStrategy: binding.SelectionStrategy,
-			LiveOptions: binding.LiveOptions,
+			LiveOptions: binding.LiveOptions, Scope: binding.Scope, ProjectTableID: binding.ProjectTableID,
 		})
 	}
 	placement := ScenarioAuthoringPlacement{ReleaseIDs: []string{}}

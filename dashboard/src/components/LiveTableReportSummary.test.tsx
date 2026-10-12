@@ -53,3 +53,17 @@ it('shows retained waits and recovery gaps separately from target completion', a
   expect(container.querySelector('[aria-label="Shared-data event history"]')?.textContent).toContain('recovery observation gap')
  } finally { await act(async () => root.unmount()) }
 })
+
+
+it('retains archived project attachment identity without presenting global table metrics as run results', async () => {
+ const container = document.createElement('div'); const root = createRoot(container)
+ try {
+  await act(async () => root.render(<LiveTableReportSummary projectId="project" projectTables={[{ table_id: 'shared', instance_id: 'retired-instance', attachment_id: 'attachment', alias: 'work', group: 'Consumers', state: 'detached', revision: '9007199254740993' }]} />))
+  expect(container.textContent).toContain('retired-instance')
+  expect(container.textContent).toContain('detached · Recorded revision 9007199254740993')
+  expect(container.textContent).toContain('global row counts and operations are not attributed to this run')
+  expect(container.textContent).not.toContain('Record reconciliation')
+  expect(container.textContent).not.toContain('Table operations')
+  expect(container.querySelector('a')?.getAttribute('href')).toBe('#/repository?setting=live-tables&projectId=project&resourceId=shared')
+ } finally { await act(async () => root.unmount()) }
+})

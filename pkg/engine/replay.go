@@ -314,6 +314,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := nativeScriptExecutionHostError(script); err != nil {
+		return nil, err
+	}
 	if err := ValidateParameterAllocationTopology(script); err != nil {
 		return nil, err
 	}
@@ -369,21 +372,38 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
-	// Inline sandbox rows are executable data, not evidence. Reject managed
-	// secrets before initializing them; redacting a copied value would change
-	// the script's input. Imported literals follow their existing policy.
+	// Inline sandbox contents are executable data, not evidence. Reject managed
+	// secrets in values, schema and identities before initializing them; redacting
+	// any of these strings would change the input. Imported literals keep their policy.
 	managedValues := allRuntimeSecretValues(redactionConfig)
 	importedValues := allRuntimeScriptSourcedValues(redactionConfig)
+	containsManagedSecret := func(value string) bool {
+		if replaySandboxSecretReference.MatchString(value) {
+			return true
+		}
+		for secret := range managedValues {
+			if _, imported := importedValues[secret]; !imported && strings.Contains(value, secret) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, seed := range opts.LiveTableSeeds {
+		if containsManagedSecret(seed.Alias) {
+			return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+		}
+		for _, column := range seed.Columns {
+			if containsManagedSecret(column) {
+				return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+			}
+		}
 		for _, row := range seed.Rows {
-			for _, value := range row.Values {
-				if replaySandboxSecretReference.MatchString(value) {
+			if containsManagedSecret(row.ID) {
+				return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+			}
+			for key, value := range row.Values {
+				if containsManagedSecret(key) || containsManagedSecret(value) {
 					return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
-				}
-				for secret := range managedValues {
-					if _, imported := importedValues[secret]; !imported && strings.Contains(value, secret) {
-						return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
-					}
 				}
 			}
 		}
@@ -404,6 +424,20 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 
 	_, captureCorrelationEvidence := opts.DebugController.(ReplayDebugControllerCorrelationObserver)
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)
+	requiredFeatures := dsl.RequiredNativeRuntimeFeatures(script)
+	if protocol.RuntimeFeaturesSatisfy(requiredFeatures, protocol.FeatureNativeDataJavaV1) {
+		targets, err := runtimePreflightTargets(ctx, script, secretResolver)
+		if err != nil {
+			return nil, fmt.Errorf("native runtime preflight: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		}
+		_, supported, err := protocol.RunRuntimePreflight(ctx, proto, protocol.RuntimePreflightRequest{Config: protoConfig, Targets: targets, RequiredFeatures: requiredFeatures})
+		if err != nil {
+			return nil, fmt.Errorf("native runtime preflight: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		}
+		if !supported {
+			return nil, nativeServiceUnavailable("native Java preflight unavailable")
+		}
+	}
 	if captureCorrelationEvidence {
 		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
 	}

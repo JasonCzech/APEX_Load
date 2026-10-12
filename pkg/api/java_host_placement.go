@@ -85,6 +85,11 @@ func javaHostPlacementForGroup(group TestGroup, load generatorLoadSnapshot) (*Ja
 	if !load.HeartbeatOK || c == nil || c.Contract != generatorrpc.JavaHostSelectionContract || c.Mode != "dedicated" || c.Containment != "execution_pod" || !protocol.RuntimeFeaturesSatisfy(load.CompatibleFeatures, generatorrpc.FeatureJavaHostBrokerV1) {
 		return nil, errors.New("java_host_backend_unavailable")
 	}
+	for _, feature := range groupRequiredDataRuntimeFeatures(group) {
+		if !protocol.RuntimeFeaturesSatisfy(load.CompatibleFeatures, feature) {
+			return nil, fmt.Errorf("java_host_native_capability_unavailable: %s", feature)
+		}
+	}
 	if len(group.Stages) > 0 && !c.PreparedPopulation {
 		return nil, errors.New("java_host_prepared_population_unavailable")
 	}

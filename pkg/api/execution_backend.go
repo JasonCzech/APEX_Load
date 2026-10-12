@@ -113,6 +113,16 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRunAndLog(test, "initialize live tables: "+err.Error())
 		return
 	}
+	rendezvousTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		tr.failTestBeforeRunAndLog(test, "initialize distributed rendezvous: "+err.Error())
+		return
+	}
+	defer tr.dropRunRendezvous(test.ID, rendezvousTerm)
+	if err := tr.prepareLocalRendezvous(executionCtx, test, rendezvousTerm); err != nil {
+		tr.failTestBeforeRunAndLog(test, "initialize distributed rendezvous: "+err.Error())
+		return
+	}
 	artifacts, err := newRunArtifacts(tr, test, tr.saveRunArchiveRecord)
 	if err != nil {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("initialize archive writer: %v", err))
@@ -377,6 +387,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	}
 	provenance.BusinessKeys = tr.runArchiveBusinessKeys(provenance.ProjectID, snapshot.Groups, groupSpecs)
 	provenance.LiveTables = tr.liveTableArchiveSummaries(snapshot.ID)
+	provenance.ProjectLiveTables = tr.projectLiveTableArchiveSummaries(snapshot.ID)
 	return provenance
 }
 

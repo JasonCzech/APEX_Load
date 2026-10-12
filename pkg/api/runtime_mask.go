@@ -559,6 +559,7 @@ func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
 // so it must never retain runnable credentials.
 func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
 	provenance.LiveTables = cloneLiveTableArchiveSummaries(provenance.LiveTables)
+	provenance.ProjectLiveTables = append([]RunArchiveProjectLiveTableAttachment(nil), provenance.ProjectLiveTables...)
 	provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(provenance.TelemetryPolicy)
 	provenance.PolicyPins = cloneRunPolicyPins(provenance.PolicyPins)
 	provenance.TelemetryAcceptancePolicy = cloneTelemetryAcceptancePolicySnapshot(provenance.TelemetryAcceptancePolicy)

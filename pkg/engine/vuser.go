@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/rendezvous"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/livetable"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -23,6 +24,7 @@ type VUser struct {
 	LiveTableBindings []LiveTableBinding
 	liveTables        *liveTableRuntime
 	liveTableLane     *liveTableLane
+	nativeServices    *nativeServices
 	replayRuntime     *replayRuntimeState
 
 	webSocketCallbackSteps []dsl.Action
@@ -74,6 +76,8 @@ type VUser struct {
 	PauseControl                  PauseController
 	IterationRateLimiter          *TokenBucket
 	Rendezvous                    *RendezvousCoordinator
+	DistributedRendezvous         *rendezvous.Aggregator
+	rendezvousRounds              map[string]uint64
 	ExecutionGoals                *ExecutionGoalLimiter
 	// HardStopCtx, when set, is cancelled only on hard stops (duration
 	// timeout, explicit stop/abort) — not when ExecutionGoals exhausts a
@@ -1334,6 +1338,9 @@ func (vu *VUser) prepareRuntimeState() error {
 	}
 	vu.ensureImportedCredentialInspection()
 	vu.bindRuntimeTextRedactor()
+	if err := vu.prepareNativeServices(); err != nil {
+		return err
+	}
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
 	}

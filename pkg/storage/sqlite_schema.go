@@ -1899,7 +1899,7 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			PRIMARY KEY (test_id, source_identity, source_generation)
 		)`,
-	}, liveTableSchemaStatements()...)
+	}, append(append(liveTableSchemaStatements(), projectLiveTableSchemaStatements()...), rendezvousSchemaStatements()...)...)
 }
 
 // schemaColumnMigrations returns the additive ALTER TABLE ... ADD COLUMN statements
@@ -1908,6 +1908,8 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "scenario_data_pool_bindings.scope", query: `ALTER TABLE scenario_data_pool_bindings ADD COLUMN scope TEXT`},
+		{name: "scenario_data_pool_bindings.project_table_id", query: `ALTER TABLE scenario_data_pool_bindings ADD COLUMN project_table_id TEXT`},
 		{name: "scenario_data_pool_bindings.live_options_json", query: `ALTER TABLE scenario_data_pool_bindings ADD COLUMN live_options_json TEXT`},
 		{name: "scripts.content_revision", query: `ALTER TABLE scripts ADD COLUMN content_revision TEXT`},
 		{name: "scenarios.content_revision", query: `ALTER TABLE scenarios ADD COLUMN content_revision TEXT`},

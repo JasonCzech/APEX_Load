@@ -3,7 +3,13 @@ package storage
 import "fmt"
 
 func liveBindingHasNoSeedPool(binding ScenarioDataPoolBinding) bool {
-	if binding.PoolID != "" || binding.AccessMode != "live" || binding.LiveOptions == nil {
+	if binding.PoolID != "" || binding.AccessMode != "live" {
+		return false
+	}
+	if binding.Scope == "project" {
+		return binding.ProjectTableID != ""
+	}
+	if binding.LiveOptions == nil {
 		return false
 	}
 	return (binding.LiveOptions.SeedPolicy == "empty" && len(binding.LiveOptions.Columns) > 0) || (binding.LiveOptions.SeedPolicy == "original_seed" && binding.LiveOptions.SeedRunID != "")
@@ -54,8 +60,8 @@ func (s *SQLiteStore) ensureLiveTableOptionalSeedBindings() error {
 	}
 	defer tx.Rollback()
 	for _, query := range []string{
-		`CREATE TABLE scenario_data_pool_bindings_live_migration(id TEXT PRIMARY KEY,scenario_id TEXT NOT NULL,pool_id TEXT,alias TEXT NOT NULL,access_mode TEXT NOT NULL,selection_strategy TEXT NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,live_options_json TEXT,UNIQUE(scenario_id,alias),FOREIGN KEY(scenario_id) REFERENCES scenarios(id),FOREIGN KEY(pool_id) REFERENCES shared_data_pools(id))`,
-		`INSERT INTO scenario_data_pool_bindings_live_migration(id,scenario_id,pool_id,alias,access_mode,selection_strategy,created_at,updated_at,live_options_json) SELECT id,scenario_id,pool_id,alias,access_mode,selection_strategy,created_at,updated_at,live_options_json FROM scenario_data_pool_bindings`,
+		`CREATE TABLE scenario_data_pool_bindings_live_migration(id TEXT PRIMARY KEY,scenario_id TEXT NOT NULL,pool_id TEXT,alias TEXT NOT NULL,access_mode TEXT NOT NULL,selection_strategy TEXT NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,live_options_json TEXT,scope TEXT,project_table_id TEXT,UNIQUE(scenario_id,alias),FOREIGN KEY(scenario_id) REFERENCES scenarios(id),FOREIGN KEY(pool_id) REFERENCES shared_data_pools(id))`,
+		`INSERT INTO scenario_data_pool_bindings_live_migration(id,scenario_id,pool_id,alias,access_mode,selection_strategy,created_at,updated_at,live_options_json,scope,project_table_id) SELECT id,scenario_id,pool_id,alias,access_mode,selection_strategy,created_at,updated_at,live_options_json,scope,project_table_id FROM scenario_data_pool_bindings`,
 		`DROP TABLE scenario_data_pool_bindings`,
 		`ALTER TABLE scenario_data_pool_bindings_live_migration RENAME TO scenario_data_pool_bindings`,
 	} {

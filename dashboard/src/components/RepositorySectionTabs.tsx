@@ -15,11 +15,12 @@ function repositoryCatalogHref(hash = window.location.hash): string {
  * Top-bar tabs for the Repository page: the asset catalog and the shared test
  * data it owns. Like every page with a few views, they sit beside the title.
  */
-export default function RepositorySectionTabs({ current }: { current: 'catalog' | 'test-data' }) {
+export default function RepositorySectionTabs({ current }: { current: 'catalog' | 'test-data' | 'live-tables' }) {
   return (
     <nav className="topbar-page-section-toggle repository-section-tabs" aria-label="Repository sections">
       <a href={repositoryCatalogHref()} aria-current={current === 'catalog' ? 'page' : undefined}>Catalog</a>
       <a href={settingsHref('test-data')} aria-current={current === 'test-data' ? 'page' : undefined}>Shared test data</a>
+      <a href={settingsHref('live-tables')} aria-current={current === 'live-tables' ? 'page' : undefined}>Live tables</a>
     </nav>
   )
 }

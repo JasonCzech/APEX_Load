@@ -3197,6 +3197,12 @@ func validateDataPoolProjects(poolStore dataPoolPersistence, projectID string, b
 	expectedProjectID := normalizeProjectID(projectID)
 	for _, binding := range bindings {
 		poolID := strings.TrimSpace(binding.PoolID)
+		if binding.Scope == "project" {
+			if err := validateProjectLiveTableReference(poolStore, expectedProjectID, binding); err != nil {
+				return err
+			}
+			continue
+		}
 		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
 			continue
 		}

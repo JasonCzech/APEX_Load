@@ -20,6 +20,13 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	// Live tables disclose and persist shared data, so use the same explicit
 	// scopes as data pools despite being addressed beneath a run URL.
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables", withServiceAccountScope(viewerProjectAccess(resolveTestProjectID), "read")),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/live-tables", withServiceAccountScope(viewerProjectAccess(resolveProjectIDFromPath), "read")),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/live-tables", withServiceAccountScope(editorProjectAccessWithBodyLimit(resolveProjectIDFromPath, 1<<20), "scripts:write")),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/live-tables/{tableID}", withServiceAccountScope(viewerProjectAccess(resolveProjectIDFromPath), "read")),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/live-tables/{tableID}/rows", withServiceAccountScope(viewerProjectAccess(resolveProjectIDFromPath), "read")),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/live-tables/{tableID}/export", withServiceAccountScope(viewerProjectAccess(resolveProjectIDFromPath), "read")),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/live-tables/{tableID}/mutations", withServiceAccountScope(editorProjectAccessWithBodyLimit(resolveProjectIDFromPath, 1<<20), "scripts:write")),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/live-tables/{tableID}/lifecycle", withServiceAccountScope(projectAdminAccessWithBodyLimit(resolveProjectIDFromPath, 1<<20), "scripts:write")),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/rows", withServiceAccountScope(viewerProjectAccess(resolveTestProjectID), "read")),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/export", withServiceAccountScope(viewerProjectAccess(resolveTestProjectID), "read")),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/live-tables/{tableID}/finalize", withServiceAccountScope(editorProjectAccess(resolveTestProjectID), liveTablePersistenceServiceAccountScope)),

@@ -20,7 +20,7 @@ func (t *Table) Snapshot() (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	snapshot := Snapshot{FormatVersion: formatVersion, TableID: t.s.ID, RunID: t.s.RunID, Revision: t.s.Revision, Payload: payload, Observations: t.observationSnapshot(time.Now())}
+	snapshot := Snapshot{FormatVersion: formatVersion, TableID: t.s.ID, RunID: t.s.RunID, Scope: t.s.Scope, ScopeID: t.s.ScopeID, Revision: t.s.Revision, Payload: payload, Observations: t.observationSnapshot(time.Now())}
 	if snapshotEncodedSize(snapshot) > t.s.Limits.MaxSnapshotBytes {
 		return Snapshot{}, fail(CodeCapacity, "snapshot exceeds configured byte budget")
 	}
@@ -40,7 +40,7 @@ func RestoreWithClock(snapshot Snapshot, committer Committer, now func() time.Ti
 	if err := validateObservations(snapshot.Observations); err != nil {
 		return nil, err
 	}
-	if snapshot.FormatVersion != formatVersion || !validName(snapshot.TableID) || !validName(snapshot.RunID) {
+	if snapshot.FormatVersion != formatVersion || !validName(snapshot.TableID) || !validScope(snapshot.RunID, snapshot.Scope, snapshot.ScopeID) {
 		return nil, fail(CodeInvalid, "unsupported or invalid snapshot identity")
 	}
 	// The hard envelope is also enforced before decoding untrusted state. A
@@ -52,7 +52,7 @@ func RestoreWithClock(snapshot Snapshot, committer Committer, now func() time.Ti
 	if err := strictDecode(snapshot.Payload, &s); err != nil {
 		return nil, fail(CodeInvalid, "invalid snapshot encoding")
 	}
-	if s.ID != snapshot.TableID || s.RunID != snapshot.RunID || s.Revision != snapshot.Revision {
+	if s.ID != snapshot.TableID || s.RunID != snapshot.RunID || s.Scope != snapshot.Scope || s.ScopeID != snapshot.ScopeID || s.Revision != snapshot.Revision {
 		return nil, fail(CodeConflict, "snapshot identity or revision mismatch")
 	}
 	if now == nil {
@@ -172,7 +172,7 @@ func (t *Table) validateRecovered() error {
 	if t.s.Profile != ProfileNative && t.s.Profile != ProfileVTS {
 		return fail(CodeInvalid, "invalid recovered profile")
 	}
-	if !validName(t.s.ID) || !validName(t.s.RunID) || len(t.s.Columns) == 0 || len(t.s.Columns) > l.MaxColumns {
+	if !validName(t.s.ID) || !validScope(t.s.RunID, t.s.Scope, t.s.ScopeID) || len(t.s.Columns) == 0 || len(t.s.Columns) > l.MaxColumns {
 		return fail(CodeInvalid, "invalid recovered table schema")
 	}
 	seen := map[string]bool{}
@@ -202,6 +202,14 @@ func (t *Table) validateRecovered() error {
 	for id, r := range t.s.Records {
 		if t.s.Profile != ProfileNative || id != r.Row.ID || !validName(id) || !ordered[id] || r.Row.Version == 0 {
 			return fail(CodeInvalid, "invalid recovered record")
+		}
+		if len(r.ControlClients) > 2 {
+			return fail(CodeInvalid, "invalid lease control identities")
+		}
+		for i, client := range r.ControlClients {
+			if !validName(client) || t.s.Clients[client] == 0 || i > 0 && client == r.ControlClients[0] {
+				return fail(CodeInvalid, "invalid lease control identity")
+			}
 		}
 		if err := t.validateValues(r.Row.Values); err != nil {
 			return err

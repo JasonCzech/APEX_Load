@@ -39,6 +39,16 @@ var livePrefixPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,127}$`)
 // explicitly supplied zero/empty fields. It is used again at execution so
 // direct Go callers cannot bypass the DSL contract.
 func ParseLiveTableAction(params map[string]any) (LiveTableAction, error) {
+	return parseLiveTableAction(params, true)
+}
+
+// ParseLiteralLiveTableAction validates already resolved native values without
+// treating template-shaped strings as executable references.
+func ParseLiteralLiveTableAction(params map[string]any) (LiveTableAction, error) {
+	return parseLiveTableAction(params, false)
+}
+
+func parseLiveTableAction(params map[string]any, templates bool) (LiveTableAction, error) {
 	var action LiveTableAction
 	encoded, err := json.Marshal(params)
 	if err != nil || len(encoded) > 1<<20 {
@@ -143,7 +153,7 @@ func ParseLiveTableAction(params map[string]any) (LiveTableAction, error) {
 	if action.OnCondition != "" && action.OnCondition != "error" && action.OnCondition != "skip" {
 		return action, fmt.Errorf("live_table on_condition must be error or skip")
 	}
-	if action.ExpectedVersion != "" && !strings.Contains(action.ExpectedVersion, "{{") {
+	if action.ExpectedVersion != "" && (!templates || !strings.Contains(action.ExpectedVersion, "{{")) {
 		version, err := strconv.ParseUint(action.ExpectedVersion, 10, 64)
 		if err != nil || version == 0 {
 			return action, fmt.Errorf("live_table expected_version must be a positive decimal string or template")
@@ -164,7 +174,7 @@ func ParseLiveTableAction(params map[string]any) (LiveTableAction, error) {
 			if !liveAliasPattern.MatchString(column) || len(value) > 16<<10 {
 				return action, fmt.Errorf("live_table values require valid column names and at most 16 KiB per value")
 			}
-			if strings.Contains(value, "{{secret.") {
+			if templates && strings.Contains(value, "{{secret.") {
 				return action, fmt.Errorf("live_table cannot store managed secret references")
 			}
 		}
@@ -189,6 +199,13 @@ func ScriptLiveTableAliases(script *Script) ([]string, error) {
 		return nil, fmt.Errorf("live table action inspection: %s", issues[0])
 	}
 	seen := map[string]bool{}
+	requirements, err := ScriptNativeServiceRequirements(script)
+	if err != nil {
+		return nil, err
+	}
+	for _, requirement := range requirements {
+		seen[requirement.Alias] = true
+	}
 	var walk func([]Action) error
 	walk = func(actions []Action) error {
 		for _, action := range actions {

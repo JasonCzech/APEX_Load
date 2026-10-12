@@ -24,6 +24,9 @@ kept for planning or audit context only.
 | [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator tasks, library assignments, and project secrets |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API orientation, authentication, workflows, and automation |
 | [Live data tables](LIVE_DATA_TABLES_RUNTIME.md) | Current | Explicit per-run live bindings, action semantics, recovery limits, and protected output |
+| [Project live tables](PROJECT_LIVE_TABLES.md) | Current | Shared project lifetime, operator edits, revision conflicts, lifecycle and permissions |
+| [Native script data services](NATIVE_SCRIPT_DATA_SERVICES.md) | Current | Java SDK and isolated JavaScript actions, native permissions and runner support |
+| [Distributed rendezvous](DISTRIBUTED_RENDEZVOUS.md) | Current | Opt-in group barriers, fixed membership, durable outcomes and transport bounds |
 | [VTS compatibility](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) | Current | Supported authoring primitives and blocked vendor imports without unproven parity |
 | [Live table design](LIVE_DATA_TABLES_REVISED_PLAN.md) | Design | Rationale, compatibility contract, and staged rollout criteria |
 | [Native shared-data extension](LIVE_DATA_TABLES_PROJECT_PLAN.md) | Design | Project ownership, governed mutations, native adapters and distributed rendezvous |

@@ -69,6 +69,7 @@ var (
 // allowlisted as well so a misconfigured or version-skewed peer cannot smuggle
 // resolved script values into errors, warnings, or generator inventory.
 var knownSidecarCodes = map[string]struct{}{
+	protocol.FeatureNativeDataServicesV1: {}, protocol.FeatureNativeDataLocalV1: {}, protocol.FeatureNativeDataSidecarV1: {}, protocol.FeatureNativeDataPooledV1: {}, protocol.FeatureNativeDataBrokerV1: {},
 	"action_type_invalid": {}, "ambient_credentials_detected": {},
 	"classpath_entry_invalid": {}, "classpath_entry_unavailable": {}, "classpath_too_many_entries": {},
 	javarunner.ClasspathAssetIntegrity: {}, javarunner.ClasspathAssetUnavailable: {}, javarunner.ClasspathAssetWorkDirRequired: {},
@@ -246,6 +247,7 @@ func init() {
 }
 
 type JavaVuser struct {
+	nativeServiceBinding
 	cfg configuration
 
 	// sidecar is deliberately expressed through the narrow typed contract so
@@ -320,6 +322,7 @@ type javaVuserSidecarClient interface {
 }
 
 type runCommand struct {
+	NativeServices   bool           `json:"native_services,omitempty"`
 	ProtocolVersion  string         `json:"protocol_version,omitempty"`
 	EventContract    string         `json:"event_contract,omitempty"`
 	RequestID        string         `json:"request_id,omitempty"`
@@ -576,6 +579,9 @@ func (j *JavaVuser) ExecuteStream(ctx context.Context, action *protocol.Action, 
 		return &protocol.Result{StartTime: time.Now(), StatusCode: 500, ErrorMessage: "java_vuser action is required"}, nil
 	}
 	method := actionMethod(action)
+	if j.hasNative() && !isPersistentLifecycleMethod(method) {
+		return nil, errors.New("native_services_require_persistent_java")
+	}
 	if strings.EqualFold(method, "full_lifecycle") {
 		if j.cfg.RunnerMode == config.JavaVuserRunnerModeSidecar {
 			return j.executeSidecar(ctx, action, emit)
@@ -656,6 +662,11 @@ func (j *JavaVuser) executeSidecar(ctx context.Context, action *protocol.Action,
 	result.CorrelationID = executionID
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	runCtx, closeNative, nativeErr := j.nativeContext(runCtx, executionID)
+	if nativeErr != nil {
+		return nil, nativeErr
+	}
+	defer closeNative()
 	response, callErr := client.Execute(runCtx, javasidecar.ExecutionRequest{
 		ExecutionID: executionID,
 		SessionID: func() string {
@@ -1353,7 +1364,7 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 		seen := make(map[string]struct{}, len(capabilities.Features))
 		for _, raw := range capabilities.Features {
 			feature := stableSidecarCode(raw, "")
-			if feature == "" {
+			if feature == "" || feature == protocol.FeatureNativeDataJavaV1 {
 				continue
 			}
 			if _, exists := seen[feature]; exists {
@@ -1361,6 +1372,9 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 			}
 			seen[feature] = struct{}{}
 			features = append(features, feature)
+		}
+		if protocol.RuntimeFeaturesSatisfy(features, protocol.FeatureNativeDataSidecarV1+"+"+protocol.FeatureJavaVuserPersistentLifecycleV1+"+"+protocol.FeatureJavaVuserSessionFrameTokenV1) {
+			features = append(features, protocol.FeatureNativeDataJavaV1)
 		}
 		return protocol.RuntimeCapabilities{Available: true, Features: features, MaxVUsers: int64(capabilities.MaxProcesses)}
 	}
@@ -1394,6 +1408,9 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 			evidenceErr == nil && evidence == harnessEvidencePresent &&
 			checkHarnessFeature(healthCtx, prepared, protocol.FeatureJavaVuserPersistentLifecycleV1) == nil &&
 			checkHarnessFeature(healthCtx, prepared, protocol.FeatureJavaVuserSessionFrameTokenV1) == nil {
+			if checkHarnessFeature(healthCtx, prepared, protocol.FeatureNativeDataLocalV1) == nil {
+				features = append(features, protocol.FeatureNativeDataLocalV1, protocol.FeatureNativeDataServicesV1, protocol.FeatureNativeDataJavaV1)
+			}
 			features = append(features,
 				protocol.FeatureJavaVuserPhaseLifecycleV1,
 				protocol.FeatureJavaVuserPersistentLifecycleV1,
@@ -1600,6 +1617,15 @@ func javaVuserProcessOwnerID() string {
 // value-free: VM arguments may contain resolved secrets and must never be
 // reflected into logs or API responses.
 func (j *JavaVuser) PreflightRuntime(ctx context.Context, request protocol.RuntimePreflightRequest) (protocol.RuntimePreflightResult, error) {
+	nativeRequired := protocol.RuntimeFeaturesSatisfy(request.RequiredFeatures, protocol.FeatureNativeDataServicesV1)
+	if nativeRequired {
+		for _, target := range request.Targets {
+			if !isPersistentLifecycleMethod(target.Method) {
+				return protocol.RuntimePreflightResult{}, errors.New("native data services require persistent Java init/action/end methods")
+			}
+		}
+	}
+
 	// Preflight contexts are deliberately short lived. Claiming here would
 	// start an owner keeper tied to that short context; it would stop before
 	// commit and let the external runtime expire while the test is starting.
@@ -1611,6 +1637,12 @@ func (j *JavaVuser) PreflightRuntime(ctx context.Context, request protocol.Runti
 		return protocol.RuntimePreflightResult{}, fmt.Errorf("java_vuser runner is disabled; an operator must set %s=true", config.EnvJavaVuserRunnerEnabled)
 	}
 	if j.cfg.RunnerMode == config.JavaVuserRunnerModeSidecar {
+		if nativeRequired {
+			capabilities, err := j.sidecar.Capabilities(ctx)
+			if err != nil || !protocol.RuntimeFeaturesSatisfy(capabilities.Features, protocol.FeatureNativeDataSidecarV1) {
+				return protocol.RuntimePreflightResult{}, errors.New("native_data_sidecar_v1 capability unavailable")
+			}
+		}
 		return j.preflightSidecar(ctx, request.Targets)
 	}
 	if !targetsUseOnlyFullLifecycle(request.Targets) && !j.supportsStrongProcessContainmentAvailable(ctx) {
@@ -1618,6 +1650,9 @@ func (j *JavaVuser) PreflightRuntime(ctx context.Context, request protocol.Runti
 	}
 	if err := j.checkRunnerHealth(ctx, j.cfg); err != nil {
 		return protocol.RuntimePreflightResult{}, err
+	}
+	if nativeRequired && (checkHarnessFeature(ctx, j.cfg, protocol.FeatureNativeDataLocalV1) != nil || !j.supportsStrongProcessContainmentAvailable(ctx)) {
+		return protocol.RuntimePreflightResult{}, errors.New("native_data_local_v1 capability unavailable")
 	}
 	modernHarness := false
 	if j.cfg.DirectJavaRunner {

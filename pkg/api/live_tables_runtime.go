@@ -31,17 +31,22 @@ const liveTableRetainedRuns = 128
 var errLiveTableFinalizationInterrupted = errors.New("live table finalization was interrupted; the run cannot resume")
 
 type runLiveTables struct {
-	mu                sync.RWMutex
-	tables            map[string]*runLiveTable
-	bindings          []engine.LiveTableBinding
-	term              executionLeaseTerm
-	testID, projectID string
-	budget            int64
-	releasedAt        time.Time // guarded by liveTablesMu
-	closed            bool
-	ready             bool
-	lastNotification  atomic.Int64
-	notificationSeq   atomic.Uint64
+	mu                 sync.RWMutex
+	tables             map[string]*runLiveTable
+	projectAttachments map[string]storage.ProjectLiveTableAttachment
+	projectSummaries   []RunArchiveProjectLiveTableAttachment
+	groupBindings      map[string][]engine.LiveTableBinding
+	bindings           []engine.LiveTableBinding
+	term               executionLeaseTerm
+	projectTerm        executionLeaseTerm
+	testID, projectID  string
+	recoveryBytes      int
+	budget             int64
+	releasedAt         time.Time // guarded by liveTablesMu
+	closed             bool
+	ready              bool
+	lastNotification   atomic.Int64
+	notificationSeq    atomic.Uint64
 }
 type runLiveTable struct {
 	table                     *livetable.Table
@@ -128,6 +133,12 @@ func (tr *TestRunner) liveTableBudgetError(projectID string, additional int64, e
 			project += run.budget
 		}
 	}
+	for _, instance := range tr.projectLiveTables {
+		total += instance.budget
+		if instance.projectID == projectID {
+			project += instance.budget
+		}
+	}
 	if project > liveTableProjectBudget {
 		return errors.New("live table project memory budget is exhausted")
 	}
@@ -199,7 +210,7 @@ func (tr *TestRunner) prepareLiveTables(ctx context.Context, test *ManagedTest) 
 	}
 	run := &runLiveTables{tables: map[string]*runLiveTable{}, term: term, testID: testID, projectID: projectID}
 	for _, b := range normalized {
-		if b.AccessMode == "live" {
+		if b.AccessMode == "live" && b.Scope != "project" {
 			run.budget += liveTableReservation(b.LiveOptions)
 		}
 	}
@@ -228,7 +239,7 @@ func (tr *TestRunner) prepareLiveTables(ctx context.Context, test *ManagedTest) 
 		return errors.New("live table launch was already initialized; recovery or a new run is required")
 	}
 	for _, b := range normalized {
-		if b.AccessMode != "live" {
+		if b.AccessMode != "live" || b.Scope == "project" {
 			continue
 		}
 		o := b.LiveOptions
@@ -333,6 +344,9 @@ func (tr *TestRunner) prepareLiveTables(ctx context.Context, test *ManagedTest) 
 		run.tables[id] = rt
 		run.bindings = append(run.bindings, liveEngineBinding(b, id, manifest.Columns))
 	}
+	if err := tr.projectLiveTableService().attachRun(ctx, test, run, normalized, false); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -388,6 +402,7 @@ func (tr *TestRunner) liveClient(testID, scope string) livetable.Client {
 		}
 		run.mu.RLock()
 		rt := run.tables[id]
+		attachment, projectBound := run.projectAttachments[id]
 		var table *livetable.Table
 		if rt != nil {
 			table = rt.table
@@ -396,6 +411,9 @@ func (tr *TestRunner) liveClient(testID, scope string) livetable.Client {
 		run.mu.RUnlock()
 		if closed || !tr.executionLeaseTermLocallyCurrent(run.term) {
 			return livetable.Result{}, errors.New("live table execution owner is no longer serving")
+		}
+		if projectBound {
+			return tr.projectLiveTableService().executeAttachment(ctx, run, attachment, scope, req)
 		}
 		if rt == nil || table == nil {
 			return livetable.Result{}, errors.New("live table is outside this run")
@@ -477,7 +495,7 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 	}
 	expected := 0
 	for _, b := range test.DataPools {
-		if b.AccessMode == "live" {
+		if b.AccessMode == "live" && b.Scope != "project" {
 			expected++
 		}
 	}
@@ -490,7 +508,7 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 		return err
 	}
 	for _, binding := range normalized {
-		if binding.AccessMode == "live" {
+		if binding.AccessMode == "live" && binding.Scope != "project" {
 			run.budget += liveTableReservation(binding.LiveOptions)
 		}
 	}
@@ -604,6 +622,10 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 		run.bindings = append(run.bindings, liveEngineBinding(manifest.Binding, record.ID, manifest.Columns))
 
 	}
+	run.recoveryBytes = recoveryBytes
+	if err := tr.projectLiveTableService().attachRun(ctx, test, run, normalized, true); err != nil {
+		return err
+	}
 	if run.budget > liveTableRunBudget {
 		return errors.New("live table recovery run budget exceeded")
 	}
@@ -658,6 +680,9 @@ func (tr *TestRunner) finalizeLiveTables(ctx context.Context, test *ManagedTest,
 		return errors.New("live table finalization owner expired")
 	}
 	run.closed = true
+	if err := tr.projectLiveTableService().detachRun(ctx, run); err != nil {
+		return err
+	}
 	// Close and checkpoint every table before applying any reusable-pool policy.
 	// A permission/conflict on one output cannot leave another table accepting work.
 	for _, rt := range run.tables {

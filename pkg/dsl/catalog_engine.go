@@ -70,6 +70,10 @@ func engineActionSpecs() []ActionSpec {
 			Protocols: []string{"*"},
 			Summary:   "Synchronization barrier: VUsers wait until the rendezvous point is reached.",
 			Fields: []FieldSpec{
+				{Name: "params.scope", Kind: FieldKindEnum, Enum: []string{"local", "distributed_group"}, SchemaEnum: true, Doc: "Local by default; distributed_group uses the admitted group across generators."},
+				{Name: "params.key", Kind: FieldKindString, Doc: "Unique static action identity required for distributed_group."},
+				{Name: "params.percent", Kind: FieldKindInt, Doc: "Distributed participant percentage (1..100), rounded up; mutually exclusive with count."},
+				{Name: "params.on_timeout", Kind: FieldKindEnum, Enum: []string{"fail", "continue"}, SchemaEnum: true, Doc: "Required explicit timeout outcome for distributed_group."},
 				{Name: "params.count", Kind: FieldKindInt, Doc: "Participants to wait for; defaults to all VUsers. Must be greater than zero."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Maximum wait in milliseconds; zero or greater."},
 			},
