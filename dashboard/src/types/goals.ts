@@ -129,6 +129,8 @@ export interface GoalStatus {
   last_scale_direction?: 'up' | 'down'
   last_scale_reason?: string
   last_scale_at?: string
+  /** Consumers idling on an empty live table, and whether scale-up is held for it. */
+  live_table_note?: string
   latency_breached?: boolean
   error_breached?: boolean
   server_processing_breached?: boolean

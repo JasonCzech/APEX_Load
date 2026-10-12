@@ -164,6 +164,33 @@ describe('ExecutionPlansPanel', () => {
     expect(plansApiMock.updateExecutionPlan).toHaveBeenCalledWith('p1', expect.objectContaining({ revision: 7, name: 'renamed' }))
   })
 
+  it('keeps a live override as saved and shows the scenario live tables', async () => {
+    const live = { pool_id: '', alias: 'work', access_mode: 'live' as const, selection_strategy: 'lease' as const, scope: 'run' as const, live_options: { profile: 'native_queue' as const, seed_policy: 'empty' as const, columns: ['job_id'] } }
+    const existing = plan({ run_mode: 'sequential', entries: [{ order: 0, scenario_id: 's1', enabled: true, data_pools: [live] }] })
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [existing], count: 1 })
+    plansApiMock.updateExecutionPlan.mockResolvedValue(existing)
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage scenarioOptions={[{ id: 's1', name: 'Checkout', data_pools: [
+        { pool_id: '', alias: 'jobs', access_mode: 'live', selection_strategy: 'manual', scope: 'run' },
+      ] }]} />)
+    })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click()
+    })
+    const editor = document.querySelector('[aria-labelledby="execution-plan-editor-title"]')
+    expect(editor?.textContent).toContain('work — live table, this run only')
+    expect(editor?.textContent).toContain("The scenario's live tables: jobs (this run only).")
+    expect(editor?.textContent).toContain('rows do not pass from one entry to the next')
+    await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'renamed'))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-modal-actions button')).find(button => button.textContent === 'Save')?.click()
+    })
+    await flush()
+    const saved = plansApiMock.updateExecutionPlan.mock.calls[0][1]
+    expect(saved.entries[0].data_pools).toEqual([live])
+  })
+
   it('shows a refused save inside the open editor', async () => {
     plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ revision: 7 })], count: 1 })
     plansApiMock.updateExecutionPlan.mockRejectedValue(new ApiError('schedule "nightly" files its runs under a release of another application', 409))

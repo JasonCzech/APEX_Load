@@ -1980,6 +1980,8 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		}
 		if req.DataPools == nil {
 			req.DataPools = cloneScenarioDataPoolBindings(scenario.DataPools)
+		} else if req.dataPoolOverridesByAlias {
+			req.DataPools = overlayDataPoolBindingsByAlias(scenario.DataPools, req.DataPools)
 		}
 	}
 
@@ -3580,4 +3582,30 @@ func (tr *TestRunner) resolveEffectiveRedactionRules(projectID string, explicit 
 	}
 	merged = append(merged, cloneRedactionRules(project.Settings.RedactionRules)...)
 	return merged, nil
+}
+
+// overlayDataPoolBindingsByAlias applies overrides to a scenario's bindings: an
+// override replaces the binding with the same alias (case-insensitive), the
+// scenario's other bindings stay in their order, and an override for an alias
+// the scenario lacks is added after them.
+func overlayDataPoolBindingsByAlias(base, overrides []storage.ScenarioDataPoolBinding) []storage.ScenarioDataPoolBinding {
+	out := cloneScenarioDataPoolBindings(base)
+	positions := make(map[string]int, len(out)+len(overrides))
+	for index, binding := range out {
+		if key := strings.ToLower(strings.TrimSpace(binding.Alias)); key != "" {
+			positions[key] = index
+		}
+	}
+	for _, override := range overrides {
+		key := strings.ToLower(strings.TrimSpace(override.Alias))
+		if index, ok := positions[key]; ok && key != "" {
+			out[index] = override
+			continue
+		}
+		out = append(out, override)
+		if key != "" {
+			positions[key] = len(out) - 1
+		}
+	}
+	return out
 }

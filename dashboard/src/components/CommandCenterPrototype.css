@@ -2530,3 +2530,19 @@ button.command-group-name:focus-visible {
 .command-control-shelf.compact .command-run-actions { flex: none; flex-wrap: nowrap; margin-left: auto; }
 /* The run's status line stays announced while the shelf is compact. */
 .command-control-shelf.compact :is(.command-control-feedback, .command-control-readonly) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }
+
+.command-live-table-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.command-live-table-list strong {
+  margin-right: 6px;
+}
+
+.command-live-table-list .danger {
+  color: var(--danger-text);
+}

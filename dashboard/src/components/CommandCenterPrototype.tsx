@@ -2,6 +2,7 @@ import SeriesChartExport from "./SeriesChartExport"
 import { useLiveObservation } from '../hooks/useLiveObservation'
 import { generatorResourceColumns } from './generatorResourceColumns'
 import { filterAndSortRows } from './commandCenterTableSort'
+import CommandCenterLiveTables from './CommandCenterLiveTables'
 import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
@@ -1652,6 +1653,7 @@ export default function CommandCenterPrototype({
         {discoveryError && <span role="alert">Run list is stale. <button type="button" className="btn btn-secondary" onClick={() => setDiscoveryRetry(value => value + 1)}>Retry active runs</button></span>}
       </nav>}
       {liveMode && <CommandLoadObservation test={displayTest} />}
+      {liveMode && displayTest.live_metrics?.goal_status?.live_table_note && <p className="command-stream-note">{displayTest.live_metrics.goal_status.live_table_note}</p>}
       {liveMode && liveStreamState !== 'connected' && <p className="command-stream-note" role="status">Live stream: {liveStreamState}. Run status is polled separately; live values may be stale until the stream reconnects.</p>}
       <RunControlShelf
         test={displayTest}
@@ -1799,6 +1801,9 @@ export default function CommandCenterPrototype({
         />
       )}
       <ThresholdAlertStrip alerts={scopedThresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
+      {liveMode && testId && displayTest.data_pools?.some(binding => binding.access_mode === 'live') && (
+        <CommandCenterLiveTables testId={testId} onOpen={onOpenExecution ? () => onOpenExecution(testId) : undefined} />
+      )}
 
       {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} test={displayTest} runStatus={runStatus} history={liveMode ? localMetricsHistory : []} /></section>}
       {(!noRequestSamples || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (variant === 'ops' || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (

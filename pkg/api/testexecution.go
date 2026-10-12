@@ -5712,6 +5712,9 @@ func applyGoalControllerUpdateWithScaler(tr *TestRunner, test *ManagedTest, live
 	if !update.ShouldScale {
 		return
 	}
+	if update.ScaleDirection == "up" && tr.holdGoalScaleUpForLiveTables(test) {
+		return
+	}
 
 	// Snapshot the group set + target statuses under the lock. The scaleVUsers
 	// engine call must run unlocked, and the resulting test.Groups/goalControl

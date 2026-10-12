@@ -44,19 +44,23 @@ import { listAllExecutionPlans } from './schedulingCatalogModel'
 import './parityPanels.css'
 import LoadingState from './ux/LoadingState'
 import EmptyState from './ux/EmptyState'
+import PlanEntryDataNote from './PlanEntryDataNote'
+import { liveBindingSummary } from './scenarioDataBindingModel'
 
 interface Props {
   projectId?: string
   canManage?: boolean
   canAdmin?: boolean
-  scenarioOptions?: { id: string; name: string }[]
+  scenarioOptions?: { id: string; name: string; data_pools?: ScenarioDataPoolBinding[] }[]
   onOpenTest?: (testId: string) => void
   // When set, opens a new-plan draft pre-seeded with this scenario as the first entry.
   seedScenarioId?: string
   onSeedConsumed?: () => void
 }
 
-type DataPoolDraft = { pool_id: string; alias: string }
+// An override is a read-only snapshot chosen here, or a live binding saved
+// through the API, which the editor keeps as it was saved (binding).
+type DataPoolDraft = { pool_id: string; alias: string; binding?: ScenarioDataPoolBinding }
 
 type EntryDraft = {
   scenario_id: string
@@ -454,13 +458,13 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
       .filter(e => e.scenario_id.trim())
       .map((e, index) => {
         const pools: ScenarioDataPoolBinding[] = e.data_pools
-          .filter(dp => dp.pool_id.trim() && dp.alias.trim())
-          .map(dp => ({
+          .filter(dp => dp.binding || (dp.pool_id.trim() && dp.alias.trim()))
+          .map(dp => dp.binding ? { ...dp.binding } : {
             pool_id: dp.pool_id.trim(),
             alias: dp.alias.trim(),
             access_mode: 'read_only',
             selection_strategy: 'sequential',
-          }))
+          })
         return {
           order: index,
           scenario_id: e.scenario_id.trim(),
@@ -604,7 +608,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               enabled: e.enabled !== false,
               failure_policy: e.failure_policy || 'halt',
               timeslot_id: e.timeslot_id || '',
-              data_pools: (e.data_pools || []).map(dp => ({ pool_id: dp.pool_id, alias: dp.alias })),
+              data_pools: (e.data_pools || []).map(dp => ({ pool_id: dp.pool_id, alias: dp.alias, ...(dp.access_mode === 'live' ? { binding: dp } : {}) })),
             }))
           : [{ ...emptyEntry }],
 		}
@@ -962,8 +966,16 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                           )}
                         </label>
                         <div className="pp-entry-pools">
-                          <span className="pp-entry-advanced-label">Data Pools</span>
-                          {entry.data_pools.map((dp, di) => (
+                          <span className="pp-entry-advanced-label">Data pool overrides</span>
+                          <PlanEntryDataNote bindings={scenarioOptions?.find(option => option.id === entry.scenario_id)?.data_pools} sequential={draft.run_mode === 'sequential'} />
+                          {entry.data_pools.map((dp, di) => dp.binding ? (
+                            <div className="pp-entry-pool" key={di}>
+                              <span>{liveBindingSummary(dp.binding)}</span>
+                              <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePool(index, di)} title="Remove data pool" aria-label={`Remove data pool ${di + 1} from entry ${index + 1}`}>
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
                             <div className="pp-entry-pool" key={di}>
                               {planReferences.pools ? (
                                 <select aria-label={`Entry ${index + 1} data pool ${di + 1}`} value={dp.pool_id} onChange={e => updatePool(index, di, { pool_id: e.target.value })}>

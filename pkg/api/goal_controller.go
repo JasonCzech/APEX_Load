@@ -247,6 +247,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		status.LastScaleAt = state.lastScaleAt
 		status.LastScaleDirection = state.lastScaleDirection
 		status.LastScaleReason = state.lastScaleReason
+		status.LiveTableNote = state.liveTableNote
 	}
 
 	breaches := goalBreachSet{
@@ -351,6 +352,15 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 
 		desiredTotal = clampGoalVUsers(desiredTotal, config)
 		status.SuggestedTotalVUsers = desiredTotal
+		if state != nil && scaleDirection != "up" {
+			// No shortfall to explain: a live-table note no longer applies.
+			state.liveTableNote, state.liveTableHolding = "", false
+			status.LiveTableNote = ""
+		} else if state != nil && state.liveTableHolding {
+			// Scale-up stays held while the table is empty; the check that holds
+			// it runs before VUsers are added, and suggests none meanwhile.
+			status.SuggestedTotalVUsers = currentTotalVUsers
+		}
 		if desiredTotal != currentTotalVUsers {
 			return goalControllerUpdate{
 				Status:         status,

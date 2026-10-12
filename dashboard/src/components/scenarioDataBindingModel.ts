@@ -72,3 +72,50 @@ export function dataBindingErrors(bindings: ScenarioDataPoolBinding[]): string[]
   })
   return errors
 }
+
+function liveScopeLabel(binding: ScenarioDataPoolBinding): string {
+  return binding.scope === 'project' ? 'shared across project runs' : 'this run only'
+}
+
+/** A live binding kept as saved: "work — live table, this run only". */
+export function liveBindingSummary(binding: ScenarioDataPoolBinding): string {
+  return `${binding.alias || 'Unnamed alias'} — live table, ${liveScopeLabel(binding)}`
+}
+
+/** A scenario's live tables, as a run of it will use them. */
+export function scenarioLiveTables(bindings?: ScenarioDataPoolBinding[]): { list: string; runScoped: boolean } | null {
+  const live = (bindings || []).filter(binding => binding.access_mode === 'live')
+  if (live.length === 0) return null
+  return {
+    list: live.map(binding => `${binding.alias || 'Unnamed alias'} (${liveScopeLabel(binding)})`).join(', '),
+    runScoped: live.some(binding => binding.scope !== 'project'),
+  }
+}
+
+/**
+ * One binding as a launch review states it: what data the run reads, and for a
+ * live table where it starts and what happens to it at the end. writesBack marks
+ * a binding that changes its source pool when the run ends.
+ */
+export function describeDataBinding(binding: ScenarioDataPoolBinding, poolName: (id: string) => string | undefined): { text: string; writesBack: boolean } {
+  const alias = binding.alias || 'Unnamed alias'
+  const pool = binding.pool_name || (binding.pool_id ? poolName(binding.pool_id) || binding.pool_id : '')
+  if (binding.access_mode !== 'live') {
+    return { text: `${alias}: ${pool || 'no pool'} (read-only snapshot, ${binding.selection_strategy || 'sequential'} rows)`, writesBack: false }
+  }
+  if (binding.scope === 'project') {
+    return { text: `${alias}: project live table, shared across project runs`, writesBack: false }
+  }
+  const options = { ...DEFAULT_LIVE_TABLE_OPTIONS, ...binding.live_options }
+  const seed = options.seed_policy === 'empty' || (!binding.pool_id && options.seed_policy !== 'original_seed')
+    ? 'starts empty'
+    : options.seed_policy === 'original_seed'
+      ? `starts from run ${options.seed_run_id || '(not set)'}'s original rows`
+      : `starts from ${pool}`
+  const end = options.end_mode === 'write_back'
+    ? `written back to ${pool || 'its pool'} at the end, changing that pool`
+    : options.end_mode === 'save_as_new'
+      ? `saved as a new pool${options.output_pool_name ? ` "${options.output_pool_name}"` : ''} at the end`
+      : 'discarded at the end'
+  return { text: `${alias}: live table for this run, ${seed}, ${end}`, writesBack: options.end_mode === 'write_back' }
+}

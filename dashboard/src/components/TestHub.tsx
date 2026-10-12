@@ -4757,7 +4757,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             projectId={activeProject?.id}
             canManage={canManageTests}
             canAdmin={canManageProjects}
-            scenarioOptions={scenarios.map(scenario => ({ id: scenario.id, name: scenario.name }))}
+            scenarioOptions={scenarios.map(scenario => ({ id: scenario.id, name: scenario.name, data_pools: scenario.data_pools }))}
             onOpenTest={onSelectTest}
             seedScenarioId={planSeedScenarioId ?? undefined}
             onSeedConsumed={() => setPlanSeedScenarioId(null)}

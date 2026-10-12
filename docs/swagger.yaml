@@ -89630,6 +89630,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -91418,6 +91420,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -96110,6 +96114,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -97898,6 +97904,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -102591,6 +102599,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -104379,6 +104389,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -109084,6 +109096,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -110872,6 +110886,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -115577,6 +115593,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -117365,6 +117383,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -122070,6 +122090,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -123858,6 +123880,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -128563,6 +128587,8 @@ paths:
                                   type: boolean
                                 lcp_breached:
                                   type: boolean
+                                live_table_note:
+                                  type: string
                                 max_error_count:
                                   type: integer
                                   format: int64
@@ -130351,6 +130377,8 @@ paths:
                                 type: boolean
                               lcp_breached:
                                 type: boolean
+                              live_table_note:
+                                type: string
                               max_error_count:
                                 type: integer
                                 format: int64
@@ -345322,6 +345350,8 @@ paths:
                               type: boolean
                             lcp_breached:
                               type: boolean
+                            live_table_note:
+                              type: string
                             max_error_count:
                               type: integer
                               format: int64
@@ -349171,6 +349201,8 @@ paths:
                             type: boolean
                           lcp_breached:
                             type: boolean
+                          live_table_note:
+                            type: string
                           max_error_count:
                             type: integer
                             format: int64
@@ -358961,6 +358993,8 @@ paths:
                               type: boolean
                             lcp_breached:
                               type: boolean
+                            live_table_note:
+                              type: string
                             max_error_count:
                               type: integer
                               format: int64
@@ -362810,6 +362844,8 @@ paths:
                             type: boolean
                           lcp_breached:
                             type: boolean
+                          live_table_note:
+                            type: string
                           max_error_count:
                             type: integer
                             format: int64
@@ -404210,6 +404246,8 @@ paths:
                               type: boolean
                             lcp_breached:
                               type: boolean
+                            live_table_note:
+                              type: string
                             max_error_count:
                               type: integer
                               format: int64
@@ -408059,6 +408097,8 @@ paths:
                             type: boolean
                           lcp_breached:
                             type: boolean
+                          live_table_note:
+                            type: string
                           max_error_count:
                             type: integer
                             format: int64
@@ -417793,6 +417833,8 @@ paths:
                               type: boolean
                             lcp_breached:
                               type: boolean
+                            live_table_note:
+                              type: string
                             max_error_count:
                               type: integer
                               format: int64
@@ -421642,6 +421684,8 @@ paths:
                             type: boolean
                           lcp_breached:
                             type: boolean
+                          live_table_note:
+                            type: string
                           max_error_count:
                             type: integer
                             format: int64
@@ -437257,6 +437301,8 @@ paths:
                               type: boolean
                             lcp_breached:
                               type: boolean
+                            live_table_note:
+                              type: string
                             max_error_count:
                               type: integer
                               format: int64
@@ -441106,6 +441152,8 @@ paths:
                             type: boolean
                           lcp_breached:
                             type: boolean
+                          live_table_note:
+                            type: string
                           max_error_count:
                             type: integer
                             format: int64
@@ -452847,6 +452895,8 @@ paths:
                               type: boolean
                             lcp_breached:
                               type: boolean
+                            live_table_note:
+                              type: string
                             max_error_count:
                               type: integer
                               format: int64
@@ -456684,6 +456734,8 @@ paths:
                             type: boolean
                           lcp_breached:
                             type: boolean
+                          live_table_note:
+                            type: string
                           max_error_count:
                             type: integer
                             format: int64

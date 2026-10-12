@@ -125,8 +125,8 @@ func enabledSortedEntries(entries []storage.ExecutionPlanEntry) []storage.Execut
 }
 
 // buildPlanEntryCreateRequest maps a plan entry to a test-create request, applying
-// per-entry runtime overrides, data-pool overrides (which win over the scenario's
-// pools because createTestRequestFromScenario only fills omitted DataPools), and an
+// per-entry runtime overrides, data-pool overrides (each replacing the scenario's
+// binding for the same alias; the scenario's other bindings stay), and an
 // optional timeslot (entry-level, else the plan-level fallback). Shared by both the
 // sequential orchestrator and the parallel materialize path.
 func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *string, entry storage.ExecutionPlanEntry, actors ...testCreationActor) (CreateTestRequest, error) {
@@ -148,6 +148,7 @@ func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *strin
 		// labels that always degraded to read-only at execution; the build boundary
 		// canonicalizes those legacy labels while plan create/update rejects them.
 		req.allowLegacyDataPoolModes = true
+		req.dataPoolOverridesByAlias = true
 	}
 	if ts := firstNonEmpty(trimPtr(entry.TimeslotID), trimPtr(planTimeslot)); ts != "" {
 		req.TimeslotID = &ts

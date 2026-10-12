@@ -1298,6 +1298,7 @@ type GoalStatus struct {
 	BreachDurationSec         int        `json:"breach_duration_sec,omitempty"`
 	StopTriggered             bool       `json:"stop_triggered,omitempty"`
 	StopReason                string     `json:"stop_reason,omitempty"`
+	LiveTableNote             string     `json:"live_table_note,omitempty"` // consumers idling on an empty live table, and whether scale-up is held
 }
 
 type GoalTargetStatus struct {
@@ -1359,6 +1360,12 @@ type goalControllerState struct {
 	// capSync serializes the run's throughput-cap syncs (see
 	// syncGoalThroughputCaps); it is released with the run's goal state.
 	capSync sync.Mutex
+	// liveTableEmpties is each live table's empty-outcome count at the last
+	// scale-up check, liveTableNote the starvation reported with it, and
+	// liveTableHolding whether that check held the scale-up.
+	liveTableEmpties map[string]uint64
+	liveTableNote    string
+	liveTableHolding bool
 }
 
 type telemetryDiagnosticState struct {
@@ -2195,6 +2202,11 @@ type CreateTestRequest struct {
 	// already-durable snapshots (currently execution plans). New API payloads
 	// must never set it and remain subject to the strict read-only contract.
 	allowLegacyDataPoolModes bool
+	// dataPoolOverridesByAlias makes DataPools overrides of the scenario's
+	// bindings, matched by alias, rather than the run's whole binding list. Set
+	// by execution-plan entries, whose overrides leave the scenario's other
+	// bindings (its live tables included) in place.
+	dataPoolOverridesByAlias bool
 	projectQuotaEvidence     projectQuotaEvidence
 	releaseContextEvidence   createTestReleaseEvidence
 	deferRunRefKey           bool

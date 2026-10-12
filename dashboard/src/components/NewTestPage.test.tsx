@@ -39,6 +39,7 @@ const apiMock = {
   getSystemInventory: vi.fn(),
   listTimeslots: vi.fn(),
   bindTimeslot: vi.fn(),
+  listDataPools: vi.fn(),
 }
 const projectMock = vi.hoisted(() => ({
   activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' } as {
@@ -149,6 +150,7 @@ describe('NewTestPage', () => {
 
     apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'ACC', project_id: 'project-1' }] })
     apiMock.listScripts.mockResolvedValue({ scripts: [] })
+    apiMock.listDataPools.mockResolvedValue({ data_pools: [{ id: 'pool-customers', name: 'Customers' }], count: 1 })
     apiMock.listReleases.mockResolvedValue({ releases: [{ id: 'release-1', name: 'PI29', application_id: 'app-1' }] })
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [

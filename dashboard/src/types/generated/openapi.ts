@@ -36616,6 +36616,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -37160,6 +37161,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -44719,6 +44721,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -45875,6 +45878,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -62827,6 +62831,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -63979,6 +63984,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -67270,6 +67276,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -67814,6 +67821,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -83327,6 +83335,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -84483,6 +84492,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -104953,6 +104963,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -106109,6 +106120,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -121181,6 +121193,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -121725,6 +121738,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -123273,6 +123287,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -123817,6 +123832,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -125365,6 +125381,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -125909,6 +125926,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -127457,6 +127475,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -128001,6 +128020,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -129549,6 +129569,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -130093,6 +130114,7 @@ export interface operations {
                   "last_scale_reason"?: string;
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
+                  "live_table_note"?: string;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -134082,6 +134104,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -135238,6 +135261,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -159601,6 +159625,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -160757,6 +160782,7 @@ export interface operations {
                 "last_scale_reason"?: string;
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
+                "live_table_note"?: string;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;

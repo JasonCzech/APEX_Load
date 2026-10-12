@@ -47,6 +47,7 @@ import ErrorDiagnostic from './ErrorDiagnostic'
 import PageViewToggle from './PageViewToggle'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { CronBuilder } from './ScheduleCronBuilder'
+import { describeDataBinding } from './scenarioDataBindingModel'
 import { ScheduleCurrentUtc, ScheduleNextRuns, ScheduleTimezoneSelect } from './ScheduleCadenceFields'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
@@ -1362,13 +1363,24 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const protocols = useMemo(() => groupProtocolList(effectiveScenarioGroups), [effectiveScenarioGroups])
   const groupOverridesCount = useMemo(() => groupOverrideCount(groupRunOverrides), [groupRunOverrides])
   const runOverridesCount = useMemo(() => runDefaultCards.filter(card => card.isOverridden).length + groupOverridesCount, [groupOverridesCount, runDefaultCards])
+  // Pool names for the launch review's description of each data binding.
+  const [dataPoolNames, setDataPoolNames] = useState<Record<string, string>>({})
+  const scenarioPoolIds = useMemo(() => [...new Set((scenario?.data_pools || []).map(binding => binding.pool_id).filter(Boolean))].join(','), [scenario?.data_pools])
+  useEffect(() => {
+    if (!activeProjectID || !scenarioPoolIds) return undefined
+    let cancelled = false
+    void api.listDataPools(activeProjectID, true).then(response => {
+      if (!cancelled) setDataPoolNames(Object.fromEntries((response.data_pools || []).map(pool => [pool.id, pool.name])))
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [activeProjectID, api, scenarioPoolIds])
   const launchSummaryItems = useMemo(() => {
     const capacityAdvisory = immediatePreflight?.capacity_advisory || draftEstimate?.capacity_advisory
-    const dataPools = scenario?.data_pools || []
+    const bindingSummaries = (scenario?.data_pools || []).map(binding => describeDataBinding(binding, id => dataPoolNames[id]))
     const dataPoolValue = !scenario
       ? 'None'
-      : dataPools.length
-        ? dataPools.map(pool => pool.alias || pool.pool_name || pool.pool_id).join(', ')
+      : bindingSummaries.length
+        ? bindingSummaries.map(item => item.text).join('; ')
         : 'None'
     // Both sources of an estimate failed: say so instead of "pending" forever.
     const estimateUnavailable = estimateFailed && !immediatePreflight && Boolean(immediatePreflightError)
@@ -1407,7 +1419,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       { label: 'Protocols', value: protocols.length ? protocols.join(', ') : 'None' },
       { label: 'Run Overrides', value: formatCount(runOverridesCount, 'override') },
       { label: 'Host Placement', value: groupPlacementSummary(groupRunOverrides, scenario?.scripts) },
-      { label: 'Data Pools', value: dataPoolValue },
+      { label: 'Data Pools', value: dataPoolValue, tone: bindingSummaries.some(item => item.writesBack) ? 'warning' : 'normal' },
       { label: 'Capacity estimate', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Estimated bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Preflight Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
@@ -1415,7 +1427,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
-  }, [canManageTests, effectiveAccessError, effectiveAccessLoaded, estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  }, [canManageTests, dataPoolNames, effectiveAccessError, effectiveAccessLoaded, estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const readiness = useMemo(() => {
     const checks: Array<{ label: string; ready: boolean; field: LaunchField }> = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication, field: 'application' },

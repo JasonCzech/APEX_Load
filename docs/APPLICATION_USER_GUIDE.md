@@ -647,7 +647,10 @@ scenario).
    Monitor bindings, criteria, Elastic and Dynatrace capture and trace context are
    under **Monitoring for this run**, folded unless one needs attention.
 4. Choose to start now or schedule a start time. If something blocks the launch, each
-   reason you can fix on the page links to its field.
+   reason you can fix on the page links to its field. The launch review lists each
+   data binding: a read-only pool, or a live table with where it starts and what
+   happens to it at the end. A live table that writes back to its pool is flagged,
+   because that run changes the pool.
 5. Start.
 
 Three things can happen between "start" and "running":
@@ -759,6 +762,14 @@ and the next change, and states the VUser guardrail once for the whole run. The
 run report's scorecard then shows the TPS delivered against the goal and how many
 10-second windows were within ±10%, over or under it.
 
+When a goal run's consumers find a live table empty, more VUsers cannot raise its
+throughput. If every iteration draws from the table (next, pop or lease), the
+controller holds its scale-up and Command Center says so under the run's figures. If
+the table is read by explicit script actions, it keeps scaling and notes that adding
+VUsers helps only where producers are short. Runs that use live tables also show a
+**Live tables** panel in Command Center with each table's available and leased rows,
+waits and unknown outcomes; **Open live tables** leads to the run page's previews.
+
 When errors climb, drill into the live error evidence to see representative failures
 rather than guessing — a 500 from your application and a connection reset from an
 exhausted generator look identical in an error-rate chart and call for opposite
@@ -817,6 +828,12 @@ uses a release of its own, the plan keeps its application.
 
 Each run a plan starts names its plan on the run's page ("Plan: Nightly regression,
 entry 2 of 3"), linked to **Scenarios › Execution plans**.
+
+An entry's data pool overrides replace the scenario's binding for the same alias; the
+scenario's other bindings, its live tables included, stay as the scenario sets them.
+In a sequential plan each entry is its own run, so a run-scoped live table starts
+afresh in each entry; use a project live table to pass rows from one entry to the
+next.
 
 ### When A Plan Is Already Running
 
