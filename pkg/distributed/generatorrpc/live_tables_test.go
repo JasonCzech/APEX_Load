@@ -125,16 +125,36 @@ func TestLiveTableProxyReservesControlAdmissionAndOrdersControlFirst(t *testing.
 	if _, err := proxy.Execute(ctx, "table", livetable.Request{ClientID: "excess", Sequence: 1, Operation: livetable.OpPop}); livetable.CodeOf(err) != livetable.CodeCapacity {
 		t.Fatalf("ordinary overload: %v", err)
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = proxy.Execute(ctx, "table", livetable.Request{ClientID: "renew", OwnerID: "owner", Sequence: 1, Operation: livetable.OpRenew})
-	}()
+	for i := 0; i < liveTableControlReserve-liveTableLeaseControlReserve; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _ = proxy.Execute(ctx, "table", livetable.Request{ClientID: fmt.Sprintf("push-%d", i), Sequence: 1, Operation: livetable.OpPush})
+		}(i)
+	}
 	waitLiveCondition(t, func() bool {
 		proxy.mu.Lock()
 		defer proxy.mu.Unlock()
-		return len(proxy.pending) == liveTablePendingOps-liveTableControlReserve+1
+		return proxy.producers == liveTableControlReserve-liveTableLeaseControlReserve
 	})
+	if _, err := proxy.Execute(ctx, "table", livetable.Request{ClientID: "excess-producer", Sequence: 1, Operation: livetable.OpPush}); livetable.CodeOf(err) != livetable.CodeCapacity {
+		t.Fatalf("producer consumed lease-control count reserve: %v", err)
+	}
+	for i := 0; i < liveTableLeaseControlReserve; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _ = proxy.Execute(ctx, "table", livetable.Request{ClientID: fmt.Sprintf("renew-%d", i), OwnerID: "owner", Sequence: 1, Operation: livetable.OpRenew})
+		}(i)
+	}
+	waitLiveCondition(t, func() bool {
+		proxy.mu.Lock()
+		defer proxy.mu.Unlock()
+		return len(proxy.pending) == liveTablePendingOps
+	})
+	if _, err := proxy.Execute(ctx, "table", livetable.Request{ClientID: "excess-control", Sequence: 1, Operation: livetable.OpAck}); livetable.CodeOf(err) != livetable.CodeCapacity {
+		t.Fatalf("control exceeded total count budget: %v", err)
+	}
 	frames := proxy.frames(1, "group")
 	var first livetable.Request
 	_ = json.Unmarshal(frames[0].RequestJson, &first)
@@ -145,8 +165,107 @@ func TestLiveTableProxyReservesControlAdmissionAndOrdersControlFirst(t *testing.
 	wg.Wait()
 	proxy.mu.Lock()
 	defer proxy.mu.Unlock()
-	if len(proxy.pending) != 0 || proxy.bytes != 0 || proxy.ordinary != 0 {
+	if len(proxy.pending) != 0 || proxy.liveTableAdmission != (liveTableAdmission{}) {
 		t.Fatal("canceled channel calls leaked resources")
+	}
+}
+
+func liveRequestWithJSONSize(t *testing.T, operation livetable.Operation, size int) livetable.Request {
+	t.Helper()
+	request := livetable.Request{Operation: operation, ClientID: "producer", Sequence: 1, Values: make(map[string]string)}
+	// Keep each field inside the core's default field bound while filling the
+	// transport budget, rather than relying on one invalid oversized field.
+	for i := 0; i < 64; i++ {
+		request.Values[fmt.Sprintf("field_%02d", i)] = ""
+	}
+	body, err := json.Marshal(request)
+	if err != nil || len(body) > size {
+		t.Fatalf("request size setup: %v, %d > %d", err, len(body), size)
+	}
+	remaining := size - len(body)
+	for i := 0; i < 64 && remaining > 0; i++ {
+		n := min(remaining, 16<<10)
+		request.Values[fmt.Sprintf("field_%02d", i)] = strings.Repeat("x", n)
+		remaining -= n
+	}
+	body, err = json.Marshal(request)
+	if err != nil || len(body) != size {
+		t.Fatalf("request size setup: %v, got %d want %d", err, len(body), size)
+	}
+	return request
+}
+
+func TestLiveTableProxyReservesLeaseBytesWhenProducersFillBudget(t *testing.T) {
+	proxy := newLiveTableProxy([]engine.LiveTableBinding{{Alias: "work", TableID: "table"}})
+	proxy.epoch, proxy.attached = 1, true
+	ctx, cancel := context.WithCancel(t.Context())
+	var wg sync.WaitGroup
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	producerSlots := liveTableControlReserve - liveTableLeaseControlReserve
+	request := liveRequestWithJSONSize(t, livetable.OpPush, (liveTablePendingBytes-liveTableLeaseReservedBytes)/producerSlots)
+	for i := 0; i < producerSlots; i++ {
+		request := request
+		request.ClientID = fmt.Sprintf("prod-%03d", i)
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _ = proxy.Execute(ctx, "table", request) }()
+	}
+	waitLiveCondition(t, func() bool {
+		proxy.mu.Lock()
+		defer proxy.mu.Unlock()
+		return proxy.nonLeaseBytes == liveTablePendingBytes-liveTableLeaseReservedBytes
+	})
+	// This update has an ordinary count slot available; only the byte reserve
+	// must reject it, definitively and before assigning a transport identity.
+	_, err := proxy.Execute(ctx, "table", livetable.Request{Operation: livetable.OpUpdate, ClientID: "overflow", Sequence: 1})
+	var typed *livetable.Error
+	if !errors.As(err, &typed) || typed.Code != livetable.CodeCapacity || typed.OutcomeUnknown {
+		t.Fatalf("byte overload was not definitively rejected: %v", err)
+	}
+	_, err = proxy.Execute(ctx, "table", livetable.Request{Operation: livetable.OpAck, ClientID: strings.Repeat("x", liveTableLeaseControlBytes), Sequence: 1})
+	if !errors.As(err, &typed) || typed.Code != livetable.CodeCapacity || typed.OutcomeUnknown {
+		t.Fatalf("padded lease control was not definitively rejected: %v", err)
+	}
+	leaseResults := make(chan error, liveTableLeaseControlReserve)
+	for i := 0; i < liveTableLeaseControlReserve; i++ {
+		operation := []livetable.Operation{livetable.OpAck, livetable.OpRelease, livetable.OpRenew}[i%3]
+		control := livetable.Request{Operation: operation, ClientID: strings.Repeat("<", 256), OwnerID: strings.Repeat("<", 256), RecordID: strings.Repeat("<", 256), LeaseToken: strings.Repeat("<", 256), Sequence: ^uint64(0)}
+		control.ClientID = strings.Repeat("<", 255) + fmt.Sprint(i)
+		if operation == livetable.OpRenew {
+			control.LeaseDuration = 5 * time.Minute
+		}
+		wg.Add(1)
+		go func() { defer wg.Done(); _, err := proxy.Execute(ctx, "table", control); leaseResults <- err }()
+	}
+	waitLiveCondition(t, func() bool {
+		proxy.mu.Lock()
+		defer proxy.mu.Unlock()
+		return proxy.leaseControls == liveTableLeaseControlReserve
+	})
+	frames := proxy.frames(1, "group")
+	if len(frames) != liveTableControlReserve {
+		t.Fatalf("rejected requests allocated pending identities: %d frames", len(frames))
+	}
+	result, _ := json.Marshal(livetable.Result{Status: livetable.StatusOK})
+	for i := 0; i < liveTableLeaseControlReserve; i++ {
+		var control livetable.Request
+		if err := json.Unmarshal(frames[i].RequestJson, &control); err != nil || !liveTableLeaseControlOperation(control.Operation) {
+			t.Fatalf("lease control did not precede producers: %v", err)
+		}
+		if err := proxy.receive(&pb.LiveTableReply{RequestId: frames[i].RequestId, ResultJson: result}, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < liveTableLeaseControlReserve; i++ {
+		if err := <-leaseResults; err != nil {
+			t.Fatalf("reserved control failed: %v", err)
+		}
+	}
+	cancel()
+	wg.Wait()
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if len(proxy.pending) != 0 || proxy.liveTableAdmission != (liveTableAdmission{}) {
+		t.Fatalf("channel accounting leaked: %+v", proxy.liveTableAdmission)
 	}
 }
 
@@ -263,6 +382,76 @@ func TestServeLiveTablesAllowsProducerWhileConsumersWait(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("waiting consumers blocked producer")
+	}
+	cancel()
+	<-done
+}
+
+func TestServeLiveTablesReservesLeaseAdmissionAtProducerByteLimit(t *testing.T) {
+	stream := &liveClientStream{requests: make(chan *pb.LiveTableRequest, liveTablePendingOps), replies: make(chan *pb.LiveTableReply, liveTablePendingOps)}
+	client := &Client{rpc: &liveChannelRPC{stream: stream}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan struct{}, liveTablePendingOps)
+	done := make(chan error, 1)
+	handler := liveTestClientFunc(func(ctx context.Context, _ string, r livetable.Request) (livetable.Result, error) {
+		if liveTableLeaseControlOperation(r.Operation) {
+			return livetable.Result{Status: livetable.StatusOK}, nil
+		}
+		started <- struct{}{}
+		<-ctx.Done()
+		return livetable.Result{}, ctx.Err()
+	})
+	go func() {
+		done <- client.serveLiveTables(ctx, "run", "group", 1, []byte("scope"), handler, func(error) {})
+	}()
+	<-stream.replies
+	send := func(id uint64, request livetable.Request) {
+		t.Helper()
+		body, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream.requests <- &pb.LiveTableRequest{GroupName: "group", RequestId: id, TableId: "table", RequestJson: body, TimeoutMilliseconds: 5000}
+	}
+	receive := func(id uint64, code livetable.Code) {
+		t.Helper()
+		select {
+		case reply := <-stream.replies:
+			if reply.RequestId != id || reply.ErrorCode != string(code) {
+				t.Fatalf("unexpected result: %+v", reply)
+			}
+			if code != "" {
+				var failure livetable.Error
+				if err := json.Unmarshal(reply.ResultJson, &failure); err != nil || failure.OutcomeUnknown {
+					t.Fatalf("preacceptance rejection was ambiguous: %+v, %v", failure, err)
+				}
+			}
+		case <-time.After(time.Second):
+			t.Fatal("producer load blocked lease admission or overload reply")
+		}
+	}
+	producerSlots := liveTableControlReserve - liveTableLeaseControlReserve
+	request := liveRequestWithJSONSize(t, livetable.OpPush, (liveTablePendingBytes-liveTableLeaseReservedBytes)/producerSlots)
+	for i := 0; i < producerSlots; i++ {
+		request.ClientID = fmt.Sprintf("prod-%03d", i)
+		send(uint64(i+1), request)
+	}
+	for i := 0; i < producerSlots; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("producers were not admitted at the byte limit")
+		}
+	}
+	send(100, livetable.Request{Operation: livetable.OpUpdate, ClientID: "overflow", Sequence: 1})
+	receive(100, livetable.CodeCapacity)
+	send(101, livetable.Request{Operation: livetable.OpRenew, ClientID: strings.Repeat("x", liveTableLeaseControlBytes), Sequence: 1})
+	receive(101, livetable.CodeCapacity)
+	for i, operation := range []livetable.Operation{livetable.OpAck, livetable.OpRelease, livetable.OpRenew} {
+		id := uint64(102 + i)
+		send(id, livetable.Request{Operation: operation, ClientID: "lease-control", Sequence: uint64(i + 1), RecordID: "record", LeaseToken: "token"})
+		receive(id, "")
 	}
 	cancel()
 	<-done

@@ -204,6 +204,7 @@ type Entry struct {
 }
 
 type Snapshot struct {
+	Observations  Observations    `json:"observations,omitempty"`
 	FormatVersion int             `json:"format_version"`
 	TableID       string          `json:"table_id"`
 	RunID         string          `json:"run_id"`
@@ -221,20 +222,22 @@ type Counts struct {
 	Quarantined      uint64 `json:"quarantined"`
 	Discarded        uint64 `json:"discarded"`
 	DeliveryAttempts uint64 `json:"delivery_attempts"`
+	Redeliveries     uint64 `json:"redeliveries"`
 }
 
 type Stats struct {
-	TableID      string  `json:"table_id"`
-	Profile      Profile `json:"profile"`
-	Revision     uint64  `json:"revision"`
-	DataBytes    int64   `json:"data_bytes"`
-	ReceiptBytes int64   `json:"receipt_bytes"`
-	Receipts     int     `json:"receipts"`
-	Clients      int     `json:"clients"`
-	Waiters      int     `json:"waiters"`
-	Closed       bool    `json:"closed"`
-	Unavailable  bool    `json:"unavailable"`
-	Counts       Counts  `json:"counts"`
+	Observations Observations `json:"observations"`
+	TableID      string       `json:"table_id"`
+	Profile      Profile      `json:"profile"`
+	Revision     uint64       `json:"revision"`
+	DataBytes    int64        `json:"data_bytes"`
+	ReceiptBytes int64        `json:"receipt_bytes"`
+	Receipts     int          `json:"receipts"`
+	Clients      int          `json:"clients"`
+	Waiters      int          `json:"waiters"`
+	Closed       bool         `json:"closed"`
+	Unavailable  bool         `json:"unavailable"`
+	Counts       Counts       `json:"counts"`
 	// Local serving telemetry, separate from target traffic. It restarts after
 	// recovery and is intentionally not replayed as target execution evidence.
 	OpCount          uint64 `json:"op_count"`

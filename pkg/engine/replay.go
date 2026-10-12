@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
+
+var replaySandboxSecretReference = regexp.MustCompile(`\{\{\s*secret\.`)
 
 type ReplayOptions struct {
 	// LiveTableSeeds are isolated ephemeral seeds; replay never accepts a live run client.
@@ -325,14 +328,6 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if len(aliases) > 0 && len(opts.LiveTableSeeds) == 0 {
 		return nil, fmt.Errorf("live_table replay requires explicit isolated sandbox seeds")
 	}
-	liveClient, liveBindings, liveClientID, err := NewLiveTableSandbox(opts.LiveTableSeeds)
-	if err != nil {
-		return nil, fmt.Errorf("initialize isolated replay tables: %w", err)
-	}
-	if err := validateLiveTableBindings(script, liveClient, liveClientID, liveBindings); err != nil {
-		return nil, err
-	}
-
 	groupName := opts.GroupName
 	if groupName == "" {
 		groupName = "replay"
@@ -373,6 +368,32 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	}
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
+	}
+	// Inline sandbox rows are executable data, not evidence. Reject managed
+	// secrets before initializing them; redacting a copied value would change
+	// the script's input. Imported literals follow their existing policy.
+	managedValues := allRuntimeSecretValues(redactionConfig)
+	importedValues := allRuntimeScriptSourcedValues(redactionConfig)
+	for _, seed := range opts.LiveTableSeeds {
+		for _, row := range seed.Rows {
+			for _, value := range row.Values {
+				if replaySandboxSecretReference.MatchString(value) {
+					return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+				}
+				for secret := range managedValues {
+					if _, imported := importedValues[secret]; !imported && strings.Contains(value, secret) {
+						return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+					}
+				}
+			}
+		}
+	}
+	liveClient, liveBindings, liveClientID, err := NewLiveTableSandbox(opts.LiveTableSeeds)
+	if err != nil {
+		return nil, fmt.Errorf("initialize isolated replay tables: %w", err)
+	}
+	if err := validateLiveTableBindings(script, liveClient, liveClientID, liveBindings); err != nil {
+		return nil, err
 	}
 	groupName = scrubReplayGroupName(groupName, redactionConfig)
 

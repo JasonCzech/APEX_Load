@@ -291,6 +291,9 @@ func (t *Table) native(r Request, now time.Time, d *transition) (Result, error) 
 		counts.Available--
 		counts.Leased++
 		counts.DeliveryAttempts++
+		if rec.Attempts > 1 {
+			counts.Redeliveries++
+		}
 		d.Counts = &counts
 		row = filterRow(rec.Row, columns)
 		return Result{Status: StatusOK, Row: &row, Lease: rec.Lease}, nil

@@ -24,13 +24,71 @@ const liveTableFrameBytes = (1 << 20) - 4096
 const liveTablePendingBytes = 4 << 20
 const liveTablePendingOps = 64
 const liveTableControlReserve = 8
+const liveTableLeaseControlReserve = liveTableControlReserve / 2
+const liveTableLeaseControlBytes = 8 << 10
+const liveTableLeaseReservedBytes = liveTableLeaseControlReserve * liveTableLeaseControlBytes
+
+// Waiting consumers, producers, and lease settlement have independent bounded
+// shares. Producers can wake consumers without consuming the count or bytes
+// needed to settle work already leased. Callers synchronize admission/release.
+type liveTableAdmission struct {
+	bytes, ordinary, producers, leaseControls, nonLeaseBytes int
+}
+
+func (b *liveTableAdmission) admit(operation livetable.Operation, size int) bool {
+	leaseControl := liveTableLeaseControlOperation(operation)
+	if size > liveTablePendingBytes-b.bytes {
+		return false
+	}
+	if leaseControl {
+		// Engine-generated controls contain only bounded identities and timing.
+		// Bound their frames too, so padding cannot consume another lease's share.
+		if size > liveTableLeaseControlBytes || b.leaseControls >= liveTableLeaseControlReserve {
+			return false
+		}
+		b.leaseControls++
+	} else {
+		if size > liveTablePendingBytes-liveTableLeaseReservedBytes-b.nonLeaseBytes {
+			return false
+		}
+		if operation == livetable.OpPush {
+			if b.producers >= liveTableControlReserve-liveTableLeaseControlReserve {
+				return false
+			}
+			b.producers++
+		} else {
+			if b.ordinary >= liveTablePendingOps-liveTableControlReserve {
+				return false
+			}
+			b.ordinary++
+		}
+		b.nonLeaseBytes += size
+	}
+	b.bytes += size
+	return true
+}
+
+func (b *liveTableAdmission) release(operation livetable.Operation, size int) {
+	b.bytes -= size
+	if liveTableLeaseControlOperation(operation) {
+		b.leaseControls--
+	} else {
+		b.nonLeaseBytes -= size
+		if operation == livetable.OpPush {
+			b.producers--
+		} else {
+			b.ordinary--
+		}
+	}
+}
 
 type liveTablePending struct {
-	frame    *pb.LiveTableRequest
-	result   chan liveTableResponse
-	deadline time.Time
-	sent     uint64
-	control  bool
+	frame        *pb.LiveTableRequest
+	result       chan liveTableResponse
+	deadline     time.Time
+	sent         uint64
+	control      bool
+	leaseControl bool
 }
 type liveTableResponse struct {
 	result livetable.Result
@@ -40,14 +98,13 @@ type liveTableResponse struct {
 // One proxy belongs to one immutable group assignment. Reattaching a controller
 // stream replays pending request identities; the engine never resubmits as new.
 type liveTableProxy struct {
+	liveTableAdmission
 	mu          sync.Mutex
 	tables      map[string]bool
 	pending     map[uint64]*liveTablePending
-	bytes       int
 	next, epoch uint64
 	attached    bool
 	wake        chan struct{}
-	ordinary    int
 }
 
 func newLiveTableProxy(bindings []engine.LiveTableBinding) *liveTableProxy {
@@ -86,32 +143,25 @@ func (p *liveTableProxy) Execute(ctx context.Context, tableID string, request li
 	}
 	control := liveTableControlOperation(request.Operation)
 	p.mu.Lock()
-	if len(p.pending) >= liveTablePendingOps || !control && p.ordinary >= liveTablePendingOps-liveTableControlReserve || len(body) > liveTablePendingBytes-p.bytes {
-		p.mu.Unlock()
-		return livetable.Result{}, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table channel is overloaded"}
-	}
 	if p.next == ^uint64(0) {
 		p.mu.Unlock()
 		return livetable.Result{}, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table transport sequence exhausted"}
 	}
+	if !p.admit(request.Operation, len(body)) {
+		p.mu.Unlock()
+		return livetable.Result{}, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table channel is overloaded"}
+	}
 	p.next++
 	id := p.next
-	call := &liveTablePending{frame: &pb.LiveTableRequest{RequestId: id, TableId: tableID, RequestJson: body}, result: make(chan liveTableResponse, 1), deadline: deadline, control: control}
+	call := &liveTablePending{frame: &pb.LiveTableRequest{RequestId: id, TableId: tableID, RequestJson: body}, result: make(chan liveTableResponse, 1), deadline: deadline, control: control, leaseControl: liveTableLeaseControlOperation(request.Operation)}
 	p.pending[id] = call
-	p.bytes += len(body)
-	if !control {
-		p.ordinary++
-	}
 	p.mu.Unlock()
 	p.signal()
 	defer func() {
 		p.mu.Lock()
 		if p.pending[id] == call {
 			delete(p.pending, id)
-			p.bytes -= len(body)
-			if !call.control {
-				p.ordinary--
-			}
+			p.release(request.Operation, len(body))
 		}
 		p.mu.Unlock()
 	}()
@@ -140,6 +190,9 @@ func (p *liveTableProxy) frames(epoch uint64, group string) []*pb.LiveTableReque
 		}
 	}
 	sort.Slice(ids, func(i, j int) bool {
+		if p.pending[ids[i]].leaseControl != p.pending[ids[j]].leaseControl {
+			return p.pending[ids[i]].leaseControl
+		}
 		if p.pending[ids[i]].control != p.pending[ids[j]].control {
 			return p.pending[ids[i]].control
 		}
@@ -192,7 +245,10 @@ func (p *liveTableProxy) receive(reply *pb.LiveTableReply, epoch uint64) error {
 }
 
 func liveTableControlOperation(op livetable.Operation) bool {
-	return op == livetable.OpPush || op == livetable.OpRenew || op == livetable.OpAck || op == livetable.OpRelease
+	return op == livetable.OpPush || liveTableLeaseControlOperation(op)
+}
+func liveTableLeaseControlOperation(op livetable.Operation) bool {
+	return op == livetable.OpRenew || op == livetable.OpAck || op == livetable.OpRelease
 }
 func liveTableKnownCode(code livetable.Code) bool {
 	switch code {
@@ -436,8 +492,8 @@ func (c *Client) serveLiveTablesWithHandshakeTimeout(ctx context.Context, testID
 			}
 		}
 	}()
-	ordinarySlots := make(chan struct{}, liveTablePendingOps-liveTableControlReserve)
-	controlSlots := make(chan struct{}, liveTableControlReserve)
+	var admission liveTableAdmission
+	var admissionMu sync.Mutex
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
@@ -455,16 +511,13 @@ func (c *Client) serveLiveTablesWithHandshakeTimeout(ctx context.Context, testID
 		if err := dec.Decode(new(any)); err != io.EOF {
 			return errors.New("invalid trailing live table request JSON")
 		}
-		slots := ordinarySlots
-		if liveTableControlOperation(request.Operation) {
-			slots = controlSlots
-		}
-		select {
-		case slots <- struct{}{}:
-		default:
+		admissionMu.Lock()
+		admitted := admission.admit(request.Operation, len(frame.RequestJson))
+		admissionMu.Unlock()
+		if !admitted {
 			reply := *opening
 			reply.RequestId = frame.RequestId
-			liveTableReplyError(&reply, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table operation concurrency limit exceeded"})
+			liveTableReplyError(&reply, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table operation admission limit exceeded"})
 			select {
 			case replies <- &reply:
 			case <-streamCtx.Done():
@@ -472,8 +525,12 @@ func (c *Client) serveLiveTablesWithHandshakeTimeout(ctx context.Context, testID
 			}
 			continue
 		}
-		go func(frame *pb.LiveTableRequest, request livetable.Request, slots chan struct{}) {
-			defer func() { <-slots }()
+		go func(frame *pb.LiveTableRequest, request livetable.Request) {
+			defer func() {
+				admissionMu.Lock()
+				admission.release(request.Operation, len(frame.RequestJson))
+				admissionMu.Unlock()
+			}()
 			reply := *opening
 			reply.RequestId = frame.RequestId
 			{
@@ -493,6 +550,6 @@ func (c *Client) serveLiveTablesWithHandshakeTimeout(ctx context.Context, testID
 			case replies <- &reply:
 			case <-streamCtx.Done():
 			}
-		}(frame, request, slots)
+		}(frame, request)
 	}
 }

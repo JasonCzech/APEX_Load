@@ -219,6 +219,11 @@ func (runtime *liveTableRuntime) execute(ctx context.Context, lane *liveTableLan
 	// A lost response retries the identical operation, never a new consume.
 	if uncertainLiveTableError(err) && operationCtx.Err() == nil {
 		result, err = runtime.client.Execute(operationCtx, binding.TableID, request)
+		if err != nil {
+			// Rejection of a retry does not establish whether the original attempt
+			// committed. Only an authoritative successful replay clears ambiguity.
+			err = &livetable.Error{Code: livetable.CodeUnavailable, Message: "live table retry did not establish the original outcome", OutcomeUnknown: true}
+		}
 	}
 	if err != nil {
 		if uncertainLiveTableError(err) {
@@ -646,16 +651,32 @@ type LiveTableSandboxSeed struct {
 }
 
 func NewLiveTableSandbox(seeds []LiveTableSandboxSeed) (livetable.Client, []LiveTableBinding, string, error) {
+	if len(seeds) > 4 {
+		return nil, nil, "", fmt.Errorf("replay supports at most 4 isolated live tables")
+	}
+	encoded, err := json.Marshal(seeds)
+	if err != nil || len(encoded) > 64<<10 {
+		return nil, nil, "", fmt.Errorf("isolated live table seeds must fit within 64 KiB")
+	}
 	manager := livetable.NewManager()
 	incarnation := "sandbox:" + uuid.NewString()
 	bindings := make([]LiveTableBinding, 0, len(seeds))
 	for _, seed := range seeds {
+		for _, column := range seed.Columns {
+			if strings.TrimSpace(column) == "" || len(column) > 128 || strings.ContainsAny(column, "\x00\r\n") {
+				return nil, nil, "", fmt.Errorf("sandbox columns must be nonempty names of at most 128 bytes without control separators")
+			}
+		}
 		profile := seed.Profile
 		if profile == "" {
 			profile = livetable.ProfileNative
 		}
 		binding := LiveTableBinding{Alias: seed.Alias, TableID: uuid.NewString(), Strategy: "none", Profile: profile, Columns: seed.Columns, LeaseDuration: 30 * time.Second, OpTimeout: 65 * time.Second}
-		if _, err := manager.Create(livetable.Config{ID: binding.TableID, RunID: incarnation, Profile: profile, Columns: seed.Columns, Rows: seed.Rows}); err != nil {
+		if _, err := manager.Create(livetable.Config{ID: binding.TableID, RunID: incarnation, Profile: profile, Columns: seed.Columns, Rows: seed.Rows, Limits: livetable.Limits{
+			MaxBytes: 256 << 10, MaxRows: 256, MaxFields: 4096, MaxColumns: 32, MaxFieldBytes: 8 << 10,
+			MaxRequestBytes: 64 << 10, MaxResultBytes: 64 << 10, MaxReceipts: 128, MaxReceiptBytes: 256 << 10,
+			MaxClients: 128, MaxWaiters: 8, MaxScanCells: 4096, MaxSnapshotBytes: 1 << 20,
+		}}); err != nil {
 			return nil, nil, "", err
 		}
 		bindings = append(bindings, binding)
@@ -664,4 +685,14 @@ func NewLiveTableSandbox(seeds []LiveTableSandboxSeed) (livetable.Client, []Live
 		return nil, nil, "", err
 	}
 	return manager, bindings, incarnation, nil
+}
+
+// ValidateLiveTableSandboxSeeds rejects missing/colliding aliases and oversized
+// inline seeds before a replay session is admitted. No runtime state is retained.
+func ValidateLiveTableSandboxSeeds(script *dsl.Script, seeds []LiveTableSandboxSeed) error {
+	client, bindings, identity, err := NewLiveTableSandbox(seeds)
+	if err != nil {
+		return err
+	}
+	return validateLiveTableBindings(script, client, identity, bindings)
 }

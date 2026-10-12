@@ -56,6 +56,8 @@ func TestVTSJournalSplicesStaySmallAndReplayExactly(t *testing.T) {
 		t.Fatalf("corrupt splice: %v", err)
 	}
 	after, _ := restored.Snapshot()
+	// Capture time describes inspection, not a mutation of retained state.
+	after.Observations.CapturedAt = before.Observations.CapturedAt
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("corrupt replay changed state")
 	}

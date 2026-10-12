@@ -86,6 +86,9 @@ type pending struct {
 
 type Table struct {
 	mu                   sync.Mutex
+	observationMu        sync.Mutex
+	observations         Observations
+	activeAttempts       atomic.Int64
 	s                    state
 	committer            Committer
 	now                  func() time.Time
@@ -210,6 +213,7 @@ func New(c Config) (*Table, error) {
 		seen[col] = true
 	}
 	t := &Table{s: state{ID: c.ID, RunID: c.RunID, Profile: c.Profile, Limits: l, Columns: append([]string(nil), c.Columns...), Records: map[string]record{}, Data: map[string][]Cell{}, Cursors: map[string]uint64{}, Clients: map[string]uint64{}, Receipts: map[string]receipt{}}, committer: c.Committer, now: c.Now, pending: map[string]*pending{}, pendingClients: map[string]string{}, leaseDeadlines: map[string]time.Time{}}
+	t.observations.Version = 1
 	if t.now == nil {
 		t.now = time.Now
 	}
@@ -252,7 +256,10 @@ func New(c Config) (*Table, error) {
 		return nil, fail(CodeCapacity, "seed data exceeds table budget")
 	}
 	encoded, err := json.Marshal(t.s)
-	if err != nil || len(encoded) > l.MaxSnapshotBytes {
+	// Reserve bounded observation history and the outer recovery envelope even
+	// for a seed that will never receive another mutation. Transition admission
+	// already reserves 16 KiB for fixed checkpoint overhead.
+	if err != nil || len(encoded)+8192 > l.MaxSnapshotBytes {
 		return nil, fail(CodeCapacity, "seed snapshot exceeds recovery budget")
 	}
 	return t, nil
@@ -356,6 +363,7 @@ func (t *Table) Stats() Stats {
 	for i := range stats.OpLatencyBuckets {
 		stats.OpLatencyBuckets[i] = t.opLatencyBuckets[i].Load()
 	}
+	stats.Observations = t.observationSnapshot(time.Now())
 	if t.s.Profile == ProfileVTS {
 		stats.Counts.Available = 0
 		for _, cells := range t.s.Data {

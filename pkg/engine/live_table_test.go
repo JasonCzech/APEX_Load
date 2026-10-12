@@ -28,6 +28,27 @@ func liveAction(operation string, extra map[string]any) dsl.Action {
 	return dsl.Action{Name: operation, Type: "live_table", Params: params}
 }
 
+func TestLiveTableSandboxRejectsBoundsAndKnownManagedSecretSeeds(t *testing.T) {
+	seed := LiveTableSandboxSeed{Alias: "work", Columns: []string{"id"}, Rows: []livetable.Row{{Values: map[string]string{"id": "safe"}}}}
+	if _, _, _, err := NewLiveTableSandbox([]LiveTableSandboxSeed{seed, seed, seed, seed, seed}); err == nil {
+		t.Fatal("unbounded sandbox table count accepted")
+	}
+	oversized := seed
+	oversized.Rows = []livetable.Row{{Values: map[string]string{"id": strings.Repeat("x", 65537)}}}
+	if _, _, _, err := NewLiveTableSandbox([]LiveTableSandboxSeed{oversized}); err == nil {
+		t.Fatal("oversized sandbox accepted")
+	}
+	for _, value := range []string{"prefix-managed-private-value", "{{ secret.API_KEY}}"} {
+		seed.Rows = []livetable.Row{{Values: map[string]string{"id": value}}}
+		_, err := ReplayScript(context.Background(), &dsl.Script{Name: "seed rejection", Protocol: "http", Actions: []dsl.Action{liveAction("pop", nil)}}, ReplayOptions{
+			LiveTableSeeds: []LiveTableSandboxSeed{seed}, Variables: map[string]string{"token": "managed-private-value"},
+		})
+		if err == nil || !strings.Contains(err.Error(), "managed secrets cannot seed") || strings.Contains(err.Error(), value) {
+			t.Fatalf("managed seed rejection was not private: %v", err)
+		}
+	}
+}
+
 func liveTestVU(client livetable.Client) *VUser {
 	return &VUser{ID: 1, Script: &dsl.Script{Name: "live", Protocol: "http"}, Variables: map[string]string{}, LiveTableClient: client, LiveTableClientID: "assignment-incarnation", LiveTableBindings: []LiveTableBinding{{Alias: "work", TableID: "table", Strategy: "none", Profile: livetable.ProfileNative, Columns: []string{"id"}, LeaseDuration: time.Second, OpTimeout: time.Second}}}
 }
@@ -528,4 +549,30 @@ func TestLiveTableAckResponseDoesNotRaceRenewalOrBlockAnotherLease(t *testing.T)
 		t.Fatal(err)
 	}
 	vu.closeLiveTables()
+}
+
+func TestLiveTableRejectedRetryCannotClearOriginalUnknownOutcome(t *testing.T) {
+	for _, code := range []livetable.Code{livetable.CodeCapacity, livetable.CodeClosed, livetable.CodeInvalid, livetable.CodeExpired} {
+		t.Run(string(code), func(t *testing.T) {
+			var requests []livetable.Request
+			vu := liveTestVU(liveTableClientFunc(func(_ context.Context, _ string, r livetable.Request) (livetable.Result, error) {
+				requests = append(requests, r)
+				if len(requests) == 1 {
+					return livetable.Result{}, errors.New("original reply lost")
+				}
+				return livetable.Result{}, &livetable.Error{Code: code, Message: "retry refused"}
+			}))
+			err := vu.executeLiveTableAction(context.Background(), liveAction("pop", nil))
+			var typed *livetable.Error
+			if !errors.As(err, &typed) || !typed.OutcomeUnknown || len(requests) != 2 || !reflect.DeepEqual(requests[0], requests[1]) {
+				t.Fatalf("retry erased original uncertainty: %v %+v", err, requests)
+			}
+			if err := vu.executeLiveTableAction(context.Background(), liveAction("pop", nil)); err == nil || len(requests) != 2 {
+				t.Fatal("new consume allowed after uncertain original")
+			}
+			if handled, err := vu.handleEngineAction(context.Background(), dsl.Action{Name: "target", Type: "request"}); !handled || err == nil {
+				t.Fatal("target action allowed after uncertain original")
+			}
+		})
+	}
 }

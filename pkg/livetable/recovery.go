@@ -20,10 +20,11 @@ func (t *Table) Snapshot() (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	if len(payload) > t.s.Limits.MaxSnapshotBytes {
+	snapshot := Snapshot{FormatVersion: formatVersion, TableID: t.s.ID, RunID: t.s.RunID, Revision: t.s.Revision, Payload: payload, Observations: t.observationSnapshot(time.Now())}
+	if snapshotEncodedSize(snapshot) > t.s.Limits.MaxSnapshotBytes {
 		return Snapshot{}, fail(CodeCapacity, "snapshot exceeds configured byte budget")
 	}
-	return Snapshot{FormatVersion: formatVersion, TableID: t.s.ID, RunID: t.s.RunID, Revision: t.s.Revision, Payload: payload}, nil
+	return snapshot, nil
 }
 
 func Restore(snapshot Snapshot, committer Committer) (*Table, error) {
@@ -36,6 +37,9 @@ func Restore(snapshot Snapshot, committer Committer) (*Table, error) {
 // conservative reassignment hold, not a renewal of the old execution right:
 // stored tokens/deadlines remain unchanged and late acknowledgments still fail.
 func RestoreWithClock(snapshot Snapshot, committer Committer, now func() time.Time) (*Table, error) {
+	if err := validateObservations(snapshot.Observations); err != nil {
+		return nil, err
+	}
 	if snapshot.FormatVersion != formatVersion || !validName(snapshot.TableID) || !validName(snapshot.RunID) {
 		return nil, fail(CodeInvalid, "unsupported or invalid snapshot identity")
 	}
@@ -55,10 +59,23 @@ func RestoreWithClock(snapshot Snapshot, committer Committer, now func() time.Ti
 		now = time.Now
 	}
 	t := &Table{s: s, committer: committer, now: now, pending: map[string]*pending{}, pendingClients: map[string]string{}, leaseDeadlines: map[string]time.Time{}, recoveryHolds: map[string]string{}}
+	t.observations = snapshot.Observations
+	t.observations.Events = append([]ObservationEvent(nil), snapshot.Observations.Events...)
+	if t.observations.Version == 0 {
+		t.observations.Version, t.observations.Incomplete = 1, true
+	}
 	if err := t.validateRecovered(); err != nil {
 		return nil, err
 	}
-	if len(snapshot.Payload) > t.s.Limits.MaxSnapshotBytes {
+	// Recovery accepts JSON spellings that our encoder canonicalizes (including
+	// HTML-sensitive characters). Bound the next writable snapshot, not merely
+	// the potentially shorter input spelling.
+	canonical, err := json.Marshal(t.s)
+	if err != nil {
+		return nil, fail(CodeInvalid, "invalid recovered state encoding")
+	}
+	snapshot.Payload = canonical
+	if snapshotEncodedSize(snapshot) > t.s.Limits.MaxSnapshotBytes {
 		return nil, fail(CodeCapacity, "snapshot exceeds configured byte budget")
 	}
 	for id, r := range t.s.Records {
@@ -329,4 +346,16 @@ func (t *Table) Inspect(offset, limit int, expectedRevision uint64) (Result, err
 		return Result{}, fail(CodeCapacity, "encoded inspection byte budget exceeded")
 	}
 	return result, nil
+}
+
+// Count the complete recovery envelope without allocating another copy of its
+// potentially large payload. The state payload is already encoded JSON.
+func snapshotEncodedSize(snapshot Snapshot) int {
+	payloadBytes := len(snapshot.Payload)
+	snapshot.Payload = nil
+	envelope, err := json.Marshal(snapshot)
+	if err != nil {
+		return int(^uint(0) >> 1)
+	}
+	return len(envelope) - len("null") + payloadBytes
 }

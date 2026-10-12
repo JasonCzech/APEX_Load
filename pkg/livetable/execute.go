@@ -9,8 +9,13 @@ import (
 )
 
 func (t *Table) Execute(ctx context.Context, r Request) (result Result, resultErr error) {
+	t.activeAttempts.Add(1)
 	started := time.Now()
-	defer func() { t.observeOperation(time.Since(started), resultErr) }()
+	defer func() {
+		t.observeOperation(time.Since(started), resultErr)
+		t.observeEvidence(r.Operation, result, resultErr)
+		t.activeAttempts.Add(-1)
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -84,7 +89,7 @@ func (t *Table) Execute(ctx context.Context, r Request) (result Result, resultEr
 			t.mu.Unlock()
 			return Result{}, fail(CodeCapacity, "client retirement budget exhausted")
 		}
-		if err := t.receiptCapacity(now, 1); err != nil {
+		if err := t.receiptCapacity(now, r); err != nil {
 			t.mu.Unlock()
 			return Result{}, err
 		}
@@ -132,24 +137,6 @@ func cloneError(e *Error) *Error {
 	return &copy
 }
 
-func (t *Table) receiptCapacity(now time.Time, additional int) error {
-	n := 0
-	var bytes int64
-	for _, r := range t.s.Receipts {
-		if t.receiptProtected(r, now) {
-			n++
-			bytes += r.Bytes
-		}
-	}
-	// Waiters reserve a maximum-sized outcome before accepting work. Receipts
-	// already returned use their exact encoded size.
-	reserved := len(t.pending)
-	if n+reserved+additional > t.s.Limits.MaxReceipts || bytes+int64(reserved+additional)*int64(t.s.Limits.MaxResultBytes+1024) > t.s.Limits.MaxReceiptBytes {
-		return fail(CodeCapacity, "protected operation receipt budget exhausted")
-	}
-	return nil
-}
-
 func (t *Table) commitResult(ctx context.Context, r Request, digest string, result Result, d transition, outcomeErr *Error, now time.Time) (Result, error) {
 	if resultBytes(result) > t.s.Limits.MaxResultBytes {
 		return Result{}, fail(CodeCapacity, "result byte limit exceeded before mutation")
@@ -171,18 +158,14 @@ func (t *Table) commitResult(ctx context.Context, r Request, digest string, resu
 	if outcomeErr != nil {
 		rec.Bytes += int64(len(outcomeErr.Message) + 64)
 	}
-	var retainedBytes int64
-	retainedCount := 0
 	for key, old := range t.s.Receipts {
 		if !t.receiptProtected(old, now) {
 			d.Retire = append(d.Retire, key)
-		} else {
-			retainedBytes += old.Bytes
-			retainedCount++
 		}
 	}
-	if retainedCount+1 > t.s.Limits.MaxReceipts || retainedBytes+rec.Bytes > t.s.Limits.MaxReceiptBytes {
-		return Result{}, fail(CodeCapacity, "protected operation receipt budget exhausted")
+	receiptCount, receiptBytes := t.receiptReservationUsage(now, r, &d, rec.Bytes, false)
+	if receiptCount > t.s.Limits.MaxReceipts || receiptBytes > t.s.Limits.MaxReceiptBytes {
+		return Result{}, fail(CodeCapacity, "protected operation receipt or lease settlement budget exhausted")
 	}
 	clients := len(t.s.Clients)
 	if _, ok := t.s.Clients[r.ClientID]; !ok {
@@ -197,7 +180,16 @@ func (t *Table) commitResult(ctx context.Context, r Request, digest string, resu
 	// Keep every admitted state checkpointable. These conservative metadata
 	// reservations include JSON keys, sequence tombstones, queue order and
 	// structure overhead; data costs already include JSON string escaping.
-	checkpointBound := d.DataBytes + retainedBytes + rec.Bytes + int64(clients)*2048 + int64(cursors)*2048 + int64(retainedCount+1)*1024 + int64(len(t.s.Columns))*2048 + 16384
+	settlementClients := t.s.Counts.Leased
+	if d.Counts != nil {
+		settlementClients = d.Counts.Leased
+	}
+	for key, pending := range t.pending {
+		if key != requestKey(r.ClientID, r.Sequence) && pending.request.Operation == OpLease {
+			settlementClients++
+		}
+	}
+	checkpointBound := d.DataBytes + receiptBytes + (int64(clients+len(t.pendingClients))+int64(settlementClients))*2048 + int64(cursors)*2048 + int64(receiptCount)*1024 + int64(len(t.s.Columns))*2048 + 16384
 	if checkpointBound > int64(t.s.Limits.MaxSnapshotBytes) {
 		return Result{}, fail(CodeCapacity, "checkpoint reservation budget exhausted")
 	}
@@ -428,6 +420,8 @@ func (t *Table) failWaiters(err error) {
 }
 
 func (t *Table) await(ctx context.Context, p *pending, initiator bool) (Result, error) {
+	started := time.Now()
+	defer func() { t.observeWait(time.Since(started)) }()
 	for {
 		t.mu.Lock()
 		delay := p.deadline.Sub(t.now())

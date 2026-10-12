@@ -8,8 +8,9 @@ import (
 
 // ValidityRulesVersion names the rule set and thresholds a verdict used. The
 // thresholds are the plan's starting values; the evaluation corpus (WP3.9)
-// recalibrates them under a new version.
-const ValidityRulesVersion = "validity.v1"
+// recalibrates them under a new version. Version 2 adds bounded shared-data
+// evidence without changing the generator thresholds.
+const ValidityRulesVersion = "validity.v2"
 
 // Validity verdicts. A run is valid when its load generators and telemetry
 // could carry the load it reports; missing evidence never yields valid.
@@ -136,6 +137,7 @@ type ValidityInput struct {
 	DataExhausted *bool
 	// EvidenceGaps name missing run evidence; any gap keeps the run from valid.
 	EvidenceGaps []string
+	SharedData   []SharedDataEvidence
 }
 
 // ValidityFinding is one rule that fired in a window.
@@ -166,9 +168,10 @@ type ValidityAnomaly struct {
 
 // Validity is a run's validity verdict.
 type Validity struct {
-	RulesVersion string        `json:"rules_version"`
-	Rules        ValidityRules `json:"rules"`
-	Verdict      string        `json:"verdict"`
+	SharedData   []SharedDataEvidence `json:"shared_data,omitempty"`
+	RulesVersion string               `json:"rules_version"`
+	Rules        ValidityRules        `json:"rules"`
+	Verdict      string               `json:"verdict"`
 	// Reasons are the rules behind the verdict.
 	Reasons []string `json:"reasons"`
 	// Windows are the judged intervals that were not valid, earliest first.
@@ -226,8 +229,9 @@ func counterDelta(value int64, peak *int64) int64 {
 
 // AssessValidity judges a run's evidence with rules. It is deterministic:
 // identical input gives an identical verdict.
-func AssessValidity(input ValidityInput, rules ValidityRules) Validity {
-	out := Validity{RulesVersion: ValidityRulesVersion, Rules: rules, Verdict: ValidityValid, Reasons: []string{}, Windows: []ValidityWindow{}, Anomalies: []ValidityAnomaly{}, Limitations: []string{}}
+func AssessValidity(input ValidityInput, rules ValidityRules) (out Validity) {
+	out = Validity{RulesVersion: ValidityRulesVersion, Rules: rules, Verdict: ValidityValid, Reasons: []string{}, Windows: []ValidityWindow{}, Anomalies: []ValidityAnomaly{}, Limitations: []string{}}
+	defer func() { applySharedDataValidity(&out, input.SharedData) }()
 	limitations := map[string]bool{}
 	intervals := append([]ValidityInterval(nil), input.Intervals...)
 	sort.SliceStable(intervals, func(i, j int) bool { return intervals[i].End.Before(intervals[j].End) })
