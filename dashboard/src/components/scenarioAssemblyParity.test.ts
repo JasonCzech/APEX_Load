@@ -14,7 +14,9 @@ import { scenarioDraftFromStoredScenario, scenarioEstimateRequest, scenarioLoadP
 // save no longer re-normalizes a stored section (random_percentage kept its
 // `mean_ms`). The load preview was re-recorded with the shared run projection
 // (A8), which draws group start offsets and takes the next stage's level at a
-// stage boundary; nothing else changed, browser fixtures included.
+// stage boundary; nothing else changed, browser fixtures included. It was
+// re-recorded again when the projection began drawing ramps as the engine
+// runs them, one VUser at a time (L1): only ramped groups' points changed.
 // Re-record only for an intended change: APEXLOAD_UPDATE_SCENARIO_PARITY=1.
 function projections() {
   const out: Record<string, unknown> = {}

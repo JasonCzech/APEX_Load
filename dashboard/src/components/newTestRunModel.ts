@@ -4,7 +4,8 @@ import { normalizeRequiredLabels } from './assignmentLabels'
 import { canonicalThinkTimeType } from './thinkTimeConfig'
 import { formatMillisecondsAsSecondsValue, formatPacingTiming } from './runtimeTiming'
 import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
-import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt } from './workloadStages'
+import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt, stageRampStepSeconds } from './workloadStages'
+import { engineLevelAtDeadline, engineRampDownLevel, engineRampDownSeconds, engineRampUpLevel, engineRampUpSeconds } from './loadPlanSteps'
 
 export type RunDefaultKey =
   | 'duration'
@@ -788,13 +789,21 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     if (profileMappings[index]) return
     timeline.add(preBaselineSeconds + groupOffsets[index])
     if (group.stages?.length) {
-      stageBoundarySeconds(group.stages).forEach(end => {
+      // Each stage's end and every step of its VUser ramps.
+      const stageOptions = { initialLevel: initialStageLevel(group.stages, group.vusers), emptyDurationSeconds: 0, missingTarget: 'zero' as const }
+      ;[...stageBoundarySeconds(group.stages), ...stageRampStepSeconds(group.stages, stageOptions)].forEach(end => {
         timeline.add(Math.min(preBaselineSeconds + steadySeconds, preBaselineSeconds + groupOffsets[index] + end))
       })
       return
     }
-    timeline.add(preBaselineSeconds + Math.min(steadySeconds, groupOffsets[index] + parseDurationToSeconds(group.ramp_up)))
-    timeline.add(preBaselineSeconds + steadySeconds + parseDurationToSeconds(group.ramp_down))
+    // Every VUser start and stop, so the staircase is drawn step for step.
+    const rampUp = parseDurationToSeconds(group.ramp_up)
+    const deadline = preBaselineSeconds + steadySeconds
+    engineRampUpSeconds(group.vusers, rampUp).forEach(start => {
+      timeline.add(Math.min(deadline, preBaselineSeconds + groupOffsets[index] + start))
+    })
+    const reached = engineLevelAtDeadline(group.vusers, rampUp, steadySeconds - groupOffsets[index])
+    engineRampDownSeconds(reached, parseDurationToSeconds(group.ramp_down)).forEach(stop => timeline.add(deadline + stop))
   })
   trafficProfileTimelineSeconds(trafficProfile).forEach(second => timeline.add(preBaselineSeconds + Math.min(steadySeconds, second)))
   const tpsGroupIndexes = groups.flatMap((_, index) => profileTps && profileMappings[index] ? [index] : [])
@@ -820,17 +829,16 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
       } else if (group.stages?.length) {
         value = loadSecond < steadySeconds ? stagedRunGroupValue(group, groupSecond) : 0
       } else {
+        // The engine's staircase: VUsers start one at a time through the
+        // ramp-up; at the deadline the group stops ramping up and stops the
+        // VUsers it reached one at a time through the ramp-down. A group that
+        // activates at the deadline never runs.
         const rampUp = parseDurationToSeconds(group.ramp_up)
-        const rampDown = parseDurationToSeconds(group.ramp_down)
-        // The level a group reached after activeSeconds of its own ramp.
-        const level = (activeSeconds: number) => activeSeconds < rampUp ? (activeSeconds / rampUp) * group.vusers : group.vusers
         if (loadSecond < steadySeconds) {
-          value = level(groupSecond)
-        } else if (loadSecond < steadySeconds + rampDown) {
-          // At the deadline a group stops ramping up and ramps down from the
-          // level it reached; one that activates at the deadline never ran.
-          const active = steadySeconds - groupOffsets[index]
-          value = rampDown > 0 && active > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * level(active) : 0
+          value = engineRampUpLevel(group.vusers, rampUp, groupSecond)
+        } else {
+          const reached = engineLevelAtDeadline(group.vusers, rampUp, steadySeconds - groupOffsets[index])
+          value = engineRampDownLevel(reached, parseDurationToSeconds(group.ramp_down), loadSecond - steadySeconds)
         }
       }
 

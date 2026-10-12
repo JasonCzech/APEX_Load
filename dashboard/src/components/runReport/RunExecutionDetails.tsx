@@ -1,11 +1,11 @@
 import TelemetryPolicy from '../TelemetryPolicy'
 import TelemetryAcceptanceVerdict from '../TelemetryAcceptanceVerdict'
 import SeriesChartExport from "../SeriesChartExport"
-import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import LoadPlanChart from '../LoadPlanChart'
+import { LOAD_PLAN_COLORS } from '../loadPlanSteps'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
 import type { useExecutionTestManifest } from '../useExecutionTestManifest'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from '../chartTooltipTheme'
-import { executionDate, executionFacts, executionLoadPoints, recordedNumber } from './executionPresentation'
+import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, recordedNumber } from './executionPresentation'
 
 export function RunExecutionFacts({ test, report, manifest }: { test: TestSummary; report: RunArchiveReport | null; manifest?: TestRunManifest | null }) {
   const facts = executionFacts(test, report, manifest)
@@ -64,29 +64,37 @@ export default function RunExecutionDetails({ test, report, history = [], histor
   const { manifest, manifestError, manifestLoading, reloadManifest } = manifestModel
   const facts = executionFacts(test, report, manifest)
   const points = executionLoadPoints(history)
+  const plan = executionLoadPlan(test, manifest)
+  const observed = executionObservedLoad(points, facts.started)
+  // The plan's steps and the observed samples, each at its own elapsed second.
+  const exportRows = [
+    ...plan.points.map(point => ({ second: point.second, planned: point.total })),
+    ...observed.map(sample => ({ second: sample.second, timestampMs: sample.timestampMs, vusers: sample.vusers })),
+  ].sort((left, right) => left.second - right.second)
   const events = manifest?.runtime_changes || []
   return <>
     {!evidenceOnly && <>
       <p className="run-report-muted">Read-only execution record. {facts.immutable ? 'Original configuration is preserved.' : 'Configured values come from a mutable retained record; the original plan is unverified.'} Execution completion and acceptance are assessed separately.</p>
       <RunExecutionFacts test={test} report={report} manifest={manifest} />
       <section className="run-report-panel" aria-label="Execution load timeline">
-        <h2>Configured and observed load</h2>
-        <p>Configured load: {recordedNumber(facts.vusers)} VUsers. This reference is not a ramp schedule. Observed samples cover only the captured intervals.</p>
-        {historyLoading ? <p role="status">Loading captured load history…</p> : historyError ? <p role="alert">{historyError}</p> : points.length > 0 ? <>
-          <div className="run-execution-chart" aria-label="Captured VUsers with configured load reference">
-            <SeriesChartExport id="execution-load" title="Configured and observed load" rows={points} axes={[{ key: "utc", label: "UTC timestamp", value: point => point.timestampMs === undefined ? undefined : new Date(point.timestampMs).toISOString() }]} series={[{ key: "vusers", label: "Observed VUsers", unit: "VUsers" }]} context={{ run_id: test.id, configured_vusers: facts.vusers, configuration_immutable: facts.immutable }}><ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={points} margin={{ top: 16, right: 24, left: 0, bottom: 12 }}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                <XAxis dataKey="timestampMs" type="number" scale="time" domain={['dataMin', 'dataMax']} tickFormatter={value => new Date(value).toLocaleTimeString()} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} minTickGap={48} />
-                <YAxis domain={[0, 'auto']} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} />
-                <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} labelFormatter={value => executionDate(new Date(Number(value)).toISOString())} />
-                {facts.vusers !== undefined && Number.isFinite(facts.vusers) && facts.vusers >= 0 && <ReferenceLine y={facts.vusers} stroke="var(--text-secondary)" strokeDasharray="5 5" ifOverflow="extendDomain" />}
-                <Area dataKey="vusers" name="Observed VUsers" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.12} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer></SeriesChartExport>
-          </div>
-          <p className="run-report-muted">Solid curve: observed VUsers.{facts.vusers !== undefined && Number.isFinite(facts.vusers) && facts.vusers >= 0 ? ' Dashed line: configured VUsers.' : ' Configured reference unavailable.'}</p>
-        </> : <p>No interval history was retained. Planned workload completion cannot be inferred from the final controller sample.</p>}
+        <h2>Planned and observed load</h2>
+        <p>The plan is the engine's schedule for {facts.immutable ? 'the preserved configuration' : 'the retained configuration, which may reflect later changes'}: {recordedNumber(facts.vusers)} VUsers, started and stopped as each group ramps. Observed samples cover only the captured intervals.</p>
+        {historyLoading && <p role="status">Loading captured load history…</p>}
+        {historyError && <p role="alert">{historyError}</p>}
+        {(plan.points.length > 0 || observed.length > 0) && <div className="run-execution-chart">
+          <SeriesChartExport id="execution-load" title="Planned and observed load" rows={exportRows} axes={[{ key: "utc", label: "UTC timestamp", value: point => 'timestampMs' in point && point.timestampMs !== undefined ? new Date(point.timestampMs).toISOString() : undefined }, { key: "elapsed", label: "Elapsed seconds", value: point => point.second }]} series={[{ key: "vusers", label: "Observed VUsers", unit: "VUsers" }, { key: "planned", label: "Planned VUsers", unit: "VUsers" }]} context={{ run_id: test.id, configured_vusers: facts.vusers, configuration_immutable: facts.immutable }}>
+            <LoadPlanChart
+              label="Planned and observed load"
+              points={plan.points}
+              totalSeconds={plan.totalSeconds}
+              groups={facts.groups.map((group, index) => ({ key: `group${index}`, label: group.name || `Group ${index + 1}`, color: LOAD_PLAN_COLORS[index % LOAD_PLAN_COLORS.length] }))}
+              phases={plan}
+              observed={observed}
+              height={240}
+            />
+          </SeriesChartExport>
+        </div>}
+        {!historyLoading && !historyError && observed.length === 0 && <p>No interval history was retained. Planned workload completion cannot be inferred from the final controller sample.</p>}
       </section>
       <section className="run-report-panel" aria-label="Execution groups">
         <h2>Groups and configuration</h2>

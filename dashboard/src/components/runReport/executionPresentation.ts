@@ -1,6 +1,7 @@
 import { formatDateTime } from '../../utils/dateTime'
 import { formatDurationDisplay, formatTimeLong } from '../../utils/timeUtils'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
+import { buildQueuedScenarioPreview } from '../testExecutionScenarioModel'
 
 export function recordedTime(value?: string): number | undefined {
   if (!value) return undefined
@@ -59,4 +60,29 @@ export function executionLoadPoints(history: MetricsHistoryPoint[]) {
     && new Date(point.timestampMs).getUTCFullYear() > 1
     && Number.isFinite(point.vusers) && point.vusers >= 0)
     .sort((a, b) => a.timestampMs! - b.timestampMs!)
+}
+
+/**
+ * The run's planned load as the engine ran it, from its immutable initial
+ * configuration when one was preserved, otherwise from the retained record.
+ * A run to its iterations is planned through the time it ran.
+ */
+export function executionLoadPlan(test: TestSummary, manifest?: TestRunManifest | null) {
+  const config = manifest?.initial_configuration_provenance?.immutable === true ? manifest.initial_configuration : undefined
+  return buildQueuedScenarioPreview(config ? {
+    ...test,
+    duration: config.duration ?? test.duration,
+    start_delay: config.start_delay ?? test.start_delay,
+    resource_baseline: config.resource_baseline ?? test.resource_baseline,
+    scenario_mode: config.scenario_mode ?? test.scenario_mode,
+    goal_config: config.goal_config ?? test.goal_config,
+    groups: config.groups ?? [],
+  } : test, lifecycleElapsedSeconds(test))
+}
+
+/** Observed VUser samples on elapsed seconds from the run's start (or its first sample). */
+export function executionObservedLoad(points: MetricsHistoryPoint[], started?: string) {
+  const origin = recordedTime(started) ?? points[0]?.timestampMs
+  if (origin === undefined) return []
+  return points.flatMap(point => point.timestampMs !== undefined && point.timestampMs >= origin ? [{ second: (point.timestampMs - origin) / 1000, vusers: point.vusers, timestampMs: point.timestampMs }] : [])
 }

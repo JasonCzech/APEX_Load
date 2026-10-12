@@ -1,23 +1,21 @@
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-
 import { DraftCapacityEstimate } from '../types'
 import PodCapacityMeter from './PodCapacityMeter'
-import { formatTimeCompact } from '../utils/timeUtils'
-import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
+import LoadPlanChart from './LoadPlanChart'
+import { LOAD_PLAN_COLORS } from './loadPlanSteps'
+import type { RunLoadProfilePreview } from './newTestRunModel'
 
 interface PreviewGroup {
   name: string
 }
 
 interface Props {
-  chartData: Array<Record<string, number>>
+  /** The draft as it will run: the load picture every page draws. */
+  plan: RunLoadProfilePreview
   groups: PreviewGroup[]
   draftEstimate: DraftCapacityEstimate | null
   estimateLoading: boolean
   estimateError: string
 }
-
-const GROUP_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 
 function formatDraftAvailabilitySource(source?: 'configured' | 'configured_plus_live', hasLive?: boolean): string {
   if (source === 'configured_plus_live') {
@@ -38,7 +36,7 @@ function formatDraftAvailabilityDetail(estimate: DraftCapacityEstimate): string 
   return `${advisory.configured_available_generators || advisory.available_generators} configured`
 }
 
-export default function CreateTestCapacityPreview({ chartData, groups, draftEstimate, estimateLoading, estimateError }: Props) {
+export default function CreateTestCapacityPreview({ plan, groups, draftEstimate, estimateLoading, estimateError }: Props) {
   return (
     <div className="load-profile-preview">
       {draftEstimate?.pod_capacity_warnings?.map(message => <p role="alert" key={message}>{message}</p>)}
@@ -50,50 +48,17 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
         </table>
       </div>}
       <div className="chart-container">
-        <ResponsiveContainer width="100%" height={160}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 18, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-            <XAxis
-              dataKey="time"
-              type="number"
-              domain={['dataMin', 'dataMax']}
-              tickFormatter={(value) => formatTimeCompact(value)}
-              stroke="var(--text-muted)"
-              fontSize={10}
-              height={36}
-              tickLine={false}
-              label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fontSize: 10, fill: 'var(--text-muted)' }}
-            />
-            <YAxis
-              stroke="var(--text-muted)"
-              fontSize={10}
-              width={64}
-              tickLine={false}
-              label={{ value: 'VUsers', angle: -90, position: 'left', fontSize: 10, fill: 'var(--text-muted)' }}
-            />
-            <Tooltip
-              itemSorter={preserveChartItemOrder}
-              labelFormatter={(value) => `Time: ${formatTimeCompact(value)}`}
-              contentStyle={{ ...chartTooltipContentStyle, fontSize: '12px' }}
-              labelStyle={chartTooltipLabelStyle}
-              itemStyle={{ padding: '2px 0' }}
-            />
-            {groups.map((group, index) => (
-              <Area
-                key={index}
-                type="monotone"
-                dataKey={`group${index}`}
-                name={group.name || `Group ${index + 1}`}
-                stackId="1"
-                stroke={GROUP_COLORS[index % GROUP_COLORS.length]}
-                fill={GROUP_COLORS[index % GROUP_COLORS.length]}
-                fillOpacity={0.4}
-                isAnimationActive={false}
-              />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-        <div className="chart-label">Scenario Load Profile</div>
+        <LoadPlanChart
+          compact
+          label="Scenario load profile"
+          points={plan.points}
+          totalSeconds={plan.totalSeconds}
+          showVUsers={plan.showVUsers}
+          groups={groups.map((group, index) => ({ key: `group${index}`, label: group.name || `Group ${index + 1}`, color: LOAD_PLAN_COLORS[index % LOAD_PLAN_COLORS.length] }))}
+          phases={plan}
+          height={160}
+        />
+        <div className="chart-label">Scenario load profile</div>
       </div>
 
       <div className={`draft-capacity-card ${draftEstimate?.capacity_advisory?.requires_override ? 'warning' : 'ready'}`}>

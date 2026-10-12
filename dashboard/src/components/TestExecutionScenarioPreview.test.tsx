@@ -15,7 +15,10 @@ vi.mock('recharts', () => {
   return {
     ResponsiveContainer: Mock,
     AreaChart: Mock,
+    ComposedChart: Mock,
     Area: () => null,
+    Line: () => null,
+    ReferenceLine: () => null,
     XAxis: ({ label, type, domain }: { label?: string | { value?: string }; type?: string; domain?: Array<string | number> }) => (
       <div data-testid="mock-x-axis" data-label={labelText(label)} data-type={type || ''} data-domain={domain?.join(',') || ''} />
     ),
@@ -579,11 +582,11 @@ describe('TestExecutionScenarioPreview', () => {
 
     const xAxis = container.querySelector('[data-testid="mock-x-axis"]')
     expect(xAxis?.getAttribute('data-type')).toBe('number')
-    expect(xAxis?.getAttribute('data-domain')).toBe('0,dataMax')
+    expect(xAxis?.getAttribute('data-domain')).toBe('0,1260')
 
     const bands = Array.from(container.querySelectorAll('[data-testid="mock-reference-area"]'))
       .map(band => [band.getAttribute('data-x1'), band.getAttribute('data-x2')])
-    expect(bands).toEqual([['300', '900'], ['0', '300'], ['960', '1260']])
+    expect(bands).toEqual([['0', '300'], ['300', '900'], ['960', '1260']])
     const sampledSeconds = new Set(points.map(point => point.second))
     expect([300, 900, 960].some(boundary => sampledSeconds.has(boundary))).toBe(false)
   })

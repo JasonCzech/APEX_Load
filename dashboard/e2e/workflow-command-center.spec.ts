@@ -151,7 +151,7 @@ const exportTest = test.extend<{ exportRun: LiveRun }>({
  }, { timeout: 150_000 }],
 })
 
-exportTest('analysis load exports retain run identity and distinguish resampled observations', async ({ page, exportRun: run }) => {
+exportTest('analysis load exports retain run identity and keep observed samples on the run clock', async ({ page, exportRun: run }) => {
  exportTest.setTimeout(150_000)
  await page.goto(`/#/command-center/${run.testId}`)
  await page.getByRole('button', { name: 'Open analysis', exact: true }).click()
@@ -161,8 +161,10 @@ exportTest('analysis load exports retain run identity and distinguish resampled 
  await card.getByRole('button', { name: 'Export Planned and actual load data as CSV', exact: true }).click()
  const csv = await readFile((await (await csvDownload).path())!, 'utf8')
  expect(csv).toContain(run.testId)
- expect(csv).toContain('Resampled observed VUsers (VUsers)')
- expect(csv).toContain('future actual values remain missing')
+ // Planned steps and observed samples, each at its own elapsed second: nothing is resampled.
+ expect(csv).toContain('Planned VUsers (VUsers)')
+ expect(csv).toContain('Observed VUsers (VUsers)')
+ expect(csv).toContain("elapsed seconds from the run's start")
  const svgDownload = page.waitForEvent('download')
  await card.getByRole('button', { name: 'Export Planned and actual load image as SVG', exact: true }).click()
  const svg = await readFile((await (await svgDownload).path())!, 'utf8')

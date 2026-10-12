@@ -582,6 +582,12 @@ A scenario brings together:
   canary that measures what a real user sees while the load groups generate the pressure.
 - **Load model** — total VUsers, ramp pattern, and duration. Multi-stage groups let you
   express step loads (ramp to 100, hold, ramp to 300, hold) rather than a single slope.
+  The load chart draws the plan as the engine runs it, one VUser at a time: a ramp-up
+  starts the first VUser at once and the rest evenly through the ramp, a ramp stage
+  adds its VUsers in equal steps with the first one interval in, and at the end of the
+  duration each group stops its VUsers evenly through its ramp-down. The scenario
+  builder, New Test, Command Center and the run's results draw the same chart on
+  elapsed time; during and after a run, the observed VUsers are drawn over it.
 - **Runtime settings** — per-group options such as think time, pacing, network
   simulation, and IP spoofing (a pool of source IPs so the run presents many client
   addresses).

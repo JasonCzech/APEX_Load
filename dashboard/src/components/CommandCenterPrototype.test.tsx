@@ -11,7 +11,7 @@ import CommandCenterPrototype, {
   stabilizeErrorRowOrder,
   type ErrorPattern,
 } from './CommandCenterPrototype'
-import { buildLoadModelProfile, plannedGroupLoadAt } from './commandCenterLoadModel'
+import { buildRunLoadPlan, loadPlanPhaseAt, observedVUsersSince, plannedVUsersAt, runLoadStatus } from './commandCenterLoadModel'
 import { buildTransactionRunRows, type CommandGroup } from './commandCenterScenarioRows'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { transactionChartSeriesKey } from './transactionChartSeries'
@@ -194,8 +194,10 @@ describe('CommandCenterPrototype', () => {
       role: 'load' as const,
       stages: [{ type: 'ramp_down', duration: '1m', target_vusers: 20 }],
     } as TestSummary['groups'][number]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '1m', groups: [testGroup] }, [group])
 
-    expect(buildLoadModelProfile([testGroup], [group], 60).map(point => point.planned)).toEqual([100, 20])
+    expect(plannedVUsersAt(plan, 0)).toBe(100)
+    expect(plannedVUsersAt(plan, 59)).toBeLessThan(100)
   })
 
   it('treats authored hold stage casing consistently', () => {
@@ -209,8 +211,59 @@ describe('CommandCenterPrototype', () => {
         { type: 'HOLD', duration: '1m', target_vusers: 60 },
       ],
     } as TestSummary['groups'][number]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '2m', groups: [testGroup] }, [commandGroup('Checkout', 100)])
 
-    expect(plannedGroupLoadAt(testGroup, 100, 90, 120)).toBe(60)
+    expect(plannedVUsersAt(plan, 90)).toBe(60)
+    expect(loadPlanPhaseAt(plan, 90, true)).toBe('Staged load')
+  })
+
+  it('plans a ramped run as the engine steps it, at the live target', () => {
+    // 3 groups of 5 over a 2 m ramp: one VUser per group every 24 s, the first at once.
+    const groups = ['Browse', 'Cart', 'Checkout'].map(name => ({ name, script_id: name, vusers: 5, ramp_up: '2m', role: 'load' as const }))
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '5m', groups } as TestSummary, groups.map(group => commandGroup(group.name, 5)))
+    expect([0, 24, 48, 72, 96].map(second => plannedVUsersAt(plan, second))).toEqual([3, 6, 9, 12, 15])
+    expect(plannedVUsersAt(plan, 23)).toBe(3)
+    expect(loadPlanPhaseAt(plan, 30, false)).toBe('Ramp-up')
+    expect(loadPlanPhaseAt(plan, 200, false)).toBe('Steady state')
+    expect(loadPlanPhaseAt(plan, 300, false)).toBe('Load complete')
+    // An operator's live target replaces the configured count.
+    const raised = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '5m', groups } as TestSummary, groups.map(group => commandGroup(group.name, group.name === 'Browse' ? 10 : 5)))
+    expect(plannedVUsersAt(raised, 200)).toBe(20)
+  })
+
+  it('states where a run stands against its plan', () => {
+    const groups = [{ name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s', ramp_down: '20s', role: 'load' as const }]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '2m', groups } as TestSummary, [commandGroup('Browse', 4)])
+    // The plan runs 2 m and ramps down for 20 s more: remaining counts the ramp-down.
+    expect(runLoadStatus(plan, 60, { state: 'running', openEnded: false, staged: false })).toMatchObject({ plannedNow: 4, phase: 'Steady state', elapsedLabel: '1m of 2m20s elapsed', progressPct: 60 / 140 * 100 })
+    // One of the four stops every 5 s after the deadline.
+    expect(runLoadStatus(plan, 124, { state: 'running', openEnded: false, staged: false })).toMatchObject({ plannedNow: 4, phase: 'Ramp-down' })
+    expect(runLoadStatus(plan, 125, { state: 'running', openEnded: false, staged: false }).plannedNow).toBe(3)
+    expect(runLoadStatus(plan, 0, { state: 'not_started', openEnded: false, staged: false }).phase).toBe('Not started')
+    expect(runLoadStatus(plan, 30, { state: 'paused', openEnded: false, staged: false }).phase).toBe('Paused')
+    // A run stopped early is past its plan, whatever the plan had left.
+    expect(runLoadStatus(plan, 57, { state: 'ended', openEnded: false, staged: false })).toMatchObject({ phase: 'Run ended', progressPct: 100, elapsedLabel: '57s of 2m20s elapsed' })
+  })
+
+  it('plans a run to its iterations up to now, holding its level with no ramp-down', () => {
+    const groups = [{ name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s', ramp_down: '20s', role: 'load' as const }]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), termination_mode: 'iterations', duration: '', groups } as TestSummary, [commandGroup('Browse', 4)], 240)
+    expect(plan.totalSeconds).toBe(240)
+    expect(plan.points[plan.points.length - 1]).toMatchObject({ second: 240, total: 4 })
+    expect(runLoadStatus(plan, 240, { state: 'running', openEnded: true, staged: false })).toMatchObject({ plannedNow: 4, progressPct: 0, phase: 'Running iterations', elapsedLabel: '4m elapsed' })
+    // The start delay comes out of the horizon, so the plan ends where the run is.
+    const delayed = buildRunLoadPlan({ ...buildLiveVuserTest(), termination_mode: 'iterations', duration: '', start_delay: '1m', groups } as TestSummary, [commandGroup('Browse', 4)], 240)
+    expect(delayed.totalSeconds).toBe(240)
+    expect(plannedVUsersAt(delayed, 59)).toBe(0)
+    expect(plannedVUsersAt(delayed, 60)).toBe(1)
+    expect(runLoadStatus(plan, 10, { state: 'running', openEnded: true, staged: false }).phase).toBe('Ramp-up')
+  })
+
+  it('places observed VUsers on seconds from the run start', () => {
+    const start = Date.parse('2026-06-08T13:05:00Z')
+    const history = [-1000, 0, 2500].map(offset => ({ time: '', timestampMs: start + offset, vusers: 3 }) as MetricsHistoryPoint).concat([{ time: '', vusers: 9 } as MetricsHistoryPoint])
+    expect(observedVUsersSince(history, start)).toEqual([{ second: 0, vusers: 3 }, { second: 2.5, vusers: 3 }])
+    expect(observedVUsersSince(history, Number.NaN)).toEqual([])
   })
 
   it('keeps unfiltered graph data when selected group fields are absent', () => {
@@ -1066,7 +1119,7 @@ describe('CommandCenterPrototype', () => {
     expect(opsPrimaryColumn?.textContent).toContain('Error Details')
     expect(opsPrimaryColumn?.textContent).toContain('Infrastructure')
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
-    expect(opsLoadModelPanel?.textContent).toContain('Load Model')
+    expect(opsLoadModelPanel?.textContent).toContain('Load model')
     expect(opsLoadModelPanel?.textContent).toContain('elapsed')
     const progressPct = Number(opsLoadModelPanel?.getAttribute('data-progress-pct'))
     expect(Number.isNaN(progressPct)).toBe(false)

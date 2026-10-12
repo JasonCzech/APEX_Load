@@ -22,7 +22,7 @@ import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, readSce
 import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import LoadPlanChart from './LoadPlanChart'
 import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfile, TrafficProfileDeriveResponse } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
@@ -32,7 +32,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import './TestHub.css'
 import './CreateTestModal.css'
-import { goalConfigFromForm, maxStageVUsers, scenarioDraftFromForm, scenarioDraftGroupFromForm, scenarioEstimateRequest, scenarioTimelineGroups, scenarioUpsertPayload } from './scenarioAssembly'
+import { goalConfigFromForm, maxStageVUsers, scenarioDraftFromForm, scenarioDraftGroupFromForm, scenarioEstimateRequest, scenarioLoadPreview, scenarioTimelineGroups, scenarioUpsertPayload } from './scenarioAssembly'
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
@@ -97,7 +97,7 @@ import ScenarioDataBindings from './ScenarioDataBindings'
 import { ScenarioMonitorBindings } from './RunMonitoring'
 import { dataBindingErrors } from './scenarioDataBindingModel'
 import NewTestReadiness from './NewTestReadiness'
-import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
+import type { RunLoadProfilePreview } from './newTestRunModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 interface Props {
@@ -669,157 +669,97 @@ function getScriptLibrarySortValue(script: StoredScript, field: ScriptLibrarySor
   }
 }
 
-function ScenarioModelTooltip({ active, payload, label }: {
-  active?: boolean
-  payload?: Array<{ color?: string, name?: string, value?: number | string }>
-  label?: string | number
-}) {
-  if (!active || !payload || payload.length === 0) return null
-  return (
-    <div className="scenario-model-tooltip">
-      <strong>{formatModelTimeLabel(Number(label) || 0)}</strong>
-      {payload
-        .filter(item => item.value !== undefined && item.value !== null)
-        .map(item => (
-          <span key={`${item.name}-${item.color}`}>
-            <i style={{ background: item.color || 'var(--accent)' }} />
-            {item.name}: {typeof item.value === 'number' ? item.value.toFixed(item.value % 1 === 0 ? 0 : 1) : item.value}
-          </span>
-        ))}
-    </div>
-  )
-}
-
 function ScenarioModelPreviewPanel({
   model,
+  runPlan,
   shapeLabel,
   dataPoolLabel,
   validationStatus,
   compositionGroups,
+  openEnded = false,
 }: {
   model: ScenarioModelPreview
+  /** The draft as New Test will run it: the VUser picture every page draws. */
+  runPlan: RunLoadProfilePreview
   shapeLabel: string
   dataPoolLabel: string
   validationStatus: string
   compositionGroups?: CompositionTimelineGroup[]
+  /** The draft runs until its iterations finish, so it has no length to draw. */
+  openEnded?: boolean
 }) {
   const groupSeries = model.series.filter(series => series.kind === 'group')
-  const totalSeries = model.series.find(series => series.kind === 'total')
   const tpsSeries = model.series.filter(series => series.kind === 'tps')
   const includesTps = tpsSeries.length > 0
-  const visibleSeries = model.series.filter(series => model.showVUsers || series.kind === 'tps')
   const formatTps = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  // A VUser plan is drawn from the run projection, so the builder, New Test,
+  // Command Center and the results show one picture. A plan the goal
+  // controller sizes at runtime has only its TPS targets to draw.
+  // A draft with no load window (one that runs to its iterations) has no plan to draw.
+  const vuserPlan = model.showVUsers && !openEnded && runPlan.steadySeconds > 0 && runPlan.points.length > 0 ? runPlan : undefined
+  const chart = vuserPlan ? {
+    points: vuserPlan.points,
+    totalSeconds: vuserPlan.totalSeconds,
+    groups: groupSeries.map((series, index) => ({ key: `group${index}`, label: series.label, color: series.color })),
+    tps: vuserPlan.peakTps === undefined ? [] : [
+      ...((vuserPlan.tpsGroupIndexes || []).length > 1 ? (vuserPlan.tpsGroupIndexes || []).map(index => ({ key: `group${index}Tps`, label: `${groupSeries[index]?.label || `Group ${index + 1}`} TPS`, color: groupSeries[index]?.color || 'var(--chart-1)' })) : []),
+      { key: 'totalTps', label: model.series.find(series => series.key === 'totalTps')?.label || 'Target TPS', color: 'var(--warning)' },
+    ],
+    phases: vuserPlan,
+  } : !model.showVUsers && includesTps ? {
+    points: model.points.map(point => ({ ...Object.fromEntries(Object.entries(point).filter((entry): entry is [string, number] => typeof entry[1] === 'number')), second: point.elapsedSeconds })),
+    totalSeconds: model.durationSeconds,
+    groups: [],
+    tps: tpsSeries.map(series => ({ key: series.key, label: series.label, color: series.color })),
+    phases: undefined,
+  } : undefined
+  const peakVusers = vuserPlan ? vuserPlan.peakVUsers : model.peakVusers
+  // The load window and the ramp-down, as the Duration field and ramp settings define them.
+  const durationSeconds = vuserPlan ? vuserPlan.totalSeconds - vuserPlan.preBaselineSeconds - vuserPlan.postBaselineSeconds : model.durationSeconds
+  // The figures of the plan drawn: the run projection's for a VUser plan.
+  const stats = vuserPlan
+    ? { peakTps: vuserPlan.peakTps, minTps: vuserPlan.minTps, averageTps: vuserPlan.averageTps, estimatedPeakVusers: vuserPlan.estimatedPeakVUsers, recommendedGenerators: vuserPlan.recommendedGenerators }
+    : { peakTps: model.peakTps, minTps: model.minTps, averageTps: model.averageTps, estimatedPeakVusers: model.estimatedPeakVusers, recommendedGenerators: model.recommendedGenerators }
+  const chartIncludesTps = (chart?.tps.length ?? 0) > 0
+  const description = compositionGroups
+    ? 'The load curve updates as you edit group timing and demand.'
+    : vuserPlan
+      ? (chartIncludesTps ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : 'Planned VUsers over time by script group, calculated from the current wizard draft.')
+      : model.showVUsers
+        ? (openEnded ? 'Each group ramps as configured and runs until its VUsers finish their iterations.' : 'Planned VUsers over time by script group, once the draft has a duration.')
+        : includesTps
+          ? (model.estimatedPeakVusers !== undefined ? 'Planned adaptive TPS targets. VUser demand is controlled at runtime; the ART-backed VUser figure is a Little’s Law planning estimate.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.')
+          : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.'
+  const emptyChartMessage = !model.showVUsers
+    ? 'No deterministic load curve is available. The goal controller will determine VUser demand during execution.'
+    : openEnded
+      ? 'This scenario runs until every VUser finishes its iterations, so its length is not known before the run.'
+      : 'Add a script group and a duration to see the load curve.'
 
   return (
     <section className={`scenario-model-preview-panel ${compositionGroups ? 'composition-preview' : ''}`}>
       <div className="scenario-model-preview-header">
         <div>
-          <h4>{compositionGroups ? 'Live scenario preview' : 'Model Preview'}</h4>
-          <p>{compositionGroups ? 'The load curve updates as you edit group timing and demand.' : includesTps ? (model.showVUsers ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : model.estimatedPeakVusers !== undefined ? 'Planned adaptive TPS targets. VUser demand is controlled at runtime; the ART-backed VUser figure is a Little’s Law planning estimate.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.') : (model.showVUsers ? 'Planned VUsers over time by script group, calculated from the current wizard draft.' : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.')}</p>
+          <h4>{compositionGroups ? 'Live scenario preview' : 'Model preview'}</h4>
+          <p>{description}</p>
         </div>
         <div className="scenario-model-summary">
-          {model.showVUsers && <span><strong>{model.peakVusers}</strong> peak VUsers</span>}
-          {model.peakTps !== undefined && <span><strong>{formatTps(model.peakTps)}</strong> peak TPS</span>}
-          {model.minTps !== undefined && <span><strong>{formatTps(model.minTps)}</strong> minimum TPS</span>}
-          {model.averageTps !== undefined && <span><strong>{formatTps(model.averageTps)}</strong> average TPS</span>}
-          {model.estimatedPeakVusers !== undefined && <span><strong>{model.estimatedPeakVusers.toLocaleString()}</strong> estimated peak VUsers</span>}
-          {model.recommendedGenerators !== undefined && model.recommendedGenerators > 0 && <span><strong>{model.recommendedGenerators}</strong> recommended generators</span>}
-          <span><strong>{formatModelTimeLabel(model.durationSeconds)}</strong> duration</span>
+          {model.showVUsers && <span><strong>{peakVusers}</strong> peak VUsers</span>}
+          {stats.peakTps !== undefined && <span><strong>{formatTps(stats.peakTps)}</strong> peak TPS</span>}
+          {stats.minTps !== undefined && <span><strong>{formatTps(stats.minTps)}</strong> minimum TPS</span>}
+          {stats.averageTps !== undefined && <span><strong>{formatTps(stats.averageTps)}</strong> average TPS</span>}
+          {stats.estimatedPeakVusers !== undefined && <span><strong>{stats.estimatedPeakVusers.toLocaleString()}</strong> estimated peak VUsers</span>}
+          {stats.recommendedGenerators !== undefined && stats.recommendedGenerators > 0 && <span><strong>{stats.recommendedGenerators}</strong> recommended generators</span>}
+          <span><strong>{formatModelTimeLabel(durationSeconds)}</strong> duration</span>
           <span><strong>{groupSeries.length}</strong> groups</span>
           <span>{shapeLabel}</span>
           <span>{dataPoolLabel}</span>
           <span>{validationStatus}</span>
         </div>
       </div>
-      {(model.showVUsers || includesTps) ? <div className="scenario-model-chart">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={model.points} margin={{ top: 16, right: includesTps && model.showVUsers ? 92 : 24, bottom: 18, left: 24 }}>
-            <CartesianGrid stroke="var(--border-subtle, var(--border))" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="elapsedSeconds"
-              tickFormatter={(value) => formatTrafficProfileAxisTime(Number(value))}
-              stroke="var(--text-muted)"
-              fontSize={11}
-              height={42}
-              tickLine={false}
-              axisLine={false}
-              label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
-            />
-            {model.showVUsers && <YAxis
-              yAxisId="vusers"
-              stroke="var(--text-muted)"
-              fontSize={11}
-              width={80}
-              tickLine={false}
-              axisLine={false}
-              label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
-            />}
-            {includesTps && (
-              <YAxis
-                yAxisId="tps"
-                orientation={model.showVUsers ? 'right' : 'left'}
-                stroke="var(--warning)"
-                fontSize={11}
-                width={68}
-                tickLine={false}
-                axisLine={false}
-                label={{ value: 'TPS', angle: model.showVUsers ? 90 : -90, position: model.showVUsers ? 'right' : 'left', fill: 'var(--warning)', fontSize: 11 }}
-              />
-            )}
-            <Tooltip content={<ScenarioModelTooltip />} />
-            {model.showVUsers && groupSeries.map(series => (
-              <Area
-                key={series.key}
-                yAxisId="vusers"
-                type={series.interpolation || 'linear'}
-                dataKey={series.key}
-                name={series.label}
-                stackId="vusers"
-                stroke={series.color}
-                fill={series.color}
-                fillOpacity={0.16}
-                strokeWidth={2}
-                dot={false}
-                isAnimationActive={false}
-              />
-            ))}
-            {model.showVUsers && totalSeries && (
-              <Line
-                yAxisId="vusers"
-                type={totalSeries.interpolation || 'linear'}
-                dataKey={totalSeries.key}
-                name={totalSeries.label}
-                stroke={totalSeries.color}
-                strokeWidth={3}
-                dot={false}
-                isAnimationActive={false}
-              />
-            )}
-            {tpsSeries.map(series => (
-              <Line
-                key={series.key}
-                yAxisId="tps"
-                type={series.interpolation || 'linear'}
-                dataKey={series.key}
-                name={series.label}
-                stroke={series.color}
-                strokeWidth={series.key === 'totalTps' ? 3 : 2}
-                strokeDasharray={series.key === 'totalTps' ? '6 5' : undefined}
-                dot={false}
-                isAnimationActive={false}
-              />
-            ))}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div> : <div className="scenario-model-chart"><p className="scenario-shape-guidance">No deterministic load curve is available. The goal controller will determine VUser demand during execution.</p></div>}
-      <div className="scenario-model-legend">
-        {visibleSeries.map(series => (
-          <span key={series.key}>
-            <i style={{ background: series.color }} />
-            {series.label}
-          </span>
-        ))}
-      </div>
+      {chart ? <div className="scenario-model-chart">
+        <LoadPlanChart label={compositionGroups ? 'Live scenario preview' : 'Model preview'} showVUsers={Boolean(vuserPlan)} height={compositionGroups ? 260 : 320} {...chart} />
+      </div> : <div className="scenario-model-chart"><p className="scenario-shape-guidance">{emptyChartMessage}</p></div>}
       {compositionGroups && <div className="scenario-composition-summary" aria-label="Live group summary">
         {compositionGroups.map((group, index) => <div className="scenario-composition-summary-row" key={`${group.script_id || 'group'}-${index}`}>
           <span className="scenario-composition-summary-name"><i style={{ background: groupSeries[index]?.color || 'var(--accent)' }} />{group.name || `Group ${index + 1}`}</span>
@@ -1280,6 +1220,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }),
 	[form.duration, form.goal_config?.target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, goalDrivenConfig.groups, isGoalDriven, isGuidedClosedVUser, scripts],
   )
+  // The draft as New Test will run it: the VUser picture the builder draws.
+  const scenarioRunPlan = useMemo(() => scenarioLoadPreview(scenarioDraftFromForm({ ...form, groups: formGroups })), [form, formGroups])
   const filteredCloneScenarios = useMemo(() => {
     const query = scenarioCloneQuery.trim().toLowerCase()
     if (!query) return scenarios
@@ -4777,10 +4719,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 {goalSizingIncomplete && <p className="scenario-source-pending" role="status">Sizing incomplete: enter average response time for every group or select a completed baseline. This chart shows requested throughput only; VUser sizing is unavailable until those inputs are supplied.</p>}
                 <ScenarioModelPreviewPanel
                   model={scenarioModel}
+                  runPlan={scenarioRunPlan}
                   shapeLabel={shapeLabel}
                   dataPoolLabel={dataPoolLabel}
                   validationStatus={goalSizingIncomplete && validationLabel === 'Not validated' ? 'Sizing incomplete' : validationLabel}
                   compositionGroups={showCompositionPreview ? compositionTimelineGroups : undefined}
+                  openEnded={form.termination_mode === 'iterations'}
                 />
 				{isSteppedRamp && !activeSteppedRampPlan.error && (
 					<div className="stepped-ramp-stage-preview">

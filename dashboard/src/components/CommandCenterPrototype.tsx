@@ -7,17 +7,6 @@ import { handleTabKey } from './tabKeyboard'
 import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Legend,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 
 import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
@@ -42,7 +31,6 @@ import { usePrometheusGraphs } from './usePrometheusGraphs'
 import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS, EXECUTION_POLL_INTERVAL_MS } from './useExecutionTestPolling'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { omitTransactionChartSeries } from './transactionChartSeries'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -65,7 +53,10 @@ import {
   type GroupRunRow,
   type TransactionRunRow,
 } from './commandCenterScenarioRows'
-import { buildLoadModelProfile, type LoadModelPoint } from './commandCenterLoadModel'
+import { buildRunLoadPlan, observedVUsersSince, runLoadStatus } from './commandCenterLoadModel'
+import LoadPlanChart from './LoadPlanChart'
+import { LOAD_PLAN_COLORS } from './loadPlanSteps'
+import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 import type { CommandCenterPrototypeFixtures } from './commandCenterPrototypeFixtures'
 import {
   formatSnapshotRequestLineAndHeaders,
@@ -244,12 +235,6 @@ function metricTone(value: number, warning: number, danger: number) {
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.min(100, value))
-}
-
-function loadProgressPercent(durationSeconds: number, remainingSeconds: number) {
-  if (durationSeconds <= 0) return 0
-  const elapsedSeconds = Math.max(0, Math.min(durationSeconds, durationSeconds - remainingSeconds))
-  return clampPercent(elapsedSeconds / durationSeconds * 100)
 }
 
 function coerceTestStatus(status: string | undefined, fallback: TestStatus = 'RUNNING'): TestStatus {
@@ -1712,7 +1697,7 @@ export default function CommandCenterPrototype({
       )}
       <ThresholdAlertStrip alerts={scopedThresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
 
-      {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} testGroups={displayTest.groups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} /></section>}
+      {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} test={displayTest} runStatus={runStatus} history={liveMode ? localMetricsHistory : []} /></section>}
       {(!noRequestSamples || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (variant === 'ops' || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (
         <OpsCockpitView
           runId={testId}
@@ -1720,6 +1705,7 @@ export default function CommandCenterPrototype({
           variant={variant}
           onVariantChange={changeVariant}
           groups={groups}
+          test={displayTest}
           testGroups={displayTest.groups}
           metrics={displayTest.live_metrics}
           metricsHistory={liveMode ? localMetricsHistory : []}
@@ -2111,6 +2097,8 @@ interface OpsCockpitViewProps {
   variant: VariantId
   onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
+  /** The run itself: its plan, start and status for the load model. */
+  test: TestSummary
   testGroups: TestGroup[]
   metrics?: LiveMetrics
   metricsHistory?: MetricsHistoryPoint[]
@@ -2159,6 +2147,7 @@ function OpsCockpitView({
   variant,
   onVariantChange,
   groups,
+  test,
   testGroups,
   metrics,
   metricsHistory,
@@ -2202,7 +2191,7 @@ function OpsCockpitView({
             ))}
           </ul>
         )}
-        <LoadModelPanel groups={groups} testGroups={testGroups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} />
+        <LoadModelPanel groups={groups} test={test} runStatus={runStatus} history={metricsHistory ?? []} />
       </section>
     )
   }
@@ -2213,6 +2202,7 @@ function OpsCockpitView({
         variant={variant}
         onVariantChange={onVariantChange}
         groups={groups}
+        test={test}
         testGroups={testGroups}
         metrics={metrics}
         metricsHistory={metricsHistory}
@@ -2259,10 +2249,9 @@ function OpsCockpitView({
           />
           <LoadModelPanel
             groups={groups}
-            testGroups={testGroups}
+            test={test}
             runStatus={runStatus}
-            totalDurationSeconds={totalDurationSeconds}
-            remainingSeconds={remainingSeconds}
+            history={metricsHistory ?? []}
           />
         </div>
         <CommandRunTables
@@ -2304,7 +2293,7 @@ type OpsCockpitV2ViewProps = Omit<OpsCockpitViewProps, 'experienceVersion' | 'on
 function OpsCockpitV2View({
   runId,
   groups,
-  testGroups,
+  test,
   metrics,
   metricsHistory = [],
   errorPatterns,
@@ -2316,6 +2305,7 @@ function OpsCockpitV2View({
   onTableTabChange,
   evidenceLoading,
   evidenceError,
+  runStatus,
   totalDurationSeconds,
   remainingSeconds,
   readOnly = false,
@@ -2329,28 +2319,14 @@ function OpsCockpitV2View({
   onChangeDuration,
 }: OpsCockpitV2ViewProps) {
   const basis = useContext(CommandMetricBasisContext)
-  const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
-  const profile = useMemo(
-    () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
-    [groups, testGroups, totalDurationSeconds],
-  )
+  const { plan, observed, elapsedSeconds, live, ended, plannedNow, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, metricsHistory)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
-  const plannedNow = plannedLoadAtProgress(profile, progressPct)
-  const chartProfile = profile.map(point => {
-    if (point.pct > progressPct) return { ...point, actual: null }
-    if (metricsHistory.length === 0) {
-      return { ...point, actual: point.pct === 0 ? totalCurrent : null }
-    }
-    const historyIndex = Math.min(
-      metricsHistory.length - 1,
-      Math.max(0, Math.round((point.pct / Math.max(1, progressPct)) * (metricsHistory.length - 1))),
-    )
-    return {
-      ...point,
-      actual: numericCommandValue(metricsHistory[historyIndex], 'vusers', 'activeVusers', 'active_vusers'),
-    }
-  })
+  // The export holds the plan's steps and the observed samples, each at its own elapsed second.
+  const exportRows = [
+    ...plan.points.map(point => ({ second: point.second, planned: point.total })),
+    ...observed.map(sample => ({ second: sample.second, actual: sample.vusers })),
+  ].sort((left, right) => left.second - right.second)
   return (
     <section className="command-v2" aria-label="Command Center analysis Ops view">
       <div className="command-v2-workbench">
@@ -2358,30 +2334,21 @@ function OpsCockpitV2View({
           <section className="command-v2-load-model" aria-label="Command Center analysis load model">
             <div className="command-v2-section-header">
               <div>
-                <h3>Load Model</h3>
-                <p>{loadPhaseAtProgress(profile, progressPct)} / tracking planned and actual VUsers</p>
+                <h3>Load model</h3>
+                <p>{phase} / tracking planned and actual VUsers</p>
               </div>
               <div className="command-v2-model-kpis">
-                <span>Planned <strong>{formatNumber(plannedNow)}</strong></span>
+                <span>Planned <strong>{ended ? MISSING_VALUE : formatNumber(plannedNow)}</strong></span>
                 <span>Actual <strong>{formatNumber(totalCurrent)}</strong></span>
-                <span>Delta <strong>{totalCurrent - plannedNow >= 0 ? '+' : ''}{formatNumber(totalCurrent - plannedNow)}</strong></span>
-                <span>Elapsed <strong>{formatNumber(progressPct, 0)}%</strong></span>
+                <span>Delta <strong>{ended ? MISSING_VALUE : `${totalCurrent - plannedNow >= 0 ? '+' : ''}${formatNumber(totalCurrent - plannedNow)}`}</strong></span>
+                <span>Time <strong>{elapsedLabel}</strong></span>
               </div>
             </div>
 
-            <div className="command-v2-chart" aria-label="Planned and actual VUsers over test duration">
-              <SeriesChartExport id="command-observed-load" title="Planned and actual load" rows={chartProfile} axes={[{ key: "progress", label: "Planned duration progress (%)", value: point => point.pct }]} series={[{ key: "planned", label: "Target VUsers", unit: "VUsers" }, { key: "actual", label: "Resampled observed VUsers", unit: "VUsers" }]} context={{ run_id: runId, progress_pct: progressPct, basis: "Observed samples resampled onto the planned progress grid; future actual values remain missing" }}><ResponsiveContainer width="100%" height={230} minWidth={320}>
-                <AreaChart data={chartProfile} margin={{ top: 10, right: 18, left: -8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="pct" type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={value => `${value}%`} stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <YAxis stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} labelFormatter={value => `${formatNumber(Number(value))}% elapsed`} />
-                  <ReferenceLine x={progressPct} stroke="var(--text-primary)" strokeWidth={1.5} ifOverflow="extendDomain" />
-                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--chart-1)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.16} strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Legend verticalAlign="bottom" height={22} iconType="plainline" wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
-                </AreaChart>
-              </ResponsiveContainer></SeriesChartExport>
+            <div className="command-v2-chart">
+              <SeriesChartExport id="command-observed-load" title="Planned and actual load" rows={exportRows} axes={[{ key: "elapsed", label: "Elapsed seconds", value: row => row.second }]} series={[{ key: "planned", label: "Planned VUsers", unit: "VUsers" }, { key: "actual", label: "Observed VUsers", unit: "VUsers" }]} context={{ run_id: runId, elapsed_seconds: elapsedSeconds, basis: "Planned steps and observed samples on elapsed seconds from the run's start" }}>
+                <LoadPlanChart label="Planned and actual VUsers" points={plan.points} totalSeconds={plan.totalSeconds} groups={chartGroups} phases={plan} observed={observed} nowSecond={live ? elapsedSeconds : undefined} height={230} />
+              </SeriesChartExport>
             </div>
 
             <div className="command-v2-capacity" aria-label="Capacity pressure">
@@ -2442,7 +2409,7 @@ function OpsCockpitV2View({
             <div className="command-v2-inspector-title"><h3>Change duration</h3><span>{formatRunClock(remainingSeconds)} left</span></div>
             <dl>
               <div><dt>Current duration</dt><dd>{formatRunClock(totalDurationSeconds)}</dd></div>
-              <div><dt>Elapsed</dt><dd>{formatNumber(progressPct, 0)}%</dd></div>
+              <div><dt>Elapsed</dt><dd>{formatTrafficProfileAxisTime(elapsedSeconds)}</dd></div>
             </dl>
             <div className="command-v2-inspector-actions">
               <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Adjust run</button>
@@ -3872,49 +3839,59 @@ function CommandRuntimeGraphs({
   )
 }
 
-function plannedLoadAtProgress(profile: LoadModelPoint[], progressPct: number) {
-  if (profile.length === 0) return 0
-  const progress = clampPercent(progressPct)
-  const nextIndex = profile.findIndex(point => point.pct >= progress)
-  if (nextIndex <= 0) return profile[0].planned
-  const next = profile[nextIndex]
-  const previous = profile[nextIndex - 1]
-  if (!next) return profile[profile.length - 1].planned
-  const span = Math.max(1, next.pct - previous.pct)
-  const ratio = (progress - previous.pct) / span
-  return Math.round(previous.planned + (next.planned - previous.planned) * ratio)
-}
-
-function loadPhaseAtProgress(profile: LoadModelPoint[], progressPct: number) {
-  if (profile.length === 0) return 'Model'
-  const progress = clampPercent(progressPct)
-  const active = [...profile].reverse().find(point => point.pct <= progress)
-  return active?.phase || profile[0].phase
+// A run's load plan and where it stands: the plan the engine runs, the VUsers
+// it actually had, and "now", all on elapsed seconds from the run's start.
+function useRunLoadModel(test: TestSummary, groups: CommandGroup[], runStatus: TestStatus, history: MetricsHistoryPoint[]) {
+  const startedMs = Date.parse(test.started_at || test.start_time || '')
+  const notStarted = runStatus === 'RESERVED' || runStatus === 'QUEUED' || !Number.isFinite(startedMs)
+  const live = !notStarted && !isHistoricalRunStatus(runStatus)
+  const endedMs = Date.parse(test.ended_at || '')
+  const elapsedSeconds = notStarted ? 0 : Math.max(0, ((live || !Number.isFinite(endedMs) ? Date.now() : endedMs) - startedMs) / 1000)
+  // A run to its iterations has no deadline: its plan runs to where it is now.
+  const openEnded = test.termination_mode === 'iterations'
+  const horizonSeconds = openEnded ? Math.ceil(elapsedSeconds) : undefined
+  const plan = useMemo(() => buildRunLoadPlan(test, groups, horizonSeconds), [groups, horizonSeconds, test])
+  // Colors by group name, so an unchanged legend keeps the chart's memo.
+  const groupColorKey = groups.map(group => `${group.name}\u0000${group.color}`).join('\u0001')
+  const chartGroups = useMemo(() => (test.groups || []).map((group, index) => ({
+    key: `group${index}`,
+    label: group.name,
+    color: groups.find(candidate => candidate.name === group.name)?.color || LOAD_PLAN_COLORS[index % LOAD_PLAN_COLORS.length],
+  // groups is read through groupColorKey, which changes when a name or color does.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  })), [groupColorKey, test.groups])
+  const observed = useMemo(() => notStarted ? [] : observedVUsersSince(history, startedMs), [history, notStarted, startedMs])
+  const staged = (test.groups || []).some(group => Boolean(group.stages?.length))
+  return {
+    plan,
+    observed,
+    elapsedSeconds,
+    live,
+    notStarted,
+    // An ended run is past its plan: there is no planned load to compare with.
+    ended: !notStarted && !live,
+    openEnded,
+    ...runLoadStatus(plan, elapsedSeconds, { state: notStarted ? 'not_started' : !live ? 'ended' : runStatus === 'PAUSED' ? 'paused' : 'running', openEnded, staged }),
+    chartGroups,
+  }
 }
 
 function LoadModelPanel({
   groups,
-  testGroups,
+  test,
   runStatus,
-  totalDurationSeconds,
-  remainingSeconds,
+  history,
 }: {
   groups: CommandGroup[]
-  testGroups: TestGroup[]
+  test: TestSummary
   runStatus: TestStatus
-  totalDurationSeconds: number
-  remainingSeconds: number
+  /** The run's VUser samples, drawn over the plan. */
+  history: MetricsHistoryPoint[]
 }) {
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
-  const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
-  const profile = useMemo(
-    () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
-    [groups, testGroups, totalDurationSeconds],
-  )
-  const plannedNow = plannedLoadAtProgress(profile, progressPct)
+  const { plan, observed, elapsedSeconds, live, notStarted, ended, openEnded, plannedNow, progressPct, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, history)
   const delta = totalCurrent - plannedNow
-  const phase = runStatus === 'PAUSED' ? 'Paused' : loadPhaseAtProgress(profile, progressPct)
 
   return (
     <section
@@ -3927,68 +3904,39 @@ function LoadModelPanel({
     >
       <div className="command-panel-header command-load-model-header">
         <div>
-          <h3>Load Model</h3>
-          <p>{phase} / {formatRunClock(remainingSeconds)} remaining</p>
+          <h3>Load model</h3>
+          {/* The run shelf counts down to the deadline; this names the phase of the plan. */}
+          <p>{phase}{openEnded && live ? ' / ends when its iterations do' : ''}</p>
           {runStatus === 'PAUSED' && <p>Allocated users are retained while active load pauses. Rolling throughput decays as its averaging window clears.</p>}
         </div>
-        <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
+        <span className="command-load-model-badge">{elapsedLabel}</span>
       </div>
 
       <details className="command-load-comparison"><summary>Load comparison</summary>
       <div className="command-load-model-stats">
-        <MetricPill label="Planned VU" value={formatNumber(plannedNow)} tone="accent" />
-        <MetricPill label="Actual VU" value={runStatus === "RESERVED" || runStatus === "QUEUED" ? "Not started" : formatNumber(totalCurrent)} tone="info" />
-        <MetricPill label="Delta VU" value={runStatus === "RESERVED" || runStatus === "QUEUED" ? "No samples" : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
+        <MetricPill label="Planned VU" value={ended ? 'Run ended' : formatNumber(plannedNow)} tone="accent" />
+        <MetricPill label="Actual VU" value={notStarted ? "Not started" : formatNumber(totalCurrent)} tone="info" />
+        <MetricPill label="Delta VU" value={notStarted ? "No samples" : ended ? MISSING_VALUE : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={!ended && Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
       </div>
 
       </details>
-      <div className="command-load-model-chart" aria-hidden="true">
-        <ResponsiveContainer width="100%" height={132} minWidth={240}>
-          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} accessibilityLayer={false}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-            <XAxis
-              dataKey="pct"
-              type="number"
-              domain={[0, 100]}
-              ticks={[0, 25, 50, 75, 100]}
-              tickFormatter={(value) => `${value}%`}
-              stroke="var(--text-muted)"
-              tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-            />
-            <YAxis
-              stroke="var(--text-muted)"
-              tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-              allowDecimals={false}
-              domain={[0, dataMax => Math.max(1, Number(dataMax), totalCurrent)]}
-              tickFormatter={(value) => `${formatNumber(Number(value))} VU`}
-            />
-            <Tooltip
-              contentStyle={chartTooltipContentStyle}
-              labelStyle={chartTooltipLabelStyle}
-              formatter={(value) => [`${formatNumber(Number(value))} VU`, 'Planned']}
-              labelFormatter={(value) => `${formatNumber(Number(value))}% elapsed`}
-            />
-            <ReferenceLine x={progressPct} stroke="var(--warning)" strokeDasharray="4 4" ifOverflow="extendDomain" />
-            <ReferenceLine y={totalCurrent} stroke="var(--chart-2)" strokeDasharray="3 3" ifOverflow="extendDomain" />
-            <Area
-              type="monotone"
-              dataKey="planned"
-              name="Planned VUsers"
-              stroke="var(--accent)"
-              fill="var(--accent-soft)"
-              fillOpacity={0.45}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4, stroke: 'var(--accent)', fill: 'var(--bg-card)' }}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+      <div className="command-load-model-chart">
+        <LoadPlanChart
+          compact
+          label="Load model"
+          points={plan.points}
+          totalSeconds={plan.totalSeconds}
+          groups={chartGroups}
+          phases={plan}
+          observed={observed}
+          nowSecond={live ? elapsedSeconds : undefined}
+          height={140}
+        />
       </div>
 
-      <div className="command-load-model-progress" aria-hidden="true">
+      {!openEnded && <div className="command-load-model-progress" aria-hidden="true">
         <span style={{ width: `${progressPct}%` }} />
-      </div>
+      </div>}
     </section>
   )
 }

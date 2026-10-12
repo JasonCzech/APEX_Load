@@ -15,15 +15,14 @@ import FormField from './ux/FormField'
 import DialogLayer from './ux/DialogLayer'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import LoadPlanChart from './LoadPlanChart'
+import { LOAD_PLAN_COLORS } from './loadPlanSteps'
 import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, DynatraceConnection, ELKConnection, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
-import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
-import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { SortIndicator } from './SortIndicator'
 import {
@@ -220,7 +219,6 @@ type GroupEditChanges = {
   assignment: boolean
 }
 
-const LOAD_PROFILE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 const formatProfileTps = (value: number | undefined) => (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
 
 function formatDate(value?: string) {
@@ -3696,10 +3694,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         </div>
 
         <aside className="new-test-sidebar-column" hidden={!scenario}>
-          <section className="new-test-profile-card" aria-label="Modeled Load Profile">
+          <section className="new-test-profile-card" aria-label="Modeled load profile">
             <div className="new-test-profile-header">
               <div>
-                <h3>Modeled Load Profile</h3>
+                <h3>Modeled load profile</h3>
                 <p>{runLoadProfilePreview.runtimeTarget === 'tps' ? `${scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production-derived adaptive' : 'Configured adaptive'} TPS targets. VUser demand is controlled at runtime${runLoadProfilePreview.estimatedPeakVUsers !== undefined ? '; the ART-backed VUser figure is a Little’s Law planning estimate' : ''}.` : runLoadProfilePreview.showVUsers ? 'Planned VUsers for this run.' : 'VUser demand is determined by the goal controller at runtime.'}</p>
               </div>
               {runLoadProfilePreview.showVUsers && runLoadProfilePreview.peakTps === undefined && <div className="new-test-profile-stat">
@@ -3717,136 +3715,19 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             {runLoadProfilePreview.points.length > 0 && (runLoadProfilePreview.showVUsers || runLoadProfilePreview.peakTps !== undefined) ? (
               <>
                 <div className="new-test-profile-chart">
-                  <ResponsiveContainer width="100%" height={210}>
-                    <AreaChart data={runLoadProfilePreview.points} margin={{ top: 10, right: 12, left: 20, bottom: 14 }}>
-                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                      <XAxis
-                        dataKey="second"
-                        type="number"
-                        domain={[0, 'dataMax']}
-                        tickFormatter={(value) => formatTrafficProfileAxisTime(Number(value))}
-                        stroke="var(--text-muted)"
-                        fontSize={10}
-                        height={38}
-                        tickLine={false}
-                        label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 10 }}
-                      />
-                      {runLoadProfilePreview.showVUsers && <YAxis
-                        yAxisId="vusers"
-                        stroke="var(--text-muted)"
-                        fontSize={10}
-                        width={66}
-                        tickLine={false}
-                        allowDecimals={false}
-                        label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
-                      />}
-                      {runLoadProfilePreview.peakTps !== undefined && (
-                        <YAxis
-                          yAxisId="tps"
-                          orientation={runLoadProfilePreview.showVUsers ? 'right' : 'left'}
-                          stroke="var(--warning)"
-                          fontSize={10}
-                          width={66}
-                          tickLine={false}
-                          label={{ value: 'TPS', angle: runLoadProfilePreview.showVUsers ? 90 : -90, position: runLoadProfilePreview.showVUsers ? 'right' : 'left', fill: 'var(--warning)', fontSize: 10 }}
-                        />
-                      )}
-                      <Tooltip
-                        itemSorter={preserveChartItemOrder}
-                        labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
-                        contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8, fontSize: '12px' }}
-                        labelStyle={chartTooltipLabelStyle}
-                        formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total VUsers' : name ?? '']}
-                      />
-                      {runLoadProfilePreview.showVUsers && effectiveScenarioGroups.map((group, index) => (
-                        <Area
-                          key={`${group.order}-${group.script_id}`}
-                          yAxisId="vusers"
-                          type="monotone"
-                          dataKey={`group${index}`}
-                          name={group.name || group.script_name || `Group ${index + 1}`}
-                          stackId="run-profile"
-                          stroke={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
-                          fill={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
-                          fillOpacity={0.28}
-                          isAnimationActive={false}
-                        />
-                      ))}
-                      {runLoadProfilePreview.showVUsers && <Line
-                        yAxisId="vusers"
-                        type="monotone"
-                        dataKey="total"
-                        name="Total"
-                        stroke="var(--text-primary)"
-                        strokeWidth={2}
-                        dot={false}
-                        isAnimationActive={false}
-                      />}
-                      {(runLoadProfilePreview.tpsGroupIndexes || []).length > 1 && (runLoadProfilePreview.tpsGroupIndexes || []).map(index => (
-                        <Line
-                          key={`group-${index}-tps`}
-                          yAxisId="tps"
-                          type="stepAfter"
-                          dataKey={`group${index}Tps`}
-                          name={`${effectiveScenarioGroups[index]?.name || effectiveScenarioGroups[index]?.script_name || `Group ${index + 1}`} TPS`}
-                          stroke={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
-                          strokeWidth={1.5}
-                          dot={false}
-                          isAnimationActive={false}
-                        />
-                      ))}
-                      {runLoadProfilePreview.peakTps !== undefined && (
-                        <Line
-                          yAxisId="tps"
-                          type="stepAfter"
-                          dataKey="totalTps"
-                          name={scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production target TPS' : 'Target TPS'}
-                          stroke="var(--warning)"
-                          strokeWidth={2.5}
-                          strokeDasharray="6 5"
-                          dot={false}
-                          isAnimationActive={false}
-                        />
-                      )}
-                      <ReferenceArea
-                        yAxisId={runLoadProfilePreview.showVUsers ? 'vusers' : 'tps'}
-                        x1={runLoadProfilePreview.preBaselineSeconds}
-                        x2={runLoadProfilePreview.preBaselineSeconds + runLoadProfilePreview.steadySeconds}
-                        fill="var(--accent)"
-                        fillOpacity={0.05}
-                        strokeOpacity={0}
-                      />
-                      {runLoadProfilePreview.preBaselineSeconds > 0 && (
-                        <ReferenceArea
-                          yAxisId={runLoadProfilePreview.showVUsers ? 'vusers' : 'tps'}
-                          x1={0}
-                          x2={runLoadProfilePreview.preBaselineSeconds}
-                          fill="var(--warning)"
-                          fillOpacity={0.05}
-                          strokeOpacity={0}
-                        />
-                      )}
-                      {runLoadProfilePreview.postBaselineSeconds > 0 && (
-                        <ReferenceArea
-                          yAxisId={runLoadProfilePreview.showVUsers ? 'vusers' : 'tps'}
-                          x1={runLoadProfilePreview.totalSeconds - runLoadProfilePreview.postBaselineSeconds}
-                          x2={runLoadProfilePreview.totalSeconds}
-                          fill="var(--warning)"
-                          fillOpacity={0.05}
-                          strokeOpacity={0}
-                        />
-                      )}
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="new-test-profile-legend">
-                  {runLoadProfilePreview.showVUsers && effectiveScenarioGroups.map((group, index) => (
-                    <span key={`${group.order}-${group.script_id}`}>
-                      <i style={{ background: LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length] }} />
-                      {group.name || group.script_name || `Group ${index + 1}`}
-                    </span>
-                  ))}
-                  {runLoadProfilePreview.peakTps !== undefined && <span><i style={{ background: 'var(--warning)' }} />{scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production target TPS' : 'Target TPS'}</span>}
+                  <LoadPlanChart
+                    label="Modeled load profile"
+                    points={runLoadProfilePreview.points}
+                    totalSeconds={runLoadProfilePreview.totalSeconds}
+                    showVUsers={runLoadProfilePreview.showVUsers}
+                    groups={effectiveScenarioGroups.map((group, index) => ({ key: `group${index}`, label: group.name || group.script_name || `Group ${index + 1}`, color: LOAD_PLAN_COLORS[index % LOAD_PLAN_COLORS.length] }))}
+                    tps={runLoadProfilePreview.peakTps === undefined ? [] : [
+                      ...((runLoadProfilePreview.tpsGroupIndexes || []).length > 1 ? (runLoadProfilePreview.tpsGroupIndexes || []).map(index => ({ key: `group${index}Tps`, label: `${effectiveScenarioGroups[index]?.name || effectiveScenarioGroups[index]?.script_name || `Group ${index + 1}`} TPS`, color: LOAD_PLAN_COLORS[index % LOAD_PLAN_COLORS.length] })) : []),
+                      { key: 'totalTps', label: scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production target TPS' : 'Target TPS', color: 'var(--warning)' },
+                    ]}
+                    phases={runLoadProfilePreview}
+                    height={210}
+                  />
                 </div>
                 <div className="new-test-profile-meta">
                   <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>
@@ -3854,7 +3735,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
               </>
             ) : (
-              <div className="new-test-empty compact">{scenario?.scenario_mode === 'goal_oriented' ? 'No deterministic VUser curve is available. The goal controller will determine demand during execution.' : 'Select a runnable scenario to preview the load profile.'}</div>
+              <div className="new-test-empty compact">{scenario?.scenario_mode === 'goal_oriented' ? 'No deterministic VUser curve is available. The goal controller will determine demand during execution.' : scenario?.termination_mode === 'iterations' ? 'This scenario runs until every VUser finishes its iterations, so its length is not known before the run.' : 'Select a runnable scenario to preview the load profile.'}</div>
             )}
           </section>
 

@@ -184,7 +184,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   // The chart draws the draft's load preview: the projection every scenario
   // editor shares (AUTH-3), so offsets, stages and baselines match.
-  const chartData = scenarioLoadPreview(scenarioDraft).points.map(({ second, ...point }) => ({ ...point, time: second }))
+  const loadPlan = scenarioLoadPreview(scenarioDraft)
   const buildPayload = () => scenarioCreatePayload(scenarioDraft, { projectId, folderId, monitorBindings, elkConnectionId, dynatraceConnectionId })
 
   const buildEstimatePayload = useCallback(
@@ -451,7 +451,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             </div>
 
             <CreateTestCapacityPreview
-              chartData={chartData}
+              plan={loadPlan}
               groups={groups}
               draftEstimate={draftEstimate}
               estimateLoading={estimateLoading}

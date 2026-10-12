@@ -1066,7 +1066,7 @@ export default function TestExecutionArchive({
                   )}
                   {archiveReport.overview.load_model_goals?.stage_count ? (
                     <div className="scenario-script-detail-card">
-                      <span className="scenario-script-detail-label">Staged Load</span>
+                      <span className="scenario-script-detail-label">Staged load</span>
                       <span className="scenario-script-detail-value">{archiveReport.overview.load_model_goals.stage_count}</span>
                       <span className="capacity-advisory-detail">{archiveReport.overview.load_model_goals.staged_groups || 0} group{archiveReport.overview.load_model_goals.staged_groups === 1 ? '' : 's'} · {archiveReport.overview.load_model_goals.once_only_groups || 0} once-only</span>
                     </div>

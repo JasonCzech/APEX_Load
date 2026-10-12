@@ -91,6 +91,8 @@ vi.mock('recharts', () => {
     Legend: Mock,
     Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-line" data-key={dataKey} data-name={name} />,
     LineChart: MockChart,
+    ReferenceArea: Mock,
+    ReferenceLine: Mock,
     ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="scenario-model-responsive">{children}</div>,
     Tooltip: MockTooltip,
     XAxis: ({ label }: { label?: string | { value?: string } }) => <g data-testid="scenario-model-x-axis" data-label={labelText(label)} />,
@@ -1499,7 +1501,7 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
     expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
     expect(container.querySelector('.scenario-composition-summary')).toBeNull()
-    expect(container.querySelector('.scenario-model-preview-panel')?.textContent).toContain('Model Preview')
+    expect(container.querySelector('.scenario-model-preview-panel')?.textContent).toContain('Model preview')
     expect(container.textContent).toContain('Goal-Driven Scenario Setup')
   })
 
@@ -3740,15 +3742,15 @@ describe('TestHub', () => {
 
     expect(onScenarioViewChange).toHaveBeenLastCalledWith('builder')
     expect(container.textContent).toContain('Scenario builder')
-    expect(container.textContent).not.toContain('Model Preview')
+    expect(container.textContent).not.toContain('Model preview')
     expect(container.textContent).not.toContain('Scenario library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Model & Shape')
-    expect(container.textContent).not.toContain('Model Preview')
+    expect(container.textContent).not.toContain('Model preview')
     await selectManualShapeByName('Closed VUser')
 
-    expect(container.textContent).toContain('Model Preview')
+    expect(container.textContent).toContain('Model preview')
     expect(container.querySelector('[data-testid="scenario-model-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(Array.from(container.querySelectorAll('[data-testid="scenario-model-y-axis"]')).map(axis => axis.getAttribute('data-label'))).toContain('VUsers')
     expect(container.textContent).not.toContain('Scenario library (')

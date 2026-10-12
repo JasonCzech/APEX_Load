@@ -211,7 +211,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   // Measure both rectangles in one browser frame, then wait for that layout.
   await expect.poll(() => page.locator('.scenario-model-preview-panel').evaluate(panel => {
     const chart = panel.querySelector('.scenario-model-chart .recharts-responsive-container')!.getBoundingClientRect()
-    const legend = panel.querySelector('.scenario-model-legend')!.getBoundingClientRect()
+    const legend = panel.querySelector('.scenario-model-chart .load-plan-legend')!.getBoundingClientRect()
     return legend.y - chart.bottom
   })).toBeGreaterThanOrEqual(0)
   await page.screenshot({ path: 'test-results/scenario-builder-review.png', fullPage: true })

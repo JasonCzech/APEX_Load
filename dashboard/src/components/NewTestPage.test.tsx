@@ -82,6 +82,8 @@ vi.mock('../hooks/useProject', () => ({
 vi.mock('recharts', () => ({
   Area: () => <span data-testid="mock-area" />,
   AreaChart: ({ children }: { children?: ReactNode }) => <div data-testid="mock-load-profile-chart">{children}</div>,
+  ComposedChart: ({ children }: { children?: ReactNode }) => <div data-testid="mock-load-profile-chart">{children}</div>,
+  ReferenceLine: () => <span data-testid="mock-reference-line" />,
   CartesianGrid: () => <span data-testid="mock-cartesian-grid" />,
   Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <span data-testid="mock-line" data-key={dataKey || ''} data-name={name || ''} />,
   ReferenceArea: () => <span data-testid="mock-reference-area" />,
@@ -1574,14 +1576,15 @@ describe('NewTestPage', () => {
     expect(summaryList?.textContent).toContain('Script Groups')
     expect(summaryList?.textContent).toContain('Capacity')
     expect(readinessCard.textContent).not.toContain('Application')
-    expect(profileCard.textContent).toContain('Modeled Load Profile')
+    expect(profileCard.textContent).toContain('Modeled load profile')
     expect(profileCard.textContent).toContain('Planned VUsers for this run.')
     expect(profileCard.textContent).toContain('10peak')
     expect(profileCard.textContent).toContain('20m total')
     expect(profileCard.querySelector('[data-testid="mock-responsive-container"]')).toBeTruthy()
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-type')).toBe('number')
-    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,dataMax')
+    // Elapsed time across the whole plan (20 m), on round ticks.
+    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,1200')
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
     expect(launchCard.textContent).toContain('Run timing')
     expect(launchCard.textContent).toContain('Hold for Manual Start')
