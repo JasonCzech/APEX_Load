@@ -2792,7 +2792,7 @@ func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist after failure", testRun.ID)
 		}
-		if failed.Status == "FAILED" && failed.EndedAt != nil && failed.Error == "generator execution failed" {
+		if failed.Status == "FAILED" && failed.EndedAt != nil && strings.HasSuffix(failed.Error, ": generator execution failed") {
 			break
 		}
 		if time.Now().After(deadline) {

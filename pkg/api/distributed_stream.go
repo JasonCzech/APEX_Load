@@ -1712,9 +1712,8 @@ func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestR
 	if b.tolerateMetricsStreamLoss(tr, test, target, err) {
 		return
 	}
-	finalError := fmt.Sprintf("remote target %s metrics stream stopped: %v", target, err)
-
 	tr.mu.Lock()
+	finalError := b.remoteTargetLossMessageLocked(test, target, err, time.Now())
 	if test.remoteFinalizing || isTerminalTestStatus(test.Status) {
 		tr.mu.Unlock()
 		return
@@ -1921,10 +1920,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 		case "FAILED":
 			test.remoteTargetStates[target] = "FAILED"
 			finalStatus = "FAILED"
-			finalError = batch.LifecycleError
-			if finalError == "" {
-				finalError = "remote generator reported failure"
-			}
+			finalError = b.remoteTargetFailureMessageLocked(test, target, "failed", firstNonEmpty(batch.LifecycleError, "remote generator reported failure"), time.Now())
 			test.remoteFinalizing = true
 		case "COMPLETE":
 			test.remoteTargetStates[target] = "COMPLETE"

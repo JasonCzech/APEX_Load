@@ -1234,6 +1234,10 @@ func cloneGeneratorResourceSnapshots(values map[string]*GeneratorResourceSnapsho
 			continue
 		}
 		item := *value
+		if value.ErrorPct != nil {
+			errorPct := *value.ErrorPct
+			item.ErrorPct = &errorPct
+		}
 		item.ImpactReasons = append([]string(nil), value.ImpactReasons...)
 		item.PodCapacity = value.PodCapacity.Clone()
 		item.Resources = cloneSystemResources(value.Resources)

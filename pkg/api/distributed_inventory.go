@@ -317,13 +317,17 @@ func (b *distributedExecutionBackend) buildGeneratorResourceSnapshots(test *Mana
 		if batch.TimestampUnixMs == 0 {
 			timestamp = time.Now()
 		}
+		var windowErrorPct *float64
+		if len(batch.Transactions) > 0 {
+			windowErrorPct = &errorPct
+		}
 		out[id] = &GeneratorResourceSnapshot{
 			GeneratorID:     id,
 			Target:          target,
 			Region:          b.regionForTarget(target),
 			ActiveVUsers:    batch.Stats.ActiveVUsers,
 			TPS:             tps,
-			ErrorPct:        errorPct,
+			ErrorPct:        windowErrorPct,
 			P95Ms:           p95,
 			P99Ms:           p99,
 			SaturationState: state,

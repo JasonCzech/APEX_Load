@@ -91337,6 +91337,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -97816,6 +97817,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -104296,6 +104298,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -110788,6 +110791,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -117280,6 +117284,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -123772,6 +123777,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -130264,6 +130270,7 @@ paths:
                                 error_pct:
                                   type: number
                                   format: double
+                                  nullable: true
                                 generator_id:
                                   type: string
                                 impact_reasons:
@@ -345234,6 +345241,7 @@ paths:
                               error_pct:
                                 type: number
                                 format: double
+                                nullable: true
                               generator_id:
                                 type: string
                               impact_reasons:
@@ -348887,6 +348895,7 @@ paths:
                             error_pct:
                               type: number
                               format: double
+                              nullable: true
                             generator_id:
                               type: string
                             impact_reasons:
@@ -358871,6 +358880,7 @@ paths:
                               error_pct:
                                 type: number
                                 format: double
+                                nullable: true
                               generator_id:
                                 type: string
                               impact_reasons:
@@ -362524,6 +362534,7 @@ paths:
                             error_pct:
                               type: number
                               format: double
+                              nullable: true
                             generator_id:
                               type: string
                             impact_reasons:
@@ -377511,6 +377522,14 @@ paths:
                           properties:
                             collected:
                               type: boolean
+                            generator_id:
+                              type: string
+                            groups:
+                              type: array
+                              items:
+                                type: string
+                            region:
+                              type: string
                             target:
                               type: string
                           required:
@@ -390002,6 +390021,14 @@ paths:
                               properties:
                                 collected:
                                   type: boolean
+                                generator_id:
+                                  type: string
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                region:
+                                  type: string
                                 target:
                                   type: string
                               required:
@@ -404102,6 +404129,7 @@ paths:
                               error_pct:
                                 type: number
                                 format: double
+                                nullable: true
                               generator_id:
                                 type: string
                               impact_reasons:
@@ -407755,6 +407783,7 @@ paths:
                             error_pct:
                               type: number
                               format: double
+                              nullable: true
                             generator_id:
                               type: string
                             impact_reasons:
@@ -417683,6 +417712,7 @@ paths:
                               error_pct:
                                 type: number
                                 format: double
+                                nullable: true
                               generator_id:
                                 type: string
                               impact_reasons:
@@ -421336,6 +421366,7 @@ paths:
                             error_pct:
                               type: number
                               format: double
+                              nullable: true
                             generator_id:
                               type: string
                             impact_reasons:
@@ -437145,6 +437176,7 @@ paths:
                               error_pct:
                                 type: number
                                 format: double
+                                nullable: true
                               generator_id:
                                 type: string
                               impact_reasons:
@@ -440798,6 +440830,7 @@ paths:
                             error_pct:
                               type: number
                               format: double
+                              nullable: true
                             generator_id:
                               type: string
                             impact_reasons:
@@ -452733,6 +452766,7 @@ paths:
                               error_pct:
                                 type: number
                                 format: double
+                                nullable: true
                               generator_id:
                                 type: string
                               impact_reasons:
@@ -456374,6 +456408,7 @@ paths:
                             error_pct:
                               type: number
                               format: double
+                              nullable: true
                             generator_id:
                               type: string
                             impact_reasons:

@@ -875,7 +875,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					if source.Collected {
 						status = "collected"
 					}
-					*lines = append(*lines, fmt.Sprintf("- %s: %s", source.Target, status))
+					*lines = append(*lines, fmt.Sprintf("- %s: %s", source.Label(), status))
 				}
 			}
 			*lines = append(*lines, "")
@@ -902,6 +902,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				for _, source := range d.Report.Manifest.SourceCoverage.Sources {
 					if err := write("archive_source", source.Target, "collected", fmt.Sprint(source.Collected)); err != nil {
 						return err
+					}
+					for _, field := range [][2]string{{"generator_id", source.GeneratorID}, {"region", source.Region}, {"groups", strings.Join(source.Groups, "; ")}} {
+						if strings.TrimSpace(field[1]) == "" {
+							continue
+						}
+						if err := write("archive_source", source.Target, field[0], field[1]); err != nil {
+							return err
+						}
 					}
 				}
 			}

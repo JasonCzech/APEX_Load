@@ -49,6 +49,11 @@ type RunArchiveSourceCoverage struct {
 type RunArchiveSource struct {
 	Target    string `json:"target"`
 	Collected bool   `json:"collected"`
+	// GeneratorID, Region and Groups name the generator and the groups it ran,
+	// so a missing source says which part of the load has no evidence.
+	GeneratorID string   `json:"generator_id,omitempty"`
+	Region      string   `json:"region,omitempty"`
+	Groups      []string `json:"groups,omitempty"`
 }
 
 type RunArchiveManifest struct {

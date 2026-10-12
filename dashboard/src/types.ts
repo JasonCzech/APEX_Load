@@ -1020,7 +1020,7 @@ export interface RunArchiveManifest {
   monitor_diagnostics_file?: string
   monitor_diagnostics_count?: number
   monitor_rule_results?: import('./types/runMonitoring').MonitorRuleResult[]
-  source_coverage?: { mode: string; sources: Array<{ target: string; collected: boolean }> }
+  source_coverage?: { mode: string; sources: Array<{ target: string; collected: boolean; generator_id?: string; region?: string; groups?: string[] }> }
   csv_exports?: Array<{ id: string; group: string; file_name: string; status: string; rows: number; error?: string }>
   termination_reason?: string
 

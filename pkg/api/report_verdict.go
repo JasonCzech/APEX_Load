@@ -243,7 +243,7 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 
 	for _, finding := range report.Completeness.Findings {
 		findings = append(findings, ReportFinding{
-			Title:    "Evidence coverage: " + strings.ToLower(reportTokenLabel(finding.Dimension)),
+			Title:    "Evidence coverage: " + completenessDimensionLabel(finding.Dimension),
 			Severity: completenessSeverityToFinding(finding.Severity),
 			Observed: finding.Message,
 		})
@@ -552,4 +552,13 @@ func reportElapsedDuration(manifest *RunArchiveManifest) string {
 		return "Unknown"
 	}
 	return fmt.Sprintf("%.0f seconds", elapsed.Seconds())
+}
+
+// completenessDimensionLabel names a completeness dimension in a risk title.
+// archive_writer carries the run's terminal error, so it reads as one.
+func completenessDimensionLabel(dimension string) string {
+	if strings.TrimSpace(dimension) == "archive_writer" {
+		return "run error"
+	}
+	return strings.ToLower(reportTokenLabel(dimension))
 }

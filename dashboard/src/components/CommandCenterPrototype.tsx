@@ -1,5 +1,7 @@
 import SeriesChartExport from "./SeriesChartExport"
 import { useLiveObservation } from '../hooks/useLiveObservation'
+import { generatorResourceColumns } from './generatorResourceColumns'
+import { filterAndSortRows } from './commandCenterTableSort'
 import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
@@ -2810,6 +2812,7 @@ interface InfrastructureRow {
   saturation: string
   cpu?: number
   memory?: number
+  memoryMb?: number
   network?: number
   disk?: number
   gc?: number
@@ -3374,7 +3377,7 @@ function InfrastructureTable({
               <td className="numeric">{formatOptionalMs(row.p99)}</td>
               <td><span className={`command-state-chip ${row.saturation}`}>{row.saturation}</span><span className="command-table-subtext">{row.saturation === 'unknown' ? 'Telemetry unavailable' : row.impact}</span></td>
               <td className="numeric">{formatOptionalPercent(row.cpu)}</td>
-              <td className="numeric">{formatOptionalPercent(row.memory)}</td>
+              <td className="numeric">{row.memory === undefined && row.memoryMb !== undefined ? `${formatOptionalNumber(row.memoryMb)} MB` : formatOptionalPercent(row.memory)}</td>
               <td className="numeric">{formatOptionalPercent(row.reserved)}</td>
               <td className="numeric">{formatOptionalPercent(row.remaining)}</td>
               <td className="numeric">{formatOptionalNumber(row.network, 1)}</td>
@@ -3440,13 +3443,9 @@ function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics):
       p95: generator.p95_ms,
       p99: generator.p99_ms,
       saturation: generator.saturation_state || 'unknown',
-      cpu: resources?.container_cpu_usage_pct ?? resources?.cpu_process_pct,
-      memory: resources?.container_memory_usage_pct,
+      ...generatorResourceColumns(resources),
       reserved: generator.pod_capacity?.state === 'ready' ? generator.pod_capacity.reserved_pct : undefined,
       remaining: generator.pod_capacity?.state === 'ready' ? generator.pod_capacity.remaining_pct : undefined,
-      network: (resources?.net_sent_kbps || 0) + (resources?.net_recv_kbps || 0) || resources?.tcp_retransmits_per_sec,
-      disk: resources?.disk_io_time_pct,
-      gc: resources?.gc_pause_ms,
       impact: generator.impact_reasons?.join(', ') || (generator.saturation_state && generator.saturation_state !== 'unknown' ? (generator.saturation_state === 'clear' ? 'No pressure reported' : 'Generator reported pressure; no reason supplied') : 'Telemetry unavailable'),
     })
   })
@@ -3506,11 +3505,7 @@ function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics):
       p95: metrics.p95_ms,
       p99: metrics.p99_ms,
       saturation: 'clear',
-      cpu: metrics.resources.container_cpu_usage_pct ?? metrics.resources.cpu_process_pct,
-      memory: metrics.resources.container_memory_usage_pct,
-      network: (metrics.resources.net_sent_kbps || 0) + (metrics.resources.net_recv_kbps || 0),
-      disk: metrics.resources.disk_io_time_pct,
-      gc: metrics.resources.gc_pause_ms,
+      ...generatorResourceColumns(metrics.resources),
       impact: 'aggregate live metrics',
     })
   }
@@ -3518,37 +3513,6 @@ function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics):
   return rows
 }
 
-function filterAndSortRows<T extends object>(rows: T[], filter: string, sort: CommandSortState): T[] {
-  const query = filter.trim().toLowerCase()
-  const filtered = query
-    ? rows.filter(row => rowMatchesFilter(row as Record<string, unknown>, query))
-    : rows
-  return [...filtered].sort((left, right) => compareSortValues(
-    (left as Record<string, unknown>)[sort.key],
-    (right as Record<string, unknown>)[sort.key],
-    sort.direction,
-  ))
-}
-
-function rowMatchesFilter(row: Record<string, unknown>, query: string) {
-  return Object.values(row).some(value => {
-    if (value == null) return false
-    if (Array.isArray(value)) return value.join(' ').toLowerCase().includes(query)
-    return String(value).toLowerCase().includes(query)
-  })
-}
-
-function compareSortValues(left: unknown, right: unknown, direction: SortDirection) {
-  const leftNumber = typeof left === 'number' && Number.isFinite(left) ? left : Number.NaN
-  const rightNumber = typeof right === 'number' && Number.isFinite(right) ? right : Number.NaN
-  let result = 0
-  if (Number.isFinite(leftNumber) || Number.isFinite(rightNumber)) {
-    result = (Number.isFinite(leftNumber) ? leftNumber : -Infinity) - (Number.isFinite(rightNumber) ? rightNumber : -Infinity)
-  } else {
-    result = String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true, sensitivity: 'base' })
-  }
-  return direction === 'asc' ? result : -result
-}
 
 function formatOptionalNumber(value?: number, digits = 0) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE

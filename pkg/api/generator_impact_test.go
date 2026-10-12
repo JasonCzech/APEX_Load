@@ -96,7 +96,7 @@ func TestBuildGeneratorResourceSnapshotsMapsDistributedStats(t *testing.T) {
 	if snapshot.Region != "east" {
 		t.Fatalf("region = %q, want east", snapshot.Region)
 	}
-	if snapshot.ActiveVUsers != 12 || snapshot.P95Ms != 1375 || snapshot.ErrorPct != 50 {
+	if snapshot.ActiveVUsers != 12 || snapshot.P95Ms != 1375 || snapshot.ErrorPct == nil || *snapshot.ErrorPct != 50 {
 		t.Fatalf("snapshot metrics = %#v, want active users, p95, and error pct", snapshot)
 	}
 	if snapshot.SaturationState != "danger" {

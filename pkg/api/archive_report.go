@@ -1146,7 +1146,13 @@ func buildRunArchiveCompletenessScoreFromCounts(manifest *RunArchiveManifest, re
 			addFinding(finding.Dimension, finding.Severity, finding.Penalty, finding.Message)
 		}
 		if strings.TrimSpace(manifest.Error) != "" {
-			addFinding("archive_writer", "critical", 25, "Archive writer recorded an error: "+manifest.Error)
+			// The manifest's error is the run's terminal reason, recorded by the
+			// archive writer: a completed run with one stopped early.
+			if strings.EqualFold(strings.TrimSpace(manifest.Status), "COMPLETE") {
+				addFinding("archive_writer", "critical", 25, "The run stopped early, so its evidence may stop short: "+manifest.Error)
+			} else {
+				addFinding("archive_writer", "critical", 25, "The run ended with an error, so its evidence may stop short: "+manifest.Error)
+			}
 		}
 		if manifest.TransactionCount > transactionCount {
 			addFinding("artifact_truncation", "critical", 20, fmt.Sprintf("Transaction archive contains %d of %d expected events.", transactionCount, manifest.TransactionCount))

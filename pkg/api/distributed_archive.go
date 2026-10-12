@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -565,21 +567,24 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 		singleClient    generatorClient
 		remoteTarget    string
 		shards          []GeneratorShardSummary
+		generatorIDs    map[string]string
 	)
 	if tr != nil {
 		tr.mu.RLock()
-		clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
-		archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
-		singleClient = test.remoteClient
-		remoteTarget = test.remoteTarget
-		shards = append([]GeneratorShardSummary(nil), test.GeneratorShards...)
+	}
+	clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
+	archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
+	singleClient = test.remoteClient
+	remoteTarget = test.remoteTarget
+	shards = append([]GeneratorShardSummary(nil), test.GeneratorShards...)
+	generatorIDs = make(map[string]string, len(test.remoteMetricsBatchesByTarget))
+	for target, batch := range test.remoteMetricsBatchesByTarget {
+		if id := strings.TrimSpace(batch.GeneratorID); id != "" {
+			generatorIDs[target] = id
+		}
+	}
+	if tr != nil {
 		tr.mu.RUnlock()
-	} else {
-		clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
-		archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
-		singleClient = test.remoteClient
-		remoteTarget = test.remoteTarget
-		shards = append([]GeneratorShardSummary(nil), test.GeneratorShards...)
 	}
 	// Snapshot active and retired-archive transports in one critical section.
 	// Otherwise a concurrent evacuation could move a source between the two maps
@@ -735,8 +740,19 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 	if requireAll {
 		coverage.Mode = "required"
 	}
+	groupsByTarget := make(map[string][]string, len(shards))
+	for _, shard := range shards {
+		target, group := strings.TrimSpace(shard.Target), strings.TrimSpace(shard.Group)
+		if target != "" && group != "" && !slices.Contains(groupsByTarget[target], group) {
+			groupsByTarget[target] = append(groupsByTarget[target], group)
+		}
+	}
 	for index, result := range ordered {
-		coverage.Sources = append(coverage.Sources, RunArchiveSource{Target: targets[index], Collected: !result.missing})
+		target := targets[index]
+		coverage.Sources = append(coverage.Sources, RunArchiveSource{
+			Target: target, Collected: !result.missing, GeneratorID: generatorIDs[target],
+			Region: strings.TrimSpace(b.regionForTarget(target)), Groups: groupsByTarget[target],
+		})
 		if result.missing {
 			missingTargets = append(missingTargets, targets[index])
 			continue
@@ -770,14 +786,25 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTargetForSource(ct
 	if client == nil {
 		return remoteArchiveBundle{}, true, nil
 	}
-	targetCtx, cancel := context.WithTimeout(ctx, remoteArchiveTargetTimeout(b.timeout))
-	defer cancel()
 	targetDir, err := ensureArchiveRelativeDirectory(transferStageRoot, fmt.Sprintf("target-%03d", index), 0o700)
 	if err != nil {
 		return remoteArchiveBundle{}, false, err
 	}
+	// Waiting for a stopping generator to finish its archive has its own
+	// deadline, so a long drain cannot use up the time to transfer the archive.
+	waitCtx, cancelWait := context.WithTimeout(ctx, remoteArchiveTargetTimeout(b.timeout))
 	var manifestBuffer bytes.Buffer
-	_, err = copyRemoteArchiveArtifactWithBudget(targetCtx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: runArchiveManifestFileName, SourceIdentity: sourceIdentity}, &manifestBuffer, remoteArchiveManifestMaxBytes, budget)
+	err = awaitRemoteArchiveFinalized(waitCtx, func() error {
+		manifestBuffer.Reset()
+		_, err := copyRemoteArchiveArtifactWithBudget(waitCtx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: runArchiveManifestFileName, SourceIdentity: sourceIdentity}, &manifestBuffer, remoteArchiveManifestMaxBytes, budget)
+		return err
+	})
+	cancelWait()
+	if generatorrpc.IsArchiveFinalizing(err) {
+		slog.Warn("generator was still writing its archive when collection stopped waiting", "test_id", testID, "target", target)
+	}
+	targetCtx, cancel := context.WithTimeout(ctx, remoteArchiveTargetTimeout(b.timeout))
+	defer cancel()
 	if err != nil {
 		code := grpcStatus.Code(err)
 		if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented || (!requireAll && (code == grpcCodes.Canceled || code == grpcCodes.Unavailable)) {
@@ -836,6 +863,32 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTargetForSource(ct
 		}
 	}
 	return remoteArchiveBundle{target: target, region: strings.TrimSpace(b.regionForTarget(target)), manifest: manifest, manifestData: append([]byte(nil), manifestBuffer.Bytes()...), browserDocumentsPath: documentsPath, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
+}
+
+// remoteArchiveFinalizingPoll is the first and longest wait between asks to a
+// generator that is still writing its archive.
+var remoteArchiveFinalizingPoll = [2]time.Duration{250 * time.Millisecond, 2 * time.Second}
+
+// awaitRemoteArchiveFinalized repeats fetch while the generator says the
+// archive is still being written, until it answers otherwise or ctx ends. A run
+// that fails while a surviving generator is still stopping is then collected
+// once that generator has written its archive, instead of counting it missing.
+func awaitRemoteArchiveFinalized(ctx context.Context, fetch func() error) error {
+	delay := remoteArchiveFinalizingPoll[0]
+	for {
+		err := fetch()
+		if err == nil || !generatorrpc.IsArchiveFinalizing(err) {
+			return err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return err
+		case <-timer.C:
+		}
+		delay = min(delay*2, remoteArchiveFinalizingPoll[1])
+	}
 }
 
 func remoteArchiveTargetTimeout(base time.Duration) time.Duration {

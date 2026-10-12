@@ -37130,7 +37130,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -44689,7 +44689,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -45785,7 +45785,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -62797,7 +62797,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -63889,7 +63889,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -67784,7 +67784,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -71678,6 +71678,9 @@ export interface operations {
               "mode": string;
               "sources": Array<{
                 "collected": boolean;
+                "generator_id"?: string;
+                "groups"?: Array<string>;
+                "region"?: string;
                 "target": string;
               }>;
             }) | null;
@@ -75315,6 +75318,9 @@ export interface operations {
                 "mode": string;
                 "sources": Array<{
                   "collected": boolean;
+                  "generator_id"?: string;
+                  "groups"?: Array<string>;
+                  "region"?: string;
                   "target": string;
                 }>;
               }) | null;
@@ -83291,7 +83297,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -84387,7 +84393,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -104917,7 +104923,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -106013,7 +106019,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -121689,7 +121695,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -123781,7 +123787,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -125873,7 +125879,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -127965,7 +127971,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -130057,7 +130063,7 @@ export interface operations {
                 "error_pct": number;
                 "generator_resources"?: Record<string, ({
                   "active_vusers": number;
-                  "error_pct"?: number;
+                  "error_pct"?: (number) | null;
                   "generator_id": string;
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
@@ -134046,7 +134052,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -135142,7 +135148,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -159565,7 +159571,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
@@ -160661,7 +160667,7 @@ export interface operations {
               "error_pct": number;
               "generator_resources"?: Record<string, ({
                 "active_vusers": number;
-                "error_pct"?: number;
+                "error_pct"?: (number) | null;
                 "generator_id": string;
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;

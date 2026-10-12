@@ -1037,6 +1037,9 @@ type LiveMetrics struct {
 	slaTelemetryPeaks map[string]*ServerTelemetrySummary
 }
 
+// GeneratorResourceSnapshot is one generator's latest window. ErrorPct is that
+// window's error rate, 0 included; it is absent only when the window had no
+// transactions.
 type GeneratorResourceSnapshot struct {
 	PodCapacity     *protocol.CapacitySnapshot `json:"pod_capacity,omitempty"`
 	GeneratorID     string                     `json:"generator_id"`
@@ -1044,7 +1047,7 @@ type GeneratorResourceSnapshot struct {
 	Region          string                     `json:"region,omitempty"`
 	ActiveVUsers    int32                      `json:"active_vusers"`
 	TPS             float64                    `json:"tps,omitempty"`
-	ErrorPct        float64                    `json:"error_pct,omitempty"`
+	ErrorPct        *float64                   `json:"error_pct,omitempty"`
 	P95Ms           float64                    `json:"p95_ms,omitempty"`
 	P99Ms           float64                    `json:"p99_ms,omitempty"`
 	SaturationState string                     `json:"saturation_state,omitempty"`

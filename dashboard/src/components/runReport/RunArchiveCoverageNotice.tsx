@@ -11,8 +11,13 @@ export default function RunArchiveCoverageNotice({ report }: { report: RunArchiv
       <summary>Inspect generator sources ({sources.length})</summary>
       <p>These sources were known at collection time. Collection does not establish complete shard history or prove that all measurements survived.</p>
       <div className="run-archive-coverage-table"><table className="tx-table">
-        <thead><tr><th scope="col">Generator source</th><th scope="col">Archive collection</th></tr></thead>
-        <tbody>{sources.map((source, index) => <tr key={index}><td>{source.target || 'Not recorded'}</td><td>{source.collected ? 'Collected' : 'Not collected'}</td></tr>)}</tbody>
+        <thead><tr><th scope="col">Generator</th><th scope="col">Region</th><th scope="col">Groups</th><th scope="col">Archive collection</th></tr></thead>
+        <tbody>{sources.map((source, index) => <tr key={index}>
+          <td>{source.generator_id ? <>{source.generator_id}<br /><small>{source.target}</small></> : source.target || 'Not recorded'}</td>
+          <td>{source.region || 'Not recorded'}</td>
+          <td>{source.groups?.length ? source.groups.join(', ') : 'Not recorded'}</td>
+          <td>{source.collected ? 'Collected' : 'Not collected'}</td>
+        </tr>)}</tbody>
       </table></div>
     </details>}
   </section>

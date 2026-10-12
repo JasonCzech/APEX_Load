@@ -873,6 +873,8 @@ For baseline comparisons, hold target environment, release context, script versi
 
 The run's validity verdict does that check: `suspect` when a load generator stayed saturated at a steady load, `invalid` when results were lost (an OOM-killed generator, dropped results, shed arrivals), and `unknown` when generator statistics are missing. A closed-model run whose throughput falls while latency rises stays valid; that is the system under test, reported as an anomaly. See [run validity](ANALYSIS_WORKFLOWS.md#run-validity) for the rules.
 
+When a generator is lost mid-run, the run fails, and its error names the generator, its region, its groups and how far into the run it was lost. The report still keeps what the other generators collected: **Archive evidence needs review** lists every generator with its region and groups, marks the lost one "Not collected", and says which groups the surviving measurements cover. If the run used live tables, leases the lost generator still held may be redelivered once they expire, and pops it had in flight may have unknown outcomes.
+
 ### Report audiences
 
 A report is assembled from a registry of sections, selected by audience. The

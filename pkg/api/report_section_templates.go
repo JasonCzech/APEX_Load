@@ -606,7 +606,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{with .Report.Manifest}}{{with .SourceCoverage}}
 <p class="section-copy">Generator sources known at collection time. This inventory does not prove complete shard history or that all measurements survived.</p>
 <table><thead><tr><th>Generator source</th><th>Collection</th></tr></thead><tbody>
-{{range .Sources}}<tr><td>{{.Target}}</td><td>{{if .Collected}}Collected{{else}}Not collected{{end}}</td></tr>{{end}}
+{{range .Sources}}<tr><td>{{.Label}}</td><td>{{if .Collected}}Collected{{else}}Not collected{{end}}</td></tr>{{end}}
 </tbody></table>
 {{end}}{{end}}
 {{if .Report.Completeness.Findings}}

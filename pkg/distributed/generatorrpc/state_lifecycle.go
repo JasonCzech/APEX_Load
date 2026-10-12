@@ -169,7 +169,7 @@ func (s *Service) acquireArchiveArtifact(request *pb.ArchiveArtifactRequest) (*l
 	manager := s.archiveManager
 	lease, retained := manager.acquireCatalogLease(testID)
 	if !retained {
-		return nil, nil, status.Error(codes.NotFound, "archive not found")
+		return nil, nil, archiveNotRetainedError(s, testID)
 	}
 
 	var file *os.File
