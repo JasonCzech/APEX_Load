@@ -81,6 +81,21 @@ describe('testExecutionLiveControlModel', () => {
     ])
   })
 
+  it('leaves paused time out of the remaining duration, as the engine makes it up', () => {
+    const preview = buildLiveControlPreview({
+      test: {
+        id: 'paused-run', name: 'Paused', status: 'PAUSED', total_vusers: 2, duration: '10m', created_at: '2026-05-12T20:00:00Z',
+        started_at: '2026-05-12T20:00:00Z', cumulative_pause_ns: 60e9, paused_at: '2026-05-12T20:04:00Z',
+        groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 2 }],
+      } as TestSummary,
+      durationInput: '10m',
+      vuserTargets: {},
+      nowMs: Date.parse('2026-05-12T20:05:00Z'),
+    })
+    // 5 m since the start, less 1 m paused before and 1 m paused now: 3 m run, 7 m to go.
+    expect(preview.remainingSeconds).toBe(420)
+  })
+
   it('uses the requested gradual VUser ramp duration in the preview', () => {
     const preview = buildLiveControlPreview({
       test: buildRunningTest(),

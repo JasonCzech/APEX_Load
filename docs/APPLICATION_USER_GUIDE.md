@@ -734,12 +734,14 @@ and the controls) that stays at the top.
 
 Watch throughput, response-time percentiles (p50/p95/p99), and error rate together.
 Live throughput and error rates count requests once the run has sent any, as the
-run report does: a script without transactions still sends requests, and the
-transaction that wraps each of its iterations fails whenever any request in it
-does. A run that sends no requests is counted in transactions, and a
+run report does, wherever a running run is shown (the Dashboard, the Command Center
+overview and the run's own pages): a script without transactions still sends
+requests, and the transaction that wraps each of its iterations fails whenever any
+request in it does. A run that sends no requests is counted in transactions, and a
 goal-oriented run's throughput stays in TPS, the unit of its targets. Every label
-names what it counts and its window: rates are averaged over the last 10 s, error
-rates and counts are run to date, and the **Transactions** table lists each
+names what it counts and its window: on a run's Command Center page rates are
+averaged over the last 10 s (the overview and the Dashboard show the last sample),
+error rates and counts are run to date, and the **Transactions** table lists each
 transaction's own TPS and the last sample's counts. When request counts would
 cover only part of a run — a generator that predates them is in the fleet, or
 another controller took the run over from stored history — they are left out

@@ -95,7 +95,7 @@ export function loadChangeImpact(groups: CommandGroup[], groupName: string, targ
  * not recorded, so they are drawn as one, just before now; the samples show
  * what the run actually did before that.
  */
-export function planAfterPauses(plan: RunLoadProfilePreview, activeSeconds: number, pausedSeconds: number): RunLoadProfilePreview {
+export function planAfterPauses<Plan extends RunLoadProfilePreview>(plan: Plan, activeSeconds: number, pausedSeconds: number): Plan {
   if (!(pausedSeconds > 0)) return plan
   // A run whose clock has passed its plan's end (a stop that ran over) still
   // paused within the plan: its end moves.

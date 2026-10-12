@@ -10,6 +10,8 @@ import {
 
 export interface ExecutionChartSummary {
   avgTps: number
+  /** Requests per second over the same points, when they carry a request rate. */
+  avgRequestRate?: number
   avgLatency: number
   avgError: number
   maxVusers: number
@@ -774,8 +776,10 @@ export function summarizeExecutionChartData(filteredData: MetricsHistoryPoint[])
     vusers: Math.max(acc.vusers, point.vusers),
   }), { tps: 0, avgMs: 0, errorPct: 0, vusers: 0 })
 
+  const requestRates = realPoints.flatMap(point => Number.isFinite(point.requestRate) ? [point.requestRate as number] : [])
   return {
     avgTps: sum.tps / realPoints.length,
+    ...(requestRates.length > 0 ? { avgRequestRate: requestRates.reduce((total, rate) => total + rate, 0) / requestRates.length } : {}),
     avgLatency: sum.avgMs / realPoints.length,
     avgError: sum.errorPct / realPoints.length,
     maxVusers: sum.vusers,

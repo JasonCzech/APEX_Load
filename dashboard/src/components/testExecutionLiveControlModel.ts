@@ -1,5 +1,6 @@
 import { TestSummary } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
+import { runActiveSeconds } from './runReport/executionPresentation'
 
 export interface LiveControlPreview {
   points: Array<Record<string, number>>
@@ -49,10 +50,8 @@ export function buildLiveControlPreview({
   }
 
   const groupMetricsMap = test.live_metrics?.groups ?? {}
-  const startedAt = test.started_at || test.start_time
-  const elapsedSeconds = startedAt
-    ? Math.max(0, Math.floor((nowMs - new Date(startedAt).getTime()) / 1000))
-    : 0
+  // The run's own clock: paused time is left out, since the engine makes it up.
+  const elapsedSeconds = Math.floor(runActiveSeconds(test, nowMs) ?? 0)
   const projectedDurationSeconds = parseDurationToSeconds(durationInput || test.duration)
   const remainingSeconds = Math.max(projectedDurationSeconds - elapsedSeconds, 0)
   const rampSeconds = vuserRampEnabled ? parseDurationToSeconds(vuserRampDurationInput) : 0

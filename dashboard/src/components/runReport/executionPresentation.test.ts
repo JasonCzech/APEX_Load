@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
-import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds, runActiveSeconds } from './executionPresentation'
+import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, executionPauses, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds, runActiveSeconds } from './executionPresentation'
 import { plannedVUsersAt } from '../loadPlanSteps'
 
 const test: TestSummary = { id: 'run', name: 'Run', status: 'FAILED', duration: '20m', total_vusers: 10, groups: [], created_at: '', error: 'Controller restarted' }
@@ -84,6 +84,25 @@ describe('lifecycle elapsed', () => {
     const plan = executionLoadPlan({ ...test, duration: '20m', groups: [{ ...group, vusers: 20 }] } as TestSummary, manifest)
     expect([0, 10, 30, 119, 120].map(second => plannedVUsersAt(plan, second))).toEqual([1, 2, 4, 4, 0])
     expect(plannedVUsersAt(executionLoadPlan({ ...test, groups: [{ ...group, vusers: 20 }] } as TestSummary), 600)).toBe(20)
+  })
+  it('moves the plan on by the pauses its events place, as the run made them up', () => {
+    const group = { name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s' }
+    const event = (action: string, at: string, status = 'success') => ({ id: at, action, label: action, status, created_at: at })
+    const manifest = { runtime_changes: [
+      event('test.start', '2026-09-10T12:00:00Z'),
+      event('test.pause', '2026-09-10T12:00:20Z', 'failure'), // refused: not a pause
+      event('test.pause', '2026-09-10T12:00:30Z'),
+      event('test.resume', '2026-09-10T12:01:30Z'),
+    ] } as unknown as TestRunManifest
+    const run = { ...test, duration: '2m', started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:03:00Z', groups: [group] } as TestSummary
+    expect(executionPauses(run, manifest)).toEqual([{ atSecond: 30, seconds: 60 }])
+    const plan = executionLoadPlan(run, manifest)
+    // VUsers start at 0, 10 and 20 s; the fourth, due at 30 s, waits out the
+    // minute paused and starts at 90 s, and the run ends a minute late.
+    expect([20, 40, 89, 90, 179, 180].map(second => plannedVUsersAt(plan, second))).toEqual([3, 3, 3, 4, 4, 0])
+    expect(plan.totalSeconds).toBe(180)
+    // A pause never resumed lasts to the run's end.
+    expect(executionPauses(run, { runtime_changes: [event('test.pause', '2026-09-10T12:02:30Z')] } as unknown as TestRunManifest)).toEqual([{ atSecond: 150, seconds: 30 }])
   })
   it('plans a run to its iterations through the time it ran', () => {
     const group = { name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s', ramp_down: '20s' }

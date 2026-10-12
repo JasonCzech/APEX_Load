@@ -74,6 +74,18 @@ describe('RunExecutionDetails load timeline', () => {
     expect(captured.exportRows.every(row => 'planned' in row)).toBe(true)
   })
 
+  it('says when the plan moves on by the run\'s pauses, and when it cannot place them', async () => {
+    const paused = { ...run, cumulative_pause_ns: 30e9 } as TestSummary
+    const withEvents = { ...(manifestModel as object), manifest: { runtime_changes: [
+      { id: 'p', action: 'test.pause', label: 'Run paused', status: 'success', created_at: '2026-10-11T22:00:30Z' },
+      { id: 'r', action: 'test.resume', label: 'Run resumed', status: 'success', created_at: '2026-10-11T22:01:00Z' },
+    ] } } as never
+    await act(async () => root.render(<RunExecutionDetails test={paused} report={null} history={[]} manifestModel={withEvents} />))
+    expect(container.querySelector('[aria-label="Execution load timeline"]')?.textContent).toContain('paused for 30s and made it up, so the plan moves on by its pauses')
+    await act(async () => root.render(<RunExecutionDetails test={paused} report={null} history={[]} manifestModel={manifestModel} />))
+    expect(container.querySelector('[aria-label="Execution load timeline"]')?.textContent).toContain('do not say when, so the plan is drawn without the pause')
+  })
+
   it('keeps the telemetry receipt with the manifest on Execution, and in view on the evidence tabs', async () => {
     const withManifest = { ...(manifestModel as object), manifest: { telemetry_policy: {}, runtime_changes: [] } } as never
     await act(async () => root.render(<RunExecutionDetails test={run} report={null} history={[]} manifestModel={withManifest} />))

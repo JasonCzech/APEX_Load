@@ -15,6 +15,7 @@ import { isTestWorkspaceTab, type TestWorkspaceTabID } from '../appRouting'
 import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { runActiveSeconds } from './runReport/executionPresentation'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -128,14 +129,12 @@ export function buildProjectDashboardWorkspace(definitions: DashboardDefinition[
   return { cards, profiles, panelByCardId }
 }
 
+// Remaining on the run's own clock: paused time is left out, since the engine makes it up.
 function computeRunRemainingSeconds(test: TestSummary) {
   const durationSeconds = parseDurationToSeconds(test.duration)
-  const startedAt = test.started_at || test.start_time
-  if (durationSeconds <= 0 || !startedAt) return 0
-  const startedAtMs = Date.parse(startedAt)
-  if (!Number.isFinite(startedAtMs)) return 0
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
-  return Math.max(durationSeconds - elapsedSeconds, 0)
+  const activeSeconds = runActiveSeconds(test)
+  if (durationSeconds <= 0 || activeSeconds === undefined) return 0
+  return Math.max(durationSeconds - Math.floor(activeSeconds), 0)
 }
 
 interface Props {
@@ -645,6 +644,7 @@ export default function TestExecution({
           archiveReport={archiveReport}
           summary={summary}
           metrics={metrics}
+          scenarioMode={test.scenario_mode}
         />
       ),
     },

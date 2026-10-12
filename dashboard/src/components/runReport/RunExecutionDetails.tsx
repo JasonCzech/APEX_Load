@@ -5,7 +5,8 @@ import LoadPlanChart from '../LoadPlanChart'
 import { LOAD_PLAN_COLORS } from '../loadPlanSteps'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
 import type { useExecutionTestManifest } from '../useExecutionTestManifest'
-import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, recordedNumber } from './executionPresentation'
+import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, executionPauses, recordedNumber } from './executionPresentation'
+import { formatTimeLong } from '../../utils/timeUtils'
 
 export function RunExecutionFacts({ test, report, manifest }: { test: TestSummary; report: RunArchiveReport | null; manifest?: TestRunManifest | null }) {
   const facts = executionFacts(test, report, manifest)
@@ -72,13 +73,21 @@ export default function RunExecutionDetails({ test, report, history = [], histor
     ...observed.map(sample => ({ second: sample.second, timestampMs: sample.timestampMs, vusers: sample.vusers })),
   ].sort((left, right) => left.second - right.second)
   const events = manifest?.runtime_changes || []
+  // The run made each pause up; the plan moves on by the pauses its events place.
+  const pausedSeconds = Math.max(0, Number(test.cumulative_pause_ns) || 0) / 1e9
+  const placedPauseSeconds = test.termination_mode === 'iterations' ? 0 : executionPauses(test, manifest).reduce((total, pause) => total + pause.seconds, 0)
+  const pauseNote = placedPauseSeconds > 0
+    ? ` The run was paused for ${formatTimeLong(Math.round(placedPauseSeconds))} and made it up, so the plan moves on by its pauses.`
+    : pausedSeconds >= 1 && test.termination_mode !== 'iterations'
+      ? ` The run was paused for ${formatTimeLong(Math.round(pausedSeconds))} and made it up, but its retained events do not say when, so the plan is drawn without the pause.`
+      : ''
   return <>
     {!evidenceOnly && <>
       <p className="run-report-muted">Read-only execution record. {facts.immutable ? 'Original configuration is preserved.' : 'Configured values come from a mutable retained record; the original plan is unverified.'} Execution completion and acceptance are assessed separately.</p>
       <RunExecutionFacts test={test} report={report} manifest={manifest} />
       <section className="run-report-panel" aria-label="Execution load timeline">
         <h2>Planned and observed load</h2>
-        <p>The plan is the engine's schedule for {facts.immutable ? 'the preserved configuration' : 'the retained configuration, which may reflect later changes'}: {recordedNumber(facts.vusers)} VUsers, started and stopped as each group ramps. Observed samples cover only the captured intervals.</p>
+        <p>The plan is the engine's schedule for {facts.immutable ? 'the preserved configuration' : 'the retained configuration, which may reflect later changes'}: {recordedNumber(facts.vusers)} VUsers, started and stopped as each group ramps. Observed samples cover only the captured intervals.{pauseNote}</p>
         {historyLoading && <p role="status">Loading captured load history…</p>}
         {historyError && <p role="alert">{historyError}</p>}
         {(plan.points.length > 0 || observed.length > 0) && <div className="run-execution-chart">

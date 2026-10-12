@@ -3,6 +3,7 @@ import { isPendingTestStatus, normalizeTestStatus } from '../utils/testStatusUti
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { recordedTime, formatElapsedSeconds, runActiveSeconds } from './runReport/executionPresentation'
 import { formatDateTime } from '../utils/dateTime'
+import { liveCountsErrorPercent, livePopulation, liveRate, liveRunCounts, liveThroughputPopulation } from '../utils/liveErrorRate'
 
 export function commandRunWaiting(run: TestSummary): boolean {
   return isPendingTestStatus(run.status) || normalizeTestStatus(run.status) === 'SHAKEOUT_REVIEW'
@@ -12,9 +13,12 @@ export function commandRunHealth(run: TestSummary, now: number) {
   const metrics = run.live_metrics
   const stamp = recordedTime(metrics?.timestamp)
   const waiting = commandRunWaiting(run)
-  const hasSamples = Boolean(metrics && metrics.total_transactions + metrics.total_errors > 0)
+  // Counted as the run's own Command Center counts it: requests once it has
+  // sent any (else transactions), run to date.
+  const counts = liveRunCounts(metrics)
+  const hasSamples = Boolean(counts && counts.attempts > 0)
   const stale = !waiting && Boolean(metrics) && (stamp === undefined || now - stamp > 30_000 || stamp > now + 5_000)
-  const errorPct = hasSamples ? metrics!.total_errors / (metrics!.total_transactions + metrics!.total_errors) * 100 : undefined
+  const errorPct = counts && hasSamples ? liveCountsErrorPercent(counts) : undefined
   const issue = Boolean((errorPct ?? 0) > 0 || metrics?.throughput_target_missed)
   return {
     errorPct,
@@ -26,6 +30,12 @@ export function commandRunHealth(run: TestSummary, now: number) {
     // attention order, not an invented SLA verdict.
     priority: waiting ? 4 : stale ? 0 : issue ? 1 : !hasSamples ? 2 : 3,
   }
+}
+
+/** The run's throughput in its own unit: requests/s once it has sent requests, TPS for goal runs and runs without requests. */
+export function commandRunThroughput(run: TestSummary): { rate: number | undefined; unit: string } {
+  const population = liveThroughputPopulation(run, livePopulation(run.live_metrics))
+  return { rate: liveRate(run.live_metrics, population), unit: population === 'requests' ? 'req/s' : 'TPS' }
 }
 
 export function commandRunTiming(run: TestSummary, now: number) {

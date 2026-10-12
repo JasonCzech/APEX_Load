@@ -458,7 +458,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
                 className="report-narrative"
                 value={narrative}
                 onChange={(event) => setNarrative(event.target.value)}
-                placeholder={isAudit ? 'Summarize the audit scope, evidence posture, and exceptions…' : isEngineer ? 'Summarize the technical outcome, bottlenecks, and follow-up…' : 'Summarize the outcome of this test run for stakeholders…'}
+                placeholder={isAudit ? 'Summarize the audit scope, evidence posture, and exceptions…' : isEngineer ? 'Summarize the technical outcome, bottlenecks, and follow-up…' : 'Summarize the outcome of this run for stakeholders…'}
                 rows={4}
               />
             </section>

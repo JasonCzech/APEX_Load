@@ -127,7 +127,7 @@ interface ReleaseSnapshotPanelProps {
     completed: number
     aborted: number
     active: number
-    activeTps: number | undefined
+    activeThroughput: string | undefined
     avgError: number | undefined
   }
   latestReleaseRun: TestSummary | undefined
@@ -364,6 +364,13 @@ function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendS
   }
 }
 
+/** Active runs' last-sample rates, summed per unit: "120.0 req/s · 8.0 TPS". */
+function formatActiveThroughput(rates: Array<{ population: LivePopulation; rate: number }>): string {
+  const sums = new Map<LivePopulation, number>()
+  for (const { population, rate } of rates) sums.set(population, (sums.get(population) ?? 0) + rate)
+  return (['requests', 'transactions'] as const).flatMap(population => sums.has(population) ? [`${formatOptionalNumber(sums.get(population), 1)} ${population === 'requests' ? 'req/s' : 'TPS'}`] : []).join(' · ')
+}
+
 function getHistoryMetric(point: MetricsHistoryPoint, metric: CardMetricKey) {
   switch (metric) {
     case 'avg_response_ms':
@@ -552,7 +559,7 @@ function ReleaseSnapshotPanel({
             <SnapshotStat label="Failed runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
             <SnapshotStat label="Archives ready" value={archivesReady} onClick={onResults} />
             <SnapshotStat label="Archive records" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
-            <SnapshotStat label="Current TPS" value={dashboardStats.active ? formatOptionalNumber(dashboardStats.activeTps, 1) : 'Idle'} onClick={onPrimaryActiveRun} />
+            <SnapshotStat label="Current throughput" value={dashboardStats.active ? dashboardStats.activeThroughput ?? MISSING_VALUE : 'Idle'} onClick={onPrimaryActiveRun} />
             {/* A rate, not a status: with nothing running there is no value to show. */}
             <SnapshotStat label="Live error rate (active runs)" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : MISSING_VALUE} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
           </div>
@@ -1229,14 +1236,22 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     const failed = resolvedTests.filter(t => t.status === 'FAILED').length
     const aborted = resolvedTests.filter(t => t.status === 'ABORTED').length
     const activeVUsers = activeTests.reduce((sum, test) => sum + (test.live_metrics?.active_vusers ?? test.total_vusers ?? 0), 0)
-    const activeTps = activeTests.every(test => Number.isFinite(test.live_metrics?.tps)) ? activeTests.reduce((sum, test) => sum + test.live_metrics!.tps, 0) : undefined
+    // Each run's rate in its own unit (requests/s once it sends requests, TPS
+    // for goal runs and runs without requests), summed per unit; error rates
+    // are each run's own, run to date, as on its Command Center page.
+    const rates = activeTests.map(test => {
+      const population = liveThroughputPopulation(test, livePopulation(test.live_metrics))
+      return { population, rate: test.live_metrics ? liveRate(test.live_metrics, population) : undefined }
+    })
+    const activeThroughput = rates.length > 0 && rates.every(item => Number.isFinite(item.rate)) ? formatActiveThroughput(rates as Array<{ population: LivePopulation; rate: number }>) : undefined
     const avgLatency = activeLiveMetrics.length
       ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.avg_response_ms || 0), 0) / activeLiveMetrics.length
       : 0
-    const avgError = activeTests.length > 0 && activeTests.every(test => Number.isFinite(test.live_metrics?.error_pct))
-      ? activeTests.reduce((sum, test) => sum + test.live_metrics!.error_pct, 0) / activeTests.length
+    const errorRates = activeTests.map(test => liveRunErrorPercent(test.live_metrics))
+    const avgError = errorRates.length > 0 && errorRates.every(rate => Number.isFinite(rate))
+      ? (errorRates as number[]).reduce((sum, rate) => sum + rate, 0) / errorRates.length
       : undefined
-    return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeTps, avgLatency, avgError }
+    return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeThroughput, avgLatency, avgError }
   }, [resolvedTests, activeTests, activeLiveMetrics])
 
   const releaseStats = useMemo(() => {

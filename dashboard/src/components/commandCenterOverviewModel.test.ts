@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TestSummary, LiveMetrics } from '../types'
-import { commandRunHealth, commandRunTiming, commandRunWaitReason, filterCommandRuns } from './commandCenterOverviewModel'
+import { commandRunHealth, commandRunThroughput, commandRunTiming, commandRunWaitReason, filterCommandRuns } from './commandCenterOverviewModel'
 
 const now = Date.parse('2026-09-12T12:00:00Z')
 const run = (id: string, status: TestSummary['status'] = 'RUNNING'): TestSummary => ({ id, name: 'Same name', ref_key: `REF-${id}`, status, groups: [], total_vusers: 10, duration: '10m', created_at: '2026-09-12T11:55:00Z', started_at: '2026-09-12T11:55:00Z' })
@@ -13,6 +13,16 @@ describe('Command Center overview evidence', () => {
     expect(commandRunHealth({ ...run('stale'), live_metrics: { ...metrics(), timestamp: '0001-01-01T00:00:00Z' } }, now).label).toBe('Metrics stale')
     expect(commandRunHealth({ ...run('aged'), live_metrics: metrics() }, now + 30_001).stale).toBe(true)
     expect(commandRunHealth({ ...run('empty'), live_metrics: { ...metrics(), total_transactions: 0 } }, now)).toMatchObject({ hasSamples: false, errorPct: undefined })
+  })
+
+  it('counts a run that sends requests by its requests, run to date, as its own page does', () => {
+    // A script without transactions: no transactions pass, its failures are requests.
+    const requestsOnly: LiveMetrics = { ...metrics(), tps: 0, total_transactions: 0, total_errors: 3, request_rate: 30, run_total_requests: 200, run_request_errors: 50 }
+    expect(commandRunHealth({ ...run('requests'), live_metrics: requestsOnly }, now)).toMatchObject({ hasSamples: true, errorPct: 25, label: 'Errors reported' })
+    expect(commandRunHealth({ ...run('clean'), live_metrics: { ...requestsOnly, total_errors: 0, run_request_errors: 0 } }, now)).toMatchObject({ hasSamples: true, errorPct: 0, label: 'No errors reported' })
+    expect(commandRunThroughput({ ...run('requests'), live_metrics: requestsOnly })).toEqual({ rate: 30, unit: 'req/s' })
+    expect(commandRunThroughput({ ...run('goal'), scenario_mode: 'goal_oriented', live_metrics: { ...requestsOnly, tps: 12 } })).toEqual({ rate: 12, unit: 'TPS' })
+    expect(commandRunThroughput({ ...run('transactions'), live_metrics: metrics() })).toEqual({ rate: 10, unit: 'TPS' })
   })
 
   it('puts actionable evidence first and finds duplicate names by reference', () => {

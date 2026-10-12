@@ -384,7 +384,7 @@ describe('DashboardPage', () => {
     clickButtonByText('Failed runs')
     expect(onNavigate).toHaveBeenCalledWith('results')
 
-    clickButtonByText('Current TPS')
+    clickButtonByText('Current throughput')
     expect(onSelectTest).toHaveBeenCalledWith('test-active')
     onSelectTest.mockClear()
 
@@ -1679,12 +1679,26 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('COMPLETE')
   })
 
+  it('sums each active run in its own unit and counts requests once a run sends them', async () => {
+    const live = (overrides: Record<string, unknown>) => ({ timestamp: '2026-05-12T20:00:30Z', active_vusers: 4, tps: 0, total_transactions: 0, total_errors: 0, error_pct: 0, avg_response_ms: 100, p50_ms: 90, p90_ms: 120, p95_ms: 130, p99_ms: 150, ...overrides })
+    apiMock.listTests.mockResolvedValue({ tests: [
+      // A script without transactions: requests flow, no transaction passes.
+      { ...scopedTest('requests', 'Requests only', 'app-1', 'rel-1'), status: 'RUNNING', ended_at: undefined, live_metrics: live({ request_rate: 30, run_total_requests: 400, run_request_errors: 100, total_errors: 3 }) },
+      { ...scopedTest('goal', 'Goal run', 'app-1', 'rel-1'), status: 'RUNNING', ended_at: undefined, scenario_mode: 'goal_oriented', live_metrics: live({ tps: 8, request_rate: 16, run_total_requests: 400, run_request_errors: 0 }) },
+    ] })
+    await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />) })
+    await flushDashboard()
+    expect(getButtonByText('Current throughput').textContent).toContain('30.0 req/s · 8.0 TPS')
+    // 25% and 0%, each run to date in requests, averaged.
+    expect(getButtonByText('Live error rate (active runs)').textContent).toContain('12.50%')
+  })
+
   it('keeps paused runs active and does not report missing live metrics as zero', async () => {
     apiMock.listTests.mockResolvedValue({ tests: [{ ...scopedTest('paused', 'Paused checkout', 'app-1', 'rel-1'), status: 'PAUSED', ended_at: undefined }] })
     await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />) })
     await flushDashboard()
     expect(container.textContent).toContain('1 active (running or paused)')
-    expect(getButtonByText('Current TPS').textContent).toContain('—')
+    expect(getButtonByText('Current throughput').textContent).toContain('—')
     expect(getButtonByText('Live error rate (active runs)').textContent).toContain('—')
     await act(async () => { getTabByText('Active tests').click() })
     expect(container.textContent).toContain('Paused checkout')

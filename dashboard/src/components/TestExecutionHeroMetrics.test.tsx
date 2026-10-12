@@ -53,3 +53,18 @@ it('uses the named population rather than combined archive totals', () => {
  expect(host.textContent).toContain('80Named transaction latency')
  act(()=>root.unmount())
 })
+
+it('leads a live run that sends requests with its requests, and keeps a goal run in TPS', () => {
+  const host = document.createElement('div'); const root = createRoot(host)
+  // A script without transactions: requests flow while no transaction passes.
+  const metrics = { timestamp: '', active_vusers: 4, tps: 0, total_transactions: 0, total_errors: 3, error_pct: 100, avg_response_ms: 90, p50_ms: 80, p90_ms: 120, p95_ms: 130, p99_ms: 150, request_rate: 31, run_total_requests: 400, run_request_errors: 100 }
+  const summary = { avgTps: 0, avgRequestRate: 30, avgLatency: 90, avgError: 100, maxVusers: 4 }
+  act(() => root.render(<TestExecutionHeroMetrics archiveReport={null} summary={summary} metrics={metrics} />))
+  expect(host.textContent).toContain('30.0Requests/s')
+  expect(host.textContent).toContain('25.00%Request error rate (run to date)')
+  expect(host.textContent).toContain('400Requests (run to date)')
+  expect(host.textContent).not.toContain('Successful transaction TPS')
+  act(() => root.render(<TestExecutionHeroMetrics archiveReport={null} summary={{ ...summary, avgTps: 8 }} metrics={metrics} scenarioMode="goal_oriented" />))
+  expect(host.textContent).toContain('8.0Successful transaction TPS')
+  act(() => root.unmount())
+})

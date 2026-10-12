@@ -1,7 +1,8 @@
 import { formatDateTime } from '../../utils/dateTime'
 import { formatDurationDisplay, formatTimeLong } from '../../utils/timeUtils'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
-import { buildQueuedScenarioPreview } from '../testExecutionScenarioModel'
+import { buildQueuedScenarioPreview, type QueuedScenarioPreview } from '../testExecutionScenarioModel'
+import { planAfterPauses } from '../commandCenterLoadModel'
 
 export function recordedTime(value?: string): number | undefined {
   if (!value) return undefined
@@ -84,7 +85,7 @@ export function executionLoadPoints(history: MetricsHistoryPoint[]) {
  */
 export function executionLoadPlan(test: TestSummary, manifest?: TestRunManifest | null) {
   const config = manifest?.initial_configuration_provenance?.immutable === true ? manifest.initial_configuration : undefined
-  return buildQueuedScenarioPreview(config ? {
+  const plan = buildQueuedScenarioPreview(config ? {
     ...test,
     duration: config.duration ?? test.duration,
     start_delay: config.start_delay ?? test.start_delay,
@@ -93,6 +94,33 @@ export function executionLoadPlan(test: TestSummary, manifest?: TestRunManifest 
     goal_config: config.goal_config ?? test.goal_config,
     groups: config.groups ?? [],
   } : test, lifecycleElapsedSeconds(test))
+  // A run to its iterations is already drawn through the time it ran; a run
+  // to a duration made each pause up, so its plan moves on by the pause.
+  if (test.termination_mode === 'iterations') return plan
+  return executionPauses(test, manifest).reduce<QueuedScenarioPreview>((shifted, pause) => planAfterPauses(shifted, pause.atSecond, pause.seconds), plan)
+}
+
+/**
+ * The run's pauses from its retained pause and resume events: when each began,
+ * in seconds after the start, and how long it lasted. A pause the run never
+ * resumed from lasts until it ended.
+ */
+export function executionPauses(test: TestSummary, manifest?: TestRunManifest | null): Array<{ atSecond: number; seconds: number }> {
+  const start = recordedTime(test.started_at) ?? recordedTime(test.start_time)
+  if (start === undefined) return []
+  const pauses: Array<{ atSecond: number; seconds: number }> = []
+  const close = (from: number, to: number) => { if (from >= start && to > from) pauses.push({ atSecond: (from - start) / 1000, seconds: (to - from) / 1000 }) }
+  let pausedAt: number | undefined
+  for (const change of manifest?.runtime_changes || []) {
+    if (change.status && change.status !== 'success') continue
+    const at = recordedTime(change.created_at)
+    if (at === undefined) continue
+    if (change.action === 'test.pause' && pausedAt === undefined) pausedAt = at
+    else if (change.action === 'test.resume' && pausedAt !== undefined) { close(pausedAt, at); pausedAt = undefined }
+  }
+  const end = recordedTime(test.ended_at)
+  if (pausedAt !== undefined && end !== undefined) close(pausedAt, end)
+  return pauses
 }
 
 /** Observed VUser samples on elapsed seconds from the run's start (or its first sample). */
