@@ -37,6 +37,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "tests",
 	"usage_accounting_snapshots", "import_assets",
 	"live_tables", "live_table_finalizations", "run_rendezvous", "project_live_tables", "project_live_table_instances", "project_live_table_attachments",
+	"project_live_table_journal", "project_live_table_operator_receipts",
 )
 
 // Cleanup jobs and audit history intentionally outlive their owner. The former

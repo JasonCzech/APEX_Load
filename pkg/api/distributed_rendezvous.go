@@ -124,12 +124,19 @@ func (tr *TestRunner) prepareGroupRendezvous(ctx context.Context, test *ManagedT
 		}
 		callCtx, cancel := context.WithTimeout(callCtx, 4*time.Second)
 		defer cancel()
-		return store.SaveRendezvous(callCtx, storage.RendezvousRecord{RunID: test.ID, Group: group.Name, ProjectID: test.ProjectID, Revision: next.Revision, Snapshot: body}, previous, liveStorageTerm(term))
+		return tr.trackDurableWrite(func() error {
+			return store.SaveRendezvous(callCtx, storage.RendezvousRecord{RunID: test.ID, Group: group.Name, ProjectID: test.ProjectID, Revision: next.Revision, Snapshot: body}, previous, liveStorageTerm(term))
+		})
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if restore {
-		r, e := store.ClaimRendezvous(ctx, test.ID, group.Name, test.ProjectID, liveStorageTerm(term))
+		var r *storage.RendezvousRecord
+		e := tr.trackDurableWrite(func() error {
+			var claimErr error
+			r, claimErr = store.ClaimRendezvous(ctx, test.ID, group.Name, test.ProjectID, liveStorageTerm(term))
+			return claimErr
+		})
 		if e != nil {
 			return e
 		}
@@ -148,7 +155,9 @@ func (tr *TestRunner) prepareGroupRendezvous(ctx context.Context, test *ManagedT
 			if e != nil {
 				return e
 			}
-			err = store.InitializeRendezvous(ctx, storage.RendezvousRecord{RunID: test.ID, Group: group.Name, ProjectID: test.ProjectID, Snapshot: body}, liveStorageTerm(term))
+			err = tr.trackDurableWrite(func() error {
+				return store.InitializeRendezvous(ctx, storage.RendezvousRecord{RunID: test.ID, Group: group.Name, ProjectID: test.ProjectID, Snapshot: body}, liveStorageTerm(term))
+			})
 		}
 	}
 	if err != nil {

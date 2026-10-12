@@ -137,6 +137,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyExplicitRouteContractTypes(route, analysis, typeDefinitions)
 		applyRouteRequestSchemaProjection(route, analysis)
 		applyAnalysisRequestContract(route, analysis, typeDefinitions)
+		applyProjectLiveTableRequestContract(route, analysis)
 		contract := inferredContractForAnalysis(route, analysis)
 		applySystemSettingsConcurrencyContract(route, &contract)
 		applyScriptAuthoringContract(route, &contract, typeDefinitions)
@@ -924,7 +925,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		}
 
 		switch callName {
-		case "decodeJSONBody", "decodeRequestBody", "decodeAnalysisDefinitionJSON", "decodeAnalysisQueryRequest", "decodeClientRenderReport":
+		case "decodeJSONBody", "decodeRequestBody", "decodeAnalysisDefinitionJSON", "decodeAnalysisQueryRequest", "decodeClientRenderReport", "decodeProjectTableBody", "decodeProjectTableMutationBody":
 			analysis.jsonRequest = true
 			setInferredRequestSchema(call, variableTypes, typeDefinitions, analysis)
 		case "decodeOptionalJSONBody", "decodeOptionalJSONBodyAllowingUnknownFields":
@@ -1332,6 +1333,9 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"PUT /api/v1/applications/{id}":                                                                 {"updated_at"},
 		"PUT /api/v1/releases/{id}":                                                                     {"updated_at"},
 		"POST /api/v1/data-pools":                                                                       {"name"},
+		"POST /api/v1/projects/{id}/live-tables":                                                        {"name", "columns"},
+		"POST /api/v1/projects/{id}/live-tables/{tableID}/mutations":                                    {"idempotency_key", "issued_at", "expected_instance_id", "expected_revision", "operation"},
+		"POST /api/v1/projects/{id}/live-tables/{tableID}/lifecycle":                                    {"action", "expected_config_revision", "expected_instance_id", "expected_revision", "reason"},
 		"PUT /api/v1/data-pools/{id}":                                                                   {"updated_at"},
 		"POST /api/v1/data-pools/{id}/rows":                                                             {"data"},
 		"PUT /api/v1/data-pools/{id}/rows/{row_id}":                                                     {"data", "version"},

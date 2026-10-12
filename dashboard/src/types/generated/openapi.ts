@@ -34300,7 +34300,22 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "columns": Array<string>;
+          "limits"?: {
+            "lease_ttl_ms"?: number;
+            "max_bytes"?: number;
+            "max_delivery_attempts"?: number;
+            "max_lease_lifetime_ms"?: number;
+            "max_receipts"?: number;
+            "max_result_bytes"?: number;
+            "max_rows"?: number;
+            "retry_window_ms"?: number;
+          };
+          "name": string;
+          "profile"?: "native_queue" | "vts_columns" | "";
+          "seed_pool_id"?: string;
+        };
       };
     };
     responses: {
@@ -99920,7 +99935,19 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "columns"?: Array<string>;
+          "delta"?: string;
+          "expected_instance_id": string;
+          "expected_revision": string;
+          "expected_version"?: string;
+          "idempotency_key": string;
+          "issued_at": string;
+          "operation": "append" | "update" | "clear" | "increment";
+          "position"?: number;
+          "record_id"?: string;
+          "values"?: Record<string, string>;
+        };
       };
     };
     responses: {
@@ -116469,7 +116496,13 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "action": "quiesce" | "resume" | "reset" | "archive";
+          "expected_config_revision": string;
+          "expected_instance_id": string;
+          "expected_revision": string;
+          "reason": string;
+        };
       };
     };
     responses: {

@@ -1,6 +1,6 @@
 # APEX Load live data tables revised implementation plan
 
-Status: Run-scoped native implementation and targeted qualification completed on October 12, 2026, including debugger isolation, live-status reconnects, durable PostgreSQL adoption, and retained run evidence. Both browser authentication profiles pass the affected workflows. The separately authorized extension below is now in progress; full-suite qualification follows its completion and clean cross-cutting review. The [runtime guide](LIVE_DATA_TABLES_RUNTIME.md) records the delivered contract and limits.
+Status: Run-scoped native implementation and targeted qualification completed on October 12, 2026, including debugger isolation, live-status reconnects, durable PostgreSQL adoption, and retained run evidence. Both browser authentication profiles pass the affected workflows. The separately authorized extension below is also committed after clean cross-cutting reviews; full-suite qualification and resulting integration fixes are in progress. The [runtime guide](LIVE_DATA_TABLES_RUNTIME.md) records the delivered contract and limits.
 
 Scope clarified by the user on October 12, 2026: this feature serves newly authored native APEX scripts and is independent of LoadRunner VTS. A VTS adapter, vendor parity, and vendor-server tests are not required. The earlier VTS discussion below is design background and an import safety boundary, not a delivery gate. The native work queue and independent shared-column model have their own explicit contracts; existing shared data pools remain unchanged by default.
 

@@ -36,7 +36,7 @@ Archived instances remain available for authorized inspection during retention. 
 
 ## Append or conditionally edit rows
 
-Data management permission is required for **Append row** and **Apply row change**. Service accounts additionally need explicit `scripts:write` scope. Select the cells to include: an unchecked cell is absent, while a checked blank input writes an empty string.
+Data management permission is required for **Append row** and **Apply row change**. Service accounts additionally need explicit `scripts:write` scope. Select the cells to include: appending leaves an unchecked cell absent, while updating leaves an unchecked cell unchanged. A checked blank input writes an empty string.
 
 Use **Edit row** after a deliberate preview. An update, selected-cell clear or integer increment always supplies the reviewed table revision. Native queues also require the record ID and version and reject edits to leased rows. Shared-column edits use the reviewed one-based position. Integer deltas, revisions and versions use decimal strings, preserving values beyond JavaScript's exact integer range.
 

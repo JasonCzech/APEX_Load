@@ -70405,8 +70405,59 @@ paths:
           application/json:
             schema:
               type: object
-              description: Handler-defined JSON request object.
-              additionalProperties: true
+              description: One JSON object of at most 1 MiB. Unknown fields are rejected.
+              properties:
+                columns:
+                  type: array
+                  description: Declare 1–128 unique column names, each 1–128 bytes after trimming whitespace.
+                  items:
+                    type: string
+                limits:
+                  type: object
+                  description: Optional capacity and lease settings. Omitted or zero values use the server defaults; profile and columns belong at the top level.
+                  properties:
+                    lease_ttl_ms:
+                      type: integer
+                      format: int64
+                    max_bytes:
+                      type: integer
+                      format: int64
+                    max_delivery_attempts:
+                      type: integer
+                      format: int64
+                    max_lease_lifetime_ms:
+                      type: integer
+                      format: int64
+                    max_receipts:
+                      type: integer
+                      format: int64
+                    max_result_bytes:
+                      type: integer
+                      format: int64
+                    max_rows:
+                      type: integer
+                      format: int64
+                    retry_window_ms:
+                      type: integer
+                      format: int64
+                  additionalProperties: false
+                name:
+                  type: string
+                  description: 'Table name: 1–256 bytes after trimming whitespace.'
+                profile:
+                  type: string
+                  description: Native record queue or shared columns. Omitted or empty defaults to native_queue.
+                  enum:
+                    - native_queue
+                    - vts_columns
+                    - ""
+                seed_pool_id:
+                  type: string
+                  description: Optional existing data pool in this project. Its rows seed the new instance; the pool is not changed.
+              additionalProperties: false
+              required:
+                - columns
+                - name
       responses:
         "201":
           description: Created
@@ -70865,8 +70916,34 @@ paths:
           application/json:
             schema:
               type: object
-              description: Handler-defined JSON request object.
-              additionalProperties: true
+              description: One JSON object of at most 1 MiB. Unknown fields are rejected.
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - quiesce
+                    - resume
+                    - reset
+                    - archive
+                expected_config_revision:
+                  type: string
+                  description: Current definition revision as a canonical unsigned decimal string.
+                expected_instance_id:
+                  type: string
+                  description: Current immutable instance identity.
+                expected_revision:
+                  type: string
+                  description: Current table revision as a canonical unsigned decimal string, including zero.
+                reason:
+                  type: string
+                  description: 'Required audit reason: nonblank and at most 1024 bytes.'
+              additionalProperties: false
+              required:
+                - action
+                - expected_config_revision
+                - expected_instance_id
+                - expected_revision
+                - reason
       responses:
         "200":
           description: OK
@@ -71085,8 +71162,60 @@ paths:
           application/json:
             schema:
               type: object
-              description: Handler-defined JSON request object.
-              additionalProperties: true
+              description: One JSON object of at most 1 MiB. Unknown fields are rejected. Field names are case-sensitive and must be unique. Null values, duplicate cell keys and malformed Unicode are rejected; cells remain literal strings, including explicit empty strings. Retain the complete request unchanged to reconcile an uncertain result within the retry window.
+              properties:
+                columns:
+                  type: array
+                  description: At most 128 selected column names for clear, or exactly one for increment.
+                  items:
+                    type: string
+                delta:
+                  type: string
+                  description: Canonical signed 64-bit decimal string, required only for increment. Numeric JSON values are not accepted.
+                expected_instance_id:
+                  type: string
+                  description: Immutable instance being edited; reset never redirects a command to the replacement instance.
+                expected_revision:
+                  type: string
+                  description: Current table revision as a canonical unsigned decimal string, including zero. Exact retained retries are resolved before the revision check.
+                expected_version:
+                  type: string
+                  description: Native row version as a positive canonical unsigned decimal string.
+                idempotency_key:
+                  type: string
+                  format: uuid
+                  description: Nonzero canonical UUID identifying this operator command. Reuse the exact request body for retries.
+                issued_at:
+                  type: string
+                  format: date-time
+                  description: Original command creation time. Must be inside the table retry window and at most 30 seconds in the future; keep unchanged on retry.
+                operation:
+                  type: string
+                  description: append requires values only; update requires values; clear requires columns; increment requires one column and delta. Non-append native_queue edits require record_id and expected_version; vts_columns edits require a positive position instead.
+                  enum:
+                    - append
+                    - update
+                    - clear
+                    - increment
+                position:
+                  type: integer
+                  format: int64
+                  description: One-based shared-column row position (1–100000) for update, clear or increment.
+                record_id:
+                  type: string
+                  description: Native record identity for update, clear or increment; unavailable for append and shared-column edits.
+                values:
+                  type: object
+                  description: At most 128 literal string cells. Append leaves omitted cells absent; update leaves unspecified cells unchanged. An explicit empty string is a present empty cell. Null is not a cell value.
+                  additionalProperties:
+                    type: string
+              additionalProperties: false
+              required:
+                - expected_instance_id
+                - expected_revision
+                - idempotency_key
+                - issued_at
+                - operation
       responses:
         "200":
           description: OK

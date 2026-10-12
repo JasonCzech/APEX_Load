@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -16,8 +17,10 @@ import (
 
 // TestEngineDispatchCoversCatalogEngineActions cross-checks the dsl action
 // catalog against the engine's dispatch: every engine-action spec must be
-// executable by the VUser loop, so a script that validates cannot hit an
-// unknown engine type at runtime. Control-flow blocks run in the iteration
+// dispatched by the VUser loop, so a script that validates cannot hit an
+// unknown engine type at runtime. Host-specific actions must execute on a
+// supported host and fail explicitly when its required capability is absent.
+// Control-flow blocks run in the iteration
 // loop rather than handleEngineAction, and review_required is an authoring
 // placeholder that launch gating resolves before execution — those are the
 // only permitted exceptions.
@@ -46,6 +49,13 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 		}
 		action := dsl.Action{Name: "step", Type: spec.Type}
 		switch spec.Type {
+		case "native_javascript":
+			action.Params = map[string]any{
+				"source":        "return {value: input.value};",
+				"inputs":        map[string]any{"value": "catalog-dispatch"},
+				"result_prefix": "catalog_native",
+				"timeout_ms":    5000,
+			}
 		case "live_table":
 			vu = liveTestVU(liveTableClientFunc(func(context.Context, string, livetable.Request) (livetable.Result, error) {
 				return livetable.Result{Status: livetable.StatusOK}, nil
@@ -71,6 +81,20 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 		vu.stopAllAsyncConversations(context.Background(), "cross-check end")
 		if !handled {
 			t.Errorf("%s: catalog engine action not handled by handleEngineAction", spec.Type)
+		}
+		if spec.Type == "native_javascript" {
+			if !NativeJavaScriptAvailable() {
+				if err == nil || !strings.Contains(err.Error(), "native_javascript_v1 requires Linux hard memory and CPU limits") {
+					t.Errorf("%s: unsupported host must reject the valid action with its capability requirement, got %v", spec.Type, err)
+				}
+				if _, published := vu.Variables["catalog_native.value"]; published {
+					t.Error("native_javascript published a result on an unsupported host")
+				}
+				continue
+			}
+			if got := vu.Variables["catalog_native.value"]; got != "catalog-dispatch" {
+				t.Errorf("native_javascript worker result = %q, want catalog-dispatch", got)
+			}
 		}
 		if _, unsupported := unsupportedEngineActions[spec.Type]; unsupported {
 			if err == nil {

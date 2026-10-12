@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 139; got != want {
+	if got, want := len(specs), 146; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -35,6 +35,13 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
+		"project_live_tables.project_id":                        "projects.id",
+		"project_live_table_instances.table_id":                 "project_live_tables.id",
+		"project_live_table_journal.instance_id":                "project_live_table_instances.id",
+		"project_live_table_attachments.instance_id":            "project_live_table_instances.id",
+		"project_live_table_operator_receipts.instance_id":      "project_live_table_instances.id",
+		"run_rendezvous.run_id":                                 "tests.id",
+		"run_rendezvous.project_id":                             "projects.id",
 		"monitor_collection_leases.project_id":                  "projects.id",
 		"monitor_management_polls.project_id":                   "projects.id",
 		"appdynamics_quota_leases.resource_key":                 "appdynamics_quota_pools.resource_key",
@@ -117,6 +124,9 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	}
 	if _, exists := byColumn["monitor_management_polls.id"]; exists {
 		t.Error("management poll identity must not reference a project or run identity")
+	}
+	if got := byColumn["project_live_table_operator_receipts.instance_id"].onDelete; got != "CASCADE" {
+		t.Errorf("operator receipt instance ON DELETE = %q, want CASCADE", got)
 	}
 	if got := byColumn["elk_connections.project_id"].onDelete; got != "CASCADE" {
 		t.Errorf("elk_connections.project_id on delete = %q, want CASCADE", got)
