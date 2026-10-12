@@ -19,7 +19,7 @@ test('[U03 U08] empty setup explains prerequisites and invalid saves do not pers
   await expect(page.getByRole('heading', { level: 4, name: 'Scripts And Groups' })).toBeVisible()
   await page.getByPlaceholder('Scenario name', { exact: true }).fill('Preserve this incomplete draft')
   await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
+  await page.getByRole('button', { name: 'Add Script to Group 1' }).click()
   await expect(page.getByText('No existing scripts are available for this project.')).toBeVisible()
   await expect(page.getByRole('searchbox', { name: 'Search scripts', exact: false })).toBeFocused()
   await page.getByRole('dialog', { name: 'Choose Script' }).getByRole('button', { name: 'Cancel' }).click()

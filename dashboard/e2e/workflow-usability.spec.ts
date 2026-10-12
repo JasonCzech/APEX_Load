@@ -54,7 +54,7 @@ test('missing-script detour preserves the scenario draft on cancellation',async(
   await page.goto(`/#/new-test?${scopeQuery(workspace)}`)
   await page.getByRole('button',{name:'Open scenario builder'}).click()
   await page.getByPlaceholder('Scenario name').fill('Retain my draft')
-  await page.getByRole('button',{name:'Choose script for Group 1'}).click()
+  await page.getByRole('button',{name:'Add Script to Group 1'}).click()
   await page.getByRole('dialog',{name:'Choose Script'}).getByRole('button',{name:'Import script',exact:true}).click()
   await expect(page.getByRole('button',{name:/OpenAPI \/ Swagger/})).toBeVisible()
   await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=authoring/)
@@ -64,7 +64,7 @@ test('missing-script detour preserves the scenario draft on cancellation',async(
   await page.getByRole('button',{name:'Back to scenario draft'}).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Retain my draft')
   await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=scenarios/)
-  await expect(page.getByRole('button',{name:'Choose script for Group 1'})).toBeVisible()
+  await expect(page.getByRole('button',{name:'Add Script to Group 1'})).toBeVisible()
 })
 
 test('OpenAPI prerequisite import returns the saved script to the original group',async({page,request,target})=>{
@@ -73,7 +73,7 @@ test('OpenAPI prerequisite import returns the saved script to the original group
   await page.getByRole('button',{name:'Open scenario builder'}).click()
   await page.getByPlaceholder('Scenario name').fill('Preserved import scenario')
   await page.getByLabel('Group Name',{exact:true}).fill('Checkout group')
-  await page.getByRole('button',{name:'Choose script for Checkout group'}).click()
+  await page.getByRole('button',{name:'Add Script to Checkout group'}).click()
   await page.getByRole('dialog',{name:'Choose Script'}).getByRole('button',{name:'Import script',exact:true}).click()
   await page.getByRole('button',{name:/OpenAPI \/ Swagger/}).click()
   const controls=page.getByRole('group',{name:'Script import controls'})
@@ -86,7 +86,7 @@ test('OpenAPI prerequisite import returns the saved script to the original group
   await controls.getByRole('button',{name:'Save draft'}).click()
   await controls.getByRole('button',{name:'Open Prerequisite_orders in Visual Editor',exact:true}).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Preserved import scenario')
-  await expect(page.getByRole('button',{name:'Choose script for Checkout group'})).toContainText('Prerequisite_orders')
+  await expect(page.getByRole('button',{name:'Prerequisite_orders: change the script for Checkout group'})).toContainText('Prerequisite_orders')
 })
 
 test('data pool row failure retains the scenario and retries without creating a second pool',async({page,request})=>{

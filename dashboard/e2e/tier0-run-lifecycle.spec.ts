@@ -83,7 +83,7 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     const target = page.getByRole('spinbutton', { name: 'smoke target VUsers', exact: true })
     const vuserRow = page.getByRole('row').filter({ has: target })
     await target.fill('3')
-    await vuserRow.getByRole('button', { name: 'Apply', exact: true }).click()
+    await vuserRow.getByRole('button', { name: 'Apply smoke target', exact: true }).click()
     await expect.poll(async () => (await (await request.get(`/api/v1/tests/${testId}`)).json()).groups[0].vusers).toBe(3)
 
     // The current command-center dialog previews and applies the runtime change.

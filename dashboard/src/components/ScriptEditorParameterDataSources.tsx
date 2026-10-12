@@ -519,7 +519,7 @@ function ParameterDataSourceRows({
           <td aria-label="Parameter actions" style={{ textAlign: 'right' }}>
             <div className="parameter-actions">
               <button className="btn btn-sm btn-ghost" onClick={() => onToggleOpenDataEditor(index)}>
-                {isEditorOpen ? 'Hide Data' : 'Edit Data'}
+                {isEditorOpen ? 'Hide data' : 'Edit data'}
               </button>
               <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} onClick={() => onRemoveDataSource(index)}>Remove</button>
             </div>

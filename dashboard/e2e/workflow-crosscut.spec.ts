@@ -96,7 +96,7 @@ test('nested script editor owns title and help and returns the scenario context'
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
   await page.reload()
   await page.getByPlaceholder('Scenario name').fill('Retained scenario')
-  await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
+  await page.getByRole('button', { name: 'Add Script to Group 1' }).click()
   await page.getByRole('dialog', { name: 'Choose Script' }).getByRole('button', { name: 'Create script', exact: true }).click()
   await page.getByRole('tab', { name: /Blank & Assisted Editors/ }).click()
   await page.getByRole('button', { name: /API Visual Editor/ }).click()

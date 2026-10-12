@@ -1616,6 +1616,8 @@ describe('CommandCenterPrototype', () => {
     await changeTextInput(inputByLabel('Group load ramp duration'), 'soon')
 
     const applyButton = buttonNamed('Apply')
+    // Each group's Apply is named by its group, starting with what it shows.
+    expect(applyButton.getAttribute('aria-label')).toMatch(/^Apply .+ target$/)
     expect(applyButton.disabled).toBe(true)
     await click(applyButton)
 

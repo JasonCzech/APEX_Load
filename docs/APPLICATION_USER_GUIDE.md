@@ -573,6 +573,17 @@ functions convert, which are no-ops, and which are preserved for review.
 A script says what one user does; a **scenario** says how many users do it, for how
 long, and under what conditions. Build scenarios from the **Scenarios** page.
 
+The scenario builder has five steps. **Start** takes the scenario's name and its script
+groups, one row per group (an empty draft can instead copy a saved scenario).
+**Model & Shape** picks the load model: choosing Fixed VUsers or Stepped Ramp selects
+its recommended variant, another variant can be picked instead, and **Next** moves on.
+Goal-Driven asks for its targets in a sizing dialog, and Traffic Profile for its
+demand source. **Run Settings** has one row of tabs for target load, ramp pattern, run
+phases, advanced settings, the browser and script runtime, and generator assignment;
+then come **Data** and **Review**. **Edit** opens a saved scenario at Start, and the
+row's **Edit run settings** and **Edit data** open it at those steps. Every step it
+has been through is marked done, and **Save draft** is on every step.
+
 A scenario brings together:
 
 - **Groups** — each group runs one script with its own VUser count, ramp-up, ramp-down,

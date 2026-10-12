@@ -850,31 +850,17 @@
   gap: 14px;
 }
 
-.scenario-settings-sections {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  min-width: 0;
-}
-
-.scenario-settings-section-tab {
-  min-width: 0;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  text-align: center;
-  cursor: pointer;
-}
-
-.scenario-settings-section-tab:hover { border-color: var(--accent-border); color: var(--text-primary); }
-.scenario-settings-section-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.scenario-settings-section-tab.active { border-color: var(--accent-border); background: var(--accent-soft); color: var(--text-primary); }
+/* Run Settings' one row of tabs (the shared underline tabs), on a baseline.
+   Six tabs share the step's column: tighter spacing keeps them on one row
+   there, and a column too narrow for them scrolls the row rather than wrap it. */
+.scenario-builder-run-tabs-scroller { min-width: 0; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--border); }
+body .scenario-builder-run-tabs.ux-underline-tabs { flex-wrap: nowrap; gap: 0; width: max-content; min-width: 100%; }
+body .scenario-builder-run-tabs.ux-underline-tabs [role='tab'] { padding-inline: 8px; font-size: 12px; }
+/* A scrolling row fades out on the side with more tabs, so a cut-off tab
+   reads as "more this way". */
+.scenario-builder-run-tabs-scroller[data-more-end] { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.scenario-builder-run-tabs-scroller[data-more-start] { mask-image: linear-gradient(to right, transparent, #000 40px); }
+.scenario-builder-run-tabs-scroller[data-more-start][data-more-end] { mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
 
 .scenario-settings-section-panel { display: grid; gap: 14px; min-width: 0; }
 
@@ -883,16 +869,6 @@
 .stepped-ramp-worksheet[data-settings-tab="stages"] > .stepped-ramp-section[data-tab="stages"],
 .stepped-ramp-worksheet[data-settings-tab="phases"] > .stepped-ramp-section[data-tab="phases"],
 .stepped-ramp-worksheet[data-settings-tab="advanced"] > .stepped-ramp-section[data-tab="advanced"] { display: grid; }
-
-@media (max-width: 900px) {
-  .scenario-settings-sections {
-    display: flex;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: thin;
-  }
-  .scenario-settings-section-tab { flex: 0 0 160px; }
-}
 
 /* The per-group runtime editor has up to 8 tabs; wrap them in a flex row rather than
    forcing the fixed 3-column grid the main run-settings tabs use. */
@@ -1595,9 +1571,12 @@
   bottom: 0;
   z-index: 2;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 0;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 8px 0;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-primary);
   box-shadow: 0 28px 0 var(--bg-primary);
@@ -2459,7 +2438,16 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-source-pending, .scenario-save-notice { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); }
 .scenario-save-notice { color: var(--success-text); }
 .scenario-create-button { margin: 12px 0; }
-.scenario-builder-actions { flex-wrap: wrap; padding-bottom: 12px; }
+.scenario-builder-actions { flex-wrap: nowrap; }
+/* The note takes what the buttons leave, on one line; its title holds the rest. */
+.scenario-builder-actions-note { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scenario-builder-actions > button { flex: 0 0 auto; }
+@media (max-width: 900px) {
+  .scenario-builder-actions { flex-wrap: wrap; }
+  .scenario-builder-actions-note { flex-basis: 100%; white-space: normal; }
+}
+/* The variant a model step has selected. */
+.scenario-shape-selected { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--text-primary); font-size: 11px; font-weight: 700; }
 .scenario-add-group-card { min-height: 44px; padding: 10px 14px; flex-direction: row; justify-content: flex-start; }
 .scenario-add-group-card > span { font-size: 18px; }
 .scenario-existing-script-library { margin: 0 0 16px; padding: 12px; scroll-margin-top: 110px; }
@@ -2469,7 +2457,8 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-library-table table { min-width: 720px; }
 .scenario-library-table td:last-child { min-width: 160px; white-space: normal; position: sticky; right: 0; background: var(--bg-secondary); }
 .scenario-more-actions { margin: 6px; }
-.scenario-builder-workspace.with-preview, .scenario-builder-workspace.with-preview.stepped-ramp-layout { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); }
+/* The step column is wide enough for Run Settings' one row of tabs at 1280 px. */
+.scenario-builder-workspace.with-preview, .scenario-builder-workspace.with-preview.stepped-ramp-layout { grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr); }
 .stepped-ramp-layout .scenario-builder-preview { position: static; max-height: none; overflow: visible; }
 .scenario-wizard-panel { scroll-margin-top: 110px; }
 @media (max-width: 1100px) {
@@ -2566,3 +2555,29 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-builder .new-test-readiness-body li p, .scenario-builder .scenario-review-details li p { margin-top: 6px; }
 
 .scenario-source-card:disabled { cursor: not-allowed; opacity: .65; }
+
+/* The Start step's script groups: one row per group (group, script, VUsers,
+   initialization scope, role), a header row on wide screens, and each row a
+   card with its own labels on narrow ones. */
+/* Too narrow for the columns (before rows stack), the table scrolls sideways rather than clip them. */
+.scenario-script-group-list.scenario-group-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+.scenario-group-table .scenario-group-row { display: grid; grid-template-columns: minmax(120px, 1.1fr) minmax(180px, 1.8fr) 56px minmax(140px, 1.1fr) minmax(110px, 0.9fr) 76px; gap: 10px; align-items: start; padding: 10px 12px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg-primary); }
+.scenario-group-table .scenario-group-header { border-top: 0; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.scenario-group-table .scenario-group-row.selecting-script { box-shadow: inset 3px 0 0 var(--accent); }
+.scenario-group-table .scenario-group-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.scenario-group-table .scenario-group-vusers strong { padding-top: 8px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.scenario-group-table .scenario-group-actions { align-items: flex-end; }
+.scenario-group-table .scenario-script-readiness { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.scenario-group-table .scenario-script-readiness p { flex: 1 1 140px; margin: 0; color: var(--text-secondary); font-size: 12px; }
+/* Column headers label the cells on wide screens; the labels return when rows stack. */
+.scenario-group-table .scenario-group-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.scenario-builder-header .scenario-builder-mode { display: block; margin-bottom: 2px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.scenario-group-table + .scenario-add-group-card { margin-top: 10px; }
+/* The six columns need about 760 px of the step; below that (a 960 px
+   window) each row stacks its fields instead. */
+@media (max-width: 960px) {
+  .scenario-group-table .scenario-group-header { display: none; }
+  .scenario-group-table .scenario-group-row { grid-template-columns: minmax(0, 1fr); }
+  .scenario-group-table .scenario-group-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+  .scenario-group-table .scenario-group-actions { align-items: flex-start; }
+}

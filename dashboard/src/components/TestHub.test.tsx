@@ -249,6 +249,8 @@ describe('TestHub', () => {
     await act(async () => {
       manualButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    // Picking a variant selects it; the user continues to its settings.
+    await clickWizardStep('Run Settings')
   }
 
   it('round-trips and edits canonical runtime sections through compact scenario controls', () => {
@@ -1702,7 +1704,7 @@ describe('TestHub', () => {
 		expect(duration?.select.value).toBe('h')
   })
 
-  it('groups scenario builder run settings into focused tabs', async () => {
+  it('groups scenario builder run settings into one row of focused tabs', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
     })
@@ -1710,13 +1712,18 @@ describe('TestHub', () => {
     await flushPromises()
     await clickWizardStep('Run Settings')
 
+    // One level of tabs: the scenario's sections, then runtime and generators.
+    expect(container.querySelectorAll('[role="tablist"][aria-label="Run settings sections"]')).toHaveLength(1)
+    expect(container.querySelector('[role="tablist"][aria-label="Scenario settings sections"]')).toBeNull()
     const tabs = Array.from(container.querySelectorAll('.scenario-run-settings-tab'))
     expect(tabs.map(tab => tab.textContent)).toEqual([
-      'Scenario Settings',
+      'Target Load', 'Ramp Pattern', 'Run Phases', 'Advanced Settings',
       'Browser/Script Runtime',
       'Controller/Generator',
     ])
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+    expect(tabs.filter(tab => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
+    expect(container.querySelector('[role="tablist"][aria-label="Run settings sections"]')?.classList.contains('ux-underline-tabs')).toBe(true)
     expect(container.textContent).toContain('Load Per Group')
     expect(container.textContent).toContain('Group load & timeline')
     expect(container.textContent).toContain('Live scenario preview')
@@ -1729,7 +1736,7 @@ describe('TestHub', () => {
 
     const workspace = container.querySelector('.scenario-builder-workspace.with-preview')
     expect(workspace).toBeTruthy()
-    expect(workspace?.querySelector('.scenario-builder-main .scenario-run-settings-tabs')).toBeTruthy()
+    expect(workspace?.querySelector('.scenario-builder-main .scenario-builder-run-tabs')).toBeTruthy()
     expect(workspace?.querySelector('.scenario-builder-preview .scenario-model-preview-panel')).toBeTruthy()
     expect(workspace?.querySelector('.composition-timeline .composition-group-editor')).toBeTruthy()
     expect(workspace?.querySelector('.scenario-composition-summary-row')).toBeTruthy()
@@ -1807,7 +1814,7 @@ describe('TestHub', () => {
     await clickRunSettingsTab('Browser/Script Runtime')
     expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(0)
     expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(0)
-    await clickRunSettingsTab('Scenario Settings')
+    await clickRunSettingsTab('Advanced Settings')
 
     expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(1)
@@ -2118,6 +2125,7 @@ describe('TestHub', () => {
     await clickWizardStep('Model & Shape')
     await clickModelFamily('Goal-Driven')
     await clickButton('Owned guardrail template')
+    await clickWizardStep('Run Settings')
     const art = container.querySelector<HTMLInputElement>('input[aria-label^="Average response time for "]')
     expect(art).not.toBeNull()
     await act(async () => setInputValue(art!, '400'))
@@ -2259,12 +2267,12 @@ describe('TestHub', () => {
     await clickRunSettingsTab('Browser/Script Runtime')
     await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Runtime scope"]')!, '1'))
     await clickWizardStep('Start')
-    await act(async () => container.querySelector<HTMLButtonElement>('.scenario-script-group-card .scenario-script-group-title button')!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('.scenario-script-group-card .scenario-group-remove')!.click())
     await clickWizardStep('Run Settings')
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Runtime scope"]')?.value).toBe('0')
     expect(container.textContent).toContain('Runtime overrides · Checkout Flow (#2)')
     await clickWizardStep('Start')
-    await act(async () => container.querySelector<HTMLButtonElement>('.scenario-script-group-card .scenario-script-group-title button')!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('.scenario-script-group-card .scenario-group-remove')!.click())
     await clickWizardStep('Run Settings')
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Runtime scope"]')?.value).toBe('defaults')
   })
@@ -3788,6 +3796,188 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-builder')).toBeNull()
   })
 
+  it('preselects the recommended variant with its model and moves on only with Next', async () => {
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await clickModelFamily('Fixed VUsers')
+
+    // One pick: the family arrives with its recommended variant selected, on this step.
+    const recommended = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-shape-catalog-card button')).find(button => button.textContent === 'Use Closed VUser')
+    expect(recommended?.getAttribute('aria-pressed')).toBe('true')
+    expect(recommended?.closest('.scenario-shape-catalog-card')?.textContent).toContain('Selected')
+    expect(wizardStepButton('Model & Shape')?.getAttribute('aria-current')).toBe('step')
+    expect(wizardStepMarker('Model & Shape')).toBe('✓')
+
+    // Picking another variant selects it and still stays here.
+    const variant = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-shape-catalog-card button')).find(button => button.textContent?.startsWith('Use ') && button !== recommended)
+    expect(variant).toBeTruthy()
+    await act(async () => variant!.click())
+    expect(variant?.getAttribute('aria-pressed')).toBe('true')
+    expect(recommended?.getAttribute('aria-pressed')).toBe('false')
+    expect(wizardStepButton('Model & Shape')?.getAttribute('aria-current')).toBe('step')
+    await clickButton('Next')
+    expect(wizardStepButton('Run Settings')?.getAttribute('aria-current')).toBe('step')
+  })
+
+  it('lets another model replace a variant it picked, but not one the author picked', async () => {
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Model & Shape')
+    const useButton = (name: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-shape-catalog-card button')).find(button => button.textContent === `Use ${name}`)
+    const nextButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-builder-actions button')).find(button => button.textContent === 'Next')
+    await clickModelFamily('Fixed VUsers')
+    expect(useButton('Closed VUser')?.getAttribute('aria-pressed')).toBe('true')
+
+    // The builder's own pick follows the model: browsing another one takes its variant.
+    await clickModelFamily('Stepped Ramp')
+    expect(useButton('Stepped Ramp')?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.textContent).not.toContain('Still using')
+    // Goal-Driven has no variant to take, so Next waits for its setup rather than run Stepped Ramp.
+    await clickModelFamily('Goal-Driven')
+    expect(nextButton()?.disabled).toBe(true)
+
+    // A variant the author picks stays until they pick another.
+    await clickModelFamily('Fixed VUsers')
+    const authored = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-shape-catalog-card button')).find(button => button.textContent?.startsWith('Use ') && button.textContent !== 'Use Closed VUser')
+    expect(authored).toBeTruthy()
+    const authoredName = authored!.textContent!.replace(/^Use /, '')
+    await act(async () => authored!.click())
+    await clickModelFamily('Stepped Ramp')
+    expect(useButton('Stepped Ramp')?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain(`Still using ${authoredName}. Pick a variant below to switch to Stepped Ramp.`)
+    expect(nextButton()?.disabled).toBe(false)
+  })
+
+  it('keeps the builder footer to one note and its actions', async () => {
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    const actions = container.querySelector('.scenario-builder-actions')!
+    // The note says why Next waits when it does, else how drafts save; never both.
+    expect(actions.querySelectorAll('.scenario-builder-actions-note')).toHaveLength(1)
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Model & Shape')
+    // The reason's status region is always there, so it is announced when it appears.
+    const reason = actions.querySelector('#scenario-next-reason')
+    expect(reason?.getAttribute('role')).toBe('status')
+    expect(reason?.textContent).toBe('Choose a load model to continue.')
+    expect(actions.querySelector('.scenario-builder-actions-note')?.textContent).toBe('Choose a load model to continue.')
+    await clickModelFamily('Stepped Ramp')
+    expect(actions.querySelectorAll('.scenario-builder-actions-note')).toHaveLength(1)
+    expect(actions.firstElementChild?.classList.contains('scenario-builder-actions-note')).toBe(true)
+    expect(actions.querySelector('#scenario-next-reason')).toBe(reason)
+    expect(reason?.textContent).toBe('')
+    expect(actions.querySelector('.scenario-builder-actions-note')?.textContent).toContain('drafts are saved in this browser')
+  })
+
+  it('keeps one scenario name field when a scenario is copied', async () => {
+    const stored: StoredScenario = { id: 'copy-one-name', name: 'Copy one name', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await clickButton('Copy Existing Scenario')
+    const cloneRow = Array.from(container.querySelectorAll('.scenario-clone-table tbody tr')).find(row => row.textContent?.includes('Copy one name'))
+    await act(async () => cloneRow!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    expect(container.textContent).toContain('Copied Copy one name')
+    expect(container.querySelectorAll('input[placeholder="Scenario name"]')).toHaveLength(1)
+  })
+
+  it('opens each step at the top of the page', async () => {
+    const scroller = document.createElement('main')
+    scroller.className = 'main-content'
+    container.appendChild(scroller)
+    const pageRoot = createRoot(scroller)
+    await act(async () => pageRoot.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    scroller.scrollTop = 133
+    const modelStep = Array.from(scroller.querySelectorAll<HTMLButtonElement>('.scenario-wizard-step')).find(button => button.textContent?.includes('Model & Shape'))
+    await act(async () => modelStep!.click())
+    expect(scroller.scrollTop).toBe(0)
+    await act(async () => pageRoot.unmount())
+  })
+
+  it('shows script groups one row each, the name first, and the start choice only on an empty draft', async () => {
+    const stored: StoredScenario = { id: 'copy-source', name: 'Copy source', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    const panel = () => container.querySelector('.scenario-wizard-panel')!
+    const name = panel().querySelector('input[placeholder="Scenario name"]')!
+    const choice = () => panel().querySelector('[aria-label="How to start this scenario"]')
+    expect(name.compareDocumentPosition(choice()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const table = panel().querySelector('[role="table"][aria-label="Script groups"]')!
+    expect(Array.from(table.querySelectorAll('[role="columnheader"]')).map(header => header.textContent)).toEqual(['Group', 'Script', 'VUsers', 'Initialization', 'Role', 'Actions'])
+    // A voice user can say what they see: the name starts with the visible label.
+    expect(table.querySelector('.scenario-script-select-button')?.getAttribute('aria-label')).toBe('Add Script to Group 1')
+
+    await chooseLibraryScriptForGroup()
+    expect(choice()).toBeNull()
+    expect(panel().querySelector('.scenario-script-select-button')?.getAttribute('aria-label')).toBe('Checkout Flow: change the script for Checkout Flow')
+    expect(panel().querySelector('.scenario-group-vusers')?.textContent).toMatch(/\d+$/)
+    // Copying stays within reach, behind a small button.
+    expect(Array.from(panel().querySelectorAll('button')).some(button => button.textContent === 'Copy Existing Scenario' && button.classList.contains('btn-ghost'))).toBe(true)
+  })
+
+  it('edits a saved scenario with every step done and no start choice', async () => {
+    const stored: StoredScenario = { id: 'edit-steps', name: 'Edit steps', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    expect(container.querySelector('.scenario-builder-mode')?.textContent).toBe('Editing')
+    expect(container.querySelector('[aria-label="How to start this scenario"]')).toBeNull()
+    for (const step of ['Start', 'Model & Shape', 'Run Settings', 'Data']) expect(wizardStepComplete(step), step).toBe(true)
+    // Save is on the step the user is on.
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-builder-actions button')).find(button => button.textContent === 'Save draft')?.disabled).toBe(false)
+  })
+
+  it('opens a saved scenario at the step asked for from its row', async () => {
+    const stored: StoredScenario = { id: 'edit-at-step', name: 'Edit at step', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit run settings')
+    await flushPromises()
+    expect(wizardStepButton('Run Settings')?.getAttribute('aria-current')).toBe('step')
+    expect(container.querySelector('.scenario-builder-mode')?.textContent).toBe('Editing')
+    await clickButton('Cancel')
+    await flushPromises()
+    await clickButton('Edit data')
+    await flushPromises()
+    expect(wizardStepButton('Data')?.getAttribute('aria-current')).toBe('step')
+  })
+
+  it('shows a goal-driven group\'s VUsers as sized automatically', async () => {
+    const stored: StoredScenario = { id: 'goal-vusers', name: 'Goal VUsers', duration: '5m', workload_shape_id: 'open-arrival-rate', scenario_mode: 'goal_oriented', scripts: [{ order: 0, script_id: 'script-1', vusers: 1 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    const vusers = container.querySelector('.scenario-group-vusers')
+    expect(vusers?.querySelector('strong')?.textContent).toBe('Auto')
+    expect(vusers?.getAttribute('title')).toBe('Sized from the goal on the Run Settings step')
+  })
+
+  it('shows the VUsers of groups a traffic profile maps as sized automatically, and the rest as set', async () => {
+    const stored = {
+      id: 'profile-vusers', name: 'Profile VUsers', duration: '5m', workload_shape_id: 'production-replay', scenario_mode: 'goal_oriented',
+      scripts: [{ order: 0, name: 'Mapped', script_id: 'script-1', vusers: 1 }, { order: 1, name: 'Static', script_id: 'script-1', vusers: 3 }],
+      traffic_profile: { version: 1, runtime_target: 'tps', interpolation: 'step', source_duration: '5m', target_duration: '5m', mappings: [{ series_key: 'checkout', series_name: 'checkout', group_name: 'Mapped', points: [], peak_target: 5 }] },
+      created_at: '', updated_at: '', script_count: 2,
+    } as unknown as StoredScenario
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    const cells = Array.from(container.querySelectorAll('.scenario-group-vusers'))
+    expect(cells.map(cell => cell.querySelector('strong')?.textContent)).toEqual(['Auto', '3'])
+    expect(cells[0].getAttribute('title')).toBe('Sized from the traffic profile on the Run Settings step')
+  })
+
   it('only enables adding another group after every existing group has a script', async () => {
     const onSelectTest = vi.fn()
 
@@ -3800,7 +3990,7 @@ describe('TestHub', () => {
 
     const groupList = container.querySelector('.scenario-script-group-list.scenario-script-group-list-spacious')
     expect(groupList).toBeDefined()
-    const addGroupButton = groupList?.querySelector<HTMLButtonElement>('.scenario-add-group-card')
+    const addGroupButton = container.querySelector<HTMLButtonElement>('.scenario-add-group-card')
     expect(addGroupButton?.disabled).toBe(true)
     expect(addGroupButton?.textContent).toContain('Add a script to every existing group first')
 

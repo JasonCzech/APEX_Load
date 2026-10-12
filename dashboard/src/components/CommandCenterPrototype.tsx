@@ -2380,7 +2380,7 @@ function OpsCockpitV2View({
                       <button type="button" disabled={readOnly || target <= 0} aria-label={`Decrease ${group.name} target`} onClick={() => onTargetChange(group.name, Math.max(0, target - 1))}>−</button>
                       <strong>{formatNumber(target)}</strong>
                       <button type="button" disabled={readOnly} aria-label={`Increase ${group.name} target`} onClick={() => onTargetChange(group.name, target + 1)}>+</button>
-                      <button type="button" className="apply" disabled={readOnly} onClick={() => onApplyTarget(group.name, target)}>Apply</button>
+                      <button type="button" className="apply" disabled={readOnly} aria-label={`Apply ${group.name} target`} onClick={() => onApplyTarget(group.name, target)}>Apply</button>
                     </span>
                   </div>
                 )
@@ -4206,7 +4206,7 @@ function GroupLoadTable({
                         activeRamp={group.activeVuserRamp}
                       />
                     </div>
-                    <button type="button" className="btn btn-sm btn-primary" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
+                    <button type="button" className="btn btn-sm btn-primary" disabled={applyDisabled} aria-label={`Apply ${group.name} target`} onClick={() => onApplyTarget(group.name, group.target)}>
                       Apply
                     </button>
                   </>

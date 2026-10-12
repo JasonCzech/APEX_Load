@@ -23,7 +23,7 @@ test('scenario Data step previews script parameters and restores them after remo
   const steps = page.locator('[aria-label="Scenario builder steps"]')
   const panel = page.getByRole('region', { name: 'Script data & parameters', exact: true })
   await page.getByPlaceholder('Scenario name').fill('Script data preview scenario')
-  await page.getByRole('button', { name: 'Choose script for Group 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Add Script to Group 1', exact: true }).click()
   await page.getByRole('row').filter({ hasText: 'Checkout_data_preview' }).getByRole('button', { name: 'Use for Group 1', exact: true }).click()
   await steps.getByRole('button', { name: /^Data/ }).click()
   await expect(panel.getByRole('definition')).toHaveCount(4)
