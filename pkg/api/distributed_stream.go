@@ -1267,6 +1267,13 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 		}
 
 		applyRuntimeGoalTargetsToLiveMetrics(test, live)
+		if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && test.Status == "RUNNING" {
+			// As locally: every published running sample enters the goal window.
+			if test.goalControl == nil {
+				test.goalControl = &goalControllerState{}
+			}
+			recordPublishedGoalThroughput(test, live)
+		}
 		if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && tr.testLoadReadyLocked(test, time.Now().UTC()) {
 			if test.goalControl == nil {
 				test.goalControl = &goalControllerState{}

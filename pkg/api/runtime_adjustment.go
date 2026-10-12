@@ -512,6 +512,7 @@ func (tr *TestRunner) rollbackRuntimeAdjustment(id string, duration time.Duratio
 		}
 	}
 	tr.mu.Unlock()
+	tr.syncGoalThroughputCaps(id)
 	if compensationErr != nil {
 		return errors.Join(cause, fmt.Errorf("runtime adjustment compensation incomplete: %w", compensationErr))
 	}

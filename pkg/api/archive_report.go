@@ -520,6 +520,11 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.OracleDB = buildRunArchiveOracleDBEvidence(resources, summaries)
 
 	report.Overview.IntervalSummaries = int64(len(summaries))
+	if manifest != nil && manifest.Provenance.ScenarioMode == "goal_oriented" {
+		// Only a goal or traffic-profile run has a goal; a VUser run's TPS
+		// pacing target is a pace, judged by its own throughput gap.
+		report.Overview.GoalAttainment = buildRunArchiveGoalAttainment(summaries, untargetedGoalGroups(manifest.Provenance))
+	}
 	if len(summaries) > 0 {
 		report.SummaryTimeline = make([]RunArchiveSummaryPoint, 0, len(summaries))
 	}

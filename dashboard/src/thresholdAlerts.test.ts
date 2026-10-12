@@ -4,6 +4,7 @@ import {
   acknowledgeThresholdAlert,
   appendProjectThresholdAlert,
   formatThresholdAlertSummary,
+  thresholdAlertMetricLabel,
   isThresholdAlertTerminalStatus,
   MAX_THRESHOLD_ALERTS,
   resolveProjectThresholdAlertsBefore,
@@ -203,6 +204,18 @@ describe('thresholdAlerts', () => {
       gap_pct: 28,
     }))
     expect(throughput && formatThresholdAlertSummary(throughput)).toBe('Throughput 180 TPS is below target 250 TPS (28% gap)')
+
+    // A goal run is judged over its 10 s window, in both directions.
+    const over = thresholdAlertFromMessage(breachMessage({
+      metric: 'throughput_over_pct',
+      value: 27.8,
+      threshold: 20,
+      target_tps: 20,
+      gap_pct: 39,
+      window: '10 s avg',
+    }))
+    expect(over && formatThresholdAlertSummary(over)).toBe('Throughput 27.80 TPS (10 s avg) is above target 20 TPS (39% over)')
+    expect(thresholdAlertMetricLabel('throughput_over_pct')).toBe('Throughput above target')
 
     const perTransaction = thresholdAlertFromMessage(breachMessage({ metric: 'avg_server_processing_ms', value: 420, threshold: 350, transaction: 'checkout_submit' }))
     expect(perTransaction && formatThresholdAlertSummary(perTransaction)).toBe('Avg server processing 420 ms exceeded threshold 350 ms for transaction checkout_submit')

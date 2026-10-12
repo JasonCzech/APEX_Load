@@ -4174,6 +4174,16 @@ export interface operations {
               }) | null;
               "error_pct"?: number;
               "errors"?: number;
+              "goal_attainment"?: ({
+                "achieved_average_tps"?: number;
+                "over_windows"?: number;
+                "target_average_tps"?: number;
+                "tolerance_pct"?: number;
+                "under_windows"?: number;
+                "window_seconds"?: number;
+                "windows"?: number;
+                "within_windows"?: number;
+              }) | null;
               "goal_completion"?: ({
                 "achieved_transactions"?: number;
                 "configured_global_iterations"?: number;
@@ -36225,6 +36235,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -36255,6 +36266,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -36766,6 +36779,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -36796,9 +36810,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -44213,6 +44232,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -44243,9 +44263,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -45363,6 +45388,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -45393,9 +45419,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -62060,6 +62091,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -62090,9 +62122,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -63206,6 +63243,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -63236,9 +63274,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -66378,6 +66421,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -66408,6 +66452,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -66919,6 +66965,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -66949,9 +66996,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -74826,6 +74878,16 @@ export interface operations {
               }) | null;
               "error_pct": number;
               "errors": number;
+              "goal_attainment"?: ({
+                "achieved_average_tps": number;
+                "over_windows": number;
+                "target_average_tps": number;
+                "tolerance_pct": number;
+                "under_windows": number;
+                "window_seconds": number;
+                "windows": number;
+                "within_windows": number;
+              }) | null;
               "goal_completion"?: ({
                 "achieved_transactions": number;
                 "configured_global_iterations"?: number;
@@ -82152,6 +82214,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -82182,9 +82245,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -83302,6 +83370,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -83332,9 +83401,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -103467,6 +103541,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -103497,9 +103572,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -104617,6 +104697,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -104647,9 +104728,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -119423,6 +119509,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -119453,6 +119540,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -119964,6 +120053,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -119994,9 +120084,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -121476,6 +121571,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -121506,6 +121602,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -122017,6 +122115,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -122047,9 +122146,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -123529,6 +123633,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -123559,6 +123664,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -124070,6 +124177,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -124100,9 +124208,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -125582,6 +125695,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -125612,6 +125726,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -126123,6 +126239,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -126153,9 +126270,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -127635,6 +127757,7 @@ export interface operations {
                 "error_patterns"?: Array<Record<string, unknown>>;
                 "error_pct": number;
                 "generator_resources"?: Record<string, (Record<string, unknown>) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -127665,6 +127788,8 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
                   "actions": number;
@@ -128176,6 +128301,7 @@ export interface operations {
                   "timestamp": string;
                   "tps"?: number;
                 }) | null>;
+                "goal_gap_pct"?: (number) | null;
                 "goal_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -128206,9 +128332,14 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 }) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
                   "errors": number;
+                  "goal_gap_pct"?: (number) | null;
+                  "goal_window_target_tps"?: number;
+                  "goal_window_tps"?: number;
                   "name": string;
                   "p50_ms": number;
                   "p90_ms": number;
@@ -132099,6 +132230,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -132129,9 +132261,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -133249,6 +133386,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -133279,9 +133417,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -157403,6 +157546,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -157433,9 +157577,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -158553,6 +158702,7 @@ export interface operations {
                 "timestamp": string;
                 "tps"?: number;
               }) | null>;
+              "goal_gap_pct"?: (number) | null;
               "goal_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -158583,9 +158733,14 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               }) | null;
+              "goal_window_target_tps"?: number;
+              "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
                 "errors": number;
+                "goal_gap_pct"?: (number) | null;
+                "goal_window_target_tps"?: number;
+                "goal_window_tps"?: number;
                 "name": string;
                 "p50_ms": number;
                 "p90_ms": number;

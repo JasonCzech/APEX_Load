@@ -182,7 +182,13 @@ func reportConditionalConcerns(report *RunArchiveReport) []string {
 	if t := report.Overview.Telemetry; t != nil && t.UnscoredIntervals > 0 {
 		concerns = append(concerns, "telemetry could not be scored for "+reportCountNoun(int64(t.UnscoredIntervals), "interval", "intervals"))
 	}
-	if report.Overview.ThroughputMissedIntervals > 0 {
+	if attainment := report.Overview.GoalAttainment; attainment != nil {
+		if off := attainment.OverWindows + attainment.UnderWindows; off > 0 {
+			concerns = append(concerns, fmt.Sprintf("throughput was off its goal in %d of %s (%d over, %d under)",
+				off, reportCountNoun(attainment.Windows, fmt.Sprintf("%d-second window", attainment.WindowSeconds), fmt.Sprintf("%d-second windows", attainment.WindowSeconds)),
+				attainment.OverWindows, attainment.UnderWindows))
+		}
+	} else if report.Overview.ThroughputMissedIntervals > 0 {
 		concerns = append(concerns, "throughput missed its target in "+reportCountNoun(int64(report.Overview.ThroughputMissedIntervals), "interval", "intervals"))
 	}
 	if status := strings.ToLower(strings.TrimSpace(report.Completeness.Status)); status != "" && status != "complete" && status != "ok" {
@@ -243,7 +249,24 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 		})
 	}
 
-	if report.Overview.ThroughputMissedIntervals > 0 {
+	if attainment := report.Overview.GoalAttainment; attainment != nil {
+		if attainment.OverWindows+attainment.UnderWindows > 0 {
+			title := "Throughput off its goal"
+			switch {
+			case attainment.UnderWindows == 0:
+				title = "Throughput above its goal"
+			case attainment.OverWindows == 0:
+				title = "Throughput below its goal"
+			}
+			findings = append(findings, ReportFinding{
+				Title:    title,
+				Severity: "minor",
+				Observed: fmt.Sprintf("The goal averaged %.1f TPS and the run delivered %.1f TPS. Within ±%.0f%% in %d of %d %d-second windows; over in %d, under in %d.",
+					attainment.TargetAverageTPS, attainment.AchievedAverageTPS, attainment.TolerancePct,
+					attainment.WithinWindows, attainment.Windows, attainment.WindowSeconds, attainment.OverWindows, attainment.UnderWindows),
+			})
+		}
+	} else if report.Overview.ThroughputMissedIntervals > 0 {
 		findings = append(findings, ReportFinding{
 			Title:    "Throughput below target",
 			Severity: "minor",

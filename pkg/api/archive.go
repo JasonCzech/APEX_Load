@@ -949,6 +949,22 @@ type RunArchiveOverview struct {
 	Telemetry                 *RunArchiveTelemetrySummary `json:"telemetry,omitempty"`
 	LoadModelGoals            *RunArchiveLoadModelGoals   `json:"load_model_goals,omitempty"`
 	GoalCompletion            *RunArchiveGoalCompletion   `json:"goal_completion,omitempty"`
+	GoalAttainment            *RunArchiveGoalAttainment   `json:"goal_attainment,omitempty"`
+}
+
+// RunArchiveGoalAttainment states a goal or traffic-profile run's TPS goal
+// against what it delivered, judged over the same 10 s windows the run was
+// steered on: each window is within tolerance of its target, over it or
+// under it.
+type RunArchiveGoalAttainment struct {
+	TargetAverageTPS   float64 `json:"target_average_tps"`
+	AchievedAverageTPS float64 `json:"achieved_average_tps"`
+	WindowSeconds      int64   `json:"window_seconds"`
+	TolerancePct       float64 `json:"tolerance_pct"`
+	Windows            int64   `json:"windows"`
+	WithinWindows      int64   `json:"within_windows"`
+	OverWindows        int64   `json:"over_windows"`
+	UnderWindows       int64   `json:"under_windows"`
 }
 
 type RunArchiveLoadModelGoals struct {

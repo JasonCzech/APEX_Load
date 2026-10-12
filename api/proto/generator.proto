@@ -37,6 +37,10 @@ service GeneratorControl {
   // AdjustDuration changes the duration for a running test on this generator.
   rpc AdjustDuration(DurationAdjustment) returns (DurationAck);
 
+  // SetThroughputCap moves a running goal group's throughput cap on this
+  // generator (throughput_cap_v1 peers only).
+  rpc SetThroughputCap(ThroughputCapRequest) returns (ThroughputCapAck);
+
   // SetPaused applies an idempotent, execution-fenced pause transition and
   // returns only after the generator engine has applied the requested state.
   rpc SetPaused(PauseRequest) returns (PauseAck);
@@ -260,6 +264,11 @@ message WorkAssignment {
   // The run's joint evidence v4 projection, frozen at Start. Send only to
   // native_joint_evidence_v4 peers; omission publishes no joint evidence.
   JointEvidenceProjection joint_evidence_projection = 47;
+  // Goal-run throughput cap for this shard's group, in passed transactions per
+  // second; zero suspends the group. Send only to throughput_cap_v1 peers;
+  // omission leaves the group uncapped.
+  bool throughput_cap_enabled = 48;
+  double throughput_cap_tps = 49;
 }
 
 // JointEvidenceProjection chooses up to three dimensions of one population
@@ -507,6 +516,22 @@ message VUserAdjustment {
 message AdjustmentAck {
   bool accepted = 1;
   int32 current_vusers = 2;
+}
+
+// ThroughputCapRequest sets or clears a running group's throughput cap. tps is
+// this generator's share of the group's target, in passed transactions per
+// second; zero with enabled suspends the group's iterations.
+message ThroughputCapRequest {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  bytes run_supervision_token = 3;
+  string group_name = 4;
+  bool enabled = 5;
+  double tps = 6;
+}
+
+message ThroughputCapAck {
+  bool accepted = 1;
 }
 
 message DurationAdjustment {

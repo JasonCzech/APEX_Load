@@ -27,6 +27,7 @@ const (
 	GeneratorControl_CheckPreparation_FullMethodName      = "/apexload.v1.GeneratorControl/CheckPreparation"
 	GeneratorControl_AdjustVUsers_FullMethodName          = "/apexload.v1.GeneratorControl/AdjustVUsers"
 	GeneratorControl_AdjustDuration_FullMethodName        = "/apexload.v1.GeneratorControl/AdjustDuration"
+	GeneratorControl_SetThroughputCap_FullMethodName      = "/apexload.v1.GeneratorControl/SetThroughputCap"
 	GeneratorControl_SetPaused_FullMethodName             = "/apexload.v1.GeneratorControl/SetPaused"
 	GeneratorControl_StopTest_FullMethodName              = "/apexload.v1.GeneratorControl/StopTest"
 	GeneratorControl_StreamMetrics_FullMethodName         = "/apexload.v1.GeneratorControl/StreamMetrics"
@@ -66,6 +67,9 @@ type GeneratorControlClient interface {
 	AdjustVUsers(ctx context.Context, in *VUserAdjustment, opts ...grpc.CallOption) (*AdjustmentAck, error)
 	// AdjustDuration changes the duration for a running test on this generator.
 	AdjustDuration(ctx context.Context, in *DurationAdjustment, opts ...grpc.CallOption) (*DurationAck, error)
+	// SetThroughputCap moves a running goal group's throughput cap on this
+	// generator (throughput_cap_v1 peers only).
+	SetThroughputCap(ctx context.Context, in *ThroughputCapRequest, opts ...grpc.CallOption) (*ThroughputCapAck, error)
 	// SetPaused applies an idempotent, execution-fenced pause transition and
 	// returns only after the generator engine has applied the requested state.
 	SetPaused(ctx context.Context, in *PauseRequest, opts ...grpc.CallOption) (*PauseAck, error)
@@ -180,6 +184,16 @@ func (c *generatorControlClient) AdjustDuration(ctx context.Context, in *Duratio
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DurationAck)
 	err := c.cc.Invoke(ctx, GeneratorControl_AdjustDuration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *generatorControlClient) SetThroughputCap(ctx context.Context, in *ThroughputCapRequest, opts ...grpc.CallOption) (*ThroughputCapAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ThroughputCapAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_SetThroughputCap_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -319,6 +333,9 @@ type GeneratorControlServer interface {
 	AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error)
 	// AdjustDuration changes the duration for a running test on this generator.
 	AdjustDuration(context.Context, *DurationAdjustment) (*DurationAck, error)
+	// SetThroughputCap moves a running goal group's throughput cap on this
+	// generator (throughput_cap_v1 peers only).
+	SetThroughputCap(context.Context, *ThroughputCapRequest) (*ThroughputCapAck, error)
 	// SetPaused applies an idempotent, execution-fenced pause transition and
 	// returns only after the generator engine has applied the requested state.
 	SetPaused(context.Context, *PauseRequest) (*PauseAck, error)
@@ -382,6 +399,9 @@ func (UnimplementedGeneratorControlServer) AdjustVUsers(context.Context, *VUserA
 }
 func (UnimplementedGeneratorControlServer) AdjustDuration(context.Context, *DurationAdjustment) (*DurationAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdjustDuration not implemented")
+}
+func (UnimplementedGeneratorControlServer) SetThroughputCap(context.Context, *ThroughputCapRequest) (*ThroughputCapAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetThroughputCap not implemented")
 }
 func (UnimplementedGeneratorControlServer) SetPaused(context.Context, *PauseRequest) (*PauseAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
@@ -575,6 +595,24 @@ func _GeneratorControl_AdjustDuration_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GeneratorControl_SetThroughputCap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ThroughputCapRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).SetThroughputCap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_SetThroughputCap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).SetThroughputCap(ctx, req.(*ThroughputCapRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GeneratorControl_SetPaused_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PauseRequest)
 	if err := dec(in); err != nil {
@@ -746,6 +784,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdjustDuration",
 			Handler:    _GeneratorControl_AdjustDuration_Handler,
+		},
+		{
+			MethodName: "SetThroughputCap",
+			Handler:    _GeneratorControl_SetThroughputCap_Handler,
 		},
 		{
 			MethodName: "SetPaused",

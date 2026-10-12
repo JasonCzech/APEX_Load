@@ -1540,6 +1540,18 @@ func (mc *MetricsCollector) RecordCompletedIteration(group string) {
 		value.(*groupRunCounters).completedIterations.Add(1)
 	}
 }
+
+// GroupPassedTransactions is the group's passed business transactions so far
+// in the run: the population live TPS counts. A group's throughput cap holds
+// this count to its target rate, so the cap and the goal controller agree on
+// what the target measures.
+func (mc *MetricsCollector) GroupPassedTransactions(group string) int64 {
+	if value, ok := mc.groupRunTotals.Load(group); ok {
+		return value.(*groupRunCounters).totalTransactions.Load()
+	}
+	return 0
+}
+
 func (mc *MetricsCollector) GroupCompletedIterations(group string) int64 {
 	if value, ok := mc.groupRunTotals.Load(group); ok {
 		return value.(*groupRunCounters).completedIterations.Load()

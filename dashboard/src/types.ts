@@ -851,6 +851,8 @@ export interface TestSummary {
   runtime_settings?: RuntimeSettingsOverride
   scenario_mode?: ScenarioMode
   goal_config?: GoalConfig
+  /** A traffic-profile run's replayed profile: its per-group TPS (or VUser) points by offset. */
+  traffic_profile?: import('./types/trafficProfiles').TrafficProfile
   archive?: RunArchiveRecord
   archive_failure?: RunArchiveFailure
   archive_recovery?: RunArchiveRecovery
@@ -1619,6 +1621,17 @@ export interface RunArchiveOverview {
   telemetry?: RunArchiveTelemetrySummary
   load_model_goals?: RunArchiveLoadModelGoals
   goal_completion?: RunArchiveGoalCompletion
+  /** A goal or traffic-profile run's TPS goal against what it delivered, over 10 s windows. */
+  goal_attainment?: {
+    target_average_tps: number
+    achieved_average_tps: number
+    window_seconds: number
+    tolerance_pct: number
+    windows: number
+    within_windows: number
+    over_windows: number
+    under_windows: number
+  }
 }
 
 export interface RunArchiveLoadModelGoals {
@@ -2275,6 +2288,12 @@ export interface LiveMetrics {
   target_tps?: number
   throughput_gap_pct?: number
   throughput_target_missed?: boolean
+  /** Goal run: TPS over the goal window (10 s), the figure its gap is judged on. */
+  goal_window_tps?: number
+  /** Goal run: the targets in force over that window, averaged — what the gap is measured against. */
+  goal_window_target_tps?: number
+  /** Goal run: (target − goal_window_tps) / target × 100 — positive under target, negative over. */
+  goal_gap_pct?: number
   avg_response_ms: number
   /** Error % of the last sample window (sample_window_seconds, normally 1 s). */
   error_pct: number
@@ -2708,6 +2727,12 @@ export interface GroupLiveMetrics {
   target_tps?: number
   throughput_gap_pct?: number
   throughput_target_missed?: boolean
+  /** Goal run: TPS over the goal window (10 s), the figure its gap is judged on. */
+  goal_window_tps?: number
+  /** Goal run: the targets in force over that window, averaged — what the gap is measured against. */
+  goal_window_target_tps?: number
+  /** Goal run: (target − goal_window_tps) / target × 100 — positive under target, negative over. */
+  goal_gap_pct?: number
   avg_response_ms: number
   p50_ms: number
   p90_ms: number

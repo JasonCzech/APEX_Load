@@ -1231,6 +1231,8 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			AllowZeroVUsers:              request.GetVuserCount() == 0,
 			InitStrategy:                 plan.validated.initStrategy,
 			TransactionResponseTimeSLAMs: request.GetTransactionResponseTimeSlaMs(),
+			ThroughputCapTPS:             request.GetThroughputCapTps(),
+			ThroughputCapEnabled:         request.GetThroughputCapEnabled(),
 			DataShard: engine.DataShardConfig{
 				Ordinal: request.GetShardOrdinal(),
 				Count:   plan.validated.shardCount,

@@ -11,11 +11,15 @@ export interface CommandGroup {
   targetMode: 'vusers' | 'tps'
   /** The group's TPS target; in a goal run it includes a staged, unapplied draft. */
   targetTps?: number
-  /** A goal run's applied TPS target, the one its gap is measured against. */
+  /** A goal run's applied TPS target. */
   committedTargetTps?: number
+  /** The targets the engine held a goal group to over its goal window, which its gap is measured against. */
+  goalWindowTargetTps?: number
   throughputGapPct?: number
   throughputTargetMissed?: boolean
   suggestedVusers?: number
+  /** A traffic-profile group's place in its profile. */
+  profile?: import('./goalThroughputModel').ProfilePosition
   minVusers?: number
   maxVusers?: number
   activeVuserRamp?: VUserRampStatus
@@ -90,8 +94,9 @@ export function buildGroupRunRows(groups: CommandGroup[], metrics?: LiveMetrics)
     const groupMetrics = metrics?.groups?.[group.name]
     // A goal run shows the applied target its gap is measured against; a
     // staged draft lives in Group Load's input until it is applied.
+    // (Measured over the engine's goal window, that is the window's target.)
     const targetTps = group.targetMode === 'tps'
-      ? group.committedTargetTps ?? group.targetTps ?? group.target
+      ? group.goalWindowTargetTps ?? group.committedTargetTps ?? group.targetTps ?? group.target
       : groupMetrics?.target_tps ?? group.targetTps
     return {
       id: `group-${group.key}`,

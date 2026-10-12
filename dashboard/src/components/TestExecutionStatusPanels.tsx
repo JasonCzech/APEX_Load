@@ -11,6 +11,7 @@ import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
 import { MISSING_VALUE } from './runReport/reportPresentation'
 import { ratioParts, usedHTTP3, versionMixHeadline } from './runReport/httpVersionMixModel'
 import { formatDateTime } from '../utils/dateTime'
+import { formatGapToTarget, goalStanding, isOffTarget } from './goalThroughputModel'
 
 interface LiveMetricsSummary {
   browser_documents?: BrowserDocumentSummary | null
@@ -18,6 +19,8 @@ interface LiveMetricsSummary {
   target_tps?: number
   throughput_gap_pct?: number
   throughput_target_missed?: boolean
+  goal_window_tps?: number
+  goal_gap_pct?: number
   active_vusers?: number
   telemetry_policy?: import('../types/telemetryPolicy').TelemetryPolicyEvidence
   telemetry?: TelemetryHealth
@@ -153,8 +156,14 @@ function regionDemand(test: TestSummary): Array<[string, number]> {
   return [['Auto pool', test.total_vusers]]
 }
 
+// A goal run is judged over its goal window in both directions (goal_gap_pct);
+// a paced run without one keeps the engine's per-sample shortfall.
 function throughputBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
   if (!metrics?.target_tps) return 'healthy'
+  if (metrics.goal_gap_pct !== undefined) {
+    const standing = goalStanding(metrics.goal_gap_pct)
+    return standing === 'under' ? 'danger' : standing === 'over' ? 'warning' : 'healthy'
+  }
   if (metrics.throughput_target_missed) return 'danger'
   if ((metrics.throughput_gap_pct ?? 0) > 0) return 'warning'
   return 'healthy'
@@ -162,9 +171,13 @@ function throughputBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warnin
 
 function throughputBadgeLabel(metrics?: LiveMetricsSummary): string {
   if (!metrics?.target_tps) return 'Untracked'
-  if (metrics.throughput_target_missed) return 'Behind Target'
-  if ((metrics.throughput_gap_pct ?? 0) > 0) return 'Catching Up'
-  return 'On Target'
+  if (metrics.goal_gap_pct !== undefined) {
+    const standing = goalStanding(metrics.goal_gap_pct)
+    return standing === 'under' ? 'Below target' : standing === 'over' ? 'Above target' : 'On target'
+  }
+  if (metrics.throughput_target_missed) return 'Behind target'
+  if ((metrics.throughput_gap_pct ?? 0) > 0) return 'Catching up'
+  return 'On target'
 }
 
 function observedTelemetryCount(value?: number): number | undefined {
@@ -312,12 +325,12 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-value">{metrics.target_tps.toFixed(1)}</span>
             </div>
             <div className="goal-status-metric">
-              <span className="goal-status-label">Actual TPS</span>
-              <span className="goal-status-value">{(metrics.tps ?? 0).toFixed(1)}</span>
+              <span className="goal-status-label">{metrics.goal_gap_pct !== undefined ? 'Actual TPS (10 s avg)' : 'Actual TPS'}</span>
+              <span className="goal-status-value">{(metrics.goal_gap_pct !== undefined ? metrics.goal_window_tps ?? 0 : metrics.tps ?? 0).toFixed(1)}</span>
             </div>
             <div className="goal-status-metric">
-              <span className="goal-status-label">Gap</span>
-              <span className="goal-status-value">{formatThroughputGap(metrics.throughput_gap_pct)}</span>
+              <span className="goal-status-label">Gap to target</span>
+              <span className="goal-status-value">{metrics.goal_gap_pct !== undefined ? formatGapToTarget(metrics.goal_gap_pct) : formatThroughputGap(metrics.throughput_gap_pct)}</span>
             </div>
             <div className="goal-status-metric">
               <span className="goal-status-label">Status</span>
@@ -691,9 +704,9 @@ export default function TestExecutionStatusPanels({
                 </div>
               </div>
               {groupMetric.target_tps ? (
-                <div className={`gm-throughput-status ${groupMetric.throughput_target_missed ? 'danger' : 'healthy'}`}>
+                <div className={`gm-throughput-status ${(groupMetric.goal_gap_pct !== undefined ? isOffTarget(groupMetric.goal_gap_pct) : groupMetric.throughput_target_missed) ? 'danger' : 'healthy'}`}>
                   <span>Target {groupMetric.target_tps.toFixed(1)} TPS</span>
-                  <span>Gap {formatThroughputGap(groupMetric.throughput_gap_pct)}</span>
+                  <span>{groupMetric.goal_gap_pct !== undefined ? `${(groupMetric.goal_window_tps ?? 0).toFixed(1)} TPS (10 s avg) · ${formatGapToTarget(groupMetric.goal_gap_pct)}` : `Gap ${formatThroughputGap(groupMetric.throughput_gap_pct)}`}</span>
                 </div>
               ) : null}
             </div>

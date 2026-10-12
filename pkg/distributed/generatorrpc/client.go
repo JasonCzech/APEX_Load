@@ -46,6 +46,8 @@ type Assignment struct {
 	RunCorrelationOrigins []string
 	CorrelationCarriers   []string
 	CorrelationTestName   string
+	ThroughputCapEnabled  bool    // send only to FeatureThroughputCapV1 peers
+	ThroughputCapTPS      float64 // this shard's share of the group's goal TPS
 	// JointEvidenceProjection is the run's frozen joint evidence v4
 	// projection; send only to FeatureJointEvidenceV4 peers.
 	JointEvidenceProjection      *engine.JointProjection
@@ -1846,6 +1848,8 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		JointEvidenceProjection:   jointProjectionToProto(assignment.JointEvidenceProjection),
 		CorrelationCarriers:       append([]string(nil), assignment.CorrelationCarriers...),
 		CorrelationTestName:       assignment.CorrelationTestName,
+		ThroughputCapEnabled:      assignment.ThroughputCapEnabled,
+		ThroughputCapTps:          assignment.ThroughputCapTPS,
 		RequireTestExecutionLease: assignment.RequireTestExecutionLease,
 		AdoptionGrace:             preciseDurationProto(assignment.AdoptionGrace, 0),
 		GroupName:                 assignment.GroupName,

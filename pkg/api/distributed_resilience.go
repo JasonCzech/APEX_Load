@@ -125,7 +125,12 @@ func groupAllowsStatelessDataReshard(group TestGroup) (bool, string) {
 }
 
 func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *ManagedTest, target string, dryRun bool, _ string) ([]GeneratorEvacuationImpact, error) {
-	return b.evacuateGenerator(tr, test, target, dryRun, false)
+	impacts, err := b.evacuateGenerator(tr, test, target, dryRun, false)
+	if err == nil && !dryRun {
+		// Replacement shards start uncapped; give them their goal shares.
+		tr.resyncGoalThroughputCaps(test.ID)
+	}
+	return impacts, err
 }
 
 // evacuateGenerator's allowLostSourceLeaseFence bit is intentionally private:
@@ -1774,6 +1779,7 @@ func (b *distributedExecutionBackend) tolerateMetricsStreamLoss(tr *TestRunner, 
 		slog.Warn("generator loss tolerance failed; falling back to run failure", "test_id", test.ID, "target", target, "err", evacuateErr)
 		return false
 	}
+	tr.resyncGoalThroughputCaps(test.ID)
 	b.broadcastFleetDegraded(tr, test, target, err, impacts)
 	return true
 }

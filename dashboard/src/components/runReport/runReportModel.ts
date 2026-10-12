@@ -7,7 +7,7 @@ import type {
   RunArchiveSLARow,
 } from '../../types'
 
-export type ReportKpiID = 'avgLatency' | 'p95' | 'errorRate' | 'peakTps' | 'peakVusers' | 'completeness'
+export type ReportKpiID = 'avgLatency' | 'p95' | 'errorRate' | 'peakTps' | 'goalTps' | 'peakVusers' | 'completeness'
 
 export interface ReportKpi {
   id: ReportKpiID
@@ -135,7 +135,7 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
       deltaTone: baselineDiff.errorRate?.tone,
       sparkline: sparkline(history, 'errorPct'),
     },
-    {
+    goalAttainmentKpi(report?.overview?.goal_attainment, history) ?? {
       id: 'peakTps',
       label: 'Peak TPS (attempts/s)',
       value: formatNumber(overview?.peak_tps, 1),
@@ -161,6 +161,28 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
       sparkline: [],
     },
   ]
+}
+
+// A goal or traffic-profile run leads with its goal: the TPS it delivered
+// against the TPS it was asked for, and how much of the run was on target.
+// This takes the peak TPS card's place; the peak stays in Performance.
+export function goalAttainmentKpi(attainment: RunArchiveOverview['goal_attainment'], history: MetricsHistoryPoint[]): ReportKpi | undefined {
+  if (!attainment || attainment.windows <= 0) return undefined
+  const off = attainment.over_windows + attainment.under_windows
+  const direction = attainment.over_windows > 0 && attainment.under_windows === 0 ? ' over'
+    : attainment.under_windows > 0 && attainment.over_windows === 0 ? ' under'
+      : off > 0 ? ' off' : ''
+  return {
+    id: 'goalTps',
+    label: 'TPS delivered / goal',
+    value: `${formatNumber(attainment.achieved_average_tps, 1)} / ${formatNumber(attainment.target_average_tps, 1)}`,
+    tone: off === 0 ? 'good' : off / attainment.windows > 0.2 ? 'warn' : 'neutral',
+    delta: off === 0
+      ? `On goal (±${attainment.tolerance_pct}%) throughout`
+      : `${off} of ${attainment.windows} ${attainment.window_seconds}-second windows${direction} goal`,
+    deltaTone: off === 0 ? 'good' : 'warn',
+    sparkline: sparkline(history, 'tps'),
+  }
 }
 
 export function effectiveReportVerdict(report: RunArchiveReport | null, annotations?: ReportAnnotations | null) {

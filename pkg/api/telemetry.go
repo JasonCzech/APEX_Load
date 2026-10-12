@@ -7,6 +7,7 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -704,7 +705,29 @@ func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds Thres
 			"action":    "stop_requested",
 		})
 	}
-	if live != nil && live.TargetTPS > 0 && live.ThroughputTargetMissed {
+	if live != nil && live.TargetTPS > 0 && live.GoalGapPct != nil {
+		// A goal run is judged over its goal window in both directions: an
+		// overshoot loads the system under test beyond what the goal asked for
+		// as surely as a shortfall misses it.
+		if gap := *live.GoalGapPct; math.Abs(gap) >= goalGapAlertPct {
+			metric := "throughput_gap_pct"
+			if gap < 0 {
+				metric = "throughput_over_pct"
+			}
+			alerts = append(alerts, map[string]any{
+				"type":       "threshold_alert",
+				"test_id":    test.ID,
+				"test_name":  test.Name,
+				"timestamp":  live.Timestamp,
+				"metric":     metric,
+				"value":      live.GoalWindowTPS,
+				"threshold":  live.TargetTPS,
+				"target_tps": live.TargetTPS,
+				"gap_pct":    math.Abs(gap),
+				"window":     goalThroughputWindowLabel,
+			})
+		}
+	} else if live != nil && live.TargetTPS > 0 && live.ThroughputTargetMissed {
 		alerts = append(alerts, map[string]any{
 			"type":       "threshold_alert",
 			"test_id":    test.ID,
@@ -847,10 +870,22 @@ func thresholdAlertNotificationEvent(test *ManagedTest, status string, alert map
 		severity = "danger"
 	}
 	summary := fmt.Sprintf("%s %.2f exceeded threshold %.2f", metric, value, threshold)
-	if metric == "throughput_gap_pct" {
-		summary = fmt.Sprintf("throughput %.2f TPS is below target %.2f TPS", value, threshold)
+	if metric == "throughput_gap_pct" || metric == "throughput_over_pct" {
+		direction := "below"
+		if metric == "throughput_over_pct" {
+			direction = "above"
+		}
+		window := ""
+		if label, ok := alert["window"].(string); ok && label != "" {
+			window = " (" + label + ")"
+		}
+		summary = fmt.Sprintf("throughput %.2f TPS%s is %s target %.2f TPS", value, window, direction, threshold)
 		if gap, ok := alert["gap_pct"].(float64); ok && gap > 0 {
-			summary += fmt.Sprintf(" (%.2f%% gap)", gap)
+			noun := "gap"
+			if metric == "throughput_over_pct" {
+				noun = "over"
+			}
+			summary += fmt.Sprintf(" (%.2f%% %s)", gap, noun)
 		}
 	}
 	if alert["action"] == "advisory" {

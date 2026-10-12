@@ -672,6 +672,9 @@ type ManagedTest struct {
 	remoteGroupTargets    map[string]string
 	remoteGroupShards     map[string][]GeneratorShardSummary
 	remoteClientsByTarget map[string]generatorClient
+	// remoteThroughputCaps is each generator's last accepted throughput-cap
+	// share by "target\x00group", so unchanged shares are not re-sent.
+	remoteThroughputCaps map[string]float64
 	// remoteArchiveClientsByTarget retains positively stopped evacuation
 	// sources for the final archive merge. They are deliberately excluded from
 	// active topology and every mutable-control fan-out.
@@ -926,6 +929,9 @@ type LiveMetrics struct {
 	TargetTPS              float64    `json:"target_tps,omitempty"`
 	ThroughputGapPct       float64    `json:"throughput_gap_pct,omitempty"`
 	ThroughputTargetMissed bool       `json:"throughput_target_missed,omitempty"`
+	GoalWindowTPS          float64    `json:"goal_window_tps,omitempty"`        // goal run: TPS over goalThroughputWindow
+	GoalWindowTargetTPS    float64    `json:"goal_window_target_tps,omitempty"` // the targets in force over that window, averaged
+	GoalGapPct             *float64   `json:"goal_gap_pct,omitempty"`           // signed: + under target, - over
 	AvgResponseMs          float64    `json:"avg_response_ms"`
 	ErrorPct               float64    `json:"error_pct"`
 	TotalTx                int64      `json:"total_transactions"`
@@ -1319,6 +1325,10 @@ type goalControllerState struct {
 	cumulativeErrors        int64
 	errorWindowsTracked     bool
 	lastErrorWindowBySource map[string]time.Time
+	throughputWindow        []goalThroughputSample
+	// capSync serializes the run's throughput-cap syncs (see
+	// syncGoalThroughputCaps); it is released with the run's goal state.
+	capSync sync.Mutex
 }
 
 type telemetryDiagnosticState struct {
@@ -1452,6 +1462,9 @@ type GroupLiveMetrics struct {
 	TargetTPS              float64  `json:"target_tps,omitempty"`
 	ThroughputGapPct       float64  `json:"throughput_gap_pct,omitempty"`
 	ThroughputTargetMissed bool     `json:"throughput_target_missed,omitempty"`
+	GoalWindowTPS          float64  `json:"goal_window_tps,omitempty"`        // goal run: TPS over goalThroughputWindow
+	GoalWindowTargetTPS    float64  `json:"goal_window_target_tps,omitempty"` // the targets in force over that window, averaged
+	GoalGapPct             *float64 `json:"goal_gap_pct,omitempty"`           // signed: + under target, - over
 	AvgResponseMs          float64  `json:"avg_response_ms"`
 	P50Ms                  float64  `json:"p50_ms"`
 	P90Ms                  float64  `json:"p90_ms"`

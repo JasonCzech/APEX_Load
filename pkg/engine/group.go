@@ -67,11 +67,20 @@ type GroupConfig struct {
 	ResultSink          ResultSink
 	RedactionConfig     *RedactionConfig
 	SecretResolver      SecretResolver
+
+	// ThroughputCapTPS, when ThroughputCapEnabled, holds the group's passed
+	// transactions to this rate from the first iteration on. Goal-driven
+	// and traffic-profile runs set it from the group's starting TPS target and
+	// move it with SetGroupThroughputCap; zero suspends the group.
+	ThroughputCapTPS     float64
+	ThroughputCapEnabled bool
+
 	// JavaBroker selects an operator-approved dedicated execution-pod backend.
 	// Nil preserves the existing local dedicated runtime. Scripts cannot set it.
 	JavaBroker     *JavaBrokerGroupOptions
 	javaBroker     *javaBrokerGroup
 	rateLimiter    *TokenBucket
+	throughputCap  *GroupThroughputCap
 	rendezvous     *RendezvousCoordinator
 	executionGoals *ExecutionGoalLimiter
 	dataProvider   *DataProvider
@@ -352,6 +361,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if g.VUsers < 0 {
 			return nil, fmt.Errorf("group[%d] %q: vusers must be zero or greater", i, g.Name)
 		}
+		if g.ThroughputCapEnabled && !validThroughputCapTPS(g.ThroughputCapTPS) {
+			return nil, fmt.Errorf("group[%d] %q: throughput cap must be a finite, non-negative TPS", i, g.Name)
+		}
 		if g.VUsers > MaxEngineVUsers {
 			return nil, fmt.Errorf("group[%d] %q: vusers must not exceed %d", i, g.Name, MaxEngineVUsers)
 		}
@@ -519,6 +531,18 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		vuserChanged:          make(chan struct{}),
 	}
 	mge.metrics.SetGroupActiveVUsersProvider(mge.activeVUserCountByGroup)
+	for i := range mge.groups {
+		name := mge.groups[i].Name
+		throughputCap := newGroupThroughputCap(
+			func() int64 { return mge.metrics.GroupPassedTransactions(name) },
+			func() int64 { return mge.metrics.GroupCompletedIterations(name) },
+		)
+		if cfg.StartPaused {
+			throughputCap.SetPaused(true)
+		}
+		throughputCap.Set(mge.groups[i].ThroughputCapTPS, mge.groups[i].ThroughputCapEnabled)
+		mge.groups[i].throughputCap = throughputCap
+	}
 	slaThresholds := make(map[string]float64)
 	for _, group := range cfg.Groups {
 		if group.TransactionResponseTimeSLAMs > 0 {
@@ -2152,6 +2176,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			SecretResolver:               prepared.group.SecretResolver,
 			PauseControl:                 mge,
 			IterationRateLimiter:         prepared.group.rateLimiter,
+			ThroughputCap:                prepared.group.throughputCap,
 			Rendezvous:                   prepared.group.rendezvous,
 			ExecutionGoals:               prepared.group.executionGoals,
 			HardStopCtx:                  prepared.shedCtx,
@@ -2681,6 +2706,48 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 	return true, nil
 }
 
+// SetGroupThroughputCap holds a group's passed transactions to tps, or
+// removes the cap when enabled is false. Zero suspends the group's
+// iterations. VUsers already waiting for a start slot re-admit at the new
+// rate at once.
+func (mge *MultiGroupEngine) SetGroupThroughputCap(groupName string, tps float64, enabled bool) error {
+	if mge == nil {
+		return fmt.Errorf("engine is unavailable")
+	}
+	if enabled && !validThroughputCapTPS(tps) {
+		return fmt.Errorf("throughput cap must be a finite, non-negative TPS")
+	}
+	mge.mu.Lock()
+	var throughputCap *GroupThroughputCap
+	for i := range mge.groups {
+		if mge.groups[i].Name == groupName {
+			throughputCap = mge.groups[i].throughputCap
+			break
+		}
+	}
+	mge.mu.Unlock()
+	if throughputCap == nil {
+		return fmt.Errorf("group not found: %s", groupName)
+	}
+	throughputCap.Set(tps, enabled)
+	return nil
+}
+
+// GroupThroughputCap reports a group's cap rate and whether it is enabled.
+func (mge *MultiGroupEngine) GroupThroughputCap(groupName string) (float64, bool) {
+	if mge == nil {
+		return 0, false
+	}
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	for i := range mge.groups {
+		if mge.groups[i].Name == groupName {
+			return mge.groups[i].throughputCap.Target()
+		}
+	}
+	return 0, false
+}
+
 // ScaleVUsers adds or removes VUsers for a specific group.
 // If targetVUsers > current, new VUsers are spawned.
 // If targetVUsers < current, excess VUsers are cancelled (LIFO).
@@ -3042,6 +3109,7 @@ func (mge *MultiGroupEngine) pauseLocked() error {
 		if mge.groups[i].rateLimiter != nil {
 			mge.groups[i].rateLimiter.SetPaused(true)
 		}
+		mge.groups[i].throughputCap.SetPaused(true)
 	}
 
 	slog.Info("test execution paused")
@@ -3123,6 +3191,7 @@ func (mge *MultiGroupEngine) Resume() error {
 		if mge.groups[i].rateLimiter != nil {
 			mge.groups[i].rateLimiter.SetPaused(false)
 		}
+		mge.groups[i].throughputCap.SetPaused(false)
 	}
 
 	// Keep the user-visible duration as the active-runtime base and retain pause

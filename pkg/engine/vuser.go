@@ -67,6 +67,7 @@ type VUser struct {
 	SnapshotStore                 *SnapshotStore
 	PauseControl                  PauseController
 	IterationRateLimiter          *TokenBucket
+	ThroughputCap                 *GroupThroughputCap // spaces iteration starts to the group's TPS target
 	Rendezvous                    *RendezvousCoordinator
 	ExecutionGoals                *ExecutionGoalLimiter
 	// HardStopCtx, when set, is cancelled only on hard stops (duration
@@ -541,6 +542,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				releasePreIterationReservations()
 				break
 			}
+		}
+		if !vu.ThroughputCap.Admit(iterationBoundaryCtx) {
+			releasePreIterationReservations()
+			break
 		}
 		if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
 			releasePreIterationReservations()

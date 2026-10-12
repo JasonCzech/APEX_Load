@@ -747,6 +747,18 @@ cover only part of a run — a generator that predates them is in the fleet, or
 another controller took the run over from stored history — they are left out
 rather than shown as run to date, and the page counts that run in
 transactions.
+A goal-oriented run — Goal-Driven or Traffic Profile — holds each group to its TPS
+target in both directions. The goal controller adds VUsers when a group falls short,
+and the engine spaces each group's iterations so its passed transactions do not run
+past the target, which VUser counts alone cannot do once one VUser is faster than the
+target. A traffic profile starts at its first point, so the seed VUsers wait rather
+than run flat out. The run is judged over the last 10 s: it warns when it is 5% or
+more over or under its target, Command Center shows each group's target, its gap
+("4.0% under", "12.0% over") and, for a traffic profile, its point in the profile
+and the next change, and states the VUser guardrail once for the whole run. The
+run report's scorecard then shows the TPS delivered against the goal and how many
+10-second windows were within ±10%, over or under it.
+
 When errors climb, drill into the live error evidence to see representative failures
 rather than guessing — a 500 from your application and a connection reset from an
 exhausted generator look identical in an error-rate chart and call for opposite

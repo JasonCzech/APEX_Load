@@ -486,19 +486,30 @@ func defaultGoalTargetsByGroup(test *ManagedTest) map[string]float64 {
 	aggregate := *test.GoalConfig.TargetAverageTPS
 	targets := make(map[string]float64, len(test.Groups))
 
-	totalVUsers := 0
+	// Observer canaries are pinned while load groups scale (splitObserverGroups),
+	// so the goal is shared among the load groups alone.
+	loadGroups := make([]TestGroup, 0, len(test.Groups))
 	for _, group := range test.Groups {
+		if group.Role != GroupRoleObserver {
+			loadGroups = append(loadGroups, group)
+		}
+	}
+	if len(loadGroups) == 0 {
+		return nil
+	}
+	totalVUsers := 0
+	for _, group := range loadGroups {
 		totalVUsers += group.VUsers
 	}
 	if totalVUsers <= 0 {
-		share := aggregate / float64(len(test.Groups))
-		for _, group := range test.Groups {
+		share := aggregate / float64(len(loadGroups))
+		for _, group := range loadGroups {
 			targets[group.Name] = share
 		}
 		return targets
 	}
 
-	for _, group := range test.Groups {
+	for _, group := range loadGroups {
 		targets[group.Name] = aggregate * float64(group.VUsers) / float64(totalVUsers)
 	}
 	return targets
@@ -523,6 +534,16 @@ func evaluateGoalControllerForTest(test *ManagedTest, now time.Time, currentTota
 		managedLive := *live
 		managedLive.TPS = managedTPS
 		controllerLive = &managedLive
+	}
+	if live != nil && live.GoalGapPct != nil && test.GoalConfig != nil && test.GoalConfig.TargetAverageTPS != nil {
+		// Scale on the goal window, as the run is judged: with each group capped
+		// at its target, a single noisy sample above it is not an overshoot to
+		// shed VUsers for, nor one below it a shortfall to add them for. The
+		// window's delivery against its own targets is carried onto the goal the
+		// controller compares with, so a target change is not mistaken for a gap.
+		windowLive := *controllerLive
+		windowLive.TPS = *test.GoalConfig.TargetAverageTPS * (1 - *live.GoalGapPct/100)
+		controllerLive = &windowLive
 	}
 	update := evaluateGoalController(now, currentTotalVUsers, controllerLive, test.GoalConfig, test.goalControl)
 	if test.TrafficProfile == nil || test.TrafficProfile.RuntimeTarget != "tps" {
@@ -598,6 +619,10 @@ func applyRuntimeGoalTargetsToLiveMetrics(test *ManagedTest, live *LiveMetrics) 
 	if live.GroupMetrics == nil {
 		live.GroupMetrics = make(map[string]*GroupLiveMetrics)
 	}
+	window := goalWindowMeans(test.goalControl, goalThroughputSampleOf(test, live, targets))
+	live.GoalWindowTPS = window.run
+	live.GoalWindowTargetTPS = window.runTarget
+	live.GoalGapPct = signedGoalGapPct(window.run, window.runTarget)
 	for _, group := range test.Groups {
 		target, ok := targets[group.Name]
 		if !ok || (target.TargetTPS <= 0 && !profileOwned) {
@@ -620,11 +645,147 @@ func applyRuntimeGoalTargetsToLiveMetrics(test *ManagedTest, live *LiveMetrics) 
 		}
 		metrics.TargetTPS = target.TargetTPS
 		metrics.ThroughputGapPct, metrics.ThroughputTargetMissed = throughputGap(metrics.TPS, target.TargetTPS)
+		metrics.GoalWindowTPS = window.groups[group.Name]
+		metrics.GoalWindowTargetTPS = window.groupTargets[group.Name]
+		metrics.GoalGapPct = signedGoalGapPct(window.groups[group.Name], window.groupTargets[group.Name])
 	}
 	if live.GoalStatus != nil {
 		targetAverage := totalTargetTPS
 		live.GoalStatus.TargetAverageTPS = &targetAverage
 	}
+}
+
+// goalThroughputWindow is the span a goal run's throughput is judged over:
+// the "10 s avg" the Command Center shows beside the target. A single metrics
+// sample (normally 1 s) is too noisy to warn on, and judging it while the page
+// shows a ten-second average made the warning and the tile disagree.
+const goalThroughputWindow = 10 * time.Second
+
+// goalThroughputWindowLabel names the goal window on alerts, as the page does.
+const goalThroughputWindowLabel = "10 s avg"
+
+// goalGapAlertPct is how far over or under its target a goal run's windowed
+// throughput may drift before the run warns.
+const goalGapAlertPct = 5.0
+
+// goalThroughputSample is one published sample of a goal run: the TPS of its
+// goal-managed groups and the targets they were held to at that moment, so a
+// window that spans a target change judges each sample against its own target.
+type goalThroughputSample struct {
+	at           time.Time
+	run          float64
+	runTarget    float64
+	groups       map[string]float64
+	groupTargets map[string]float64
+}
+
+// goalThroughputSampleOf is one metrics sample's goal throughput. The run's
+// figure is its total less the groups that carry no target (an observer
+// canary, a group a traffic profile does not manage), so their traffic does
+// not read as overshoot, and a sample whose per-group figures are incomplete
+// still counts the run's throughput.
+func goalThroughputSampleOf(test *ManagedTest, live *LiveMetrics, targets map[string]GoalTargetStatus) goalThroughputSample {
+	sample := goalThroughputSample{
+		at:           live.Timestamp,
+		run:          live.TPS,
+		runTarget:    sumGoalTargetTPS(targets),
+		groups:       make(map[string]float64, len(targets)),
+		groupTargets: make(map[string]float64, len(targets)),
+	}
+	for name, metrics := range live.GroupMetrics {
+		if _, goal := targets[name]; !goal && metrics != nil {
+			sample.run -= metrics.TPS
+		}
+	}
+	sample.run = max(sample.run, 0)
+	for name, target := range targets {
+		sample.groupTargets[name] = max(target.TargetTPS, 0)
+		if metrics := live.GroupMetrics[name]; metrics != nil {
+			sample.groups[name] = metrics.TPS
+		} else if test != nil && len(test.Groups) == 1 {
+			sample.groups[name] = live.TPS
+		}
+	}
+	return sample
+}
+
+// goalWindowMeans averages the goal window with this sample in it: the
+// recorded samples of the last goalThroughputWindow before it, and the sample
+// itself. Throughput and target are averaged together (a group over the
+// samples in which it had a target), so the gap after a target change is the
+// window's delivery against what the window asked for, not old throughput
+// against the new target. It records nothing, so applying targets to a sample
+// that is never published (a losing distributed revision) leaves the window
+// as it was.
+func goalWindowMeans(state *goalControllerState, current goalThroughputSample) goalThroughputSample {
+	if state == nil || current.at.IsZero() {
+		return current
+	}
+	cutoff := current.at.Add(-goalThroughputWindow)
+	samples := []goalThroughputSample{current}
+	for _, sample := range state.throughputWindow {
+		if sample.at.After(cutoff) && sample.at.Before(current.at) {
+			samples = append(samples, sample)
+		}
+	}
+	means := goalThroughputSample{at: current.at, groups: map[string]float64{}, groupTargets: map[string]float64{}}
+	groupCounts := map[string]int{}
+	for _, sample := range samples {
+		means.run += sample.run
+		means.runTarget += sample.runTarget
+		for name, target := range sample.groupTargets {
+			means.groups[name] += sample.groups[name]
+			means.groupTargets[name] += target
+			groupCounts[name]++
+		}
+	}
+	means.run /= float64(len(samples))
+	means.runTarget /= float64(len(samples))
+	for name, count := range groupCounts {
+		means.groups[name] /= float64(count)
+		means.groupTargets[name] /= float64(count)
+	}
+	return means
+}
+
+// recordGoalThroughputSample adds a published sample to the goal window, once
+// per timestamp, and drops samples that have aged out of it. Like the goal's
+// error windows it is called only for a sample the controller evaluates.
+func recordGoalThroughputSample(state *goalControllerState, sample goalThroughputSample) {
+	if state == nil || sample.at.IsZero() {
+		return
+	}
+	if n := len(state.throughputWindow); n == 0 || sample.at.After(state.throughputWindow[n-1].at) {
+		state.throughputWindow = append(state.throughputWindow, sample)
+	}
+	cutoff := sample.at.Add(-goalThroughputWindow)
+	kept := state.throughputWindow[:0]
+	for _, recorded := range state.throughputWindow {
+		if recorded.at.After(cutoff) {
+			kept = append(kept, recorded)
+		}
+	}
+	state.throughputWindow = kept
+}
+
+// recordPublishedGoalThroughput records an evaluated sample in the goal window.
+func recordPublishedGoalThroughput(test *ManagedTest, live *LiveMetrics) {
+	if test == nil || live == nil {
+		return
+	}
+	targets := currentGoalTargetStatuses(test, live.Timestamp)
+	recordGoalThroughputSample(test.goalControl, goalThroughputSampleOf(test, live, targets))
+}
+
+// signedGoalGapPct is how far actual falls short of target, as a percentage
+// of the target, with the sign throughputGap uses: positive under target,
+// negative over it. Nil without a target.
+func signedGoalGapPct(actualTPS, targetTPS float64) *float64 {
+	if targetTPS <= 0 || math.IsNaN(actualTPS) || math.IsInf(actualTPS, 0) {
+		return nil
+	}
+	gap := (targetTPS - actualTPS) / targetTPS * 100
+	return &gap
 }
 
 func throughputGap(actualTPS, targetTPS float64) (float64, bool) {
@@ -650,11 +811,14 @@ func hasServerTelemetryBreach(live *LiveMetrics, threshold *float64, pickValue f
 	return false
 }
 
+// shouldEvaluateScale waits a goal window after a scale before the next: the
+// window must fill with samples taken at the new VUser count, or the same
+// shortfall is answered twice.
 func shouldEvaluateScale(now time.Time, state *goalControllerState) bool {
 	if state == nil || state.lastScaleAt == nil {
 		return true
 	}
-	return now.Sub(*state.lastScaleAt) >= 5*time.Second
+	return now.Sub(*state.lastScaleAt) >= goalThroughputWindow
 }
 
 func goalScaleStep(currentTotalVUsers int, deltaRatio float64) int {

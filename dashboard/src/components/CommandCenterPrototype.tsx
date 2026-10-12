@@ -69,6 +69,7 @@ import { formatPercentValue } from '../utils/numberFormat'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
 import { MISSING_VALUE } from './runReport/reportPresentation'
+import { formatGapToTarget, isOffTarget, profilePosition, throughputGapToTarget } from './goalThroughputModel'
 import LoadingState from './ux/LoadingState'
 
 const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
@@ -310,14 +311,18 @@ function isGoalOrientedRun(test: TestSummary) {
   return test.scenario_mode === 'goal_oriented'
 }
 
-// As the engine measures it: how far below its target a throughput is, and
-// whether that misses the 5% alert threshold. At or above target there is no gap.
-const THROUGHPUT_GAP_ALERT_PCT = 5
+// The goal controller's VUser guardrail bounds the whole run, not each group.
+function runVuserGuardrail(group: CommandGroup | undefined): string | undefined {
+  if (!group || (group.minVusers === undefined && group.maxVusers === undefined)) return undefined
+  return `The goal controller keeps the whole run between ${group.minVusers ?? 0} and ${group.maxVusers ?? 'unlimited'} VUsers.`
+}
 
+// As the engine judges a goal run: how far its throughput is from target in
+// either direction (positive under, negative over), and whether that is 5% or
+// more off target.
 function goalThroughputGap(rate: number, target: number | undefined): Pick<CommandGroup, 'throughputGapPct' | 'throughputTargetMissed'> {
-  if (!target || target <= 0 || rate >= target) return { throughputGapPct: undefined, throughputTargetMissed: false }
-  const gap = (target - rate) / target * 100
-  return { throughputGapPct: gap, throughputTargetMissed: gap >= THROUGHPUT_GAP_ALERT_PCT }
+  const gap = throughputGapToTarget(rate, target)
+  return { throughputGapPct: gap, throughputTargetMissed: isOffTarget(gap) }
 }
 
 function finitePositive(value: unknown): number {
@@ -328,8 +333,10 @@ function stagedTargetTps(group: TestGroup): number {
   return (group.stages || []).reduce((maxTarget, stage) => Math.max(maxTarget, finitePositive(stage.target_tps)), 0)
 }
 
+// As the engine shares a goal: among the load groups, by VUsers; observer
+// canaries are pinned and carry none of it.
 function defaultGoalTargets(test: TestSummary): Record<string, number> {
-  const groups = test.groups || []
+  const groups = (test.groups || []).filter(group => group.role !== 'observer')
   const aggregateTarget = finitePositive(test.goal_config?.target_average_tps)
   if (groups.length === 0 || aggregateTarget <= 0) return {}
 
@@ -342,13 +349,48 @@ function defaultGoalTargets(test: TestSummary): Record<string, number> {
   }, {} as Record<string, number>)
 }
 
+// An applied target change is in force at once; until the next live sample
+// arrives with it, carry it into the current sample so the page (which reads
+// targets from the live sample first) does not show the old one.
+function withLiveGoalTargets(test: TestSummary, applied: Record<string, number>): TestSummary {
+  const live = test.live_metrics
+  if (!live?.groups || Object.keys(applied).length === 0) return test
+  const groups = { ...live.groups }
+  for (const [name, target] of Object.entries(applied)) {
+    if (groups[name]) groups[name] = { ...groups[name], target_tps: target }
+  }
+  const total = Object.values(groups).reduce((sum, group) => sum + (group?.target_tps ?? 0), 0)
+  return { ...test, live_metrics: { ...live, groups, ...(total > 0 ? { target_tps: total } : {}) } }
+}
+
+// A traffic profile's points are offsets from the start of load, which
+// follows the resource pre-baseline (5 min when on) and any start delay.
+const RESOURCE_PRE_BASELINE_SECONDS = 300
+
+function profileElapsedSeconds(test: TestSummary): number | undefined {
+  const active = runActiveSeconds(test)
+  if (active === undefined) return undefined
+  return active - (test.resource_baseline ? RESOURCE_PRE_BASELINE_SECONDS : 0) - parseDurationToSeconds(test.start_delay)
+}
+
+function groupProfilePosition(test: TestSummary, groupName: string) {
+  if (test.traffic_profile?.runtime_target !== 'tps') return undefined
+  return profilePosition(test.traffic_profile.mappings.find(mapping => mapping.group_name === groupName)?.points, profileElapsedSeconds(test))
+}
+
+// The live sample carries the target the engine is holding the group to now,
+// so it leads: a traffic profile moves its targets during the run, and the
+// run's stored targets only reflect what the page loaded with. A live target
+// of zero is not sent, so a traffic-profile group falls back to its profile's
+// current point (which may be zero) before the stored target.
 function buildGoalTargetMap(test: TestSummary): Record<string, number> {
   const defaults = defaultGoalTargets(test)
   return (test.groups || []).reduce((targets, group) => {
     const stored = finitePositive(test.goal_targets?.[group.name]?.target_tps)
     const staged = stagedTargetTps(group)
     const live = finitePositive(test.live_metrics?.groups?.[group.name]?.target_tps)
-    targets[group.name] = stored || staged || live || defaults[group.name] || 0
+    const profiled = groupProfilePosition(test, group.name)?.target
+    targets[group.name] = live || (profiled !== undefined ? profiled : stored || staged || defaults[group.name] || 0)
     return targets
   }, {} as Record<string, number>)
 }
@@ -430,7 +472,14 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
     // group's whole-run figures when it reports none of its own.
     const averaged = metrics ? recent.groups?.[group.name] : aggregateFallback ? { tps: recent.tps, requestRate: recent.requestRate } : undefined
     const averagedRate = throughputPopulation === 'requests' ? averaged?.requestRate : averaged?.tps
-    const rate = averagedRate ?? liveRate(metrics ?? aggregateFallback, throughputPopulation) ?? 0
+    // Once the page is averaging (its rates read "10 s avg"), a goal group is
+    // shown as the engine judges it: its goal window's TPS, the targets in
+    // force over that window, and the gap between them — the figures the
+    // run's over/under warnings are raised on.
+    const engineGoal = targetMode === 'tps' && averagedRate !== undefined && metrics?.goal_gap_pct !== undefined
+      ? { rate: metrics.goal_window_tps ?? 0, gap: metrics.goal_gap_pct, target: metrics.goal_window_target_tps }
+      : undefined
+    const rate = engineGoal?.rate ?? averagedRate ?? liveRate(metrics ?? aggregateFallback, throughputPopulation) ?? 0
     const activeVuserRamp = test.vuser_ramps?.[group.name]
     const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
@@ -448,13 +497,15 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       targetMode,
       targetTps,
       committedTargetTps: targetMode === 'tps' ? liveTarget : undefined,
+      goalWindowTargetTps: engineGoal?.target,
       // A goal run's rate is TPS over the page's window; measure its gap to
       // the committed target over the same window.
-      ...(targetMode === 'tps' ? goalThroughputGap(rate, liveTarget) : {
+      ...(targetMode === 'tps' ? (engineGoal ? { throughputGapPct: engineGoal.gap, throughputTargetMissed: isOffTarget(engineGoal.gap) } : goalThroughputGap(rate, liveTarget)) : {
         throughputGapPct: metrics?.throughput_gap_pct ?? aggregateFallback?.throughput_gap_pct,
         throughputTargetMissed: metrics?.throughput_target_missed ?? aggregateFallback?.throughput_target_missed,
       }),
       suggestedVusers: targetMode === 'tps' ? suggestedGroupVusers(test, group.name, current) : undefined,
+      profile: targetMode === 'tps' ? groupProfilePosition(test, group.name) : undefined,
       minVusers: test.live_metrics?.goal_status?.min_vusers ?? test.goal_config?.min_vusers,
       maxVusers: test.live_metrics?.goal_status?.max_vusers ?? test.goal_config?.max_vusers,
       activeVuserRamp,
@@ -1134,7 +1185,15 @@ export default function CommandCenterPrototype({
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
   const recentRunRate = throughputPopulation === 'requests' ? recentAverages.requestRate : recentAverages.tps
-  const runSummaryRate = recentRunRate
+  // A goal run's summary is the engine's goal window: its TPS and the gap the
+  // run's over/under warnings are raised on, against the applied targets
+  // (a staged, unapplied draft is not yet a target).
+  const engineGoalGap = targetMode === 'tps' && recentRunRate !== undefined ? displayTest.live_metrics?.goal_gap_pct : undefined
+  const shelfGoalTarget = engineGoalGap !== undefined
+    ? displayTest.live_metrics?.goal_window_target_tps ?? 0
+    : groups.reduce((sum, group) => sum + (group.committedTargetTps ?? group.target), 0)
+  const runSummaryRate = (engineGoalGap !== undefined ? displayTest.live_metrics?.goal_window_tps : undefined)
+    ?? recentRunRate
     ?? liveRate(displayTest.live_metrics, throughputPopulation)
     ?? groups.reduce((sum, group) => sum + group.rate, 0)
   const metricBasis = useMemo<CommandMetricBasis>(() => ({
@@ -1463,14 +1522,14 @@ export default function CommandCenterPrototype({
           delete drafts[groupName]
           viewMemory.values.set('targetDrafts', drafts)
           if (currentRunRef.current !== testId) return
-          setLiveTest(prev => prev ? {
+          setLiveTest(prev => prev ? withLiveGoalTargets({
             ...prev,
             goal_targets: update.goal_targets,
             goal_config: {
               ...(prev.goal_config || {}),
               target_average_tps: update.target_average_tps,
             },
-          } : prev)
+          }, { [groupName]: target }) : prev)
           setState(prev => ({
             ...prev,
             vuserTargets: { ...prev.vuserTargets, [groupName]: target },
@@ -1597,8 +1656,9 @@ export default function CommandCenterPrototype({
         status={runStatus}
         remainingSeconds={remainingSeconds}
         totalCurrent={totalCurrent}
-        totalTarget={totalTarget}
+        totalTarget={targetMode === 'tps' && runStatus !== 'QUEUED' && runStatus !== 'RESERVED' ? shelfGoalTarget : totalTarget}
         targetMode={targetMode}
+        goalGapPct={engineGoalGap}
         errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups, metricPopulation)}
         errorLabel={errorRateHeader(metricBasis)}
         noRequestSamples={noRequestSamples}
@@ -1671,7 +1731,8 @@ export default function CommandCenterPrototype({
                   vusers: adjusted.target_vusers,
                 } : group
               })
-              return {
+              const adjustedTps = Object.fromEntries(result.groups.flatMap(adjusted => adjusted.target_tps !== undefined ? [[adjusted.name, adjusted.target_tps]] : []))
+              return withLiveGoalTargets({
                 ...current,
                 duration: result.impact.scenario_duration,
                 total_vusers: groups.reduce((total, group) => total + group.vusers, 0),
@@ -1681,7 +1742,7 @@ export default function CommandCenterPrototype({
                   ...current.goal_config,
                   target_average_tps: Object.values(goalTargets).reduce((total, target) => total + target.target_tps, 0),
                 } : current.goal_config,
-              }
+              }, adjustedTps)
             })
             setState(previous => ({
               ...previous,
@@ -1841,6 +1902,8 @@ interface RunControlShelfProps {
   remainingSeconds: number
   totalCurrent: number
   totalTarget: number
+  /** A goal run's gap over the engine's goal window: positive under target, negative over. */
+  goalGapPct?: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
   /** Names the error rate's population and basis, e.g. "Request error rate (run to date)". */
@@ -1899,6 +1962,7 @@ function RunControlShelf({
   onCreateQueuedCopy,
   queuedCopyLoading = false,
   noRequestSamples = false,
+  goalGapPct,
 }: RunControlShelfProps) {
   const readOnly = Boolean(readOnlyReason)
   const readOnlyNoteId = readOnly ? `command-controls-readonly-${test.id}` : undefined
@@ -1911,14 +1975,21 @@ function RunControlShelf({
   const elapsedSeconds = runActiveSeconds(test) ?? 0
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
-  const loadValue = canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
-    ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
+  // A goal run's target is throughput, so its load pill counts VUsers alone
+  // and its throughput pill carries the target and the gap to it.
+  const goalRun = targetMode === 'tps'
+  const loadValue = canStart ? `${formatNumber(totalTarget)} ${goalRun ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${goalRun ? 'TPS' : 'VU'}` : goalRun
+    ? `${formatNumber(totalCurrent)} VU`
     : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`
+  const goalGap = goalRun && !canStart && !noRequestSamples ? goalGapPct ?? throughputGapToTarget(throughput, totalTarget) : undefined
+  const goalGapText = formatGapToTarget(goalGap)
   const clockValue = test.termination_mode === 'iterations' ? formatRunClock(elapsedSeconds) : `${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`
   const errorValue = canStart || noRequestSamples ? 'No samples' : formatOptionalPercent(errorPct)
-  const throughputValue = canStart ? 'Not started' : noRequestSamples ? 'No samples' : formatNumber(throughput ?? 0, 1)
+  const throughputValue = canStart ? 'Not started' : noRequestSamples ? 'No samples' : goalRun
+    ? `${formatNumber(throughput ?? 0, 1)} of ${formatNumber(totalTarget, 1)}${goalGapText ? ` · ${goalGapText}` : ''}`
+    : formatNumber(throughput ?? 0, 1)
   // The compact row names each value by the label of its pill.
-  const loadLabel = canStart ? 'Planned load' : 'Observed / Target Load'
+  const loadLabel = canStart ? 'Planned load' : goalRun ? 'Active VUsers' : 'Observed / Target Load'
   const clockLabel = test.termination_mode === 'iterations' ? 'Elapsed' : 'Elapsed · remaining'
   const { shelfRef, stuck } = useStuckShelf()
   return (
@@ -1941,7 +2012,7 @@ function RunControlShelf({
         <div className="command-run-stats" aria-label="Run summary">
           <MetricPill label={loadLabel} value={loadValue} tone="info" />
           {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label={clockLabel} value={clockValue} /></> : <MetricPill label={clockLabel} value={clockValue} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
-          {throughput !== undefined && <MetricPill label={throughputMetricLabel} value={throughputValue} tone="accent" />}
+          {throughput !== undefined && <MetricPill label={goalRun && !canStart ? `${throughputMetricLabel} / target` : throughputMetricLabel} value={throughputValue} tone={isOffTarget(goalGap) ? 'warning' : 'accent'} />}
           <MetricPill label="Transaction response (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
           <MetricPill label={errorLabel} value={errorValue} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
           {test.groups.length > 1 && (
@@ -2983,7 +3054,7 @@ function GroupRunTable({ rows, sort, onSort, emptyMessage }: { rows: GroupRunRow
     { label: 'Target VUsers', sortKey: 'targetVusers', align: 'right', render: row => formatOptionalNumber(row.targetVusers) },
     { label: rateHeader(basis), sortKey: 'rate', align: 'right', render: row => formatOptionalNumber(row.rate, 1) },
     { label: 'Target TPS', sortKey: 'targetTps', align: 'right', render: row => formatOptionalNumber(row.targetTps, 1) },
-    { label: 'Gap', sortKey: 'throughputGap', align: 'right', render: row => formatOptionalPercent(row.throughputGap), className: row => typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : '' },
+    { label: 'Gap to target', sortKey: 'throughputGap', align: 'right', render: row => formatGapToTarget(row.throughputGap) ?? MISSING_VALUE, className: row => typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : '' },
     { label: `${basis.population === 'requests' ? 'Requests' : 'Transactions'} (${countBasis})`, sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
     { label: `Failed (${countBasis})`, sortKey: 'errors', align: 'right', render: row => formatOptionalNumber(row.errors) },
     { label: errorRateHeader(basis), sortKey: 'errorPct', align: 'right', render: row => row.errorPct === undefined ? MISSING_VALUE : formatPercent(row.errorPct), className: row => row.errorPct === undefined ? '' : metricTone(row.errorPct, 0.75, 1.5) },
@@ -4171,6 +4242,7 @@ function GroupLoadTable({
         <div>
           <h3>Group Load</h3>
           <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, throughput, ART and error rate by group.' : 'Current load, staged target, throughput, ART and error rate by group.'}</p>
+          {targetMode === 'tps' && runVuserGuardrail(groups[0]) && <p className="command-group-guardrail">{runVuserGuardrail(groups[0])}</p>}
         </div>
         {showTransitionControls && (
           <div className="command-group-transition-controls" aria-label="Group load transition controls">
@@ -4225,12 +4297,12 @@ function GroupLoadTable({
             : Math.min(maxVUsersForRole(group.role), sharedVuserSliderMax)
           const sliderMin = isGoalTarget ? 0.1 : 0
           const applyDisabled = (isGoalTarget && group.target <= 0) || (!isGoalTarget && targetTransitionMode === 'gradual' && !rampDurationValid)
-          const guardrail = isGoalTarget && (group.minVusers !== undefined || group.maxVusers !== undefined)
-            ? `guardrail ${group.minVusers ?? 0}-${group.maxVusers ?? 'unbounded'} VU`
-            : ''
           const suggested = isGoalTarget && group.suggestedVusers !== undefined ? `suggested ${formatNumber(group.suggestedVusers)} VU` : ''
-          const goalContext = [group.protocol, suggested, guardrail].filter(Boolean).join(' / ')
-          const gapText = isGoalTarget && group.throughputGapPct !== undefined ? `gap ${formatPercent(group.throughputGapPct)}` : ''
+          const profileText = group.profile
+            ? `profile point ${group.profile.point} of ${group.profile.points}${group.profile.next ? `, next ${formatNumber(group.profile.next.target, 1)} TPS in ${formatRunClock(group.profile.next.inSeconds)}` : ', last point'}`
+            : ''
+          const goalContext = [group.protocol, profileText, suggested].filter(Boolean).join(' / ')
+          const gapText = isGoalTarget ? formatGapToTarget(group.throughputGapPct) ?? '' : ''
           return (
             <div
               key={group.key}
@@ -4332,7 +4404,7 @@ function GroupLoadTable({
               <span role="cell" data-label={rateHeader(basis)} className={group.throughputTargetMissed ? 'warning' : undefined}>
                 <span className="command-tps-stack">
                   <strong>{formatNumber(group.rate, 1)}</strong>
-                  {isGoalTarget && <small>target {formatNumber(committedTarget, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
+                  {isGoalTarget && <small>{group.goalWindowTargetTps !== undefined ? `10 s target ${formatNumber(group.goalWindowTargetTps, 1)}` : `target ${formatNumber(committedTarget, 1)}`} TPS{gapText ? ` / ${gapText}` : ''}</small>}
                 </span>
               </span>
               <span role="cell" data-label="ART">{formatNumber(group.art)} ms</span>

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"hash"
+	"math"
 	"sort"
 
 	pb "github.com/jasonczech/apexload/api/proto"
@@ -133,6 +134,12 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 		for _, dimension := range projection.GetDimensions() {
 			fingerprintWriteString(h, dimension)
 		}
+	}
+	// Written only when set, so an uncapped assignment keeps the fingerprint
+	// older controllers and generators compute.
+	if assignment.GetThroughputCapEnabled() {
+		fingerprintWriteString(h, FeatureThroughputCapV1)
+		fingerprintWriteUint64(h, math.Float64bits(assignment.GetThroughputCapTps()))
 	}
 	fingerprintWriteBool(h, assignment.GetRequireTestExecutionLease())
 	fingerprintWriteBytes(h, assignment.GetRunSupervisionToken())

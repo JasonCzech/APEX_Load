@@ -3398,6 +3398,17 @@ func (tr *TestRunner) updateGoalTargetTPS(id string, groupName string, targetTPS
 	if targets == nil {
 		targets = make(map[string]GoalTargetStatus, len(test.Groups))
 	}
+	if test.TrafficProfile != nil && test.TrafficProfile.RuntimeTarget == "tps" {
+		// A traffic-profile group whose first point the scheduler has not
+		// applied yet reads as a zero target; storing that placeholder would
+		// make it look applied, and suspend the group, when another group's
+		// point lands first.
+		for name, status := range targets {
+			if _, applied := test.GoalTargets[name]; !applied && name != groupName && status.TargetTPS == 0 {
+				delete(targets, name)
+			}
+		}
+	}
 	targets[groupName] = GoalTargetStatus{
 		Group:     groupName,
 		TargetTPS: targetTPS,
@@ -3441,6 +3452,7 @@ func (tr *TestRunner) updateGoalTargetTPS(id string, groupName string, targetTPS
 		Status:           "adjusted",
 	}
 	tr.mu.Unlock()
+	tr.syncGoalThroughputCaps(id)
 
 	eventType, targetKind := "goal_target_changed", "manual"
 	if profileOwned {
@@ -4199,6 +4211,12 @@ func (tr *TestRunner) scaleVUsersNowWithAdmissionGuard(id string, groupName stri
 		// back accounting after an applied scale merely because leadership was
 		// lost while the backend acknowledged it.
 		return errNotExecutionLeader
+	}
+	if multiEngine == nil {
+		// A distributed goal group's cap is split by each generator's share
+		// of its VUsers; a scale moves those shares. The RPCs run after this
+		// group's control lock is released, not under it.
+		go tr.syncGoalThroughputCaps(id)
 	}
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":          "vusers_changed",
@@ -5612,6 +5630,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	for index := range test.Groups {
 		runtimeSecrets[index] = test.Groups[index].runtimeSecretValues
 	}
+	throughputCaps := goalThroughputCapsLocked(test, time.Now().UTC())
 	tr.mu.Unlock()
 
 	if boundsErr != nil {
@@ -5631,6 +5650,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	if err := validateEngineGroupBounds(groups); err != nil {
 		return nil, err
 	}
+	applyInitialGoalThroughputCaps(groups, throughputCaps)
 	correlation := tr.runCorrelationAssignment(test.ID)
 	for index := range groups {
 		if index < len(resourcePeaks) {

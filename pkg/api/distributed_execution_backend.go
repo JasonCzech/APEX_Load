@@ -1065,6 +1065,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 
 	tr.mu.RLock()
 	executionCtx := test.executionCtx
+	// A goal or traffic-profile run's groups start capped at their targets
+	// (the profile's first point), so seed VUsers cannot run uncapped before
+	// the first target is applied.
+	initialThroughputCaps := goalThroughputCapsLocked(test, time.Now().UTC())
 	tr.mu.RUnlock()
 	if executionCtx == nil {
 		executionCtx = context.Background()
@@ -1459,6 +1463,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		for i := range plans {
 			plans[i].jointEvidence = generatorAcceptsJointEvidence(loadByTarget[plans[i].target].CompatibleFeatures)
+			plans[i].throughputCap = generatorAcceptsThroughputCap(loadByTarget[plans[i].target].CompatibleFeatures)
 		}
 		if !distributedRunStartable(tr, test) {
 			cleanup(true)
@@ -1476,6 +1481,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			failStartup(err.Error())
 			return
 		}
+		throughputCapTPS, throughputCapSet := initialThroughputCaps[group.Name]
 		outcomes := b.assignDistributedGroupTargets(
 			executionCtx,
 			plans,
@@ -1495,6 +1501,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				CorrelationCarriers:        correlation.Carriers,
 				CorrelationTestName:        correlation.TestName,
 				JointEvidenceProjection:    runJointProjection(test),
+				ThroughputCapEnabled:       throughputCapSet,
+				ThroughputCapTPS:           throughputCapTPS,
 				RequireTestExecutionLease:  requireTestExecutionLease,
 				GroupName:                  group.Name,
 				ParameterPopulation:        uint32(allocationByGroup[group.Name].Population),
@@ -1705,6 +1713,9 @@ type distributedTargetAssignmentPlan struct {
 	// jointEvidence says the target advertises native_joint_evidence_v4 and
 	// receives the run's joint evidence projection.
 	jointEvidence bool
+	// throughputCap says the target advertises throughput_cap_v1 and
+	// receives its share of a goal group's throughput cap.
+	throughputCap bool
 }
 
 // distributedTargetAssignmentOutcome carries a plan's result back to the
@@ -1767,9 +1778,11 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 		allocationShards = append(allocationShards, plan.shards...)
 	}
 	sort.Slice(allocationShards, func(i, j int) bool { return allocationShards[i].ShardOrdinal < allocationShards[j].ShardOrdinal })
+	groupVUsers, shardCount := 0, len(allocationShards)
 	for _, shard := range allocationShards {
 		allocationOffsets[shard.ShardOrdinal] = allocationPopulation
 		allocationPopulation += uint32(shard.VUsers)
+		groupVUsers += shard.VUsers
 	}
 
 	runPlan := func(index int) {
@@ -1810,6 +1823,13 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			assignment.JointEvidenceProjection = nil
 			if plan.jointEvidence {
 				assignment.JointEvidenceProjection = template.JointEvidenceProjection.Clone()
+			}
+			// Likewise the throughput cap: each capable target holds its share
+			// of the group's goal; an older one runs its shard uncapped.
+			assignment.ThroughputCapEnabled, assignment.ThroughputCapTPS = false, 0
+			if plan.throughputCap && template.ThroughputCapEnabled {
+				assignment.ThroughputCapEnabled = true
+				assignment.ThroughputCapTPS = throughputCapShare(template.ThroughputCapTPS, shard.VUsers, groupVUsers, shardCount)
 			}
 			assignment.JavaHost = shard.JavaHost.selection()
 			assignment.RuntimeResourceClaim = shardRuntimeResourceClaim(shard)

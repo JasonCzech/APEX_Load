@@ -126,4 +126,25 @@ describe('runReportModel', () => {
     expect(buildReportKpis(report, [point('a', 1)])).toHaveLength(6)
     expect(slaRowsForReport(report)[0].name).toBe('Checkout')
   })
+
+  // The review's goal run asked for 20 TPS and delivered 24.5, and the report
+  // never said so. A goal run's scorecard now leads with that, in place of peak TPS.
+  it('states a goal run\'s delivered TPS against its goal in place of peak TPS', () => {
+    const report = {
+      overview: {
+        transactions: 2935, errors: 0, error_pct: 0, avg_response_ms: 40, min_response_ms: 5, max_response_ms: 300,
+        resource_samples: 1, interval_summaries: 120, peak_tps: 45, peak_active_vusers: 4,
+        goal_attainment: { target_average_tps: 20, achieved_average_tps: 24.5, window_seconds: 10, tolerance_pct: 10, windows: 12, within_windows: 6, over_windows: 6, under_windows: 0 },
+      },
+      completeness: { score_pct: 100, status: 'complete' },
+    } as unknown as RunArchiveReport
+    const kpis = buildReportKpis(report, [])
+    expect(kpis).toHaveLength(6)
+    expect(kpis.find(kpi => kpi.id === 'peakTps')).toBeUndefined()
+    const goal = kpis.find(kpi => kpi.id === 'goalTps')
+    expect(goal).toMatchObject({ label: 'TPS delivered / goal', value: '24.5 / 20.0', delta: '6 of 12 10-second windows over goal', tone: 'warn' })
+
+    const onGoal = { ...report, overview: { ...report.overview, goal_attainment: { ...report.overview.goal_attainment!, within_windows: 12, over_windows: 0 } } } as RunArchiveReport
+    expect(buildReportKpis(onGoal, []).find(kpi => kpi.id === 'goalTps')).toMatchObject({ tone: 'good', delta: 'On goal (±10%) throughout' })
+  })
 })

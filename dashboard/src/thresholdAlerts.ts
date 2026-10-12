@@ -15,6 +15,8 @@ export interface ThresholdAlertEntry {
   threshold: number
   targetTps?: number
   gapPct?: number
+  /** The window a goal run's throughput was judged over, e.g. "10 s avg". */
+  window?: string
   action?: 'stop_requested'
   transaction?: string
   dependencyType?: string
@@ -35,7 +37,8 @@ export const MAX_THRESHOLD_ALERTS = 50
 const THRESHOLD_ALERT_METRIC_LABELS: Record<string, string> = {
   p99_ms: 'P99 latency',
   error_pct: 'Error rate',
-  throughput_gap_pct: 'Throughput target',
+  throughput_gap_pct: 'Throughput below target',
+  throughput_over_pct: 'Throughput above target',
   avg_server_processing_ms: 'Avg server processing',
   avg_transfer_ms: 'Avg transfer time',
 }
@@ -55,7 +58,7 @@ function asNonEmptyString(value: unknown): string | undefined {
 // Runtime-checked parse of the backend event shape (telemetry.go
 // buildThresholdAlerts): { type: "threshold_alert", test_id, test_name?,
 // timestamp?, metric, value, threshold, action?, transaction?,
-// target_tps?, gap_pct?, dependency_type?, dependency_target? }.
+// target_tps?, gap_pct?, window?, dependency_type?, dependency_target? }.
 export function thresholdAlertFromMessage(msg: WSMessage): ThresholdAlertEntry | null {
   const raw = msg as unknown as Record<string, unknown>
   const testId = asNonEmptyString(raw.test_id)
@@ -75,6 +78,7 @@ export function thresholdAlertFromMessage(msg: WSMessage): ThresholdAlertEntry |
     threshold,
     targetTps: asFiniteNumber(raw.target_tps),
     gapPct: asFiniteNumber(raw.gap_pct),
+    window: asNonEmptyString(raw.window),
     action: raw.action === 'stop_requested' ? 'stop_requested' : undefined,
     transaction,
     dependencyType: asNonEmptyString(raw.dependency_type),
@@ -210,10 +214,12 @@ function formatThresholdAlertNumber(value: number): string {
 }
 
 export function formatThresholdAlertSummary(entry: ThresholdAlertEntry): string {
-  if (entry.metric === 'throughput_gap_pct') {
+  if (entry.metric === 'throughput_gap_pct' || entry.metric === 'throughput_over_pct') {
+    const over = entry.metric === 'throughput_over_pct'
     const targetTps = entry.targetTps ?? entry.threshold
-    const gap = entry.gapPct === undefined ? '' : ` (${formatThresholdAlertNumber(entry.gapPct)}% gap)`
-    return `Throughput ${formatThresholdAlertNumber(entry.value)} TPS is below target ${formatThresholdAlertNumber(targetTps)} TPS${gap}`
+    const window = entry.window ? ` (${entry.window})` : ''
+    const gap = entry.gapPct === undefined ? '' : ` (${formatThresholdAlertNumber(entry.gapPct)}% ${over ? 'over' : 'gap'})`
+    return `Throughput ${formatThresholdAlertNumber(entry.value)} TPS${window} is ${over ? 'above' : 'below'} target ${formatThresholdAlertNumber(targetTps)} TPS${gap}`
   }
   const unit = entry.metric.endsWith('_ms') ? ' ms' : entry.metric.endsWith('_pct') ? '%' : ''
   const base = `${thresholdAlertMetricLabel(entry.metric)} ${formatThresholdAlertNumber(entry.value)}${unit} exceeded threshold ${formatThresholdAlertNumber(entry.threshold)}${unit}`

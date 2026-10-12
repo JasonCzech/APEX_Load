@@ -1106,6 +1106,11 @@ func (tr *TestRunner) evaluateGoalControllerSnapshotLocked(test *ManagedTest, li
 func (tr *TestRunner) evaluateGoalControllerSnapshotAssumingLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, requireLoadReady bool) (goalControllerUpdate, bool) {
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+		// The goal window takes every running sample, an initial ramp's too
+		// (its throughput is real and the page shows it), but not a paused one.
+		if test.Status == "RUNNING" {
+			recordPublishedGoalThroughput(test, live)
+		}
 		// Baseline snapshots are deliberately idle and paused snapshots do not
 		// represent controllable throughput. Neither may advance breach/cooldown
 		// state, accumulate error windows, or trigger an early scale.

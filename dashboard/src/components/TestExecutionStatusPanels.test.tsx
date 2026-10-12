@@ -312,9 +312,33 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('180.0')
     expect(container.textContent).toContain('Gap')
     expect(container.textContent).toContain('28.0%')
-    expect(container.textContent).toContain('Behind Target')
+    expect(container.textContent).toContain('Behind target')
     expect(container.textContent).toContain('Target 120.0 TPS')
     expect(container.textContent).toContain('Gap 25.0%')
+  })
+
+  // A goal run is judged over its 10 s window in both directions: the review's
+  // run was 39% over its goal and the card only knew "Behind" or "On Target".
+  it('judges a goal run over its 10 s window, above target as well as below', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented
+          goalDescription="Hold 20 TPS"
+          test={{ id: 'goal-1', name: 'Goal run', status: 'RUNNING', total_vusers: 4, created_at: '2026-10-12T06:36:43Z', groups: [] } as never}
+          metrics={{ tps: 26.1, target_tps: 20, goal_window_tps: 27.8, goal_gap_pct: -39 }}
+          isMultiGroup
+          groupMetrics={[{ name: 'Store_Browse', vusers: 2, transactions: 140, errors: 0, tps: 13, target_tps: 10, goal_window_tps: 13.9, goal_gap_pct: -39, avg_response_ms: 40, p50_ms: 30, p90_ms: 60, p99_ms: 90 }]}
+          groupColors={['#f59e0b']}
+        />,
+      )
+    })
+    const card = container.querySelector('.throughput-status-card')!
+    expect(card.textContent).toContain('Above target')
+    expect(card.textContent).toContain('Actual TPS (10 s avg)27.8')
+    expect(card.textContent).toContain('Gap to target39.0% over')
+    expect(container.querySelector('.gm-throughput-status')?.textContent).toBe('Target 10.0 TPS13.9 TPS (10 s avg) · 39.0% over')
+    expect(container.querySelector('.gm-throughput-status')?.classList.contains('danger')).toBe(true)
   })
 
   it('renders live capacity allocation, saturation, queue, and placement signals', async () => {

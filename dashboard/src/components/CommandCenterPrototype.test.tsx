@@ -2754,13 +2754,18 @@ describe('CommandCenterPrototype', () => {
     // A goal run's throughput stays TPS, the unit of its targets, and its gap
     // is measured on the same window as the rate beside it.
     const goalRow = container.querySelector('.command-group-row.goal-target')!
-    expect(goalRow.querySelector('[data-label="TPS (last sample)"]')?.textContent).toBe('75.4target 90.0 TPS / gap 16.22%')
+    expect(goalRow.querySelector('[data-label="TPS (last sample)"]')?.textContent).toBe('75.4target 90.0 TPS / 16.2% under')
     expect(container.textContent).toContain('suggested 56 VU')
-    expect(container.textContent).toContain('guardrail 10-200 VU')
+    // The VUser guardrail bounds the whole run, so it is stated once, not on each group.
+    expect(container.textContent).toContain('The goal controller keeps the whole run between 10 and 200 VUsers.')
+    expect(goalRow.textContent).not.toContain('guardrail')
     expect(container.querySelector('[aria-label="Group load transition controls"]')).toBeNull()
-    const combinedLoad = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
-      .find(metric => metric.querySelector('span')?.textContent === 'Observed / Target Load')
-    expect(combinedLoad?.querySelector('strong')?.textContent).toBe('42 VU / 90.0 TPS')
+    // VUsers and throughput are separate pills; the throughput pill carries the target and the gap.
+    const pills = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+    const activeLoad = pills.find(metric => metric.querySelector('span')?.textContent === 'Active VUsers')
+    expect(activeLoad?.querySelector('strong')?.textContent).toBe('42 VU')
+    const throughputPill = pills.find(metric => metric.querySelector('span')?.textContent?.endsWith('/ target'))
+    expect(throughputPill?.querySelector('strong')?.textContent).toBe('75.4 of 90.0 · 16.2% under')
     const projected = Array.from(container.querySelectorAll('.command-capacity-snapshot .command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Projected')
     expect(projected?.querySelector('strong')?.textContent).toBe('50 VU')
 
@@ -2773,7 +2778,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Live Checkout target staged at 120.0 TPS.')
     expect(targetSlider.max).toBe('240')
     // Until it is applied the gap is still measured against, and named with, 90.
-    expect(goalRow.querySelector('.command-tps-stack small')?.textContent).toBe('target 90.0 TPS / gap 16.22%')
+    expect(goalRow.querySelector('.command-tps-stack small')?.textContent).toBe('target 90.0 TPS / 16.2% under')
 
     await click(buttonNamed('Apply'))
     expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 90 → 120 TPS')
@@ -2788,6 +2793,72 @@ describe('CommandCenterPrototype', () => {
     )
     expect(container.textContent).toContain('Live Checkout TPS target applied at 120.0. Aggregate goal is 120.0 TPS.')
     expect(container.textContent).toContain('120.0')
+  })
+
+  // A traffic profile moves its targets during the run. The page loaded with
+  // stale stored targets (1.0) must show the target in force now (4.0, from
+  // the live sample), where the run is in its profile, and an overshoot as
+  // such — the review's replay showed "Target 1.0 TPS" while the engine held 4.
+  it('shows a traffic-profile group at its current target and profile point, over or under', async () => {
+    const startedAt = new Date(Date.now() - 45_000).toISOString()
+    const liveTest: TestSummary = {
+      id: 'live-profile-1',
+      name: 'Profile replay checkout',
+      status: 'RUNNING',
+      duration: '2m',
+      total_vusers: 2,
+      created_at: startedAt,
+      started_at: startedAt,
+      scenario_mode: 'goal_oriented',
+      goal_config: { target_average_tps: 2, min_vusers: 1, max_vusers: 20 },
+      goal_targets: { Store_Browse: { group: 'Store_Browse', target_tps: 1, updated_at: startedAt } },
+      traffic_profile: {
+        version: 1,
+        source: { kind: 'file' },
+        value_semantics: 'tps',
+        runtime_target: 'tps',
+        interpolation: 'step',
+        source_duration: '10m0s',
+        target_duration: '2m0s',
+        mappings: [{
+          series_key: 'checkout',
+          series_name: 'checkout',
+          group_name: 'Store_Browse',
+          peak_target: 5,
+          points: [
+            { offset_ms: 0, target: 1 }, { offset_ms: 12000, target: 1.5 }, { offset_ms: 24000, target: 2.5 },
+            { offset_ms: 36000, target: 4 }, { offset_ms: 48000, target: 5 },
+          ],
+        }],
+      } as TestSummary['traffic_profile'],
+      groups: [{ name: 'Store_Browse', protocol: 'http', script_id: 'script-browse', script_name: 'Store_Browse', vusers: 2 }],
+      live_metrics: {
+        timestamp: new Date().toISOString(),
+        active_vusers: 2,
+        tps: 4.6,
+        target_tps: 4,
+        avg_response_ms: 40,
+        error_pct: 0,
+        total_transactions: 120,
+        total_errors: 0,
+        p50_ms: 30,
+        p90_ms: 60,
+        p95_ms: 70,
+        p99_ms: 90,
+        groups: {
+          Store_Browse: { name: 'Store_Browse', vusers: 2, transactions: 120, errors: 0, tps: 4.6, target_tps: 4, avg_response_ms: 40, p50_ms: 30, p90_ms: 60, p99_ms: 90 },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-profile-1" initialTest={liveTest} history={[]} />)
+    })
+
+    const goalRow = container.querySelector('.command-group-row.goal-target')!
+    expect(inputByLabel('Store_Browse target TPS').value).toBe('4')
+    expect(goalRow.querySelector('.command-tps-stack small')?.textContent).toBe('target 4.0 TPS / 15.0% over')
+    expect(goalRow.querySelector('.command-group-name small')?.textContent).toMatch(/^http \/ profile point 4 of 5, next 5\.0 TPS in /)
   })
 
   it('opens a context menu on a live group row and launches the Runtime Settings dialog', async () => {

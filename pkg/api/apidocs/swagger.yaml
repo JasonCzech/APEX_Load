@@ -11579,6 +11579,34 @@ paths:
                         errors:
                           type: integer
                           format: int64
+                        goal_attainment:
+                          type: object
+                          properties:
+                            achieved_average_tps:
+                              type: number
+                              format: double
+                            over_windows:
+                              type: integer
+                              format: int64
+                            target_average_tps:
+                              type: number
+                              format: double
+                            tolerance_pct:
+                              type: number
+                              format: double
+                            under_windows:
+                              type: integer
+                              format: int64
+                            window_seconds:
+                              type: integer
+                              format: int64
+                            windows:
+                              type: integer
+                              format: int64
+                            within_windows:
+                              type: integer
+                              format: int64
+                          nullable: true
                         goal_completion:
                           type: object
                           properties:
@@ -87947,6 +87975,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -88025,6 +88057,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -89724,6 +89762,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -89802,6 +89844,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -89813,6 +89861,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -94317,6 +94375,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -94395,6 +94457,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -96094,6 +96162,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -96172,6 +96244,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -96183,6 +96261,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -100688,6 +100776,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -100766,6 +100858,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -102465,6 +102563,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -102543,6 +102645,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -102554,6 +102662,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -107071,6 +107189,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -107149,6 +107271,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -108848,6 +108976,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -108926,6 +109058,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -108937,6 +109075,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -113454,6 +113602,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -113532,6 +113684,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -115231,6 +115389,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -115309,6 +115471,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -115320,6 +115488,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -119837,6 +120015,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -119915,6 +120097,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -121614,6 +121802,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -121692,6 +121884,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -121703,6 +121901,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -126220,6 +126428,10 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
                             goal_status:
                               type: object
                               properties:
@@ -126298,6 +126510,12 @@ paths:
                                 - current_tps
                                 - mode
                               nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             groups:
                               type: object
                               additionalProperties:
@@ -127997,6 +128215,10 @@ paths:
                                 - target
                                 - timestamp
                               nullable: true
+                          goal_gap_pct:
+                            type: number
+                            format: double
+                            nullable: true
                           goal_status:
                             type: object
                             properties:
@@ -128075,6 +128297,12 @@ paths:
                               - current_tps
                               - mode
                             nullable: true
+                          goal_window_target_tps:
+                            type: number
+                            format: double
+                          goal_window_tps:
+                            type: number
+                            format: double
                           groups:
                             type: object
                             additionalProperties:
@@ -128086,6 +128314,16 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                goal_gap_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                goal_window_target_tps:
+                                  type: number
+                                  format: double
+                                goal_window_tps:
+                                  type: number
+                                  format: double
                                 name:
                                   type: string
                                 p50_ms:
@@ -341061,6 +341299,10 @@ paths:
                               - target
                               - timestamp
                             nullable: true
+                        goal_gap_pct:
+                          type: number
+                          format: double
+                          nullable: true
                         goal_status:
                           type: object
                           properties:
@@ -341139,6 +341381,12 @@ paths:
                             - current_tps
                             - mode
                           nullable: true
+                        goal_window_target_tps:
+                          type: number
+                          format: double
+                        goal_window_tps:
+                          type: number
+                          format: double
                         groups:
                           type: object
                           additionalProperties:
@@ -341150,6 +341398,16 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              goal_gap_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              goal_window_target_tps:
+                                type: number
+                                format: double
+                              goal_window_tps:
+                                type: number
+                                format: double
                               name:
                                 type: string
                               p50_ms:
@@ -344889,6 +345147,10 @@ paths:
                             - target
                             - timestamp
                           nullable: true
+                      goal_gap_pct:
+                        type: number
+                        format: double
+                        nullable: true
                       goal_status:
                         type: object
                         properties:
@@ -344967,6 +345229,12 @@ paths:
                           - current_tps
                           - mode
                         nullable: true
+                      goal_window_target_tps:
+                        type: number
+                        format: double
+                      goal_window_tps:
+                        type: number
+                        format: double
                       groups:
                         type: object
                         additionalProperties:
@@ -344978,6 +345246,16 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             name:
                               type: string
                             p50_ms:
@@ -354579,6 +354857,10 @@ paths:
                               - target
                               - timestamp
                             nullable: true
+                        goal_gap_pct:
+                          type: number
+                          format: double
+                          nullable: true
                         goal_status:
                           type: object
                           properties:
@@ -354657,6 +354939,12 @@ paths:
                             - current_tps
                             - mode
                           nullable: true
+                        goal_window_target_tps:
+                          type: number
+                          format: double
+                        goal_window_tps:
+                          type: number
+                          format: double
                         groups:
                           type: object
                           additionalProperties:
@@ -354668,6 +354956,16 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              goal_gap_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              goal_window_target_tps:
+                                type: number
+                                format: double
+                              goal_window_tps:
+                                type: number
+                                format: double
                               name:
                                 type: string
                               p50_ms:
@@ -358407,6 +358705,10 @@ paths:
                             - target
                             - timestamp
                           nullable: true
+                      goal_gap_pct:
+                        type: number
+                        format: double
+                        nullable: true
                       goal_status:
                         type: object
                         properties:
@@ -358485,6 +358787,12 @@ paths:
                           - current_tps
                           - mode
                         nullable: true
+                      goal_window_target_tps:
+                        type: number
+                        format: double
+                      goal_window_tps:
+                        type: number
+                        format: double
                       groups:
                         type: object
                         additionalProperties:
@@ -358496,6 +358804,16 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             name:
                               type: string
                             p50_ms:
@@ -386892,6 +387210,43 @@ paths:
                       errors:
                         type: integer
                         format: int64
+                      goal_attainment:
+                        type: object
+                        properties:
+                          achieved_average_tps:
+                            type: number
+                            format: double
+                          over_windows:
+                            type: integer
+                            format: int64
+                          target_average_tps:
+                            type: number
+                            format: double
+                          tolerance_pct:
+                            type: number
+                            format: double
+                          under_windows:
+                            type: integer
+                            format: int64
+                          window_seconds:
+                            type: integer
+                            format: int64
+                          windows:
+                            type: integer
+                            format: int64
+                          within_windows:
+                            type: integer
+                            format: int64
+                        required:
+                          - achieved_average_tps
+                          - over_windows
+                          - target_average_tps
+                          - tolerance_pct
+                          - under_windows
+                          - window_seconds
+                          - windows
+                          - within_windows
+                        nullable: true
                       goal_completion:
                         type: object
                         properties:
@@ -399052,6 +399407,10 @@ paths:
                               - target
                               - timestamp
                             nullable: true
+                        goal_gap_pct:
+                          type: number
+                          format: double
+                          nullable: true
                         goal_status:
                           type: object
                           properties:
@@ -399130,6 +399489,12 @@ paths:
                             - current_tps
                             - mode
                           nullable: true
+                        goal_window_target_tps:
+                          type: number
+                          format: double
+                        goal_window_tps:
+                          type: number
+                          format: double
                         groups:
                           type: object
                           additionalProperties:
@@ -399141,6 +399506,16 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              goal_gap_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              goal_window_target_tps:
+                                type: number
+                                format: double
+                              goal_window_tps:
+                                type: number
+                                format: double
                               name:
                                 type: string
                               p50_ms:
@@ -402880,6 +403255,10 @@ paths:
                             - target
                             - timestamp
                           nullable: true
+                      goal_gap_pct:
+                        type: number
+                        format: double
+                        nullable: true
                       goal_status:
                         type: object
                         properties:
@@ -402958,6 +403337,12 @@ paths:
                           - current_tps
                           - mode
                         nullable: true
+                      goal_window_target_tps:
+                        type: number
+                        format: double
+                      goal_window_tps:
+                        type: number
+                        format: double
                       groups:
                         type: object
                         additionalProperties:
@@ -402969,6 +403354,16 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             name:
                               type: string
                             p50_ms:
@@ -412514,6 +412909,10 @@ paths:
                               - target
                               - timestamp
                             nullable: true
+                        goal_gap_pct:
+                          type: number
+                          format: double
+                          nullable: true
                         goal_status:
                           type: object
                           properties:
@@ -412592,6 +412991,12 @@ paths:
                             - current_tps
                             - mode
                           nullable: true
+                        goal_window_target_tps:
+                          type: number
+                          format: double
+                        goal_window_tps:
+                          type: number
+                          format: double
                         groups:
                           type: object
                           additionalProperties:
@@ -412603,6 +413008,16 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              goal_gap_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              goal_window_target_tps:
+                                type: number
+                                format: double
+                              goal_window_tps:
+                                type: number
+                                format: double
                               name:
                                 type: string
                               p50_ms:
@@ -416342,6 +416757,10 @@ paths:
                             - target
                             - timestamp
                           nullable: true
+                      goal_gap_pct:
+                        type: number
+                        format: double
+                        nullable: true
                       goal_status:
                         type: object
                         properties:
@@ -416420,6 +416839,12 @@ paths:
                           - current_tps
                           - mode
                         nullable: true
+                      goal_window_target_tps:
+                        type: number
+                        format: double
+                      goal_window_tps:
+                        type: number
+                        format: double
                       groups:
                         type: object
                         additionalProperties:
@@ -416431,6 +416856,16 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             name:
                               type: string
                             p50_ms:
@@ -431857,6 +432292,10 @@ paths:
                               - target
                               - timestamp
                             nullable: true
+                        goal_gap_pct:
+                          type: number
+                          format: double
+                          nullable: true
                         goal_status:
                           type: object
                           properties:
@@ -431935,6 +432374,12 @@ paths:
                             - current_tps
                             - mode
                           nullable: true
+                        goal_window_target_tps:
+                          type: number
+                          format: double
+                        goal_window_tps:
+                          type: number
+                          format: double
                         groups:
                           type: object
                           additionalProperties:
@@ -431946,6 +432391,16 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              goal_gap_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              goal_window_target_tps:
+                                type: number
+                                format: double
+                              goal_window_tps:
+                                type: number
+                                format: double
                               name:
                                 type: string
                               p50_ms:
@@ -435685,6 +436140,10 @@ paths:
                             - target
                             - timestamp
                           nullable: true
+                      goal_gap_pct:
+                        type: number
+                        format: double
+                        nullable: true
                       goal_status:
                         type: object
                         properties:
@@ -435763,6 +436222,12 @@ paths:
                           - current_tps
                           - mode
                         nullable: true
+                      goal_window_target_tps:
+                        type: number
+                        format: double
+                      goal_window_tps:
+                        type: number
+                        format: double
                       groups:
                         type: object
                         additionalProperties:
@@ -435774,6 +436239,16 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             name:
                               type: string
                             p50_ms:
@@ -447028,6 +447503,10 @@ paths:
                               - target
                               - timestamp
                             nullable: true
+                        goal_gap_pct:
+                          type: number
+                          format: double
+                          nullable: true
                         goal_status:
                           type: object
                           properties:
@@ -447106,6 +447585,12 @@ paths:
                             - current_tps
                             - mode
                           nullable: true
+                        goal_window_target_tps:
+                          type: number
+                          format: double
+                        goal_window_tps:
+                          type: number
+                          format: double
                         groups:
                           type: object
                           additionalProperties:
@@ -447117,6 +447602,16 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              goal_gap_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              goal_window_target_tps:
+                                type: number
+                                format: double
+                              goal_window_tps:
+                                type: number
+                                format: double
                               name:
                                 type: string
                               p50_ms:
@@ -450844,6 +451339,10 @@ paths:
                             - target
                             - timestamp
                           nullable: true
+                      goal_gap_pct:
+                        type: number
+                        format: double
+                        nullable: true
                       goal_status:
                         type: object
                         properties:
@@ -450922,6 +451421,12 @@ paths:
                           - current_tps
                           - mode
                         nullable: true
+                      goal_window_target_tps:
+                        type: number
+                        format: double
+                      goal_window_tps:
+                        type: number
+                        format: double
                       groups:
                         type: object
                         additionalProperties:
@@ -450933,6 +451438,16 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            goal_gap_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            goal_window_target_tps:
+                              type: number
+                              format: double
+                            goal_window_tps:
+                              type: number
+                              format: double
                             name:
                               type: string
                             p50_ms:
