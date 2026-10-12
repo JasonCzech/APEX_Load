@@ -6739,7 +6739,7 @@ describe('SettingsPage', () => {
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(section.textContent).toContain('Edit Row')
+    expect(section.textContent).toContain('Edit row')
 
     const updateButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Save row')
     expect(updateButton).toBeTruthy()
@@ -6750,7 +6750,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(apiMock.updateDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1', { data: { customer_id: 'C-1' }, version: 3 })
-    expect(section.textContent).not.toContain('Edit Row')
+    expect(section.textContent).not.toContain('Edit row')
     // The conflict message renders in the shared section-messages banner, which
     // sits outside the section element itself.
     expect(container.textContent).toContain('reopen the row to apply your change')

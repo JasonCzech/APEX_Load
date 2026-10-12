@@ -6193,7 +6193,7 @@ export default function SettingsPage({
               <div className="settings-subsection">
                 <div className="settings-manager-summary">
                   <div>
-                    <span className="setting-label" id="data-pool-row-label">{editingDataPoolRowId ? 'Edit Row' : 'Add Row'}</span>
+                    <span className="setting-label" id="data-pool-row-label">{editingDataPoolRowId ? 'Edit row' : 'Add Row'}</span>
                     <span className="setting-desc">Use JSON object keys as parameter names, for example customer_id, account_id, or zip.</span>
                   </div>
                   <strong>{editingDataPoolRowId ? 'Editing' : 'New'}</strong>
