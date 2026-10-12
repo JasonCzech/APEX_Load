@@ -12,7 +12,7 @@ import CommandCenterPrototype, {
   type ErrorPattern,
 } from './CommandCenterPrototype'
 import { buildLoadModelProfile, plannedGroupLoadAt } from './commandCenterLoadModel'
-import { buildScenarioRunRows, type CommandGroup } from './commandCenterScenarioRows'
+import { buildTransactionRunRows, type CommandGroup } from './commandCenterScenarioRows'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
@@ -1062,7 +1062,7 @@ describe('CommandCenterPrototype', () => {
     expect(opsLoadModelPanel).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('.command-runtime-graphs')).toBeNull()
-    expect(opsPrimaryColumn?.textContent).toContain('Run metrics')
+    expect(opsPrimaryColumn?.textContent).toContain('Groups')
     expect(opsPrimaryColumn?.textContent).toContain('Error Details')
     expect(opsPrimaryColumn?.textContent).toContain('Infrastructure')
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
@@ -1606,9 +1606,13 @@ describe('CommandCenterPrototype', () => {
     const tableWorkspace = container.querySelector('[aria-label="Command center run tables"]')
     expect(tableWorkspace).not.toBeNull()
     expect(container.querySelector('.command-layout-ops .command-runtime-graphs')).toBeNull()
-    expect(tableWorkspace?.textContent).toContain('Run metrics')
-    expect(tableWorkspace?.textContent).toContain('POST /orders')
+    expect(tableWorkspace?.textContent).toContain('Checkout API')
     expect(tableWorkspace?.textContent).toContain('Target TPS')
+    // Transactions have their own table.
+    expect(tableWorkspace?.textContent).not.toContain('POST /orders')
+    await click(tabNamed('Transactions'))
+    expect(tableWorkspace?.textContent).toContain('POST /orders')
+    expect(tableWorkspace?.textContent).not.toContain('Checkout API')
 
     await click(tabNamed('Error Details'))
 
@@ -1722,7 +1726,6 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('keeps transaction rows when live metrics temporarily omit transactions', () => {
-    const groups = [commandGroup('Live Checkout', 50)]
     const transaction: TxMetrics = {
       name: 'POST /orders',
       count: 23,
@@ -1736,7 +1739,7 @@ describe('CommandCenterPrototype', () => {
     }
     const snapshot = { 'POST /orders': transaction }
 
-    const rowsWhenPresent = buildScenarioRunRows(groups, {
+    const rowsWhenPresent = buildTransactionRunRows({
       timestamp: '2026-06-08T13:10:00Z',
       active_vusers: 42,
       tps: 75.4,
@@ -1750,7 +1753,7 @@ describe('CommandCenterPrototype', () => {
       p99_ms: 410,
       transactions: snapshot,
     })
-    const rowsWhenMissing = buildScenarioRunRows(groups, {
+    const rowsWhenMissing = buildTransactionRunRows({
       timestamp: '2026-06-08T13:10:01Z',
       active_vusers: 42,
       tps: 75.4,
@@ -1977,12 +1980,57 @@ describe('CommandCenterPrototype', () => {
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('42 / 50 VU')
     const errorRateMetric = summaryMetrics
-      .find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
+      .find(metric => metric.querySelector('span')?.textContent === 'Transaction error rate (run to date)')
     expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
-    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent?.startsWith('Highest Error Rate'))).toBe(false)
+    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent?.startsWith('Highest'))).toBe(false)
     const tpsMetric = summaryMetrics.find(metric => metric.querySelector('span')?.textContent?.startsWith('TPS'))
     expect(tpsMetric?.querySelector('strong')?.textContent).toBe('75.4')
     expect(container.querySelector('.command-hero-strip')).toBeNull()
+  })
+
+  // A script without transactions: each iteration's second request fails,
+  // so every iteration's implicit transaction fails while half the requests
+  // pass. Live figures count requests, as the report and the target do.
+  it('counts requests for a group whose script has no transactions', async () => {
+    const liveTest = buildLiveVuserTest()
+    liveTest.groups = [liveTest.groups[0], { ...liveTest.groups[0], name: 'Inventory', script_name: 'Inventory Script', vusers: 4 }]
+    const checkout = liveTest.live_metrics!.groups!['Live Checkout']
+    liveTest.live_metrics = {
+      ...liveTest.live_metrics!,
+      tps: 20, total_transactions: 20, total_errors: 3, run_total_transactions: 400, run_total_errors: 387,
+      requests: 50, request_errors: 15, request_rate: 50, run_total_requests: 2_800, run_request_errors: 863,
+      groups: {
+        'Live Checkout': { ...checkout, transactions: 20, errors: 0, tps: 20, run_transactions: 400, run_errors: 0, requests: 20, request_rate: 20, run_requests: 1_071, run_request_errors: 0 },
+        Inventory: { ...checkout, name: 'Inventory', vusers: 4, transactions: 0, errors: 3, tps: 0, run_transactions: 0, run_errors: 387, requests: 30, request_errors: 15, request_rate: 30, run_requests: 1_729, run_request_errors: 863 },
+      },
+    }
+    await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} history={[]} />))
+
+    const pill = (label: string) => Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+      .find(metric => metric.querySelector('span')?.textContent === label)?.querySelector('strong')?.textContent
+    expect(pill('Requests/s (last sample)')).toBe('50.0')
+    expect(pill('Request error rate (run to date)')).toBe('30.82%')
+    expect(pill('Highest request error rate (run to date)')).toBe('49.91% · Inventory')
+    expect(container.textContent).not.toContain('Transaction error rate')
+
+    const groupLoad = container.querySelector('[aria-label="Group load and health"]')!
+    const headers = Array.from(groupLoad.querySelectorAll('[role="columnheader"]')).map(header => header.textContent)
+    expect(headers).toEqual(['Group', 'Current VUsers', 'Target', 'Requests/s (last sample)', 'ART', 'Error rate (requests, run to date)'])
+    const inventory = Array.from(groupLoad.querySelectorAll('[role="row"]')).find(row => row.textContent?.includes('Inventory'))!
+    const cells = inventory.querySelectorAll('[role="cell"]')
+    expect(cells[3].textContent).toBe('30.0')
+    expect(cells[5].textContent).toBe('49.91%')
+
+    const groupsTable = container.querySelector('[role="tabpanel"][aria-label="Groups"]')!
+    expect(Array.from(groupsTable.querySelectorAll('th:not([hidden])')).map(header => header.textContent?.replace(/[▲▼·]$/, ''))).toEqual([
+      'Group', 'Current VUsers', 'Target VUsers', 'Requests/s (last sample)', 'Request error rate (run to date)', 'P95',
+    ])
+    expect(groupsTable.textContent).toContain('attempts, failures and error rates are run to date')
+    // Only the name column is fixed; the rest can be chosen one by one.
+    const pickers = Array.from(groupsTable.querySelectorAll<HTMLInputElement>('.command-column-picker input'))
+    expect(pickers.slice(0, 2).map(input => [input.parentElement?.textContent, input.disabled])).toEqual([['Group', true], ['Protocol', false]])
+    await click(pickers[1])
+    expect(groupsTable.querySelector<HTMLTableCellElement>('th[aria-label="Protocol sort"]')?.hidden).toBe(false)
   })
 
   it('shows the highest cumulative group error rate only for multi-group runs', async () => {
@@ -2027,8 +2075,8 @@ describe('CommandCenterPrototype', () => {
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('67 / 75 VU')
-    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
-    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (run to date)')
+    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Transaction error rate (run to date)')
+    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest transaction error rate (run to date)')
     expect(overall?.querySelector('strong')?.textContent).toBe('10.00%')
     expect(highest?.querySelector('strong')?.textContent).toBe('20.00% · Search')
   })
@@ -2048,7 +2096,7 @@ describe('CommandCenterPrototype', () => {
     }
     await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} />))
     // Runs recorded before run counters existed fall back to the window and say so.
-    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (last sample)')!
+    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest transaction error rate (last sample)')!
     expect(highest.querySelector('strong')?.textContent).toBe(expected)
     expect(highest.classList.contains('danger')).toBe(danger)
     if (!errors) expect(highest.textContent).not.toMatch(/Live Checkout|Search/)
@@ -2061,7 +2109,7 @@ describe('CommandCenterPrototype', () => {
     const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'P99')!
     await click(p99)
     expect(container.querySelector<HTMLTableCellElement>('th[aria-label="P99 sort"]')?.hidden).toBe(false)
-    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(8)
+    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(7)
     await click(preset)
     await changeTextInput(inputByLabel('Filter command center table rows'), 'Checkout')
     await click(buttonNamed('Graph Wall'))
@@ -2073,7 +2121,7 @@ describe('CommandCenterPrototype', () => {
     await changeTextInput(inputByLabel('Filter command center table rows'), 'not-an-error')
     expect(container.textContent).toContain('No matching errors')
     expect(container.querySelector('.command-evidence-panel')).toBeNull()
-    await click(tabNamed('Run metrics'))
+    await click(tabNamed('Groups'))
     expect(inputByLabel('Filter command center table rows').value).toBe('Checkout')
   })
 
@@ -2567,6 +2615,10 @@ describe('CommandCenterPrototype', () => {
     })
 
     expect(container.textContent).toContain('Target TPS')
+    // A goal run's throughput stays TPS, the unit of its targets, and its gap
+    // is measured on the same window as the rate beside it.
+    const goalRow = container.querySelector('.command-group-row.goal-target')!
+    expect(goalRow.querySelector('[data-label="TPS (last sample)"]')?.textContent).toBe('75.4target 90.0 TPS / gap 16.22%')
     expect(container.textContent).toContain('suggested 56 VU')
     expect(container.textContent).toContain('guardrail 10-200 VU')
     expect(container.querySelector('[aria-label="Group load transition controls"]')).toBeNull()
@@ -2584,6 +2636,8 @@ describe('CommandCenterPrototype', () => {
     await changeNumberInput(targetInput, '120')
     expect(container.textContent).toContain('Live Checkout target staged at 120.0 TPS.')
     expect(targetSlider.max).toBe('240')
+    // Until it is applied the gap is still measured against, and named with, 90.
+    expect(goalRow.querySelector('.command-tps-stack small')?.textContent).toBe('target 90.0 TPS / gap 16.22%')
 
     await click(buttonNamed('Apply'))
 
@@ -2913,10 +2967,11 @@ describe('CommandCenterPrototype', () => {
       targetVusers,
       targetMode: 'vusers',
       tps: 0,
+      rate: 0,
       art: 0,
       errorPct: 0,
       p99: 0,
-      transactions: 0,
+      attempts: 0,
       errors: 0,
       color: 'var(--chart-1)',
     }

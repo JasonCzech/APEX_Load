@@ -680,6 +680,43 @@ describe('recentMetricAverages', () => {
     expect(art).toBe(200)
   })
 
+  // Every rate on a page covers one window, so the groups' rates add up to
+  // the run's; a sample without a group's or transaction's traffic counts
+  // as zero for it.
+  it('averages request rates and named groups and transactions over the same samples', () => {
+    const sample = (timestampMs: number, browse: number, inventory: number | undefined, checkoutTps: number | undefined): MetricsHistoryPoint => ({
+      ...pt(timestampMs, browse, 100),
+      requestRate: browse + (inventory ?? 0),
+      Browse_tps: browse,
+      Browse_requestRate: browse,
+      ...(inventory === undefined ? {} : { Inventory_tps: 0, Inventory_requestRate: inventory }),
+      ...(checkoutTps === undefined ? {} : { [transactionChartSeriesKey('Checkout', 'tps')]: checkoutTps }),
+    })
+    const history = [sample(0, 100, 100, 50), sample(8_000, 4, 30, 2), sample(9_000, 6, undefined, undefined), sample(10_000, 5, 33, 4)]
+    const averages = recentMetricAverages(history, undefined, { groups: ['Browse', 'Inventory'], transactions: ['Checkout'] })
+    // Anchor 10_000 → cutoff 0 → all four samples.
+    expect(averages.requestRate).toBe((200 + 34 + 6 + 38) / 4)
+    expect(averages.groups).toEqual({ Browse: { tps: 115 / 4, requestRate: 115 / 4 }, Inventory: { tps: 0, requestRate: 163 / 4 } })
+    expect(averages.transactions).toEqual({ Checkout: 56 / 4 })
+    expect(averages.groups!.Browse.requestRate + averages.groups!.Inventory.requestRate).toBeCloseTo(averages.requestRate!, 9)
+    expect(recentMetricAverages(history, 1_500).groups).toBeUndefined()
+    // A name no sample carries (history recorded without group detail) has no
+    // average, so the page shows its latest value rather than 0.
+    expect(recentMetricAverages(history, undefined, { groups: ['Checkout'], transactions: ['Login'] })).toMatchObject({ groups: {}, transactions: {} })
+  })
+
+  it('reads request rates from live samples into history points', () => {
+    const point = mapExecutionMetricToHistoryPoint({
+      timestamp: '2026-10-11T10:00:00Z', active_vusers: 8, tps: 0, avg_response_ms: 10, error_pct: 100, total_transactions: 0, total_errors: 3,
+      p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1, request_rate: 34.66,
+      groups: { Inventory: { name: 'Inventory', vusers: 4, transactions: 0, errors: 3, tps: 0, request_rate: 25.44, avg_response_ms: 10, p50_ms: 1, p90_ms: 1, p99_ms: 1 } },
+    } as LiveMetrics)
+    expect(point.requestRate).toBe(34.7)
+    expect(point.Inventory_requestRate).toBe(25.4)
+    // An older controller sends no request rate: a window with none.
+    expect(mapExecutionMetricToHistoryPoint({ timestamp: '2026-10-11T10:00:01Z', tps: 3 } as LiveMetrics).requestRate).toBe(0)
+  })
+
   it('ignores value-less gap-spacer rows and returns empty for empty history', () => {
     const spacer = { time: 'gap', timestampMs: 15_000 } as unknown as MetricsHistoryPoint
     const history = [pt(0, 2, 100), pt(10_000, 4, 100), spacer]

@@ -1,5 +1,5 @@
 import { useLiveObservation } from '../hooks/useLiveObservation'
-import { errorRateBasisLabel, groupRunCounts, groupRunErrorPercent } from '../utils/liveErrorRate'
+import { errorRateBasisLabel, errorRateLabel, groupRunCounts, groupRunErrorPercent, livePopulation, liveRate, liveThroughputPopulation, throughputLabel } from '../utils/liveErrorRate'
 import LiveObservationNotice from './LiveObservationNotice'
 import { GroupLiveMetrics, TestSummary } from '../types'
 import { formatRunClock } from '../utils/timeUtils'
@@ -36,6 +36,10 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
   // A live run is still producing data; only a finished run has a true gap.
   const pending = terminal || retained ? MISSING_VALUE : 'Awaiting data'
   const remaining = terminal ? 'Run ended' : remainingSeconds > 0 ? formatRunClock(remainingSeconds) : pending
+  // As in Command Center: requests once the run has sent any.
+  const population = livePopulation(test.live_metrics)
+  const throughputPopulation = liveThroughputPopulation(test, population)
+  const errorBasis = groupMetrics.some(group => groupRunCounts(group, population)?.basis === 'window') ? 'window' : 'run'
   return (
     <section className="advanced-run-state" aria-label="Run state">
       <header className="advanced-section-header">
@@ -54,15 +58,15 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
       <LiveObservationNotice state={observation} />
       <div className="advanced-group-table-wrap">
         <table className="advanced-group-table">
-          <thead><tr><th>Group</th><th>{retained ? 'Last observed / planned' : 'Observed / planned'}</th><th>TPS</th><th>P95</th><th>Error rate ({errorRateBasisLabel(groupMetrics.some(group => groupRunCounts(group)?.basis === 'window') ? 'window' : 'run')})</th></tr></thead>
+          <thead><tr><th>Group</th><th>{retained ? 'Last observed / planned' : 'Observed / planned'}</th><th>{throughputLabel(throughputPopulation)} (last sample)</th><th>P95</th><th>{errorRateLabel(population)} ({errorRateBasisLabel(errorBasis)})</th></tr></thead>
           <tbody>
             {groupMetrics.map(group => (
               <tr key={group.name}>
                 <th scope="row">{group.name}</th>
                 <td>{group.vusers ?? MISSING_VALUE} / {test.groups?.find(item => item.name === group.name)?.vusers ?? MISSING_VALUE} VUsers</td>
-                <td>{metricValue(group.tps)}</td>
+                <td>{metricValue(liveRate(group, throughputPopulation))}</td>
                 <td>{metricValue(group.p95_ms, ' ms')}</td>
-                <td>{metricValue(groupRunErrorPercent(group), '%', 2)}</td>
+                <td>{metricValue(groupRunErrorPercent(group, population), '%', 2)}</td>
               </tr>
             ))}
             {groupMetrics.length === 0 && <tr><td colSpan={5}>No group observations have arrived yet.</td></tr>}

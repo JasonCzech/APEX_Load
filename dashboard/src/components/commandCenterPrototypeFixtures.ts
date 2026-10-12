@@ -28,10 +28,11 @@ const GROUPS: CommandGroup[] = [
     targetVusers: 1200,
     targetMode: 'vusers',
     tps: 812.4,
+    rate: 812.4,
     art: 188,
     errorPct: 0.92,
     p99: 621,
-    transactions: 48210,
+    attempts: 48652,
     errors: 442,
     color: 'var(--chart-1)',
   },
@@ -44,10 +45,11 @@ const GROUPS: CommandGroup[] = [
     targetVusers: 420,
     targetMode: 'vusers',
     tps: 146.7,
+    rate: 146.7,
     art: 842,
     errorPct: 1.84,
     p99: 2210,
-    transactions: 9240,
+    attempts: 9410,
     errors: 170,
     color: 'var(--chart-2)',
   },
@@ -60,10 +62,11 @@ const GROUPS: CommandGroup[] = [
     targetVusers: 520,
     targetMode: 'vusers',
     tps: 332.9,
+    rate: 332.9,
     art: 142,
     errorPct: 0.28,
     p99: 384,
-    transactions: 23780,
+    attempts: 23846,
     errors: 66,
     color: 'var(--chart-3)',
   },
@@ -254,7 +257,7 @@ const MOCK_GROUP_METRICS: Record<string, GroupLiveMetrics> = GROUPS.reduce((metr
   metrics[group.name] = {
     name: group.name,
     vusers: group.current,
-    transactions: group.transactions,
+    transactions: group.attempts - group.errors,
     errors: group.errors,
     tps: group.tps,
     target_tps: group.tps,
@@ -268,7 +271,7 @@ const MOCK_GROUP_METRICS: Record<string, GroupLiveMetrics> = GROUPS.reduce((metr
   }
   return metrics
 }, {} as Record<string, GroupLiveMetrics>)
-const MOCK_TOTAL_TRANSACTIONS = GROUPS.reduce((sum, group) => sum + group.transactions, 0)
+const MOCK_TOTAL_TRANSACTIONS = GROUPS.reduce((sum, group) => sum + group.attempts - group.errors, 0)
 const MOCK_TOTAL_ERRORS = GROUPS.reduce((sum, group) => sum + group.errors, 0)
 const MOCK_TOTAL_TPS = GROUPS.reduce((sum, group) => sum + group.tps, 0)
 

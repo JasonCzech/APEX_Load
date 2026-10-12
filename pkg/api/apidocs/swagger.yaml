@@ -88294,6 +88294,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -88448,7 +88457,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -89808,11 +89829,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -90292,6 +90334,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -90446,7 +90497,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -94601,6 +94664,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -94755,7 +94827,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -96115,11 +96199,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -96599,6 +96704,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -96753,7 +96867,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -100909,6 +101035,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -101063,7 +101198,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -102423,11 +102570,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -102907,6 +103075,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -103061,7 +103238,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -107229,6 +107418,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -107383,7 +107581,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -108743,11 +108953,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -109227,6 +109458,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -109381,7 +109621,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -113549,6 +113801,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -113703,7 +113964,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -115063,11 +115336,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -115547,6 +115841,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -115701,7 +116004,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -119869,6 +120184,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -120023,7 +120347,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -121383,11 +121719,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -121867,6 +122224,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -122021,7 +122387,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -126189,6 +126567,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -126343,7 +126730,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -127703,11 +128102,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -128187,6 +128607,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -128341,7 +128770,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -340725,11 +341166,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -341278,6 +341740,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -341432,7 +341903,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -344511,11 +344994,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -346480,6 +346984,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -346634,7 +347147,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -354159,11 +354684,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -354712,6 +355258,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -354866,7 +355421,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -357945,11 +358512,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -359914,6 +360502,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -360068,7 +360665,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -398548,11 +399157,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -399101,6 +399731,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -399255,7 +399894,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -402334,11 +402985,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -404303,6 +404975,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -404457,7 +405138,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -411926,11 +412619,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -412479,6 +413193,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -412633,7 +413356,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -415712,11 +416447,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -417681,6 +418437,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -417835,7 +418600,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -431185,11 +431962,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -431738,6 +432536,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -431892,7 +432699,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -434971,11 +435790,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -436940,6 +437780,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -437094,7 +437943,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -446272,11 +447133,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -446825,6 +447707,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -446979,7 +447870,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -450046,11 +450949,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -452015,6 +452939,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -452169,7 +453102,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true

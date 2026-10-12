@@ -170,7 +170,7 @@ exportTest('analysis load exports retain run identity and distinguish resampled 
  expect(svg).toContain('<svg')
  expect(svg).not.toContain('var(')
  await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
- await page.getByRole('tab', { name: /^Active (?:Tests|& Queued)/ }).click()
+ await page.getByRole('tab', { name: /^Active (?:tests|& queued)/ }).click()
  const openRun = page.getByRole('button', { name: /^Open live test command-load-export/ })
  const activeCard = page.locator('.dash-active-card').filter({ has: openRun })
  await expect(activeCard.locator('[role="button"] button')).toHaveCount(0)

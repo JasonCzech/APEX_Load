@@ -7,11 +7,11 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
 
-// runTotalsAccumulator derives run-to-date transaction and error counters. A
-// local run counts the per-window live samples it publishes (apply); a
-// distributed run counts each generator's accepted windows (countWindow), and
-// a controller that takes it over starts from the stored history
-// (adoptedRunTotals).
+// runTotalsAccumulator derives run-to-date transaction, request and error
+// counters. A local run counts the per-window live samples it publishes
+// (apply); a distributed run counts each generator's accepted windows
+// (countWindow), and a controller that takes it over starts from the stored
+// history (adoptedRunTotals).
 //
 // Every window contributes exactly once. For a local run, a sample carrying
 // the latest timestamp again replaces that window's earlier contribution
@@ -32,12 +32,17 @@ type runTotalsAccumulator struct {
 	// the number and publication time of the collection that produced it.
 	windows    map[string]distributedWindowMark
 	lastWindow time.Time
-	lastTx     int64
-	lastErrors int64
+	last       runTotalsCounts
 	lastGroups map[string]runTotalsCounts
-	tx         int64
-	errors     int64
+	total      runTotalsCounts
 	groups     map[string]runTotalsCounts
+	// requestsUnknown: the request totals are incomplete, so samples carry no
+	// request counts at all, run-to-date or window: the run is shown in
+	// transactions throughout, rather than switching between requests and
+	// transactions sample by sample. A counted window came from a generator
+	// that does not count requests, or the totals started from history
+	// recorded without them (a controller that took the run over from storage).
+	requestsUnknown bool
 }
 
 type distributedWindowMark struct {
@@ -77,11 +82,12 @@ func (a *runTotalsAccumulator) newDistributedWindow(target string, batch generat
 	return true
 }
 
-// runTotalsWindow is one generator window's successful transactions and
-// errors, fleet-wide and per group.
+// runTotalsWindow is one generator window's counts, fleet-wide and per
+// group. requestsUnknown marks a generator that does not count requests.
 type runTotalsWindow struct {
 	runTotalsCounts
-	groups map[string]runTotalsCounts
+	groups          map[string]runTotalsCounts
+	requestsUnknown bool
 }
 
 // distributedWindowCounts counts one generator batch's window as a published
@@ -117,7 +123,11 @@ func distributedWindowCounts(batch generatorrpc.MetricsBatch, configuredGroups [
 			}
 		}
 	}
+	var requestsCounted bool
+	window.requests, window.requestErrors, requestsCounted = distributedRequestCounts(batch)
+	window.requestsUnknown = !requestsCounted
 	if count <= 0 {
+		window.addGroupRequests(batch)
 		return window
 	}
 	window.tx, window.errors = successfulMetricCount(count, errors), boundedMetricErrors(count, errors)
@@ -195,14 +205,55 @@ func distributedWindowCounts(batch generatorrpc.MetricsBatch, configuredGroups [
 		window.groups[name] = runTotalsCounts{tx: successfulMetricCount(counts.tx, counts.errors), errors: boundedMetricErrors(counts.tx, counts.errors)}
 	}
 	if len(named) == 0 && len(configuredGroups) == 1 {
-		window.groups[configuredGroups[0].Name] = window.runTotalsCounts
+		window.groups[configuredGroups[0].Name] = runTotalsCounts{tx: window.tx, errors: window.errors}
 	}
+	window.addGroupRequests(batch)
 	return window
 }
 
+// addGroupRequests counts each named group's requests, as a published
+// sample counts them (applyDistributedRequestMetrics).
+func (w *runTotalsWindow) addGroupRequests(batch generatorrpc.MetricsBatch) {
+	if w.requestsUnknown {
+		return
+	}
+	for _, group := range batch.Groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			continue
+		}
+		if requests, requestErrors := distributedGroupRequestCounts(group); requests > 0 {
+			counts := w.groups[name]
+			counts.requests += requests
+			counts.requestErrors += requestErrors
+			w.groups[name] = counts
+		}
+	}
+}
+
+// runTotalsCounts are successful transactions, failed transactions,
+// attempted requests (failed ones included) and failed requests.
 type runTotalsCounts struct {
-	tx     int64
-	errors int64
+	tx            int64
+	errors        int64
+	requests      int64
+	requestErrors int64
+}
+
+func (c runTotalsCounts) plus(other runTotalsCounts) runTotalsCounts {
+	return runTotalsCounts{tx: c.tx + other.tx, errors: c.errors + other.errors, requests: c.requests + other.requests, requestErrors: c.requestErrors + other.requestErrors}
+}
+
+func (c runTotalsCounts) minus(other runTotalsCounts) runTotalsCounts {
+	return runTotalsCounts{tx: c.tx - other.tx, errors: c.errors - other.errors, requests: c.requests - other.requests, requestErrors: c.requestErrors - other.requestErrors}
+}
+
+func liveWindowCounts(live *LiveMetrics) runTotalsCounts {
+	return runTotalsCounts{tx: live.TotalTx, errors: live.TotalErrors, requests: live.Requests, requestErrors: live.RequestErrors}
+}
+
+func groupWindowCounts(group *GroupLiveMetrics) runTotalsCounts {
+	return runTotalsCounts{tx: group.Transactions, errors: group.Errors, requests: group.Requests, requestErrors: group.RequestErrors}
 }
 
 // seed rebuilds the totals from retained history before a time (any, when
@@ -218,48 +269,40 @@ func (a *runTotalsAccumulator) seed(history []*LiveMetrics, before time.Time) {
 		if !a.lastWindow.IsZero() && !point.Timestamp.After(a.lastWindow) {
 			continue
 		}
+		// A published sample carries its run's request totals; a stored one,
+		// which keeps no request counters, does not.
+		if point.RunTotalRequests == nil {
+			a.requestsUnknown = true
+		}
 		a.add(point)
 	}
 }
 
 func (a *runTotalsAccumulator) add(live *LiveMetrics) {
-	a.tx += live.TotalTx
-	a.errors += live.TotalErrors
 	a.lastWindow = live.Timestamp
-	a.lastTx, a.lastErrors = live.TotalTx, live.TotalErrors
-	a.lastGroups = make(map[string]runTotalsCounts, len(live.GroupMetrics))
-	for name, group := range live.GroupMetrics {
-		if group == nil {
-			continue
-		}
-		counts := a.groups[name]
-		counts.tx += group.Transactions
-		counts.errors += group.Errors
-		a.groups[name] = counts
-		a.lastGroups[name] = runTotalsCounts{tx: group.Transactions, errors: group.Errors}
-	}
+	a.addWindow(live)
 }
 
 func (a *runTotalsAccumulator) replaceLatest(live *LiveMetrics) {
-	a.tx += live.TotalTx - a.lastTx
-	a.errors += live.TotalErrors - a.lastErrors
+	a.total = a.total.minus(a.last)
 	for name, previous := range a.lastGroups {
-		counts := a.groups[name]
-		counts.tx -= previous.tx
-		counts.errors -= previous.errors
-		a.groups[name] = counts
+		a.groups[name] = a.groups[name].minus(previous)
 	}
-	a.lastTx, a.lastErrors = live.TotalTx, live.TotalErrors
+	a.addWindow(live)
+}
+
+// addWindow adds one sample's window and remembers it as the latest.
+func (a *runTotalsAccumulator) addWindow(live *LiveMetrics) {
+	a.last = liveWindowCounts(live)
+	a.total = a.total.plus(a.last)
 	a.lastGroups = make(map[string]runTotalsCounts, len(live.GroupMetrics))
 	for name, group := range live.GroupMetrics {
 		if group == nil {
 			continue
 		}
-		counts := a.groups[name]
-		counts.tx += group.Transactions
-		counts.errors += group.Errors
-		a.groups[name] = counts
-		a.lastGroups[name] = runTotalsCounts{tx: group.Transactions, errors: group.Errors}
+		counts := groupWindowCounts(group)
+		a.groups[name] = a.groups[name].plus(counts)
+		a.lastGroups[name] = counts
 	}
 }
 
@@ -268,14 +311,15 @@ func (a *runTotalsAccumulator) replaceLatest(live *LiveMetrics) {
 // on a controller starts from the run totals its retained history recorded:
 // the latest point's run totals, or, for history restored from storage, which
 // keeps no run totals, the sum of its windows (bounded and approximate, as
-// the published windows it sums were). Stored windows keep no groups either,
-// so only a run with one group starts its group's totals from that sum. The
-// caller holds the runner lock.
+// the published windows it sums were). Stored windows keep no groups
+// either, so only a run with one group starts its group's totals from that
+// sum, and no request counters, so the run's request totals are unknown from
+// then on. The caller holds the runner lock.
 func (a *runTotalsAccumulator) countWindow(window *runTotalsWindow, history []*LiveMetrics, configuredGroups []TestGroup) {
 	if !a.initialized && !a.seedFromRunTotals(history) {
 		a.seed(history, time.Time{})
 		if len(a.groups) == 0 && len(configuredGroups) == 1 {
-			a.groups[configuredGroups[0].Name] = runTotalsCounts{tx: a.tx, errors: a.errors}
+			a.groups[configuredGroups[0].Name] = a.total
 		}
 	}
 	if a.groups == nil {
@@ -285,18 +329,18 @@ func (a *runTotalsAccumulator) countWindow(window *runTotalsWindow, history []*L
 	if window == nil {
 		return
 	}
-	a.tx += window.tx
-	a.errors += window.errors
+	if window.requestsUnknown {
+		a.requestsUnknown = true
+	}
+	a.total = a.total.plus(window.runTotalsCounts)
 	for name, group := range window.groups {
-		counts := a.groups[name]
-		counts.tx += group.tx
-		counts.errors += group.errors
-		a.groups[name] = counts
+		a.groups[name] = a.groups[name].plus(group)
 	}
 }
 
 // seedFromRunTotals starts the totals from the latest history point that
-// carries run totals, and reports whether one did.
+// carries run totals, and reports whether one did. A point without request
+// totals leaves the run's request totals unknown.
 func (a *runTotalsAccumulator) seedFromRunTotals(history []*LiveMetrics) bool {
 	for index := len(history) - 1; index >= 0; index-- {
 		point := history[index]
@@ -304,16 +348,24 @@ func (a *runTotalsAccumulator) seedFromRunTotals(history []*LiveMetrics) bool {
 			continue
 		}
 		a.initialized = true
-		a.tx, a.errors = *point.RunTotalTx, *point.RunTotalErrors
+		a.requestsUnknown = point.RunTotalRequests == nil || point.RunRequestErrors == nil
+		a.total = runTotalsCounts{tx: *point.RunTotalTx, errors: *point.RunTotalErrors, requests: valueOrZero(point.RunTotalRequests), requestErrors: valueOrZero(point.RunRequestErrors)}
 		a.groups = map[string]runTotalsCounts{}
 		for name, group := range point.GroupMetrics {
 			if group != nil && group.RunTransactions != nil && group.RunErrors != nil {
-				a.groups[name] = runTotalsCounts{tx: *group.RunTransactions, errors: *group.RunErrors}
+				a.groups[name] = runTotalsCounts{tx: *group.RunTransactions, errors: *group.RunErrors, requests: valueOrZero(group.RunRequests), requestErrors: valueOrZero(group.RunRequestErrors)}
 			}
 		}
 		return true
 	}
 	return false
+}
+
+func valueOrZero(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 // apply folds one published sample into the totals (unless a distributed
@@ -333,17 +385,52 @@ func (a *runTotalsAccumulator) apply(live *LiveMetrics, history []*LiveMetrics) 
 	case live.Timestamp.Equal(a.lastWindow):
 		a.replaceLatest(live)
 	}
-	live.RunTotalTx = ptrTo(a.tx)
-	live.RunTotalErrors = ptrTo(a.errors)
-	live.RunErrorPct = ptrTo(errorPercent(a.tx, a.errors))
+	if a.requestsUnknown {
+		clearWindowRequestCounts(live)
+	}
+	setLiveRunTotals(live, a.total, !a.requestsUnknown)
 	for name, group := range live.GroupMetrics {
 		if group == nil {
 			continue
 		}
-		counts := a.groups[name]
-		group.RunTransactions = ptrTo(counts.tx)
-		group.RunErrors = ptrTo(counts.errors)
-		group.RunErrorPct = ptrTo(errorPercent(counts.tx, counts.errors))
+		setGroupRunTotals(group, a.groups[name], !a.requestsUnknown)
+	}
+}
+
+// clearWindowRequestCounts drops a sample's window request counts, the run's
+// and each group's.
+func clearWindowRequestCounts(live *LiveMetrics) {
+	live.Requests, live.RequestErrors, live.RequestRate = 0, 0, 0
+	for _, group := range live.GroupMetrics {
+		if group != nil {
+			group.Requests, group.RequestErrors, group.RequestRate = 0, 0, 0
+		}
+	}
+}
+
+// setLiveRunTotals writes run-to-date counters onto a sample; the request
+// ones only when they are known, and otherwise leaves them absent.
+func setLiveRunTotals(live *LiveMetrics, counts runTotalsCounts, requestsKnown bool) {
+	live.RunTotalTx = ptrTo(counts.tx)
+	live.RunTotalErrors = ptrTo(counts.errors)
+	live.RunErrorPct = ptrTo(errorPercent(counts.tx, counts.errors))
+	live.RunTotalRequests, live.RunRequestErrors, live.RunRequestErrorPct = nil, nil, nil
+	if requestsKnown {
+		live.RunTotalRequests = ptrTo(counts.requests)
+		live.RunRequestErrors = ptrTo(counts.requestErrors)
+		live.RunRequestErrorPct = ptrTo(requestErrorPercent(counts.requests, counts.requestErrors))
+	}
+}
+
+func setGroupRunTotals(group *GroupLiveMetrics, counts runTotalsCounts, requestsKnown bool) {
+	group.RunTransactions = ptrTo(counts.tx)
+	group.RunErrors = ptrTo(counts.errors)
+	group.RunErrorPct = ptrTo(errorPercent(counts.tx, counts.errors))
+	group.RunRequests, group.RunRequestErrors, group.RunRequestErrorPct = nil, nil, nil
+	if requestsKnown {
+		group.RunRequests = ptrTo(counts.requests)
+		group.RunRequestErrors = ptrTo(counts.requestErrors)
+		group.RunRequestErrorPct = ptrTo(requestErrorPercent(counts.requests, counts.requestErrors))
 	}
 }
 
@@ -355,6 +442,15 @@ func errorPercent(successes, errors int64) float64 {
 		return 0
 	}
 	return float64(errors) / float64(attempts) * 100
+}
+
+// requestErrorPercent is failed requests over attempted requests; unlike
+// transactions, the request count already includes the failures.
+func requestErrorPercent(requests, errors int64) float64 {
+	if requests <= 0 {
+		return 0
+	}
+	return float64(min(errors, requests)) / float64(requests) * 100
 }
 
 func ptrTo[T any](value T) *T { return &value }

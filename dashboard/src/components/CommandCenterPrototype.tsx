@@ -4,7 +4,7 @@ import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
 import {
@@ -30,11 +30,11 @@ import { rcaSummaryWithResponse } from './rca/useRootCauseSummary'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
+import type { BrowserReplaySnapshot, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange, ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
-import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
+import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -59,9 +59,11 @@ import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { listAllCommandCenterActiveRuns } from './commandCenterRunDiscovery'
 import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 import {
-  buildScenarioRunRows,
+  buildGroupRunRows,
+  buildTransactionRunRows,
   type CommandGroup,
-  type ScenarioRunRow,
+  type GroupRunRow,
+  type TransactionRunRow,
 } from './commandCenterScenarioRows'
 import { buildLoadModelProfile, type LoadModelPoint } from './commandCenterLoadModel'
 import type { CommandCenterPrototypeFixtures } from './commandCenterPrototypeFixtures'
@@ -69,7 +71,7 @@ import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
 } from '../utils/snapshotFormatUtils'
-import { attemptErrorPercent, errorRateBasisLabel, groupRunCounts, groupRunErrorPercent, liveRunCounts, type ErrorRateBasis } from '../utils/liveErrorRate'
+import { errorRateBasisLabel, errorRateLabel, groupRunCounts, liveCountsErrorPercent, livePopulation, liveRate, liveRunCounts, liveThroughputPopulation, throughputLabel, type ErrorRateBasis, type LivePopulation } from '../utils/liveErrorRate'
 import { formatPercentValue } from '../utils/numberFormat'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
@@ -79,7 +81,7 @@ import LoadingState from './ux/LoadingState'
 const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
 
 type VariantId = 'ops' | 'grafana'
-type CommandTableTab = 'scenario' | 'errors' | 'infrastructure'
+type CommandTableTab = 'groups' | 'transactions' | 'errors' | 'infrastructure'
 type SortDirection = 'asc' | 'desc'
 type TargetTransitionMode = 'immediate' | 'gradual'
 export type GroupSettingsDialogKind = 'runtime-settings' | 'parameters'
@@ -289,26 +291,17 @@ function groupActionsSelector(groupName: string) {
 
 // Error rates on this page are run-to-date whenever the controller reports
 // run counters; a one-second window misreports a failing run as 0.00%.
-function groupErrorPercent(group: GroupLiveMetrics | undefined) {
-  return groupRunErrorPercent(group)
-}
-
-function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[]) {
-  const counts = liveRunCounts(metrics)
-  if (counts) return attemptErrorPercent(counts.transactions, counts.errors)
-  return attemptErrorPercent(groups.reduce((sum, group) => sum + group.transactions, 0), groups.reduce((sum, group) => sum + group.errors, 0))
-}
-
-function wholeTestErrorRateBasis(metrics: LiveMetrics | undefined): ErrorRateBasis | undefined {
-  return liveRunCounts(metrics)?.basis
+function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[], population: LivePopulation) {
+  const counts = liveRunCounts(metrics, population)
+  if (counts) return liveCountsErrorPercent(counts)
+  return liveCountsErrorPercent({ attempts: groups.reduce((sum, group) => sum + group.attempts, 0), errors: groups.reduce((sum, group) => sum + group.errors, 0) })
 }
 
 function highestGroupErrorRate(groups: CommandGroup[]) {
   if (groups.length <= 1) return undefined
   const highest = groups.reduce((current, group) => {
-    if (group.errors <= 0) return current
-    const attempts = group.transactions + group.errors
-    const errorPct = group.errors / attempts * 100
+    if (group.errors <= 0 || group.attempts <= 0) return current
+    const errorPct = Math.min(100, group.errors / group.attempts * 100)
     if (current && errorPct === current.errorPct) return { ...current, names: [...current.names, group.name] }
     return !current || errorPct > current.errorPct
       ? { names: [group.name], errorPct }
@@ -322,6 +315,16 @@ function highestGroupErrorRate(groups: CommandGroup[]) {
 
 function isGoalOrientedRun(test: TestSummary) {
   return test.scenario_mode === 'goal_oriented'
+}
+
+// As the engine measures it: how far below its target a throughput is, and
+// whether that misses the 5% alert threshold. At or above target there is no gap.
+const THROUGHPUT_GAP_ALERT_PCT = 5
+
+function goalThroughputGap(rate: number, target: number | undefined): Pick<CommandGroup, 'throughputGapPct' | 'throughputTargetMissed'> {
+  if (!target || target <= 0 || rate >= target) return { throughputGapPct: undefined, throughputTargetMissed: false }
+  const gap = (target - rate) / target * 100
+  return { throughputGapPct: gap, throughputTargetMissed: gap >= THROUGHPUT_GAP_ALERT_PCT }
 }
 
 function finitePositive(value: unknown): number {
@@ -379,13 +382,62 @@ function suggestedGroupVusers(test: TestSummary, groupName: string, currentVuser
   return Math.round(suggestedTotal * currentVusers / currentTotal)
 }
 
-function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>): CommandGroup[] {
+// How the page counts its live figures: the population its error rates
+// count and the one its throughput counts (goal targets are in TPS, so a
+// goal-oriented run's throughput stays TPS), the basis of its error rates,
+// the window its rates cover and the history they are averaged from. Every
+// view labels its figures from this.
+interface CommandMetricBasis {
+  population: LivePopulation
+  throughputPopulation: LivePopulation
+  errorBasis?: ErrorRateBasis
+  /** RECENT_AVERAGE_LABEL when the history has samples to average, else "last sample". */
+  rateWindow: string
+  history: ReadonlyArray<MetricsHistoryPoint>
+}
+
+const CommandMetricBasisContext = createContext<CommandMetricBasis>({ population: 'transactions', throughputPopulation: 'transactions', rateWindow: 'last sample', history: [] })
+
+/** "Requests/s (10 s avg)" or "TPS (last sample)". */
+function rateHeader(basis: CommandMetricBasis) {
+  return `${throughputLabel(basis.throughputPopulation)} (${basis.rateWindow})`
+}
+
+/** "Request error rate (run to date)" or "Transaction error rate (last sample)". */
+function errorRateHeader(basis: CommandMetricBasis) {
+  return `${errorRateLabel(basis.population)} (${errorRateBasisLabel(basis.errorBasis)})`
+}
+
+/** "averaged over the last 10 s" or "the last sample's". */
+function rateWindowPhrase(basis: CommandMetricBasis) {
+  return basis.rateWindow === RECENT_AVERAGE_LABEL ? `averaged over the last ${RECENT_AVERAGE_WINDOW}` : 'the last sample\'s'
+}
+
+// Column headers in the narrow group grids: the name, then what it covers.
+function RateColumnHeader({ basis }: { basis: CommandMetricBasis }) {
+  return <>{throughputLabel(basis.throughputPopulation)} <small>({basis.rateWindow})</small></>
+}
+
+function ErrorRateColumnHeader({ basis }: { basis: CommandMetricBasis }) {
+  return <>Error rate <small>({basis.population === 'requests' ? 'requests' : 'transactions'}, {errorRateBasisLabel(basis.errorBasis)})</small></>
+}
+
+function lowerFirst(value: string) {
+  return value.charAt(0).toLowerCase() + value.slice(1)
+}
+
+function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>, population: LivePopulation, throughputPopulation: LivePopulation, recent: RecentMetricAverages): CommandGroup[] {
   const targetMode = isGoalOrientedRun(test) ? 'tps' : 'vusers'
   const goalTargets = targetMode === 'tps' ? buildGoalTargetMap(test) : {}
   return (test.groups || []).map((group, index) => {
     const metrics = test.live_metrics?.groups?.[group.name]
     const aggregateFallback = !metrics && test.groups.length === 1 ? test.live_metrics : undefined
-    const fallbackCounts = liveRunCounts(aggregateFallback)
+    const counts = metrics ? groupRunCounts(metrics, population) : liveRunCounts(aggregateFallback, population)
+    // The same samples as the run's average: the group's own, or a single
+    // group's whole-run figures when it reports none of its own.
+    const averaged = metrics ? recent.groups?.[group.name] : aggregateFallback ? { tps: recent.tps, requestRate: recent.requestRate } : undefined
+    const averagedRate = throughputPopulation === 'requests' ? averaged?.requestRate : averaged?.tps
+    const rate = averagedRate ?? liveRate(metrics ?? aggregateFallback, throughputPopulation) ?? 0
     const activeVuserRamp = test.vuser_ramps?.[group.name]
     const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
@@ -402,18 +454,24 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       targetVusers: liveTargetVusers,
       targetMode,
       targetTps,
-      throughputGapPct: metrics?.throughput_gap_pct ?? aggregateFallback?.throughput_gap_pct,
-      throughputTargetMissed: metrics?.throughput_target_missed ?? aggregateFallback?.throughput_target_missed,
+      committedTargetTps: targetMode === 'tps' ? liveTarget : undefined,
+      // A goal run's rate is TPS over the page's window; measure its gap to
+      // the committed target over the same window.
+      ...(targetMode === 'tps' ? goalThroughputGap(rate, liveTarget) : {
+        throughputGapPct: metrics?.throughput_gap_pct ?? aggregateFallback?.throughput_gap_pct,
+        throughputTargetMissed: metrics?.throughput_target_missed ?? aggregateFallback?.throughput_target_missed,
+      }),
       suggestedVusers: targetMode === 'tps' ? suggestedGroupVusers(test, group.name, current) : undefined,
       minVusers: test.live_metrics?.goal_status?.min_vusers ?? test.goal_config?.min_vusers,
       maxVusers: test.live_metrics?.goal_status?.max_vusers ?? test.goal_config?.max_vusers,
       activeVuserRamp,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
+      rate,
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
-      errorPct: metrics ? groupErrorPercent(metrics) : fallbackCounts ? attemptErrorPercent(fallbackCounts.transactions, fallbackCounts.errors) : 0,
+      errorPct: counts ? liveCountsErrorPercent(counts) : 0,
       p99: metrics?.p99_ms ?? aggregateFallback?.p99_ms ?? 0,
-      transactions: groupRunCounts(metrics)?.transactions ?? fallbackCounts?.transactions ?? 0,
-      errors: groupRunCounts(metrics)?.errors ?? fallbackCounts?.errors ?? 0,
+      attempts: counts?.attempts ?? 0,
+      errors: counts?.errors ?? 0,
       color: COMMAND_GROUP_COLORS[index % COMMAND_GROUP_COLORS.length],
     }
   })
@@ -597,7 +655,7 @@ export default function CommandCenterPrototype({
   const [expandedCharts, setExpandedCharts] = useState<Record<VariantId, string | null>>({ ops: null, grafana: null })
   const [activeGraphCursor, setActiveGraphCursor] = useState<GraphCursorState | null>(null)
   const [graphWallGroupVisibility, setGraphWallGroupVisibility] = useState<Record<string, boolean>>({})
-  const [activeTableTab, setActiveTableTab] = useState<CommandTableTab>('scenario')
+  const [activeTableTab, setActiveTableTab] = useState<CommandTableTab>('groups')
   const [selectedEvidenceId, setSelectedEvidenceId] = useState('')
   const [liveEvidenceByRunSignature, setLiveEvidenceByRunSignature] = useState<Record<string, LiveErrorEvidence[]>>({})
   const [evidenceLoadingKey, setEvidenceLoadingKey] = useState('')
@@ -958,9 +1016,16 @@ export default function CommandCenterPrototype({
     ? groupSettingsDialog.plannedOwner.scope === plannedSettingsScope && groupSettingsDialog.plannedOwner.token === plannedSettingsTokenRef.current ? groupSettingsDialog : null
     : groupSettingsDialog
 
+  const metricPopulation = livePopulation(displayTest.live_metrics)
+  const throughputPopulation = liveThroughputPopulation(displayTest, metricPopulation)
+  const groupNamesKey = (displayTest.groups || []).map(group => group.name).join('\u001f')
+  const recentAverages = useMemo(
+    () => recentMetricAverages(liveMode ? localMetricsHistory : [], undefined, { groups: groupNamesKey ? groupNamesKey.split('\u001f') : [] }),
+    [groupNamesKey, liveMode, localMetricsHistory],
+  )
   const groups = useMemo(
-    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
-    [displayTest, emptyMode, hasLiveRoute, liveMode, prototypeFixtures, state.vuserTargets],
+    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets, metricPopulation, throughputPopulation, recentAverages) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
+    [displayTest, emptyMode, hasLiveRoute, liveMode, metricPopulation, prototypeFixtures, recentAverages, state.vuserTargets, throughputPopulation],
   )
   const graphWallGroups = useMemo(
     () => groups.filter(group => graphWallGroupVisibility[group.key] !== false),
@@ -1054,14 +1119,22 @@ export default function CommandCenterPrototype({
     liveMode ? chartData : [],
     liveMode ? (displayTest.project_id || projectId) : undefined,
   )
-  const noRequestSamples = liveMode && (!displayTest.live_metrics || displayTest.live_metrics.total_transactions === 0) && archiveSummaryHistory.length === 0 && !localMetricsHistory.some(point => point.tps > 0 || point.avgMs > 0 || point.errorPct > 0)
+  const sentRequests = metricPopulation === 'requests'
+  const noRequestSamples = liveMode && (!displayTest.live_metrics || (displayTest.live_metrics.total_transactions === 0 && !sentRequests)) && archiveSummaryHistory.length === 0 && !localMetricsHistory.some(point => point.tps > 0 || (point.requestRate ?? 0) > 0 || point.avgMs > 0 || point.errorPct > 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
-  const runSummaryAverages = recentMetricAverages(liveMode ? localMetricsHistory : [])
-  const runSummaryTps = runSummaryAverages.tps
-    ?? displayTest.live_metrics?.tps
-    ?? groups.reduce((sum, group) => sum + group.tps, 0)
+  const recentRunRate = throughputPopulation === 'requests' ? recentAverages.requestRate : recentAverages.tps
+  const runSummaryRate = recentRunRate
+    ?? liveRate(displayTest.live_metrics, throughputPopulation)
+    ?? groups.reduce((sum, group) => sum + group.rate, 0)
+  const metricBasis = useMemo<CommandMetricBasis>(() => ({
+    population: metricPopulation,
+    throughputPopulation,
+    errorBasis: liveRunCounts(displayTest.live_metrics, metricPopulation)?.basis,
+    rateWindow: recentRunRate !== undefined ? RECENT_AVERAGE_LABEL : 'last sample',
+    history: liveMode ? localMetricsHistory : [],
+  }), [displayTest.live_metrics, liveMode, localMetricsHistory, metricPopulation, recentRunRate, throughputPopulation])
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode
     ? computeRemainingSeconds(displayTest, runStatus)
@@ -1466,6 +1539,7 @@ export default function CommandCenterPrototype({
 
   return (
     <CommandViewMemoryContext.Provider key={viewMemory.testId} value={viewMemory.values}>
+    <CommandMetricBasisContext.Provider value={metricBasis}>
     <div ref={pageRef} className={`page command-center-page ${experienceVersion === 'v2' ? 'command-center-v2' : 'command-center-original'}`}>
       {active && !emptyMode && (commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch)}
       {emptyMode ? (
@@ -1502,12 +1576,12 @@ export default function CommandCenterPrototype({
         totalCurrent={totalCurrent}
         totalTarget={totalTarget}
         targetMode={targetMode}
-        errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups)}
-        errorRateBasis={wholeTestErrorRateBasis(displayTest.live_metrics)}
+        errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups, metricPopulation)}
+        errorLabel={errorRateHeader(metricBasis)}
         noRequestSamples={noRequestSamples}
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
-        tps={runSummaryTps}
-        tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
+        throughput={runSummaryRate}
+        throughputLabel={rateHeader(metricBasis)}
         // Average and P95 from the same metrics window, so P95 never reads below the average.
         responseAvgMs={displayTest.live_metrics?.avg_response_ms}
         responseP95Ms={displayTest.live_metrics?.p95_ms}
@@ -1719,6 +1793,7 @@ export default function CommandCenterPrototype({
         </>
       )}
     </div>
+    </CommandMetricBasisContext.Provider>
     </CommandViewMemoryContext.Provider>
   )
 }
@@ -1742,11 +1817,13 @@ interface RunControlShelfProps {
   totalTarget: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
-  errorRateBasis?: ErrorRateBasis
+  /** Names the error rate's population and basis, e.g. "Request error rate (run to date)". */
+  errorLabel: string
   highestErrorGroup?: { name: string; errorPct: number }
-  tps?: number
-  tpsHint?: string
-  /** Average and P95 response time (ms) from the latest metrics window. */
+  throughput?: number
+  /** Names the throughput's population and window, e.g. "Requests/s (10 s avg)". */
+  throughputLabel: string
+  /** Average and P95 transaction response time (ms) from the latest metrics window. */
   responseAvgMs?: number
   responseP95Ms?: number
   feedback: string
@@ -1773,10 +1850,10 @@ function RunControlShelf({
   totalTarget,
   targetMode,
   errorPct,
-  errorRateBasis,
+  errorLabel,
   highestErrorGroup,
-  tps,
-  tpsHint,
+  throughput,
+  throughputLabel: throughputMetricLabel,
   responseAvgMs,
   responseP95Ms,
   feedback,
@@ -1825,12 +1902,12 @@ function RunControlShelf({
           tone="info"
         />
         {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(elapsedSeconds)} /></> : <MetricPill label="Elapsed · remaining" value={`${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
-        {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
-        <MetricPill label="Response time (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
-        <MetricPill label={`Error Rate (${errorRateBasisLabel(errorRateBasis)})`} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
+        {throughput !== undefined && <MetricPill label={throughputMetricLabel} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(throughput, 1)} tone="accent" />}
+        <MetricPill label="Transaction response (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
+        <MetricPill label={errorLabel} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
         {test.groups.length > 1 && (
           <MetricPill
-            label={`Highest Error Rate (${errorRateBasisLabel(errorRateBasis)})`}
+            label={`Highest ${lowerFirst(errorLabel)}`}
             value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
             tone={highestErrorGroup ? "danger" : "default"}
           />
@@ -2251,6 +2328,7 @@ function OpsCockpitV2View({
   onErrorSelect,
   onChangeDuration,
 }: OpsCockpitV2ViewProps) {
+  const basis = useContext(CommandMetricBasisContext)
   const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
   const profile = useMemo(
     () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
@@ -2316,22 +2394,21 @@ function OpsCockpitV2View({
               <div className="command-v2-group-row header" role="row">
                 <span role="columnheader">Group</span>
                 <span role="columnheader">VUsers (actual / target)</span>
-                <span role="columnheader">TPS</span>
+                <span role="columnheader"><RateColumnHeader basis={basis} /></span>
                 <span role="columnheader">ART</span>
-                <span role="columnheader">Errors</span>
+                <span role="columnheader"><ErrorRateColumnHeader basis={basis} /></span>
                 <span role="columnheader">Adjust target</span>
               </div>
               {groups.map((group, index) => {
                 const art = numericCommandValue(group, 'art', 'artMs', 'avgResponseMs', 'avg_response_ms')
-                const errors = numericCommandValue(group, 'errorPct', 'errorRate', 'error_pct')
                 const target = Math.max(0, Math.round(group.target))
                 return (
                   <div className="command-v2-group-row" role="row" key={group.name}>
                     <span role="cell" className="command-v2-group-name"><i data-group-index={index} /><strong>{group.name}</strong><small>{group.protocol}</small></span>
                     <span role="cell"><strong>{formatNumber(group.current)} / {formatNumber(target)}</strong><em>{target > 0 ? formatNumber((group.current / target) * 100, 0) : '0'}%</em></span>
-                    <span role="cell"><strong>{formatNumber(group.tps, 1)}</strong></span>
+                    <span role="cell"><strong>{formatNumber(group.rate, 1)}</strong></span>
                     <span role="cell"><strong>{formatNumber(art, 0)} ms</strong></span>
-                    <span role="cell" className={errors > 1 ? 'danger' : 'healthy'}><strong>{formatNumber(errors, 2)}%</strong></span>
+                    <span role="cell" className={group.attempts > 0 && group.errorPct > 1 ? 'danger' : 'healthy'}><strong>{group.attempts > 0 ? formatPercent(group.errorPct) : MISSING_VALUE}</strong></span>
                     <span role="cell" className="command-v2-target-stepper">
                       <button type="button" disabled={readOnly || target <= 0} aria-label={`Decrease ${group.name} target`} onClick={() => onTargetChange(group.name, Math.max(0, target - 1))}>−</button>
                       <strong>{formatNumber(target)}</strong>
@@ -2558,7 +2635,8 @@ function GroupSelectionPanel({
 }
 
 const COMMAND_TABLE_TABS: Array<{ id: CommandTableTab; label: string }> = [
-  { id: 'scenario', label: 'Run metrics' },
+  { id: 'groups', label: 'Groups' },
+  { id: 'transactions', label: 'Transactions' },
   { id: 'errors', label: 'Error Details' },
   { id: 'infrastructure', label: 'Infrastructure' },
 ]
@@ -2619,11 +2697,12 @@ function CommandRunTables({
   evidenceLoading,
   evidenceError,
 }: CommandRunTablesProps) {
-  const [filters, setFilters] = useCommandViewState<Record<CommandTableTab, string>>('tableFilters', { scenario: '', errors: '', infrastructure: '' })
+  const [filters, setFilters] = useCommandViewState<Record<CommandTableTab, string>>('tableFilters', { groups: '', transactions: '', errors: '', infrastructure: '' })
   const filter = filters[activeTab]
   const setFilter = (value: string) => setFilters(previous => ({ ...previous, [activeTab]: value }))
   const [sorts, setSorts] = useCommandViewState<Record<CommandTableTab, CommandSortState>>('tableSorts', {
-    scenario: { key: 'type', direction: 'asc' },
+    groups: { key: 'name', direction: 'asc' },
+    transactions: { key: 'name', direction: 'asc' },
     errors: { key: 'count', direction: 'desc' },
     infrastructure: { key: 'type', direction: 'asc' },
   })
@@ -2635,7 +2714,16 @@ function CommandRunTables({
     setTransactionSnapshot(incoming)
   }, [metrics?.transactions])
   const activeSort = sorts[activeTab]
-  const scenarioRows = useMemo(() => buildScenarioRunRows(groups, metrics, transactionSnapshot), [groups, metrics, transactionSnapshot])
+  const basis = useContext(CommandMetricBasisContext)
+  const transactionSource = metrics?.transactions && Object.keys(metrics.transactions).length > 0 ? metrics.transactions : transactionSnapshot
+  const transactionNamesKey = Object.entries(transactionSource).map(([key, tx]) => tx?.name?.trim() || key).join('\u001f')
+  // TPS over the same samples as the page's other rates.
+  const recentTransactionTps = useMemo(
+    () => transactionNamesKey ? recentMetricAverages(basis.history, undefined, { transactions: transactionNamesKey.split('\u001f') }).transactions : undefined,
+    [basis.history, transactionNamesKey],
+  )
+  const groupRows = useMemo(() => buildGroupRunRows(groups, metrics), [groups, metrics])
+  const transactionRows = useMemo(() => buildTransactionRunRows(metrics, transactionSnapshot, recentTransactionTps), [metrics, recentTransactionTps, transactionSnapshot])
   const infrastructureRows = useMemo(() => buildInfrastructureRows(groups, metrics), [groups, metrics])
   const activeEvidence = selectedEvidence.find(item => item.id === selectedEvidenceId) || selectedEvidence[0]
 
@@ -2649,9 +2737,13 @@ function CommandRunTables({
     })
   }
 
-  const filteredScenarioRows = useMemo(
-    () => filterAndSortRows(scenarioRows, filter, activeSort),
-    [activeSort, filter, scenarioRows],
+  const filteredGroupRows = useMemo(
+    () => filterAndSortRows(groupRows, filter, activeSort),
+    [activeSort, filter, groupRows],
+  )
+  const filteredTransactionRows = useMemo(
+    () => filterAndSortRows(transactionRows, filter, activeSort),
+    [activeSort, filter, transactionRows],
   )
   const sortedErrorRows = useMemo(
     () => filterAndSortRows(patterns, filter, activeSort),
@@ -2695,8 +2787,11 @@ function CommandRunTables({
       </div>
 
       <div className="command-table-surface">
-        {activeTab === 'scenario' && (
-          <ScenarioRunTable rows={filteredScenarioRows} sort={activeSort} onSort={updateSort} />
+        {activeTab === 'groups' && (
+          <GroupRunTable rows={filteredGroupRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No groups match the current filter.' : 'No groups in this run.'} />
+        )}
+        {activeTab === 'transactions' && (
+          <TransactionRunTable rows={filteredTransactionRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No transactions match the current filter.' : 'No transactions have completed yet.'} />
         )}
         {activeTab === 'errors' && (
           <ErrorDetailsTable
@@ -2741,74 +2836,128 @@ export function stabilizeErrorRowOrder(
   return stable
 }
 
-function ScenarioRunTable({
+interface MetricColumn<Row> {
+  label: string
+  sortKey: string
+  align?: 'right'
+  render: (row: Row) => ReactNode
+  className?: (row: Row) => string
+}
+
+// One metrics table with a column picker; the name column always shows.
+function MetricColumnsTable<Row extends { id: string }>({
+  label,
+  caption,
+  columns,
+  essentialColumns,
+  memoryKey,
   rows,
   sort,
   onSort,
+  emptyMessage,
 }: {
-  rows: ScenarioRunRow[]
+  label: string
+  caption: string
+  columns: MetricColumn<Row>[]
+  essentialColumns: number[]
+  memoryKey: string
+  rows: Row[]
   sort: CommandSortState
   onSort: (key: string) => void
+  emptyMessage: string
 }) {
-  const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VUsers', 'Target VUsers', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error rate', 'ART', 'P50', 'P90', 'P95', 'P99']
-  const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
-  const fullMetrics = columns.length === labels.length
+  const [visible, setVisible] = useCommandViewState(memoryKey, essentialColumns)
+  const fullMetrics = visible.length === columns.length
   return (
-    <div className="command-data-table-wrap" role="tabpanel" aria-label="Run metrics" tabIndex={0}>
-      <p className="command-table-caption">Rates and counts cover the last sample window; Group Load shows run-to-date error rates.</p>
-      <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
+    <div className="command-data-table-wrap" role="tabpanel" aria-label={label} tabIndex={0}>
+      <p className="command-table-caption">{caption}</p>
+      <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setVisible(event.target.checked ? columns.map((_, index) => index) : essentialColumns)} /> Show all {columns.length} metrics</label>
       <details className="command-column-picker"><summary>Choose columns</summary>
-        <div>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={columns.includes(index)} disabled={index < 2} onChange={event => setColumns(previous => event.target.checked ? [...previous, index] : previous.filter(column => column !== index))} />{label}</label>)}</div>
+        <div>{columns.map((column, index) => <label key={column.sortKey}><input type="checkbox" checked={visible.includes(index)} disabled={index === 0} onChange={event => setVisible(previous => event.target.checked ? [...previous, index] : previous.filter(item => item !== index))} />{column.label}</label>)}</div>
       </details>
       <table className={`command-data-table command-scenario-table ${fullMetrics ? 'full-metrics' : 'essential-metrics'}`}>
         <thead>
           <tr>
-            <SortableHeader hidden={!columns.includes(0)} label="Name" sortKey="name" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(1)} label="Group" sortKey="group" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(2)} label="Type" sortKey="type" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(3)} label="Protocol" sortKey="protocol" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(4)} label="Current VUsers" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(5)} label="Target VUsers" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(9)} label="Attempts" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(11)} label="Error rate" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(13)} label="P50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(14)} label="P90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(15)} label="P95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(16)} label="P99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            {columns.map((column, index) => <SortableHeader key={column.sortKey} hidden={!visible.includes(index)} label={column.label} sortKey={column.sortKey} sort={sort} onSort={onSort} align={column.align} />)}
           </tr>
         </thead>
         <tbody>
           {rows.map(row => (
-            <tr key={row.id} className={row.type === 'Group' ? 'command-table-group-row' : ''}>
-              <td hidden={!columns.includes(0)}><strong>{row.name}</strong></td>
-              <td hidden={!columns.includes(1)}>{row.group}</td>
-              <td hidden={!columns.includes(2)}>{row.type}</td>
-              <td hidden={!columns.includes(3)}>{row.protocol}</td>
-              <td hidden={!columns.includes(4)} className="numeric">{formatOptionalNumber(row.currentVusers)}</td>
-              <td hidden={!columns.includes(5)} className="numeric">{formatOptionalNumber(row.targetVusers)}</td>
-              <td hidden={!columns.includes(6)} className="numeric">{formatOptionalNumber(row.tps, 1)}</td>
-              <td hidden={!columns.includes(7)} className="numeric">{formatOptionalNumber(row.targetTps, 1)}</td>
-              <td hidden={!columns.includes(8)} className={`numeric ${typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : ''}`}>{formatOptionalPercent(row.throughputGap)}</td>
-              <td hidden={!columns.includes(9)} className="numeric">{formatOptionalNumber(row.transactions)}</td>
-              <td hidden={!columns.includes(10)} className="numeric">{formatOptionalNumber(row.errors)}</td>
-              <td hidden={!columns.includes(11)} className={`numeric ${metricTone(row.errorPct, 0.75, 1.5)}`}>{formatPercent(row.errorPct)}</td>
-              <td hidden={!columns.includes(12)} className="numeric">{formatOptionalMs(row.art)}</td>
-              <td hidden={!columns.includes(13)} className="numeric">{formatOptionalMs(row.p50)}</td>
-              <td hidden={!columns.includes(14)} className="numeric">{formatOptionalMs(row.p90)}</td>
-              <td hidden={!columns.includes(15)} className="numeric">{formatOptionalMs(row.p95)}</td>
-              <td hidden={!columns.includes(16)} className="numeric">{formatOptionalMs(row.p99)}</td>
+            <tr key={row.id}>
+              {columns.map((column, index) => (
+                <td key={column.sortKey} hidden={!visible.includes(index)} className={[column.align === 'right' ? 'numeric' : '', column.className?.(row) ?? ''].filter(Boolean).join(' ') || undefined}>{column.render(row)}</td>
+              ))}
             </tr>
           ))}
-          {rows.length === 0 && <EmptyTableRow colSpan={columns.length} message="No scenario metrics match the current filter." />}
+          {rows.length === 0 && <EmptyTableRow colSpan={visible.length} message={emptyMessage} />}
         </tbody>
       </table>
     </div>
+  )
+}
+
+function GroupRunTable({ rows, sort, onSort, emptyMessage }: { rows: GroupRunRow[]; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
+  const basis = useContext(CommandMetricBasisContext)
+  const countBasis = errorRateBasisLabel(basis.errorBasis)
+  const columns: MetricColumn<GroupRunRow>[] = [
+    { label: 'Group', sortKey: 'name', render: row => <strong>{row.name}</strong> },
+    { label: 'Protocol', sortKey: 'protocol', render: row => row.protocol },
+    { label: 'Current VUsers', sortKey: 'currentVusers', align: 'right', render: row => formatOptionalNumber(row.currentVusers) },
+    { label: 'Target VUsers', sortKey: 'targetVusers', align: 'right', render: row => formatOptionalNumber(row.targetVusers) },
+    { label: rateHeader(basis), sortKey: 'rate', align: 'right', render: row => formatOptionalNumber(row.rate, 1) },
+    { label: 'Target TPS', sortKey: 'targetTps', align: 'right', render: row => formatOptionalNumber(row.targetTps, 1) },
+    { label: 'Gap', sortKey: 'throughputGap', align: 'right', render: row => formatOptionalPercent(row.throughputGap), className: row => typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : '' },
+    { label: `${basis.population === 'requests' ? 'Requests' : 'Transactions'} (${countBasis})`, sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
+    { label: `Failed (${countBasis})`, sortKey: 'errors', align: 'right', render: row => formatOptionalNumber(row.errors) },
+    { label: errorRateHeader(basis), sortKey: 'errorPct', align: 'right', render: row => row.errorPct === undefined ? MISSING_VALUE : formatPercent(row.errorPct), className: row => row.errorPct === undefined ? '' : metricTone(row.errorPct, 0.75, 1.5) },
+    { label: 'ART', sortKey: 'art', align: 'right', render: row => formatOptionalMs(row.art) },
+    { label: 'P50', sortKey: 'p50', align: 'right', render: row => formatOptionalMs(row.p50) },
+    { label: 'P90', sortKey: 'p90', align: 'right', render: row => formatOptionalMs(row.p90) },
+    { label: 'P95', sortKey: 'p95', align: 'right', render: row => formatOptionalMs(row.p95) },
+    { label: 'P99', sortKey: 'p99', align: 'right', render: row => formatOptionalMs(row.p99) },
+  ]
+  return (
+    <MetricColumnsTable
+      label="Groups"
+      caption={`Throughput is ${rateWindowPhrase(basis)}; attempts, failures and error rates are ${countBasis}. Response times are the last sample's, for transactions.`}
+      columns={columns}
+      essentialColumns={[0, 2, 3, 4, 9, 13]}
+      memoryKey="groupColumns"
+      rows={rows}
+      sort={sort}
+      onSort={onSort}
+      emptyMessage={emptyMessage}
+    />
+  )
+}
+
+function TransactionRunTable({ rows, sort, onSort, emptyMessage }: { rows: TransactionRunRow[]; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
+  const basis = useContext(CommandMetricBasisContext)
+  const columns: MetricColumn<TransactionRunRow>[] = [
+    { label: 'Transaction', sortKey: 'name', render: row => <strong>{row.name}</strong> },
+    { label: 'Protocol', sortKey: 'protocol', render: row => row.protocol },
+    { label: `TPS (${basis.rateWindow})`, sortKey: 'tps', align: 'right', render: row => formatOptionalNumber(row.tps, 1) },
+    { label: 'Attempts (last sample)', sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
+    { label: 'Failed (last sample)', sortKey: 'errors', align: 'right', render: row => formatOptionalNumber(row.errors) },
+    { label: 'Error rate (last sample)', sortKey: 'errorPct', align: 'right', render: row => formatPercent(row.errorPct), className: row => metricTone(row.errorPct, 0.75, 1.5) },
+    { label: 'ART', sortKey: 'art', align: 'right', render: row => formatOptionalMs(row.art) },
+    { label: 'P50', sortKey: 'p50', align: 'right', render: row => formatOptionalMs(row.p50) },
+    { label: 'P90', sortKey: 'p90', align: 'right', render: row => formatOptionalMs(row.p90) },
+    { label: 'P95', sortKey: 'p95', align: 'right', render: row => formatOptionalMs(row.p95) },
+    { label: 'P99', sortKey: 'p99', align: 'right', render: row => formatOptionalMs(row.p99) },
+  ]
+  return (
+    <MetricColumnsTable
+      label="Transactions"
+      caption={`TPS is ${rateWindowPhrase(basis)}; attempts, failures, error rates and response times are the last sample's, across all groups.`}
+      columns={columns}
+      essentialColumns={[0, 2, 3, 5, 9]}
+      memoryKey="transactionColumns"
+      rows={rows}
+      sort={sort}
+      onSort={onSort}
+      emptyMessage={emptyMessage}
+    />
   )
 }
 
@@ -3869,6 +4018,7 @@ function GroupLoadTable({
   onApplyTarget: (groupName: string, value: number) => void
   onOpenGroupSettings?: (groupName: string, kind: GroupSettingsDialogKind) => void
 }) {
+  const basis = useContext(CommandMetricBasisContext)
   const [groupMenu, setGroupMenu] = useState<{ group: string; x: number; y: number } | null>(null)
   const groupMenuRef = useRef<HTMLDivElement | null>(null)
   const firstMenuItemRef = useRef<HTMLButtonElement | null>(null)
@@ -3955,7 +4105,7 @@ function GroupLoadTable({
       <div className="command-panel-header">
         <div>
           <h3>Group Load</h3>
-          <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, TPS, ART, and error rate by group.' : 'Current load, staged target, TPS, ART, and error rate by group.'}</p>
+          <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, throughput, ART and error rate by group.' : 'Current load, staged target, throughput, ART and error rate by group.'}</p>
         </div>
         {showTransitionControls && (
           <div className="command-group-transition-controls" aria-label="Group load transition controls">
@@ -3996,14 +4146,15 @@ function GroupLoadTable({
           <span role="columnheader">Group</span>
           <span role="columnheader">Current VUsers</span>
           <span role="columnheader">{targetHeader}</span>
-          <span role="columnheader">TPS</span>
+          <span role="columnheader"><RateColumnHeader basis={basis} /></span>
           <span role="columnheader">ART</span>
-          <span role="columnheader">Errors</span>
+          <span role="columnheader"><ErrorRateColumnHeader basis={basis} /></span>
         </div>
         {groups.map(group => {
           const isGoalTarget = group.targetMode === 'tps'
-          const indicatorCurrent = isGoalTarget ? group.tps : group.current
-          const committedTarget = isGoalTarget ? group.targetTps ?? group.target : group.targetVusers
+          // A goal-oriented run's rate is TPS, the unit of its targets.
+          const indicatorCurrent = isGoalTarget ? group.rate : group.current
+          const committedTarget = isGoalTarget ? group.committedTargetTps ?? group.targetTps ?? group.target : group.targetVusers
           const sliderMax = isGoalTarget
             ? Math.max(100, Math.ceil(Math.max(group.target, indicatorCurrent, committedTarget) * 2))
             : Math.min(maxVUsersForRole(group.role), sharedVuserSliderMax)
@@ -4113,14 +4264,14 @@ function GroupLoadTable({
                   </>
                 )}
               </span>
-              <span role="cell" data-label="TPS" className={group.throughputTargetMissed ? 'warning' : undefined}>
+              <span role="cell" data-label={rateHeader(basis)} className={group.throughputTargetMissed ? 'warning' : undefined}>
                 <span className="command-tps-stack">
-                  <strong>{formatNumber(group.tps, 1)}</strong>
-                  {isGoalTarget && <small>target {formatNumber(group.targetTps ?? group.target, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
+                  <strong>{formatNumber(group.rate, 1)}</strong>
+                  {isGoalTarget && <small>target {formatNumber(committedTarget, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
                 </span>
               </span>
               <span role="cell" data-label="ART">{formatNumber(group.art)} ms</span>
-              <span role="cell" data-label="Error rate" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
+              <span role="cell" data-label={errorRateHeader(basis)} className={group.attempts > 0 ? metricTone(group.errorPct, 0.75, 1.5) : undefined}>{group.attempts > 0 ? formatPercent(group.errorPct) : MISSING_VALUE}</span>
             </div>
           )
         })}

@@ -491,6 +491,52 @@ func TestMetricsCollector_ByGroup(t *testing.T) {
 	}
 }
 
+// A script without transactions still sends requests: an iteration whose
+// second request always fails fails its implicit iteration transaction, but
+// only half its requests failed. Requests count every attempt, run-wide and
+// per group, and the transaction counters are unchanged.
+func TestMetricsCollector_CountsRequestsBesideTransactions(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	request := func(group string, success bool) *protocol.Result {
+		return &protocol.Result{ActionName: "GET /stock", Group: group, Success: success, Duration: 5 * time.Millisecond}
+	}
+	iteration := func(group string, success bool) *protocol.Result {
+		return &protocol.Result{ActionName: "Iteration", BusinessTransaction: true, Group: group, Success: success, Duration: 10 * time.Millisecond}
+	}
+	snap := mc.computeSnapshot([]*protocol.Result{
+		request("inventory", true), request("inventory", false), iteration("inventory", false),
+		request("inventory", true), request("inventory", false), iteration("inventory", false),
+		request("browse", true), iteration("browse", true),
+		request("", true),
+	}, 2*time.Second)
+
+	if snap.Requests != 6 || snap.RequestErrors != 2 || snap.RequestRate != 3 {
+		t.Fatalf("run requests = %d / %d errors at %v/s, want 6 / 2 at 3/s", snap.Requests, snap.RequestErrors, snap.RequestRate)
+	}
+	if snap.Transactions != 1 || snap.Errors != 2 || snap.TPS != 0.5 {
+		t.Fatalf("run transactions = %d / %d errors at %v TPS, want 1 / 2 at 0.5", snap.Transactions, snap.Errors, snap.TPS)
+	}
+	inventory := snap.ByGroup["inventory"]
+	if inventory == nil || inventory.Requests != 4 || inventory.RequestErrors != 2 || inventory.RequestRate != 2 {
+		t.Fatalf("inventory = %+v, want 4 requests, 2 failed, 2/s", inventory)
+	}
+	if inventory.Transactions != 0 || inventory.Errors != 2 || inventory.TPS != 0 {
+		t.Fatalf("inventory transactions = %d / %d at %v TPS, want 0 / 2 at 0", inventory.Transactions, inventory.Errors, inventory.TPS)
+	}
+	if browse := snap.ByGroup["browse"]; browse == nil || browse.Requests != 1 || browse.RequestErrors != 0 || browse.RequestRate != 0.5 {
+		t.Fatalf("browse = %+v, want 1 request at 0.5/s", browse)
+	}
+	if _, ok := snap.ByGroup[""]; ok {
+		t.Fatal("a request without a group made an unnamed group")
+	}
+
+	// A group that has only sent requests so far still reports them.
+	early := mc.computeSnapshot([]*protocol.Result{request("checkout", true), request("checkout", true)}, time.Second)
+	if checkout := early.ByGroup["checkout"]; checkout == nil || checkout.Requests != 2 || checkout.RequestRate != 2 || checkout.TPS != 0 {
+		t.Fatalf("checkout before its first transaction = %+v, want 2 requests at 2/s", checkout)
+	}
+}
+
 func TestMetricsCollector_TracksThroughputTargetGap(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.SetTargetTPS(8)

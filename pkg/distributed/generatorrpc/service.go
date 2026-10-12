@@ -309,6 +309,24 @@ type metricsAggregateSet struct {
 	Browser           *BrowserMetrics
 	BrowserByDevice   []BrowserDeviceMetrics
 	Groups            []GroupMetric
+	// Requests and RequestErrors are one execution's (one group's) attempted
+	// and failed requests in the window; GroupRequests holds them per group
+	// once the groups' sets are merged.
+	Requests      int64
+	RequestErrors int64
+	GroupRequests map[string]requestCounts
+}
+
+// CurrentRequestCountsVersion marks batches whose groups count their
+// requests (MetricsBatch.RequestCountsVersion); a controller reads request
+// counts only from batches of this version.
+const CurrentRequestCountsVersion = 1
+
+// requestCounts are attempted requests, failed ones included, and the
+// failed ones.
+type requestCounts struct {
+	requests int64
+	errors   int64
 }
 
 type transactionWindowAggregate struct {
@@ -317,6 +335,9 @@ type transactionWindowAggregate struct {
 	dependencies map[string]*metricAccumulator
 	soap         map[string]*metricAccumulator
 	groups       map[string]*metricAccumulator
+	// requests counts every result that is not a business transaction, as
+	// the archive's request (action) population does.
+	requests requestCounts
 }
 
 type metricAccumulator struct {
@@ -474,7 +495,7 @@ func boundRetainedTransactionSamples(values map[string][]TransactionMetric, prio
 }
 
 func (a *transactionWindowAggregate) empty() bool {
-	return a == nil || a.fleet == nil || a.fleet.count == 0
+	return a == nil || a.requests.requests == 0 && (a.fleet == nil || a.fleet.count == 0)
 }
 
 func (a *transactionWindowAggregate) finalize(windowMs int64) metricsAggregateSet {
@@ -483,11 +504,13 @@ func (a *transactionWindowAggregate) finalize(windowMs int64) metricsAggregateSe
 	}
 	windowSec := windowSecondsFromMs(windowMs)
 	return metricsAggregateSet{
-		Fleet:        a.fleet.finalize(windowSec),
-		Transactions: finalizeMetricAccumulatorMap(a.transactions, windowSec),
-		Dependencies: finalizeMetricAccumulatorMap(a.dependencies, windowSec),
-		SOAP:         finalizeMetricAccumulatorMap(a.soap, windowSec),
-		Groups:       finalizeGroupAccumulatorMap(a.groups, windowSec),
+		Fleet:         a.fleet.finalize(windowSec),
+		Transactions:  finalizeMetricAccumulatorMap(a.transactions, windowSec),
+		Dependencies:  finalizeMetricAccumulatorMap(a.dependencies, windowSec),
+		SOAP:          finalizeMetricAccumulatorMap(a.soap, windowSec),
+		Groups:        finalizeGroupAccumulatorMap(a.groups, windowSec),
+		Requests:      a.requests.requests,
+		RequestErrors: a.requests.errors,
 	}
 }
 
@@ -590,10 +613,30 @@ func mergeStableString(current *string, next string) {
 }
 
 func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
-	if result == nil || !result.BusinessTransaction {
+	if result == nil {
+		return nil
+	}
+	if !result.BusinessTransaction {
+		b.recordRequest(result.Success)
 		return nil
 	}
 	return b.RecordTransaction(result)
+}
+
+// recordRequest counts one attempted request toward the window. The lock
+// keeps a request and its failure in the same window; every result already
+// takes the archive recorder's lock (and is encoded under it) on this path,
+// so this brief one adds no new point of serialization.
+func (b *transactionBuffer) recordRequest(success bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.window == nil {
+		b.window = newTransactionWindowAggregate()
+	}
+	b.window.requests.requests++
+	if !success {
+		b.window.requests.errors++
+	}
 }
 
 func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
@@ -2328,10 +2371,13 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 			if paused || terminal {
 				activeGroupVUsers = 0
 			}
+			requests := aggregates.GroupRequests[name]
 			groups = append(groups, &pb.GroupMetric{
-				Name:         name,
-				ActiveVusers: activeGroupVUsers,
-				Metrics:      metricAggregateToProto(findGroupMetricAggregate(aggregates.Groups, name)),
+				Name:          name,
+				ActiveVusers:  activeGroupVUsers,
+				Metrics:       metricAggregateToProto(findGroupMetricAggregate(aggregates.Groups, name)),
+				Requests:      requests.requests,
+				RequestErrors: requests.errors,
 			})
 		}
 	}
@@ -2453,6 +2499,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		JointMetricsInfo:              jointInfoToProto(aggregates.JointInfo),
 		ActionPropertyMetrics:         metricAggregatesToProto(aggregates.ActionProperties),
 		ActionMetricsVersion:          aggregates.NativeVersion,
+		RequestCountsVersion:          CurrentRequestCountsVersion,
 		PropertyMetrics:               metricAggregatesToProto(aggregates.Properties),
 		RegionMetrics:                 metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:                  metricAggregateToProto(aggregates.Fleet),
@@ -2855,7 +2902,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.BrowserDocuments != nil || aggregates.MessagingProgress != nil || aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.BrowserDocuments != nil || aggregates.MessagingProgress != nil || aggregates.Fleet != nil || aggregates.Requests > 0 || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -3276,7 +3323,18 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	browserDevices := make([]BrowserDeviceMetrics, 0)
 	jointParts := make([][]MetricAggregate, 0, len(values))
 	jointInfos := make([]*JointMetricsInfo, 0, len(values))
-	for _, value := range values {
+	for groupName, value := range values {
+		if value.Requests > 0 {
+			if out.GroupRequests == nil {
+				out.GroupRequests = make(map[string]requestCounts, len(values))
+			}
+			counts := out.GroupRequests[groupName]
+			counts.requests += value.Requests
+			counts.errors += value.RequestErrors
+			out.GroupRequests[groupName] = counts
+			out.Requests += value.Requests
+			out.RequestErrors += value.RequestErrors
+		}
 		jointParts = append(jointParts, value.Joint)
 		jointInfos = append(jointInfos, value.JointInfo)
 		protocol.MergeBrowserDocumentSummaries(&out.BrowserDocuments, value.BrowserDocuments)

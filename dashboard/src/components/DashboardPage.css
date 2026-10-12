@@ -308,6 +308,14 @@
   border-collapse: collapse;
 }
 
+.dac-group-table caption {
+  caption-side: bottom;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: left;
+}
+
 .dac-group-table th,
 .dac-group-table td {
   padding: 6px 8px;

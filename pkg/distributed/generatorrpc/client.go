@@ -197,10 +197,13 @@ type MetricsBatch struct {
 	// JointMetrics are the tuple-keyed joint evidence v4 aggregates (each
 	// named by the JSON array of its values) described by JointInfo; both
 	// are empty from older peers.
-	JointMetrics               []MetricAggregate
-	JointInfo                  *JointMetricsInfo
-	ActionPropertyMetrics      []MetricAggregate
-	ActionMetricsVersion       uint32
+	JointMetrics          []MetricAggregate
+	JointInfo             *JointMetricsInfo
+	ActionPropertyMetrics []MetricAggregate
+	ActionMetricsVersion  uint32
+	// RequestCountsVersion is 1 when the groups' request counts are counted;
+	// 0 from an older generator, whose zero counts mean "not counted".
+	RequestCountsVersion       uint32
 	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
 	Browser                    *BrowserMetrics
@@ -280,6 +283,14 @@ type GroupMetric struct {
 	Name         string
 	ActiveVUsers int32
 	Metrics      *MetricAggregate
+	// Requests the group attempted in the window (failed ones included) and
+	// the failed ones; zero from a generator that predates them.
+	Requests      int64
+	RequestErrors int64
+	// RequestRate is requests per second. The controller sets it when it
+	// merges generators' windows, which can differ in length; it is not
+	// sent over the wire.
+	RequestRate float64
 }
 
 type MetricAggregate struct {
@@ -1705,14 +1716,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		})
 	}
 
-	groups := make([]GroupMetric, 0, len(batch.GetGroups()))
-	for _, group := range batch.GetGroups() {
-		groups = append(groups, GroupMetric{
-			Name:         group.GetName(),
-			ActiveVUsers: group.GetActiveVusers(),
-			Metrics:      metricAggregateFromProto(group.GetMetrics()),
-		})
-	}
+	groups := groupMetricsFromProto(batch.GetGroups())
 
 	stats := generatorStatsFromProto(batch.GetStats())
 	telemetry := metricsTelemetryFromProto(batch.GetTelemetry())
@@ -1744,6 +1748,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		JointInfo:                  jointInfoFromProto(batch.GetJointMetricsInfo()),
 		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
 		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
+		RequestCountsVersion:       batch.GetRequestCountsVersion(),
 		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:                    browserMetricsFromProto(batch.GetBrowserMetrics()),
@@ -2365,6 +2370,23 @@ func (c *Client) javaHostSelectionNegotiated(q *pb.WorkAssignment) bool {
 // metricsTelemetryFromProto reads a publication's telemetry. A per-test
 // subscriber-drop count is reported only when the field is present: older
 // generators send none, which is not zero.
+// groupMetricsFromProto reads a batch's groups. Request counts are bounded:
+// never negative, and never more failed requests than attempted.
+func groupMetricsFromProto(in []*pb.GroupMetric) []GroupMetric {
+	groups := make([]GroupMetric, 0, len(in))
+	for _, group := range in {
+		requests := max(group.GetRequests(), 0)
+		groups = append(groups, GroupMetric{
+			Name:          group.GetName(),
+			ActiveVUsers:  group.GetActiveVusers(),
+			Metrics:       metricAggregateFromProto(group.GetMetrics()),
+			Requests:      requests,
+			RequestErrors: min(max(group.GetRequestErrors(), 0), requests),
+		})
+	}
+	return groups
+}
+
 func metricsTelemetryFromProto(in *pb.MetricsBatchTelemetry) *MetricsTelemetry {
 	if in == nil {
 		return nil

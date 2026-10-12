@@ -386,6 +386,12 @@ func clearLivePerformanceMetrics(live *LiveMetrics) {
 	live.RunTotalTx = nil
 	live.RunTotalErrors = nil
 	live.RunErrorPct = nil
+	live.Requests = 0
+	live.RequestErrors = 0
+	live.RequestRate = 0
+	live.RunTotalRequests = nil
+	live.RunRequestErrors = nil
+	live.RunRequestErrorPct = nil
 	live.P50Ms = 0
 	live.P90Ms = 0
 	live.P95Ms = 0
@@ -420,6 +426,9 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 		live.TargetTPS += group.TargetTPS
 		live.TotalTx += group.Transactions
 		live.TotalErrors += group.Errors
+		live.Requests += group.Requests
+		live.RequestErrors += group.RequestErrors
+		live.RequestRate += group.RequestRate
 		if groupAttempts > 0 {
 			attempts += groupAttempts
 			weightedDuration += group.AvgResponseMs * float64(groupAttempts)
@@ -464,8 +473,8 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 // groups, like the window counters. They stay absent unless every selected
 // group carries them, so a filtered view never mixes in whole-test totals.
 func applySelectedGroupRunTotals(live *LiveMetrics, selected []*GroupLiveMetrics) {
-	var tx, errors int64
-	counted := false
+	var counts runTotalsCounts
+	counted, requestsCounted := false, true
 	for _, group := range selected {
 		if group == nil {
 			continue
@@ -473,16 +482,20 @@ func applySelectedGroupRunTotals(live *LiveMetrics, selected []*GroupLiveMetrics
 		if group.RunTransactions == nil || group.RunErrors == nil {
 			return
 		}
-		tx += *group.RunTransactions
-		errors += *group.RunErrors
+		counts.tx += *group.RunTransactions
+		counts.errors += *group.RunErrors
+		if group.RunRequests == nil || group.RunRequestErrors == nil {
+			requestsCounted = false
+		} else {
+			counts.requests += *group.RunRequests
+			counts.requestErrors += *group.RunRequestErrors
+		}
 		counted = true
 	}
 	if !counted {
 		return
 	}
-	live.RunTotalTx = ptrTo(tx)
-	live.RunTotalErrors = ptrTo(errors)
-	live.RunErrorPct = ptrTo(errorPercent(tx, errors))
+	setLiveRunTotals(live, counts, requestsCounted)
 }
 
 func sortedGroupFilterNames(set map[string]struct{}) []string {

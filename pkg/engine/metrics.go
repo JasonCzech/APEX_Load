@@ -88,11 +88,19 @@ type groupRunCounters struct {
 }
 
 type MetricsSnapshot struct {
-	CompletedIterations    int64
-	Timestamp              time.Time
-	Window                 time.Duration
-	Transactions           int64
-	Errors                 int64
+	CompletedIterations int64
+	Timestamp           time.Time
+	Window              time.Duration
+	Transactions        int64
+	Errors              int64
+	// Requests counts every attempted request in the window: every result
+	// that is not a business transaction, failed or not, which is the
+	// report's request population. RequestErrors is the failed ones and
+	// RequestRate is Requests per second. Transactions/Errors/TPS describe
+	// business transactions only, and TPS counts successes only.
+	Requests               int64   `json:"requests,omitempty"`
+	RequestErrors          int64   `json:"request_errors,omitempty"`
+	RequestRate            float64 `json:"request_rate,omitempty"`
 	ActiveVUsers           int64
 	TPS                    float64
 	TargetTPS              float64 `json:"target_tps,omitempty"`
@@ -296,6 +304,9 @@ type GroupMetrics struct {
 	Name                   string
 	Transactions           int64
 	Errors                 int64
+	Requests               int64   `json:"requests,omitempty"`
+	RequestErrors          int64   `json:"request_errors,omitempty"`
+	RequestRate            float64 `json:"request_rate,omitempty"`
 	ActiveVUsers           int64
 	ActiveVUsersReported   bool `json:"active_vusers_reported,omitempty"`
 	TPS                    float64
@@ -826,6 +837,22 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		}
 
 		if !r.BusinessTransaction {
+			snap.Requests++
+			if !r.Success {
+				snap.RequestErrors++
+			}
+			if r.Group != "" {
+				groupName := boundedDimensionKey(r.Group, snap.ByGroup)
+				gm, ok := snap.ByGroup[groupName]
+				if !ok {
+					gm = &GroupMetrics{Name: groupName}
+					snap.ByGroup[groupName] = gm
+				}
+				gm.Requests++
+				if !r.Success {
+					gm.RequestErrors++
+				}
+			}
 			actionName := boundedDimensionKey(metricActionDimension(r), snap.ByAction)
 			am, ok := snap.ByAction[actionName]
 			if !ok {
@@ -984,6 +1011,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		snap.P99 = time.Duration(td.Quantile(0.99))
 	}
 	applyThroughputGap(&snap.TPS, snap.TargetTPS, &snap.ThroughputGapPct, &snap.ThroughputTargetMissed)
+	if snap.Requests > 0 {
+		snap.RequestRate = float64(snap.Requests) / window.Seconds()
+	}
 
 	// Attach live per-group active VUser counts before finalizing group metrics
 	// so resultless groups still receive their configured target and throughput
@@ -1012,6 +1042,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, gm := range snap.ByGroup {
 		gm.TargetTPS = groupTargets[name]
+		if gm.Requests > 0 {
+			gm.RequestRate = float64(gm.Requests) / window.Seconds()
+		}
 		groupAttempts := gm.Transactions + gm.Errors
 		if groupAttempts > 0 {
 			gd := groupDigests[name]

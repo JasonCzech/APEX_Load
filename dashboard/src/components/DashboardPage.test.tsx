@@ -1122,8 +1122,61 @@ describe('DashboardPage', () => {
       ['Checkout', '12', '31.7', '148', '4.76%', '20', '1'],
       ['Search', '8', '12.5', '90', '0.00%', '40', '0'],
       ['Reporting', '4', '—', '—', '—', '—', '—'],
-      ['Adhoc', '2', '0.0', '0', '0.00%', '0', '0'],
+      // No attempts yet: no error rate, rather than a 0.00% it has not earned.
+      ['Adhoc', '2', '0.0', '0', '—', '0', '0'],
     ])
+    expect(table?.querySelector('caption')?.textContent).toContain('TPS from the last sample; transaction error rates and counts from the last sample')
+  })
+
+  // A script without transactions still sends requests: the card counts
+  // them, as Command Center and the report do, and names the window.
+  it('counts requests in active test cards once the run has sent any', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [{
+        id: 'test-requests', name: 'Inventory resilience', status: 'RUNNING', application_id: 'app-1', release_id: 'rel-1',
+        groups: [{ name: 'Inventory', script_id: 'script-1', script_name: 'Inventory Flow', protocol: 'http', vusers: 4 }],
+        total_vusers: 4, duration: '10m', created_at: '2026-05-12T20:00:00Z',
+        live_metrics: {
+          timestamp: '2026-05-12T20:00:03Z', active_vusers: 4, tps: 0, avg_response_ms: 128, error_pct: 100,
+          total_transactions: 0, total_errors: 3, run_total_transactions: 0, run_total_errors: 387,
+          requests: 30, request_errors: 15, request_rate: 30, run_total_requests: 1_729, run_request_errors: 863,
+          p50_ms: 90, p90_ms: 150, p95_ms: 180, p99_ms: 240,
+          groups: {
+            Inventory: { name: 'Inventory', vusers: 4, transactions: 0, errors: 3, tps: 0, run_transactions: 0, run_errors: 387, requests: 30, request_errors: 15, request_rate: 30, run_requests: 1_729, run_request_errors: 863, avg_response_ms: 128, p50_ms: 90, p90_ms: 150, p99_ms: 240 },
+            // Reported without being configured: averaged like the rest.
+            Extra: { name: 'Extra', vusers: 1, transactions: 0, errors: 0, tps: 0, requests: 14, request_rate: 14, run_requests: 100, run_request_errors: 0, avg_response_ms: 90, p50_ms: 90, p90_ms: 90, p99_ms: 90 },
+          },
+        },
+      }],
+    })
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{
+            'test-requests': [
+              { time: 'a', timestampMs: 1_000, vusers: 4, tps: 0, requestRate: 36, Inventory_tps: 0, Inventory_requestRate: 26, Extra_tps: 0, Extra_requestRate: 10, avgMs: 128, errorPct: 100, p50: 90, p90: 150, p99: 240 },
+              { time: 'b', timestampMs: 2_000, vusers: 4, tps: 0, requestRate: 44, Inventory_tps: 0, Inventory_requestRate: 30, Extra_tps: 0, Extra_requestRate: 14, avgMs: 128, errorPct: 100, p50: 90, p90: 150, p99: 240 },
+            ],
+          }}
+          connectionState="connected"
+          onSelectTest={vi.fn()}
+          onNavigate={vi.fn()}
+        />,
+      )
+    })
+    await flushDashboard()
+    clickButtonByText('Active tests')
+
+    const card = container.querySelector<HTMLElement>('.dash-active-card')!
+    const metric = (label: string) => Array.from(card.querySelectorAll('.dac-metric')).find(item => item.querySelector('.dac-metric-label')?.textContent === label)?.querySelector('.dac-metric-value')?.textContent?.trim()
+    expect(metric('Requests/s (10 s avg)')).toBe('40.0')
+    expect(metric('Request error rate (run to date)')).toBe('49.91%')
+    expect(metric('ART ms (10 s avg)')).toBe('128')
+    const table = card.querySelector<HTMLTableElement>('.dac-group-table')!
+    expect(Array.from(table.querySelectorAll('thead th')).map(cell => cell.textContent?.trim())).toEqual(['Group', 'VUsers', 'Requests/s', 'ART (ms)', 'Error rate (%)', 'Requests', 'Failed'])
+    expect(groupMetricRows(table)).toEqual([['Inventory', '4', '28.0', '128', '49.91%', '1,729', '863'], ['Extra', '1', '12.0', '90', '0.00%', '100', '0']])
+    expect(table.querySelector('caption')?.textContent).toContain('Requests/s averaged over the last 10 s; request error rates and counts run to date')
   })
 
   it('renders every dashboard table row instead of preview caps', async () => {
@@ -1645,7 +1698,7 @@ describe('DashboardPage', () => {
     ] })
     await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onOpenCommandCenter={onOpenCommandCenter} onNavigate={onNavigate} />) })
     await flushDashboard()
-    expect(getTabByText('Active & Queued').textContent).toContain('2')
+    expect(getTabByText('Active & queued').textContent).toContain('2')
     clickButtonByText('View queued tests (2)')
     expect(container.querySelector('[aria-label="Queued runs"]')?.textContent).toContain('Project VUser limit')
     expect(container.querySelector('[aria-label="Queued runs"]')?.textContent).toContain('queued-2')
