@@ -1,7 +1,10 @@
-// Confirmation copy for the run lifecycle controls. Every one of these changes
-// what a live load test is doing to a real target environment, so each is
-// confirmed before it is sent.
-export type RunActionConfirmationKind = 'start' | 'pause' | 'resume' | 'stop' | 'abort'
+import type { TestSummary } from '../types'
+import { formatDurationDisplay, isValidDurationInput } from '../utils/timeUtils'
+
+// Confirmation copy for the run lifecycle controls and live load changes.
+// Every one of these changes what a live load test is doing to a real target
+// environment, so each is confirmed before it is sent.
+export type RunActionConfirmationKind = 'start' | 'pause' | 'resume' | 'stop' | 'abort' | 'apply-target'
 
 export interface RunActionConfirmationCopy {
   title: string
@@ -41,8 +44,23 @@ const RUN_ACTION_CONFIRMATIONS: Record<RunActionConfirmationKind, RunActionConfi
     confirmLabel: 'Abort Test',
     tone: 'danger',
   },
+  'apply-target': {
+    title: 'Apply this load change?',
+    description: 'The running test starts changing as soon as it is applied, at once or over its ramp.',
+    confirmLabel: 'Apply change',
+    tone: 'primary',
+  },
 }
 
 export function runActionConfirmationCopy(kind: RunActionConfirmationKind): RunActionConfirmationCopy {
   return RUN_ACTION_CONFIRMATIONS[kind]
+}
+
+/**
+ * What pausing does to a run's clock: a run to a duration keeps counting
+ * while paused, so the paused time is not run again after resuming.
+ */
+export function pauseDurationNote(run?: Pick<TestSummary, 'duration' | 'termination_mode'> | null): string {
+  if (!run || run.termination_mode === 'iterations' || !isValidDurationInput(run.duration)) return ''
+  return `Paused time counts against the ${formatDurationDisplay(run.duration)} duration; resuming does not add it back.`
 }

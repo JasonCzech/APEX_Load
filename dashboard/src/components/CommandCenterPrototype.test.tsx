@@ -475,6 +475,57 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
+  it('says in the Pause dialog that a paused run keeps spending its duration', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={[]} />) })
+    await click(buttonNamed('Pause'))
+    const dialog = container.querySelector('.confirm-run-action-modal')!
+    const detail = dialog.querySelector('.confirm-run-action-detail')!
+    expect(detail.textContent).toBe('Paused time counts against the 10m duration; resuming does not add it back.')
+    expect(dialog.getAttribute('aria-describedby')?.split(' ')).toContain(detail.id)
+  })
+
+  it('shrinks the run shelf to one row of status and controls once the page scrolls past it', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    const scroller = document.createElement('main')
+    scroller.className = 'main-content'
+    container.appendChild(scroller)
+    const pageRoot = createRoot(scroller)
+    await act(async () => { pageRoot.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={[]} />) })
+    const shelf = scroller.querySelector<HTMLElement>('.command-control-shelf')!
+    const previous = shelf.previousElementSibling as HTMLElement
+    // The shelf checks where it is once a frame while the page scrolls.
+    const scrollPage = () => act(async () => {
+      scroller.dispatchEvent(new Event('scroll'))
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    })
+    // jsdom has no layout (or gap): the shelf sits right under the element before it, then holds while that scrolls away.
+    vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100 } as DOMRect)
+    vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect)
+    await scrollPage()
+    expect(shelf.classList.contains('compact')).toBe(false)
+    expect(shelf.textContent).toContain('Test notes')
+
+    vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: -400, bottom: -300 } as DOMRect)
+    vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 60 } as DOMRect)
+    await scrollPage()
+    expect(shelf.classList.contains('compact')).toBe(true)
+    // The essentials, each named: load, throughput in the page's unit, time and errors.
+    expect(Array.from(shelf.querySelectorAll('[role="group"][aria-label="Run summary"] strong')).map(label => label.textContent)).toEqual(['Load', expect.stringMatching(/^(Requests\/s|TPS)$/), 'Time', 'Errors'])
+    // Every control stays within reach; only the summary pills fold into one line.
+    expect(Array.from(shelf.querySelectorAll('button')).map(button => button.textContent)).toEqual(expect.arrayContaining(['Pause', 'Stop', 'Abort', 'Test notes']))
+    expect(shelf.querySelectorAll('[aria-label="Run summary"]')).toHaveLength(1)
+
+    vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100 } as DOMRect)
+    vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect)
+    await scrollPage()
+    expect(shelf.classList.contains('compact')).toBe(false)
+    expect(shelf.style.marginBottom).toBe('')
+    await act(async () => pageRoot.unmount())
+  })
+
   it('reverts a rejected VUser target and says it was not applied', async () => {
     const run = buildLiveVuserTest()
     vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
@@ -488,6 +539,7 @@ describe('CommandCenterPrototype', () => {
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '99999')
     const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-primary'))!
     await click(apply)
+    await confirmRunAction('Apply change')
     await flush()
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
     expect(container.textContent).toContain('Not applied: Live Checkout keeps its current VUser target')
@@ -1485,6 +1537,10 @@ describe('CommandCenterPrototype', () => {
 
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '60')
     await click(buttonNamed('Apply'))
+    // A running test's load changes only once confirmed, with what it does.
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('/vusers'))).toBe(false)
+    expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 50 → 60 VUsers')
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
@@ -1513,6 +1569,7 @@ describe('CommandCenterPrototype', () => {
     expect(targetInput.max).toBe('1000000')
     await changeNumberInput(targetInput, '1000000')
     await click(buttonNamed('Apply'))
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
@@ -1592,6 +1649,8 @@ describe('CommandCenterPrototype', () => {
     await click(buttonNamed('Gradual'))
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '60')
     await click(buttonNamed('Apply'))
+    expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 50 → 60 VUsers over 2m')
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
@@ -2695,6 +2754,8 @@ describe('CommandCenterPrototype', () => {
     expect(goalRow.querySelector('.command-tps-stack small')?.textContent).toBe('target 90.0 TPS / gap 16.22%')
 
     await click(buttonNamed('Apply'))
+    expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 90 → 120 TPS')
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-goal-1/goal-targets'),

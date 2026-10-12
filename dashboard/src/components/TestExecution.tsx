@@ -37,6 +37,7 @@ import type { ReportProfileId } from './reportTypeOptions'
 import ReportComposer from './ReportComposer'
 import TestNotesDialog from './TestNotesDialog'
 import ConfirmRunActionModal from './ConfirmRunActionModal'
+import { pauseDurationNote } from './runActionConfirmation'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -355,9 +356,9 @@ export default function TestExecution({
   // the live-controls panel, so the two surfaces cannot drift apart. onStart is
   // wrapped only for the plain Start button; the capacity/shakeout override
   // flows are already an explicit confirmation of their own.
-  const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
+  const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
   const onConfirmStart = confirmRunAction('start', onStart)
-  const onConfirmPause = confirmRunAction('pause', onPause)
+  const onConfirmPause = confirmRunAction('pause', onPause, pauseDurationNote(test))
   const onConfirmResume = confirmRunAction('resume', onResume)
   const onConfirmStop = confirmRunAction('stop', onStop)
   const onConfirmAbort = confirmRunAction('abort', onAbort)
@@ -1061,6 +1062,7 @@ export default function TestExecution({
           action={pendingAction}
           runName={test?.name}
           runRef={test?.ref_key}
+          detail={pendingDetail}
           onConfirm={onConfirmRunAction}
           onCancel={onCancelRunAction}
         />

@@ -29,3 +29,11 @@
   color: var(--text-secondary);
   font-size: 12px;
 }
+
+/* What the action does to this run: a load change's impact, or a pause's clock. */
+.confirm-run-action-detail {
+  margin: 0 0 16px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}

@@ -707,7 +707,7 @@ From the Command Center you can also control the run while it is in flight:
 | Control | Available when | Effect |
 | --- | --- | --- |
 | **Start** | `QUEUED` or `RESERVED` | Begins execution now |
-| **Pause** | `RUNNING` | Holds every VUser between actions |
+| **Pause** | `RUNNING` | Holds every VUser between actions. A run to a duration keeps its clock running while paused, so paused time counts against the duration |
 | **Resume** | `PAUSED` | Releases the hold |
 | **Stop** | `RUNNING`, `INITIALIZING`, or `PAUSED` | Graceful: finishes the action in flight, skips later actions and think time, runs teardown. The run stays `STOPPING` until generator teardown and archive finalization complete |
 | **Abort** | Any non-terminal state | Force-cancels active work immediately |
@@ -715,6 +715,13 @@ From the Command Center you can also control the run while it is in flight:
 
 Pause and Stop become unavailable once a run enters `STOPPING` — from there only Abort
 remains.
+
+Each of these asks for confirmation first, and so does a group's **Apply** in the
+group load panel: its dialog names the change and what it does to the run (for
+example "Store_Browse 2 → 4 VUsers · run total 6 → 8 VUsers"). A run that has not
+started takes target edits without asking. Once the page scrolls past the run
+controls, they fold into one row (the run, its load, throughput, time and errors,
+and the controls) that stays at the top.
 
 Watch throughput, response-time percentiles (p50/p95/p99), and error rate together.
 Live throughput and error rates count requests once the run has sent any, as the

@@ -4,32 +4,34 @@ import { RunActionConfirmationKind } from './runActionConfirmation'
 
 interface RunActionConfirmationModel {
   pendingAction: RunActionConfirmationKind | null
+  /** What the pending action does to this run, said in its dialog. */
+  pendingDetail: string
   /** Wraps a run-control handler so it opens the confirmation dialog first. */
-  confirmRunAction: (action: RunActionConfirmationKind, run: () => void | Promise<void>) => () => void
+  confirmRunAction: (action: RunActionConfirmationKind, run: () => void | Promise<void>, detail?: string) => () => void
   onConfirmRunAction: () => void
   onCancelRunAction: () => void
 }
 
 export function useRunActionConfirmation(): RunActionConfirmationModel {
-  const [pendingAction, setPendingAction] = useState<RunActionConfirmationKind | null>(null)
+  const [pending, setPending] = useState<{ action: RunActionConfirmationKind; detail: string } | null>(null)
   const pendingRunRef = useRef<(() => void | Promise<void>) | null>(null)
 
-  const confirmRunAction = useCallback((action: RunActionConfirmationKind, run: () => void | Promise<void>) => () => {
+  const confirmRunAction = useCallback((action: RunActionConfirmationKind, run: () => void | Promise<void>, detail = '') => () => {
     pendingRunRef.current = run
-    setPendingAction(action)
+    setPending({ action, detail })
   }, [])
 
   const onConfirmRunAction = useCallback(() => {
     const run = pendingRunRef.current
     pendingRunRef.current = null
-    setPendingAction(null)
+    setPending(null)
     void run?.()
   }, [])
 
   const onCancelRunAction = useCallback(() => {
     pendingRunRef.current = null
-    setPendingAction(null)
+    setPending(null)
   }, [])
 
-  return { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction }
+  return { pendingAction: pending?.action ?? null, pendingDetail: pending?.detail ?? '', confirmRunAction, onConfirmRunAction, onCancelRunAction }
 }

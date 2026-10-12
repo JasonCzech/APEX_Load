@@ -67,3 +67,22 @@ export function runLoadStatus(plan: RunLoadProfilePreview, elapsedSeconds: numbe
     elapsedLabel: openEnded ? `${elapsed} elapsed` : `${elapsed} of ${formatTrafficProfileAxisTime(plan.totalSeconds)} elapsed`,
   }
 }
+
+/**
+ * What a live load change does, said in its confirmation: the group's applied
+ * target to the new one, and, with more than one group, the run's total
+ * ("Store_Browse 2 → 4 VUsers · run total 6 → 8 VUsers"). A goal run's
+ * targets are TPS; a gradual VUser change names its ramp.
+ */
+export function loadChangeImpact(groups: CommandGroup[], groupName: string, target: number, rampDuration = ''): string {
+  const group = groups.find(item => item.name === groupName)
+  const mode = group?.targetMode ?? 'vusers'
+  const applied = (item: CommandGroup) => mode === 'tps' ? item.committedTargetTps ?? 0 : item.targetVusers
+  const amount = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: mode === 'tps' ? 1 : 0 })
+  const unit = mode === 'tps' ? 'TPS' : 'VUsers'
+  const from = group ? applied(group) : 0
+  const change = `${groupName} ${amount(from)} → ${amount(target)} ${unit}${rampDuration ? ` over ${rampDuration}` : ''}`
+  if (groups.length < 2) return change
+  const totalFrom = groups.reduce((sum, item) => sum + applied(item), 0)
+  return `${change} · ${mode === 'tps' ? 'run goal' : 'run total'} ${amount(totalFrom)} → ${amount(totalFrom - from + target)} ${unit}`
+}

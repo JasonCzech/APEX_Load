@@ -67,6 +67,7 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     const pauseDialog = page.getByRole('dialog', { name: 'Pause this test run?' })
     await expect(pauseDialog).toBeVisible()
+    await expect(pauseDialog).toContainText('Paused time counts against the')
     await pauseDialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(pauseDialog).toBeHidden()
     expect(await status(request, testId), 'cancelled confirmation must not pause the run').toBe('RUNNING')
@@ -84,6 +85,10 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     const vuserRow = page.getByRole('row').filter({ has: target })
     await target.fill('3')
     await vuserRow.getByRole('button', { name: 'Apply smoke target', exact: true }).click()
+    // A running test's load changes only once confirmed, with what it does to the run.
+    const applyDialog = page.getByRole('dialog', { name: 'Apply this load change?' })
+    await expect(applyDialog).toContainText('smoke 2 → 3 VUsers')
+    await applyDialog.getByRole('button', { name: 'Apply change', exact: true }).click()
     await expect.poll(async () => (await (await request.get(`/api/v1/tests/${testId}`)).json()).groups[0].vusers).toBe(3)
 
     // The current command-center dialog previews and applies the runtime change.

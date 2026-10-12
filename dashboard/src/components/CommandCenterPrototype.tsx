@@ -4,7 +4,7 @@ import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
 
@@ -35,6 +35,7 @@ import { omitTransactionChartSeries } from './transactionChartSeries'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import ConfirmRunActionModal from './ConfirmRunActionModal'
+import { pauseDurationNote } from './runActionConfirmation'
 import TestNotesDialog from './TestNotesDialog'
 import GroupParametersDialog from './GroupParametersDialog'
 import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
@@ -53,7 +54,7 @@ import {
   type GroupRunRow,
   type TransactionRunRow,
 } from './commandCenterScenarioRows'
-import { buildRunLoadPlan, observedVUsersSince, runLoadStatus } from './commandCenterLoadModel'
+import { buildRunLoadPlan, loadChangeImpact, observedVUsersSince, runLoadStatus } from './commandCenterLoadModel'
 import LoadPlanChart from './LoadPlanChart'
 import { LOAD_PLAN_COLORS } from './loadPlanSteps'
 import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
@@ -218,6 +219,14 @@ function clampTarget(value: number, role?: TestGroup['role']) {
 function clampTpsTarget(value: number) {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.min(100000, Math.round(value * 10) / 10))
+}
+
+// A group target change ready to send: the clamped target, and its ramp when gradual.
+interface TargetChange {
+  targetMode: CommandGroup['targetMode']
+  target: number
+  rampDuration: string
+  useGradualVuserChange: boolean
 }
 
 function formatTargetValue(value: number, mode: CommandGroup['targetMode']) {
@@ -652,7 +661,7 @@ export default function CommandCenterPrototype({
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const [showNotes, setShowNotes] = useState(false)
   const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
-  const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
+  const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
   const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind; plannedOwner?: { scope: string; token: { generation: number } } } | null>(null)
   const archiveCheckGenerationRef = useRef(0)
   const archiveCheckInFlightRef = useRef(false)
@@ -1403,20 +1412,34 @@ export default function CommandCenterPrototype({
     }))
   }
 
-  const applyTarget = async (groupName: string, value: number) => {
-    const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
+  // The change a group's Apply asks for, clamped and checked, or why it cannot be made.
+  const planTargetChange = (groupName: string, value: number): TargetChange | { error: string } => {
+    const targetMode: CommandGroup['targetMode'] = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
     const role = displayTest.groups.find(group => group.name === groupName)?.role
     const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value, role)
-    if (targetMode === 'tps' && target <= 0) {
-      setState(prev => ({ ...prev, feedback: `${groupName} target TPS must be greater than zero.` }))
-      return
-    }
+    if (targetMode === 'tps' && target <= 0) return { error: `${groupName} target TPS must be greater than zero.` }
     const rampDuration = state.targetRampDuration.trim()
     const useGradualVuserChange = targetMode === 'vusers' && state.targetTransitionMode === 'gradual'
-    if (useGradualVuserChange && !isValidDurationInput(rampDuration)) {
-      setState(prev => ({ ...prev, feedback: 'Enter a valid ramp duration before applying gradual load changes.' }))
+    if (useGradualVuserChange && !isValidDurationInput(rampDuration)) return { error: 'Enter a valid ramp duration before applying gradual load changes.' }
+    return { targetMode, target, rampDuration, useGradualVuserChange }
+  }
+
+  // A change to a running test's load is confirmed like Pause and Stop, with
+  // what it does to the run. A run that has not started takes plan edits as is.
+  const requestApplyTarget = (groupName: string, value: number) => {
+    const plan = planTargetChange(groupName, value)
+    if ('error' in plan) {
+      setState(prev => ({ ...prev, feedback: plan.error }))
       return
     }
+    if (!liveMode || !testId || runStatus === 'QUEUED' || runStatus === 'RESERVED' || runStatus === 'SCHEDULED') {
+      void applyTarget(groupName, plan)
+      return
+    }
+    confirmRunAction('apply-target', () => applyTarget(groupName, plan), loadChangeImpact(groups, groupName, plan.target, plan.useGradualVuserChange ? plan.rampDuration : ''))()
+  }
+
+  const applyTarget = async (groupName: string, { targetMode, target, rampDuration, useGradualVuserChange }: TargetChange) => {
     if (liveMode && testId) {
       try {
         if (targetMode === 'tps') {
@@ -1567,6 +1590,7 @@ export default function CommandCenterPrototype({
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
         throughput={runSummaryRate}
         throughputLabel={rateHeader(metricBasis)}
+        throughputUnit={throughputLabel(metricBasis.throughputPopulation)}
         // Average and P95 from the same metrics window, so P95 never reads below the average.
         responseAvgMs={displayTest.live_metrics?.avg_response_ms}
         responseP95Ms={displayTest.live_metrics?.p95_ms}
@@ -1574,7 +1598,7 @@ export default function CommandCenterPrototype({
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
         onStart={confirmRunAction('start', startRun)}
         // One button, two directions: confirm whichever one it is about to do.
-        onPauseResume={confirmRunAction(runStatus === 'PAUSED' ? 'resume' : 'pause', togglePause)}
+        onPauseResume={runStatus === 'PAUSED' ? confirmRunAction('resume', togglePause) : confirmRunAction('pause', togglePause, pauseDurationNote(displayTest))}
         onStop={confirmRunAction('stop', stopRun)}
         onAbort={confirmRunAction('abort', abortRun)}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
@@ -1596,6 +1620,7 @@ export default function CommandCenterPrototype({
           action={pendingAction}
           runName={displayTest.name}
           runRef={displayTest.ref_key}
+          detail={pendingDetail}
           onConfirm={onConfirmRunAction}
           onCancel={onCancelRunAction}
         />
@@ -1727,7 +1752,7 @@ export default function CommandCenterPrototype({
           onTargetTransitionModeChange={changeTargetTransitionMode}
           onTargetRampDurationChange={changeTargetRampDuration}
           onTargetChange={changeTarget}
-          onApplyTarget={applyTarget}
+          onApplyTarget={requestApplyTarget}
           onErrorSelect={selectError}
           onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
           onOpenPlannedGroupSettings={plannedSettingsScope ? openPlannedGroupSettings : undefined}
@@ -1772,7 +1797,7 @@ export default function CommandCenterPrototype({
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
           onTargetChange={changeTarget}
-          onApplyTarget={applyTarget}
+          onApplyTarget={requestApplyTarget}
           onErrorSelect={selectError}
         />
       )}
@@ -1809,6 +1834,8 @@ interface RunControlShelfProps {
   throughput?: number
   /** Names the throughput's population and window, e.g. "Requests/s (10 s avg)". */
   throughputLabel: string
+  /** The throughput's unit alone ("Requests/s" or "TPS"), for the compact row. */
+  throughputUnit: string
   /** Average and P95 transaction response time (ms) from the latest metrics window. */
   responseAvgMs?: number
   responseP95Ms?: number
@@ -1840,6 +1867,7 @@ function RunControlShelf({
   highestErrorGroup,
   throughput,
   throughputLabel: throughputMetricLabel,
+  throughputUnit,
   responseAvgMs,
   responseP95Ms,
   feedback,
@@ -1869,8 +1897,18 @@ function RunControlShelf({
   const elapsedSeconds = Number.isFinite(startedMs) && Number.isFinite(endMs) ? Math.max(0, (endMs - startedMs) / 1000) : 0
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
+  const loadValue = canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
+    ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
+    : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`
+  const clockValue = test.termination_mode === 'iterations' ? formatRunClock(elapsedSeconds) : `${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`
+  const errorValue = canStart || noRequestSamples ? 'No samples' : formatOptionalPercent(errorPct)
+  const throughputValue = canStart ? 'Not started' : noRequestSamples ? 'No samples' : formatNumber(throughput ?? 0, 1)
+  // The compact row names each value by the label of its pill.
+  const loadLabel = canStart ? 'Planned load' : 'Observed / Target Load'
+  const clockLabel = test.termination_mode === 'iterations' ? 'Elapsed' : 'Elapsed · remaining'
+  const { shelfRef, stuck } = useStuckShelf()
   return (
-    <section className="command-control-shelf" aria-label="Command center run controls">
+    <section ref={shelfRef} className={`command-control-shelf${stuck ? ' compact' : ''}`} aria-label="Command center run controls">
       <div className="command-run-identity">
         <StatusBadge status={status} />
         <div>
@@ -1879,26 +1917,28 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className="command-run-stats" aria-label="Run summary">
-        <MetricPill
-          label={canStart ? "Planned load" : "Observed / Target Load"}
-          value={canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
-            ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
-            : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
-          tone="info"
-        />
-        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(elapsedSeconds)} /></> : <MetricPill label="Elapsed · remaining" value={`${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
-        {throughput !== undefined && <MetricPill label={throughputMetricLabel} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(throughput, 1)} tone="accent" />}
-        <MetricPill label="Transaction response (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
-        <MetricPill label={errorLabel} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
-        {test.groups.length > 1 && (
-          <MetricPill
-            label={`Highest ${lowerFirst(errorLabel)}`}
-            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
-            tone={highestErrorGroup ? "danger" : "default"}
-          />
-        )}
-      </div>
+      {/* Scrolled down, the shelf is one row: the run, its load, rate, clock and errors, and its controls. */}
+      {stuck ? <div className="command-run-compact-summary" role="group" aria-label="Run summary">
+        <span title={loadLabel}><strong>Load</strong> {loadValue}</span>
+        {throughput !== undefined && <span title={throughputMetricLabel}><strong>{throughputUnit}</strong> {throughputValue}</span>}
+        <span title={clockLabel}><strong>Time</strong> {clockValue}</span>
+        <span title={errorLabel} className={errorPct && errorPct > 0 ? 'danger' : undefined}><strong>Errors</strong> {errorValue}</span>
+      </div> : (
+        <div className="command-run-stats" aria-label="Run summary">
+          <MetricPill label={loadLabel} value={loadValue} tone="info" />
+          {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label={clockLabel} value={clockValue} /></> : <MetricPill label={clockLabel} value={clockValue} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
+          {throughput !== undefined && <MetricPill label={throughputMetricLabel} value={throughputValue} tone="accent" />}
+          <MetricPill label="Transaction response (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
+          <MetricPill label={errorLabel} value={errorValue} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
+          {test.groups.length > 1 && (
+            <MetricPill
+              label={`Highest ${lowerFirst(errorLabel)}`}
+              value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
+              tone={highestErrorGroup ? "danger" : "default"}
+            />
+          )}
+        </div>
+      )}
 
       <div className="command-run-actions">
         {onOpenExecution && !historicalRun && (
@@ -1952,6 +1992,62 @@ function RunControlShelf({
       <p className="command-control-feedback" role="status">{feedback}</p>
     </section>
   )
+}
+
+// Whether the run shelf is stuck under the header (the page scrolled past
+// it), measured against where it sits in the page: the element before it
+// plus the page's gap. It is checked once a frame while the page scrolls or
+// its layout changes. Compact, the shelf keeps the room it had in the page as
+// a bottom margin, so changing it moves nothing below.
+function useStuckShelf() {
+  const shelfRef = useRef<HTMLElement | null>(null)
+  const expandedHeightRef = useRef(0)
+  const [stuck, setStuck] = useState(false)
+  useEffect(() => {
+    const shelf = shelfRef.current
+    const page = shelf?.parentElement
+    const scroller = shelf?.closest<HTMLElement>('.main-content')
+    if (!shelf || !page || !scroller) return
+    const update = () => {
+      const previous = shelf.previousElementSibling
+      const flowTop = previous
+        ? previous.getBoundingClientRect().bottom + (Number.parseFloat(getComputedStyle(page).rowGap) || 0)
+        : page.getBoundingClientRect().top + (Number.parseFloat(getComputedStyle(page).paddingTop) || 0)
+      if (!shelf.classList.contains('compact')) expandedHeightRef.current = shelf.offsetHeight
+      setStuck(shelf.getBoundingClientRect().top > flowTop + 1)
+    }
+    let frame = 0
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; update() })
+    }
+    update()
+    scroller.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    // Content above the shelf, or the column, can change without a scroll.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(page)
+    observer?.observe(scroller)
+    return () => {
+      cancelAnimationFrame(frame)
+      scroller.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      observer?.disconnect()
+    }
+  }, [])
+  useLayoutEffect(() => {
+    const shelf = shelfRef.current
+    if (!shelf) return
+    if (!stuck) {
+      shelf.style.marginBottom = ''
+      return
+    }
+    const keepRoom = () => { shelf.style.marginBottom = `${Math.max(0, expandedHeightRef.current - shelf.offsetHeight)}px` }
+    keepRoom()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(keepRoom)
+    observer?.observe(shelf)
+    return () => observer?.disconnect()
+  }, [stuck])
+  return { shelfRef, stuck }
 }
 
 function NotesIcon() {

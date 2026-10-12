@@ -2506,3 +2506,27 @@ button.command-group-name:focus-visible {
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Scrolled past, the run shelf is one 48 px row: the run, its load, clock and
+   errors, and its controls (on a narrow page the controls take a second row).
+   Its bottom margin keeps the room it had in the page (see useStuckShelf). */
+.command-control-shelf.compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 6px 12px;
+}
+/* The run's name gives way first (the top bar names the run too), so the row
+   keeps one line at 1280 px even with an hour-long clock. */
+.command-control-shelf.compact .command-run-identity { flex: 1 1 96px; min-width: 0; }
+.command-control-shelf.compact .command-run-identity > :first-child { flex-shrink: 0; }
+.command-control-shelf.compact .command-run-identity div > span { display: none; }
+.command-run-compact-summary { flex: none; display: flex; gap: 16px; color: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.command-run-compact-summary strong { margin-right: 4px; color: var(--text-muted); font-weight: 700; }
+.command-run-compact-summary .danger { color: var(--danger-text); }
+.command-control-shelf.compact .command-run-actions { flex: none; flex-wrap: nowrap; margin-left: auto; }
+/* The run's status line stays announced while the shelf is compact. */
+.command-control-shelf.compact :is(.command-control-feedback, .command-control-readonly) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }

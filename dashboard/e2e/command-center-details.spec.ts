@@ -66,7 +66,8 @@ test('runtime workspace keeps essential metrics readable and settings in an opaq
   await cockpit.getByRole('searchbox').fill('smoke')
   await cockpit.getByRole('button', { name: 'Graph Wall', exact: true }).click()
   await expect(cockpit.getByRole('button', { name: 'Adjust run', exact: true })).toBeVisible()
-  await expect(cockpit.locator('.command-run-stats')).toContainText('Requests/s')
+  // The run shelf keeps throughput in view, full or folded into its one-row form.
+  await expect(cockpit.getByRole('region', { name: 'Command center run controls' })).toContainText('Requests/s')
   await cockpit.getByRole('button', { name: 'Configure Graphs', exact: true }).click()
   const drawer = page.getByRole('dialog', { name: 'Graph configuration', exact: true })
   await expect(drawer).toBeVisible()

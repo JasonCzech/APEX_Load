@@ -9,6 +9,8 @@ interface Props {
   action: RunActionConfirmationKind
   runName?: string
   runRef?: string
+  /** What this action does to this run, such as a load change's impact. */
+  detail?: string
   onConfirm: () => void
   onCancel: () => void
 }
@@ -19,7 +21,7 @@ const TONE_CLASS: Record<'primary' | 'secondary' | 'danger', string> = {
   danger: 'btn-danger',
 }
 
-export default function ConfirmRunActionModal({ action, runName, runRef, onConfirm, onCancel }: Props) {
+export default function ConfirmRunActionModal({ action, runName, runRef, detail, onConfirm, onCancel }: Props) {
   const copy = runActionConfirmationCopy(action)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   // Focus Cancel, not the confirm button: Enter on an accidentally-triggered
@@ -27,6 +29,7 @@ export default function ConfirmRunActionModal({ action, runName, runRef, onConfi
   const cancelRef = useRef<HTMLButtonElement | null>(null)
   const titleId = useId()
   const descriptionId = useId()
+  const detailId = useId()
   const requestCancel = useCallback(() => onCancel(), [onCancel])
   useModalDialog({ dialogRef, initialFocusRef: cancelRef, onClose: requestCancel })
 
@@ -44,7 +47,7 @@ export default function ConfirmRunActionModal({ action, runName, runRef, onConfi
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={descriptionId}
+        aria-describedby={detail ? `${descriptionId} ${detailId}` : descriptionId}
       >
         <div className="modal-header">
           <div>
@@ -60,6 +63,7 @@ export default function ConfirmRunActionModal({ action, runName, runRef, onConfi
             {runName && runRef && <small className="cell-mono">{runRef}</small>}
           </div>
         )}
+        {detail && <p id={detailId} className="confirm-run-action-detail">{detail}</p>}
 
         <div className="modal-actions">
           <button ref={cancelRef} type="button" className="btn btn-secondary" onClick={requestCancel}>
