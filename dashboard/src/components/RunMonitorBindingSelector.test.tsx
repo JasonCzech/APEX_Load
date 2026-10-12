@@ -42,3 +42,13 @@ it('reports duplicate legacy collection for inherited Elastic sources and leaves
   expect(container.textContent).not.toContain('Turn legacy Elastic log capture off')
   expect(onConflictChange).toHaveBeenLastCalledWith(false)
 })
+
+it('reports how many scenario bindings an inheriting run keeps', async () => {
+  request.mockImplementation(async (path: string) => path.includes('/analysis/capabilities') ? { monitoring_enabled: true } : path.includes('monitor-bindings') ? { sources: [{ source_id: 'a', required: false }, { source_id: 'b', required: true }] } : [])
+  const onInheritedCountChange = vi.fn()
+  await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" value={undefined} onChange={vi.fn()} onInheritedCountChange={onInheritedCountChange} />))
+  expect(onInheritedCountChange).toHaveBeenLastCalledWith(2)
+  // A run that sets its own bindings inherits none.
+  await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" value={[]} onChange={vi.fn()} onInheritedCountChange={onInheritedCountChange} />))
+  expect(onInheritedCountChange).toHaveBeenLastCalledWith(0)
+})

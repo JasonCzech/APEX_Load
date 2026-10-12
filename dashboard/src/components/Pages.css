@@ -5351,35 +5351,15 @@
   outline-offset: 2px;
 }
 
-.new-test-row-toggle > span:nth-child(2) {
+.new-test-row-toggle > span {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.new-test-row-expander {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  font-size: 10px;
-  line-height: 1;
-  flex: 0 0 auto;
 }
 
 .new-test-release-token-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.new-test-scenario-expanded-row > td {
-  padding: 0;
-  background: var(--bg-primary);
 }
 
 .new-test-scenario-groups-panel {

@@ -2,7 +2,8 @@ import { validateGoalConfig } from './goalConfigValidation'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
 import type { MonitorBinding, MonitorRule } from '../types/runMonitoring'
 import MonitorRuleEditor from './MonitorRuleEditor'
-import ObjectHistory from './ObjectHistory'
+import ObjectHistoryDialog from './ObjectHistoryDialog'
+import RowActions from './ux/RowActions'
 import ObjectArchiveControls from './ObjectArchiveControls'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { suggestedApplication, suggestedReleases } from './libraryLaunchAssignments'
@@ -144,6 +145,9 @@ interface Props {
   onCreateRelease: (name: string) => Promise<Release | null>
   onOpenScenarioBuilder?: () => void
 }
+
+// The fields the launch blockers link to.
+type LaunchField = 'application' | 'release' | 'scenario' | 'monitoring'
 
 function createRequestedTestID(): string {
   const cryptoSource = globalThis.crypto
@@ -551,7 +555,7 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
   }
 }
 
-export default function NewTestPage({ activeApplication: workspaceApplication, applicationRepository, releases: workspaceReleases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
+export default function NewTestPage({ activeApplication: workspaceApplication, applicationRepository, activeRelease: workspaceRelease, releases: workspaceReleases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectID = activeProject?.id || ''
@@ -580,11 +584,15 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [monitorEditorError, setMonitorEditorError] = useState('')
   const [monitorEditorRevision, setMonitorEditorRevision] = useState(0)
   const [elasticMonitorConflict, setElasticMonitorConflict] = useState(false)
+  const [inheritedMonitorBindingCount, setInheritedMonitorBindingCount] = useState(0)
   useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setMonitorBindings(undefined); setMonitorRules(undefined); setELKConnections([]); setDynatraceConnections([]) }, [activeProjectID])
   const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
   const [activeApplication, setLaunchApplication] = useState(workspaceApplication)
   const [applications, setApplications] = useState<Application[]>([])
   const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[]>([])
+  // The project whose script assignments have loaded (or failed to), so the
+  // release default waits for them instead of changing under the user.
+  const [assignmentsLoadedFor, setAssignmentsLoadedFor] = useState('')
   const [releaseCatalogRefresh, setReleaseCatalogRefresh] = useState(0)
   const [launchReleaseState, setLaunchReleaseState] = useState<{ applicationId: string; releases: Release[] }>({ applicationId: '', releases: [] })
   const releases = (launchReleaseState.applicationId === activeApplication?.id ? launchReleaseState.releases : activeApplication?.id === workspaceApplication?.id ? workspaceReleases : []).filter(release => !release.archived_at)
@@ -620,10 +628,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   useEffect(() => {
     let cancelled = false
-    setApplications([]); setAssignmentScripts([])
+    setApplications([]); setAssignmentScripts([]); setAssignmentsLoadedFor('')
     void Promise.all([api.listApplications(activeProjectID), api.listScripts(activeProjectID, undefined, { archiveState: 'all' })]).then(([apps, scripts]) => {
       if (!cancelled) { setApplications(apps.applications || []); setAssignmentScripts(scripts.scripts || []) }
     }).catch(() => { /* Workspace selection remains usable if suggestions cannot load. */ })
+      .finally(() => { if (!cancelled) setAssignmentsLoadedFor(activeProjectID) })
     return () => { cancelled = true }
   }, [api, activeProjectID])
   useEffect(() => {
@@ -673,6 +682,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
   const [scheduleClock, setScheduleClock] = useState(() => new Date())
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
+  const editingScheduleIdRef = useRef(editingScheduleId)
+  editingScheduleIdRef.current = editingScheduleId
   const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null)
   const [scheduleOccurrenceLoading, setScheduleOccurrenceLoading] = useState<string | null>(null)
   const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
@@ -694,7 +705,23 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('')
   const [scenarioSortField, setScenarioSortField] = useState<ScenarioSortField>('name')
   const [scenarioSortDirection, setScenarioSortDirection] = useState<SortDirection>('asc')
-  const [expandedScenarioId, setExpandedScenarioId] = useState('')
+  // Once a scenario is chosen the list folds away and the chosen one's
+  // groups show in its card; "Change scenario" opens the list again. A
+  // scenario the page picks itself (the first of a fresh entry) keeps the
+  // list open until the user chooses or keeps one; one the user arrived with
+  // (from the scenario builder or the library) counts as chosen.
+  const [chosenScenarioId, setChosenScenarioId] = useState(initialScenarioId || '')
+  const [changingScenario, setChangingScenario] = useState(false)
+  // The scenario whose history is open, so it never reopens for another.
+  const [historyScenarioId, setHistoryScenarioId] = useState('')
+  const selectedScenarioHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const scenarioSearchRef = useRef<HTMLInputElement | null>(null)
+  const focusAfterScenarioChoiceRef = useRef<'scenario' | 'search' | ''>('')
+  const applicationSelectRef = useRef<HTMLSelectElement | null>(null)
+  const releaseSelectRef = useRef<HTMLSelectElement | null>(null)
+  const newReleaseInputRef = useRef<HTMLInputElement | null>(null)
+  const monitoringRef = useRef<HTMLDetailsElement | null>(null)
+  const [monitoringOpen, setMonitoringOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const creatingRef = useRef(false)
   const [error, setError] = useState('')
@@ -925,6 +952,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   useEffect(() => {
     if (!initialScenarioId || !scenarios.some(item => item.id === initialScenarioId)) return
     setScenarioId(prev => prev === initialScenarioId ? prev : initialScenarioId)
+    setChosenScenarioId(initialScenarioId)
   }, [initialScenarioId, scenarios])
   useEffect(() => {
     const emptyDefaults = buildEmptyRunDefaultOverrides()
@@ -938,11 +966,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setGroupSaveNotice('')
     setShowAllRuntimeDefaults(false)
   }, [scenarioId])
-  const defaultReleaseId = ''
-  useEffect(() => {
-    setReleaseId('')
-    setScheduleDraft(current => ({ ...current, release_id: '' }))
-  }, [activeApplication?.id, activeProjectID])
   useEffect(() => {
     let cancelled = false
     setEffectiveAuthAccessResources([])
@@ -1026,6 +1049,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }, [api, inventoryRefresh])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
+  const scenarioListOpen = !scenario || scenario.id !== chosenScenarioId || changingScenario
+  // A scenario without its own assignment takes its application and releases
+  // from its scripts' assignments, unknown until they load (or fail to).
+  const assignmentsPending = Boolean(scenario && !scenario.library_assignment?.application && scenario.scripts.length && assignmentsLoadedFor !== activeProjectID)
   const archivedDependencies = assignmentScripts.filter(script => script.archived_at && scenario?.scripts.some(group => group.script_id === script.id))
   const suggestedForScenario = useRef('')
   useEffect(() => { suggestedForScenario.current = '' }, [activeProjectID])
@@ -1034,14 +1061,44 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     const key = `${activeProjectID}:${scenario.id}`
     if (suggestedForScenario.current === key) return
     if (explicitPlacementRef.current) { suggestedForScenario.current = key; return }
-    const target = suggestedApplication(scenario, assignmentScripts)
     // Wait for script metadata before deciding whether a scenario has a common application.
-    if (!scenario.library_assignment?.application && scenario.scripts.length && !assignmentScripts.length) return
+    if (assignmentsPending) return
+    const target = suggestedApplication(scenario, assignmentScripts)
     suggestedForScenario.current = key
     const application = applications.find(item => item.id === target && item.project_id === activeProjectID)
     if (application) { launchPlacementPinnedRef.current = true; setLaunchApplication(application) }
-  }, [scenario, assignmentScripts, applications, activeProjectID, restoreDraft, releaseId])
+  }, [scenario, assignmentScripts, assignmentsPending, applications, activeProjectID, restoreDraft, releaseId])
   const highlightedReleases = suggestedReleases(scenario, assignmentScripts, activeApplication?.id || '')
+  // The workspace's release is the user's own choice of context, so a run in
+  // the workspace's application starts there, unless the scenario is assigned
+  // to other releases of that application: then the user picks, with the
+  // assigned ones marked. Any other application starts with no release. A
+  // release the user picks, creates or restores stays. Until the scenario's
+  // script assignments are known there is no default, so a release offered
+  // first is never withdrawn once they arrive.
+  const defaultReleaseId = !assignmentsPending && activeApplication?.id && activeApplication.id === workspaceApplication?.id && workspaceRelease
+    && releases.some(item => item.id === workspaceRelease.id)
+    && (highlightedReleases.size === 0 || highlightedReleases.has(workspaceRelease.id))
+    ? workspaceRelease.id
+    : ''
+  const releaseChosenRef = useRef(false)
+  useEffect(() => {
+    releaseChosenRef.current = false
+    // A schedule's release belongs to the application it was chosen in. An
+    // untouched new-schedule draft is cleared with its baseline, so it stays
+    // untouched and follows the run's release; an edited draft, or a stored
+    // schedule being edited, only loses the release, which shows as unsaved.
+    const untouched = !editingScheduleIdRef.current && JSON.stringify(scheduleDraftRef.current) === JSON.stringify(scheduleBaselineRef.current)
+    setScheduleDraft(current => ({ ...current, release_id: '' }))
+    if (untouched) setScheduleDraftBaseline(current => ({ ...current, release_id: '' }))
+  }, [activeApplication?.id, activeProjectID])
+  // Only the run's release follows the default: an untouched schedule draft
+  // is rebuilt from it, and an edited one, or a schedule being edited, keeps
+  // its own.
+  useEffect(() => {
+    if (releaseChosenRef.current) return
+    setReleaseId(defaultReleaseId)
+  }, [activeApplication?.id, activeProjectID, defaultReleaseId])
   const replaceScheduleDraft = useCallback((next: ScheduleDraft) => {
     setScheduleDraft(next)
     setScheduleDraftBaseline(next)
@@ -1364,11 +1421,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     ]
   }, [canManageTests, effectiveAccessError, effectiveAccessLoaded, estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const readiness = useMemo(() => {
-    const checks = [
-      { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
-      { label: release ? `Release: ${release.name}` : 'Select or create a release', ready: !!release },
-      { label: scenario ? `Scenario: ${scenario.name}` : 'Select a scenario', ready: !!scenario },
-      { label: scenario?.scripts.length ? `${scenario.scripts.length} script group${scenario.scripts.length === 1 ? '' : 's'} ready` : 'Scenario needs at least one script group', ready: !!scenario?.scripts.length },
+    const checks: Array<{ label: string; ready: boolean; field: LaunchField }> = [
+      { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication, field: 'application' },
+      { label: release ? `Release: ${release.name}` : 'Select or create a release', ready: !!release, field: 'release' },
+      { label: scenario ? `Scenario: ${scenario.name}` : 'Select a scenario', ready: !!scenario, field: 'scenario' },
+      { label: scenario?.scripts.length ? `${scenario.scripts.length} script group${scenario.scripts.length === 1 ? '' : 's'} ready` : 'Scenario needs at least one script group', ready: !!scenario?.scripts.length, field: 'scenario' },
     ]
     return checks
   }, [activeApplication, release, scenario])
@@ -1381,18 +1438,47 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   )
   const monitorRuleValidationError = monitorEditorError || validateGoalConfig({ monitor_rules: monitorRules ?? scenario?.goal_config?.monitor_rules })
   // The first reasons a launch is unavailable, shown beside the disabled
-  // launch buttons instead of leaving them silently greyed out.
-  const launchBlockers = [
-    ...readiness.filter(item => !item.ready).map(item => item.label),
-    ...(scenario?.archived_at ? ['This scenario is archived'] : []),
-    ...(archivedDependencies.length ? ['A script in this scenario is archived'] : []),
-    ...(!canManageTests ? ['Your role cannot start runs in this project'] : []),
-    ...(runSetupValidationError ? [runSetupValidationError] : []),
-    ...(monitorRuleValidationError ? ['Fix the monitor rules'] : []),
-    ...(elasticMonitorConflict ? ['Resolve the Elastic capture conflict'] : []),
-    ...(captureNeedsReview ? ['Review the telemetry capture selection'] : []),
-    ...(traceContextNeedsReview ? ['Fix the trace context settings'] : []),
+  // launch buttons instead of leaving them silently greyed out. One the user
+  // can fix on this page links to its field.
+  const launchBlockers: Array<{ label: string; field?: LaunchField }> = [
+    ...readiness.filter(item => !item.ready).map(item => ({ label: item.label, field: item.field })),
+    ...(scenario?.archived_at ? [{ label: 'This scenario is archived' }] : []),
+    ...(archivedDependencies.length ? [{ label: 'A script in this scenario is archived' }] : []),
+    ...(!canManageTests ? [{ label: 'Your role cannot start runs in this project' }] : []),
+    ...(runSetupValidationError ? [{ label: runSetupValidationError }] : []),
+    ...(monitorRuleValidationError ? [{ label: 'Fix the monitor rules', field: 'monitoring' as const }] : []),
+    ...(elasticMonitorConflict ? [{ label: 'Resolve the Elastic capture conflict', field: 'monitoring' as const }] : []),
+    ...(captureNeedsReview ? [{ label: 'Review the telemetry capture selection', field: 'monitoring' as const }] : []),
+    ...(traceContextNeedsReview ? [{ label: 'Fix the trace context settings', field: 'monitoring' as const }] : []),
   ]
+  const monitoringNeedsReview = elasticMonitorConflict || Boolean(monitorRuleValidationError) || captureNeedsReview || traceContextNeedsReview
+  const monitorRuleCount = (monitorRules ?? scenario?.goal_config?.monitor_rules ?? []).length
+  // Bindings left to the scenario still apply, so they count as the run's.
+  const monitorBindingCount = monitorBindings === undefined ? inheritedMonitorBindingCount : monitorBindings.length
+  const monitoringSummary = monitoringNeedsReview ? 'Needs review' : [
+    monitorBindingCount ? `${monitorBindingCount} monitor binding${monitorBindingCount === 1 ? '' : 's'}${monitorBindings === undefined ? ' from the scenario' : ''}` : '',
+    monitorRuleCount ? `${monitorRuleCount} monitor rule${monitorRuleCount === 1 ? '' : 's'}` : '',
+    elkConnectionId ? `Elastic: ${elkConnections.find(connection => connection.id === elkConnectionId)?.name || 'selected'}` : '',
+    dynatraceConnectionId ? `Dynatrace: ${dynatraceConnections.find(connection => connection.id === dynatraceConnectionId)?.name || 'selected'}` : '',
+    traceContextPayload(traceContext) ? 'Trace context' : '',
+  ].filter(Boolean).join(' · ') || 'None for this run'
+  const focusLaunchField = (field: LaunchField) => {
+    if (field === 'scenario') {
+      if (scenarioListOpen) scenarioSearchRef.current?.focus()
+      else changeScenario()
+      return
+    }
+    if (field === 'monitoring') {
+      // Opened on the element too: a section the user folded while it needed
+      // review keeps an open prop of true, which React would not re-apply.
+      if (monitoringRef.current) monitoringRef.current.open = true
+      setMonitoringOpen(true)
+      monitoringRef.current?.querySelector('summary')?.focus()
+      return
+    }
+    const target = field === 'application' ? applicationSelectRef.current : showNewRelease ? newReleaseInputRef.current : releaseSelectRef.current
+    target?.focus()
+  }
   const canLaunch = !elasticMonitorConflict && !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
@@ -1441,11 +1527,19 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     runNameScenarioRef.current = runNameScenarioIdentity
     if (!runNameEditedRef.current) setRunName(runNameScenarioDefault)
   }, [runNameScenarioDefault, runNameScenarioIdentity])
+  // Focus follows the scenario choice: to the chosen scenario's card once the
+  // list folds away, or to the search when the list opens to change it.
   useEffect(() => {
-    if (!scenarioId) {
-      setExpandedScenarioId('')
+    const target = focusAfterScenarioChoiceRef.current
+    if (!target) return
+    if (target === 'scenario' && scenario && !scenarioListOpen) {
+      focusAfterScenarioChoiceRef.current = ''
+      selectedScenarioHeadingRef.current?.focus()
+    } else if (target === 'search' && scenarioListOpen) {
+      focusAfterScenarioChoiceRef.current = ''
+      scenarioSearchRef.current?.focus()
     }
-  }, [scenarioId])
+  }, [scenario, scenarioListOpen])
   useEffect(() => {
     void refreshSchedules(scenarioId)
   }, [refreshSchedules, scenarioId])
@@ -1543,6 +1637,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       if (scope !== releaseCreationScopeRef.current) return
       if (created && created.application_id === activeApplication.id) {
         setLaunchReleaseState(current => ({ applicationId: created.application_id, releases: [...(current.applicationId === created.application_id ? current.releases : releases).filter(item => item.id !== created.id), created] }))
+        releaseChosenRef.current = true
         setReleaseId(created.id)
         // Supersede any list read started before creation, then load the full
         // current catalog so a late response cannot remove the new selection.
@@ -1559,14 +1654,28 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     }
   }
 
+  // Keeping the current scenario (choosing it again) folds the list away.
+  const keepScenario = () => {
+    if (!scenario) return
+    focusAfterScenarioChoiceRef.current = 'scenario'
+    setChosenScenarioId(scenario.id)
+    setChangingScenario(false)
+  }
+  const changeScenario = () => {
+    focusAfterScenarioChoiceRef.current = 'search'
+    setChangingScenario(true)
+  }
+
   const selectScenario = (nextScenarioId: string) => {
     if (nextScenarioId === scenarioId) {
-      setExpandedScenarioId(prev => prev === nextScenarioId ? '' : nextScenarioId)
+      keepScenario()
       return
     }
     runGuarded(() => {
+      focusAfterScenarioChoiceRef.current = 'scenario'
       setScenarioId(nextScenarioId)
-      setExpandedScenarioId(nextScenarioId)
+      setChosenScenarioId(nextScenarioId)
+      setChangingScenario(false)
       runNameScenarioRef.current = ''
       runNameEditedRef.current = false
       setRunName('')
@@ -1843,6 +1952,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     groupRunOverridesRef.current = {}
     runNameEditedRef.current = false
     setRunName(scenario?.name || '')
+    releaseChosenRef.current = false
     setReleaseId(defaultReleaseId)
     setNewReleaseName('')
     setShowNewRelease(false)
@@ -2710,6 +2820,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setRunName(restoreDraft.runName)
     launchPlacementPinnedRef.current = true
     explicitPlacementRef.current = true
+    releaseChosenRef.current = true
     setReleaseId(restoreDraft.releaseId)
     setScheduledStartLocal(restoreDraft.scheduledStartLocal)
     setSelectedTimeslotId(restoreDraft.selectedTimeslotId)
@@ -2721,7 +2832,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setScheduleDraft(restoreDraft.editingScheduleId ? restoreDraft.scheduleDraft : { ...restoreDraft.scheduleDraft, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' })
     setEditingScheduleId(restoreDraft.editingScheduleId)
     setPageMode(restoreDraft.pageMode)
-    setExpandedScenarioId(scenario.id)
+    setChosenScenarioId(scenario.id)
+    setChangingScenario(false)
     suggestedForScenario.current = `${activeProjectID}:${scenario.id}`
     setRestoreDraft(null)
     setDraftNotice('Saved draft restored. Review current capacity and settings before starting or scheduling.')
@@ -2830,7 +2942,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       {pageMode === 'schedules' && (
         <div className="new-test-layout new-test-schedules-layout">
           <div className="new-test-main">
-            <NewTestScheduleCatalog scenarios={scenarios} projectId={activeProjectID} revision={catalogRefresh} onSelectScenario={id => runGuarded(() => { setScenarioId(id); setScheduleQuery('') })} />
+            <NewTestScheduleCatalog scenarios={scenarios} projectId={activeProjectID} revision={catalogRefresh} onSelectScenario={id => runGuarded(() => { setScenarioId(id); setChosenScenarioId(id); setScheduleQuery('') })} />
 
             <section className="new-test-step">
               <div className="new-test-step-header">
@@ -2873,6 +2985,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         setRunName('')
                       }
                       setScenarioId(nextScenarioID)
+                      setChosenScenarioId(nextScenarioID)
                       setEditingScheduleId(null)
                     })
                   }}>
@@ -3214,22 +3327,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       )}
       <div className="new-test-layout new-test-workspace" hidden={pageMode === 'schedules'} style={pageMode === 'schedules' ? { display: 'none' } : undefined}>
         <div className="new-test-main">
-          {scenario && <section className="new-test-selected" aria-label="Selected scenario">
-            <span>Selected scenario</span><strong>{scenarioIdentity(scenario)}</strong>
-            <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
-            <ObjectHistory key={scenario.id} projectId={scenario.project_id} resourceType="scenario" resourceId={scenario.id} activity={scenario.activity} />
-            {scenario.archived_at && <p role="alert">This scenario is archived. Restore it to create a run.</p>}
-            {archivedDependencies.map(script => <p role="alert" key={script.id}>Archived script <a href={`#/scripts?mode=edit&scriptId=${encodeURIComponent(script.id)}&projectId=${encodeURIComponent(activeProjectID)}`}>{script.name}</a> blocks execution. Restore it before launching.</p>)}
-            <span>{formatScenarioWorkloadSummary(scenario)} · {scenario.duration} · Results release: {release?.name || 'Select a release'}</span>
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setScenarioQuery(scenario.id); setScenarioReleaseFilter(''); setExpandedScenarioId(scenario.id) }}>Show selected scenario</button>
-          </section>}
-
           <section className="new-test-step">
             <div className="new-test-step-header">
               <span className={`new-test-step-index${step1Complete ? ' complete' : ''}`}>{step1Complete ? '✓' : '1'}</span>
               <div className="new-test-step-header-content">
-                <h3>Select Scenario</h3>
-                <p>Choose the reusable workload definition below, or create a new scenario in the scenario builder.</p>
+                <h3>Scenario</h3>
+                <p>{!scenarioListOpen ? 'The reusable workload this run starts from. Settings you change here apply to this run only.' : 'Choose the reusable workload definition below, or create a new scenario in the scenario builder.'}</p>
               </div>
               {onOpenScenarioBuilder && (
                 <button
@@ -3241,7 +3344,87 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </button>
               )}
             </div>
-            <div className="settings-group">
+            {scenario && <div className="new-test-selected" role="group" aria-label="Selected scenario">
+              <div className="new-test-selected-header">
+                <div>
+                  <h4 ref={selectedScenarioHeadingRef} tabIndex={-1}>{scenarioIdentity(scenario)} <span className={`new-test-scenario-card-mode ${scenario.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(scenario.scenario_mode)}</span></h4>
+                  <p className="new-test-selected-meta">{formatScenarioWorkloadSummary(scenario)} · {scenario.termination_mode === 'iterations' ? 'All iterations' : scenario.duration || 'Duration not set'} · Results release: {release?.name || 'Select a release'}</p>
+                  <p className="new-test-selected-meta">{scenario.associated_releases?.length ? `Previously run in ${formatScenarioReleaseSummary(scenario)}` : 'Not run in a release yet'} · Most recent run: {formatDate(scenario.last_run_at)}</p>
+                </div>
+                <div className="new-test-selected-actions">
+                  {scenario.archived_at && <span className="status-badge">Archived</span>}
+                  <button className="btn btn-secondary btn-sm" type="button" aria-expanded={scenarioListOpen} aria-controls={scenarioListOpen ? 'new-test-scenario-browser' : undefined} onClick={scenarioListOpen ? keepScenario : changeScenario}>{scenarioListOpen ? 'Keep this scenario' : 'Change scenario'}</button>
+                  <RowActions className="new-test-selected-more" label={scenario.name}>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => setHistoryScenarioId(scenario.id)}>History</button>
+                    <ObjectArchiveControls inMenu resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
+                  </RowActions>
+                </div>
+              </div>
+              {scenario.archived_at && <p role="alert">This scenario is archived. Restore it to create a run.</p>}
+              {archivedDependencies.map(script => <p role="alert" key={script.id}>Archived script <a href={`#/scripts?mode=edit&scriptId=${encodeURIComponent(script.id)}&projectId=${encodeURIComponent(activeProjectID)}`}>{script.name}</a> blocks execution. Restore it before launching.</p>)}
+              {groupSaveNotice && <div className="new-test-default-notice" role="status">{groupSaveNotice}</div>}
+              {!scenarioListOpen && <div className="new-test-scenario-groups-panel">
+                <div className="new-test-scenario-groups-header">
+                  <strong>Script Groups</strong>
+                  <span>{formatCount(effectiveScenarioGroups.length, 'group')}</span>
+                </div>
+                <div className="data-table">
+                  <table className="new-test-script-table">
+                    <thead><tr><th>Group / script</th><th>Workload</th><th>Runtime / placement</th></tr></thead>
+                    <tbody>
+                      {effectiveScenarioGroups.length > 0 ? effectiveScenarioGroups.map((group, index) => {
+                        const sourceGroup = scenario.scripts[index] || group
+                        const key = groupOverrideKey(sourceGroup)
+                        const override = groupRunOverrides[key]
+                        const runtimeValues = buildGroupRuntimeTableValues(sourceGroup, scenario, runDefaultOverrides, override)
+                        const rowOverridden = hasGroupOverrideValues(override)
+                        return (
+                          <tr
+                            key={key}
+                            className={rowOverridden ? 'new-test-script-row overridden' : 'new-test-script-row'}
+                            tabIndex={0}
+                            aria-label={`Edit run settings for ${group.name || group.script_name || 'script group'}`}
+                            onClick={() => openGroupEditor(sourceGroup)}
+                            onKeyDown={event => {
+                              if (event.currentTarget !== event.target) return
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                openGroupEditor(sourceGroup)
+                              }
+                            }}
+                          >
+                            <td className="cell-name">
+                              <span>{group.name || group.script_name}</span><small>{group.script_name || group.script_id} · {group.protocol || 'http'}</small>
+                              <button type="button" className="btn btn-secondary btn-sm" aria-label={`Edit settings for ${group.name || group.script_name || 'script group'}`} onClick={event => { event.stopPropagation(); openGroupEditor(sourceGroup) }}>Edit settings</button>
+                              {rowOverridden && <em className="new-test-override-pill">Run override</em>}
+                            </td>
+          <td aria-label="Group workload">
+                              <div className="new-test-workload-stack">
+                                <strong>{group.vusers} VUsers</strong>
+                                <span>{group.ramp_up || 'No ramp up'} / {group.ramp_down || 'No ramp down'}</span>
+                                <span>{group.initialization === 'at_once' ? 'Init at once' : 'Init at runtime'}</span>
+                              </div>
+                            </td>
+                            <td className="new-test-runtime-cell">
+                              <p>{formatGroupPlacement(override, sourceGroup)}</p>
+                              <details onClick={event => event.stopPropagation()}><summary>Runtime details</summary>
+                                <dl><dt>Iterations</dt><dd>{runtimeValues.iterations}</dd><dt>Pacing</dt><dd>{runtimeValues.pacing}</dd><dt>Think time</dt><dd>{runtimeValues.thinkTime}</dd><dt>Log level</dt><dd>{runtimeValues.logLevel}</dd><dt>Auto transactions</dt><dd>{runtimeValues.autoTransactions}</dd><dt>Error handling</dt><dd>{runtimeValues.errorHandling}</dd></dl>
+                              </details>
+                            </td>
+                          </tr>
+                        )
+                      }) : (
+                        <tr>
+                          <td colSpan={3} className="cell-muted">No script groups included in this scenario.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>}
+            </div>}
+            {scenarioListOpen && (
+            <div className="settings-group" id="new-test-scenario-browser">
               <div className="new-test-scenario-browser">
                 <div className="new-test-scenario-picker">
                   <div className="new-test-scenario-toolbar">
@@ -3262,6 +3445,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <label className="library-search new-test-scenario-search">
                       <span>Search scenarios</span>
                       <input
+                        ref={scenarioSearchRef}
                         type="search"
                         value={scenarioQuery}
                         onChange={(event) => setScenarioQuery(event.target.value)}
@@ -3276,9 +3460,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       {scenarioFiltersActive ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
                     </div>
                   </div>
-                  {groupSaveNotice && (
-                    <div className="new-test-default-notice" role="status">{groupSaveNotice}</div>
-                  )}
                   {filteredScenarios.length > 0 ? (
                     <div className="new-test-table-wrap new-test-scenario-table-wrap">
                       <div className="data-table">
@@ -3298,117 +3479,45 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                             {sortedScenarios.map(item => {
                               const itemProtocols = scenarioProtocolList(item)
                               const selected = item.id === scenarioId
-                              const expanded = item.id === expandedScenarioId
-                              const groupsForDisplay = selected ? effectiveScenarioGroups : item.scripts
                               return (
-                                <Fragment key={item.id}>
-                                  <tr
-                                    className={`new-test-scenario-table-row clickable-row ${selected ? 'selected' : ''}`}
-                                    onClick={() => selectScenario(item.id)}
-                                  >
-                                    <td className="cell-name">
-                                      <div className="new-test-scenario-name-cell">
-                                        {/* The row's keyboard control carries its state; table rows cannot. */}
-                                        <button
-                                          type="button"
-                                          className="new-test-row-toggle"
-                                          aria-expanded={expanded}
-                                          aria-controls={expanded ? `new-test-scenario-groups-${item.id}` : undefined}
-                                          aria-current={selected ? 'true' : undefined}
-                                          onClick={event => { event.stopPropagation(); selectScenario(item.id) }}
-                                        >
-                                          <span className="new-test-row-expander" aria-hidden="true">{expanded ? 'v' : '>'}</span>
-                                          <span>{item.name}<small className="new-test-reference">{item.ref_key || item.id}</small></span>
-                                        </button>
-                                        <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
-                                      </div>
-                                      <div className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</div>
-                                    </td>
-                                    <td>
-                                      <div className="new-test-release-token-list">
-                                        {(item.associated_releases || []).map((releaseItem, index) => (
-                                          <span key={`${releaseItem.id || releaseItem.name}-${index}`} className="script-health-token">{releaseItem.name}</span>
-                                        ))}
-                                        {(!item.associated_releases || item.associated_releases.length === 0) && <span className="cell-muted">No releases</span>}
-                                      </div>
-                                    </td>
-                                    <td className="cell-muted">{formatDate(item.last_run_at)}</td>
-                                    <td>{totalScenarioVUsers(item)}</td>
-                                    <td>{item.termination_mode === 'iterations' ? 'All iterations' : item.duration || 'Not set'}</td>
-                                    <td>{item.scripts.length}</td>
-                                    <td>
-                                      <div className="new-test-release-token-list">
-                                        {itemProtocols.length ? itemProtocols.map(protocol => <span key={protocol} className="protocol-badge">{protocol}</span>) : <span className="cell-muted">None</span>}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                  {expanded && (
-                                    <tr className="no-hover new-test-scenario-expanded-row" id={`new-test-scenario-groups-${item.id}`}>
-                              <td colSpan={7} aria-label="Scenario script groups">
-                                        <div className="new-test-scenario-groups-panel">
-                                          <p>Releases: {formatScenarioReleaseSummary(item)} · Most recent run: {formatDate(item.last_run_at)}</p>
-                                          <div className="new-test-scenario-groups-header">
-                                            <strong>Script Groups</strong>
-                                            <span>{formatCount(groupsForDisplay.length, 'group')}</span>
-                                          </div>
-                                          <div className="data-table">
-                                            <table className="new-test-script-table">
-                                              <thead><tr><th>Group / script</th><th>Workload</th><th>Runtime / placement</th></tr></thead>
-                                              <tbody>
-                                                {groupsForDisplay.length > 0 ? groupsForDisplay.map((group, index) => {
-                                                  const sourceGroup = item.scripts[index] || group
-                                                  const key = groupOverrideKey(sourceGroup)
-                                                  const override = selected ? groupRunOverrides[key] : undefined
-                                                  const runtimeValues = buildGroupRuntimeTableValues(sourceGroup, item, selected ? runDefaultOverrides : buildEmptyRunDefaultOverrides(), override)
-                                                  const rowOverridden = selected && hasGroupOverrideValues(override)
-                                                  return (
-                                                    <tr
-                                                      key={key}
-                                                      className={rowOverridden ? 'new-test-script-row overridden' : 'new-test-script-row'}
-                                                      tabIndex={selected ? 0 : undefined}
-                                                      aria-label={selected ? `Edit run settings for ${group.name || group.script_name || 'script group'}` : undefined}
-                                                      onClick={() => { if (selected) openGroupEditor(sourceGroup) }}
-                                                      onKeyDown={event => {
-                                                        if (!selected || event.currentTarget !== event.target) return
-                                                        if (event.key === 'Enter' || event.key === ' ') {
-                                                          event.preventDefault()
-                                                          openGroupEditor(sourceGroup)
-                                                        }
-                                                      }}
-                                                    >
-                                                      <td className="cell-name">
-                                                        <span>{group.name || group.script_name}</span><small>{group.script_name || group.script_id} · {group.protocol || 'http'}</small>
-                                                        {selected && <button type="button" className="btn btn-secondary btn-sm" aria-label={`Edit settings for ${group.name || group.script_name || 'script group'}`} onClick={event => { event.stopPropagation(); openGroupEditor(sourceGroup) }}>Edit settings</button>}
-                                                        {rowOverridden && <em className="new-test-override-pill">Run override</em>}
-                                                      </td>
-                                    <td aria-label="Group workload">
-                                                        <div className="new-test-workload-stack">
-                                                          <strong>{group.vusers} VUsers</strong>
-                                                          <span>{group.ramp_up || 'No ramp up'} / {group.ramp_down || 'No ramp down'}</span>
-                                                          <span>{group.initialization === 'at_once' ? 'Init at once' : 'Init at runtime'}</span>
-                                                        </div>
-                                                      </td>
-                                                      <td className="new-test-runtime-cell">
-                                                        <p>{formatGroupPlacement(override, sourceGroup)}</p>
-                                                        <details onClick={event => event.stopPropagation()}><summary>Runtime details</summary>
-                                                          <dl><dt>Iterations</dt><dd>{runtimeValues.iterations}</dd><dt>Pacing</dt><dd>{runtimeValues.pacing}</dd><dt>Think time</dt><dd>{runtimeValues.thinkTime}</dd><dt>Log level</dt><dd>{runtimeValues.logLevel}</dd><dt>Auto transactions</dt><dd>{runtimeValues.autoTransactions}</dd><dt>Error handling</dt><dd>{runtimeValues.errorHandling}</dd></dl>
-                                                        </details>
-                                                      </td>
-                                                    </tr>
-                                                  )
-                                                }) : (
-                                                  <tr>
-                                                    <td colSpan={3} className="cell-muted">No script groups included in this scenario.</td>
-                                                  </tr>
-                                                )}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </Fragment>
+                                <tr
+                                  key={item.id}
+                                  className={`new-test-scenario-table-row clickable-row ${selected ? 'selected' : ''}`}
+                                  onClick={() => selectScenario(item.id)}
+                                >
+                                  <td className="cell-name">
+                                    <div className="new-test-scenario-name-cell">
+                                      {/* The row's keyboard control carries its state; table rows cannot. */}
+                                      <button
+                                        type="button"
+                                        className="new-test-row-toggle"
+                                        aria-current={selected ? 'true' : undefined}
+                                        onClick={event => { event.stopPropagation(); selectScenario(item.id) }}
+                                      >
+                                        <span>{item.name}<small className="new-test-reference">{item.ref_key || item.id}</small></span>
+                                      </button>
+                                      <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
+                                    </div>
+                                    <div className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</div>
+                                  </td>
+                                  <td>
+                                    <div className="new-test-release-token-list">
+                                      {(item.associated_releases || []).map((releaseItem, index) => (
+                                        <span key={`${releaseItem.id || releaseItem.name}-${index}`} className="script-health-token">{releaseItem.name}</span>
+                                      ))}
+                                      {(!item.associated_releases || item.associated_releases.length === 0) && <span className="cell-muted">No releases</span>}
+                                    </div>
+                                  </td>
+                                  <td className="cell-muted">{formatDate(item.last_run_at)}</td>
+                                  <td>{totalScenarioVUsers(item)}</td>
+                                  <td>{item.termination_mode === 'iterations' ? 'All iterations' : item.duration || 'Not set'}</td>
+                                  <td>{item.scripts.length}</td>
+                                  <td>
+                                    <div className="new-test-release-token-list">
+                                      {itemProtocols.length ? itemProtocols.map(protocol => <span key={protocol} className="protocol-badge">{protocol}</span>) : <span className="cell-muted">None</span>}
+                                    </div>
+                                  </td>
+                                </tr>
                               )
                             })}
                           </tbody>
@@ -3425,10 +3534,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
               </div>
             </div>
+            )}
           </section>
+          {scenario && historyScenarioId === scenario.id && <ObjectHistoryDialog title={`History · ${scenario.name}`} projectId={scenario.project_id} resourceType="scenario" resourceId={scenario.id} activity={scenario.activity} onClose={() => setHistoryScenarioId('')} />}
 
           <div className="new-test-run-only-callout" role="note" hidden={!scenario}>
-            Note: Changes on this page only override the default settings for the current run. To change scenario defaults, edit the scenario through the Scenario Editor.
+            Note: Changes on this page only override the default settings for the current run. To change scenario defaults, edit the scenario in the scenario builder.
           </div>
 
           <div className="new-test-run-config-row" hidden={!scenario}>
@@ -3441,32 +3552,32 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
               </div>
               <div className="settings-group new-test-setup-grid">
-                <label className="settings-filter-field">Launch application<select aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label" id="new-test-run-name-label">Run Name</span>
-                    <span className="setting-desc">Shown in results and monitoring</span>
-                  </div>
-                  <input className="settings-input" aria-labelledby="new-test-run-name-label" value={runName} onChange={event => { runNameEditedRef.current = true; setRunName(event.target.value) }} placeholder={scenario?.name || 'Run name'} />
-                </div>
+                <label className="settings-filter-field">Launch application<select ref={applicationSelectRef} aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <div className="setting-row new-test-release-row">
                   <div className="setting-info">
                     <span className="setting-label" id="new-test-release-label">Release</span>
                     <span className="setting-desc">Required target for results</span>
                   </div>
-                  <select className="settings-input" aria-labelledby="new-test-release-label" value={releaseId} onChange={(event) => { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setReleaseId(event.target.value) }}>
+                  <select ref={releaseSelectRef} className="settings-input" aria-labelledby="new-test-release-label" value={releaseId} onChange={(event) => { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; releaseChosenRef.current = true; setReleaseId(event.target.value) }}>
                     <option value="">Select release</option>
                     {releases.map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
                   </select>
                   {showNewRelease ? (
                     <div className="new-test-release-create-row">
-                      <FormField label="Release name" htmlFor="NewTestPage-newReleaseName"><input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" id="NewTestPage-newReleaseName" /></FormField>
+                      <FormField label="Release name" htmlFor="NewTestPage-newReleaseName"><input ref={newReleaseInputRef} className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" id="NewTestPage-newReleaseName" /></FormField>
                       <button className="btn btn-secondary" onClick={() => { void createRelease() }} disabled={releaseCreating || !newReleaseName.trim()}>Add</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
                   ) : (
                     <button className="btn btn-ghost btn-sm btn-primary new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
                   )}
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label" id="new-test-run-name-label">Run Name</span>
+                    <span className="setting-desc">Shown in results and monitoring</span>
+                  </div>
+                  <input className="settings-input" aria-labelledby="new-test-run-name-label" value={runName} onChange={event => { runNameEditedRef.current = true; setRunName(event.target.value) }} placeholder={scenario?.name || 'Run name'} />
                 </div>
                 {(bindableTimeslots.length > 0 || selectedTimeslotId) && (
                   <div className="setting-row">
@@ -3485,33 +3596,39 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </select>
                   </div>
                 )}
-                <RunMonitorBindingSelector projectId={activeProjectID} scenarioId={scenario?.id} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} value={monitorBindings} onChange={setMonitorBindings} />
-                <MonitorRuleEditor key={`${activeProjectID}:${scenarioId}:${monitorEditorRevision}`} projectId={activeProjectID} value={monitorRules ?? scenario?.goal_config?.monitor_rules ?? []} onChange={setMonitorRules} onValidationChange={setMonitorEditorError} />
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label" id="new-test-elk-label">Elastic log capture</span>
-                    <span className="setting-desc">Optional controller-side polling; load generators are unaffected</span>
+                {/* Optional capture for this run, folded away unless it needs attention. */}
+                <details ref={monitoringRef} className="new-test-monitoring" open={monitoringOpen || monitoringNeedsReview} onToggle={event => setMonitoringOpen(event.currentTarget.open)}>
+                  <summary><span>Monitoring for this run</span><small className={monitoringNeedsReview ? 'warning' : undefined}>{monitoringSummary}</small></summary>
+                  <div className="new-test-monitoring-body">
+                  <RunMonitorBindingSelector projectId={activeProjectID} scenarioId={scenario?.id} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} onInheritedCountChange={setInheritedMonitorBindingCount} value={monitorBindings} onChange={setMonitorBindings} />
+                  <MonitorRuleEditor key={`${activeProjectID}:${scenarioId}:${monitorEditorRevision}`} projectId={activeProjectID} value={monitorRules ?? scenario?.goal_config?.monitor_rules ?? []} onChange={setMonitorRules} onValidationChange={setMonitorEditorError} />
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label" id="new-test-elk-label">Elastic log capture</span>
+                      <span className="setting-desc">Optional controller-side polling; load generators are unaffected</span>
+                    </div>
+                    <select className="settings-input" aria-labelledby="new-test-elk-label" value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
+                      <option value="">Off for this test</option>
+                      {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
+                      {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+                    </select>
+                    <CaptureSelectionHelp provider="elk" count={elkConnections.length} error={elkError} forbidden={elkForbidden} loading={elkLoading} retry={() => setCaptureRetry(value => value + 1)} selected={elkConnections.find(c => c.id === elkConnectionId)?.name} canManage={canManageProjects} />
                   </div>
-                  <select className="settings-input" aria-labelledby="new-test-elk-label" value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
-                    <option value="">Off for this test</option>
-                    {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
-                    {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
-                  </select>
-                  <CaptureSelectionHelp provider="elk" count={elkConnections.length} error={elkError} forbidden={elkForbidden} loading={elkLoading} retry={() => setCaptureRetry(value => value + 1)} selected={elkConnections.find(c => c.id === elkConnectionId)?.name} canManage={canManageProjects} />
-                </div>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label" id="new-test-dynatrace-label">Dynatrace SaaS capture</span>
-                    <span className="setting-desc">Optional Metrics, Problems, and Grail log polling from the controller</span>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label" id="new-test-dynatrace-label">Dynatrace SaaS capture</span>
+                      <span className="setting-desc">Optional Metrics, Problems, and Grail log polling from the controller</span>
+                    </div>
+                    <select className="settings-input" aria-labelledby="new-test-dynatrace-label" value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
+                      <option value="">Off for this test</option>
+                      {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
+                      {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+                    </select>
+                    <CaptureSelectionHelp provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} forbidden={dynatraceForbidden} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} canManage={canManageProjects} />
                   </div>
-                  <select className="settings-input" aria-labelledby="new-test-dynatrace-label" value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
-                    <option value="">Off for this test</option>
-                    {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
-                    {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
-                  </select>
-                  <CaptureSelectionHelp provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} forbidden={dynatraceForbidden} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} canManage={canManageProjects} />
-                </div>
-                <RunTraceContextSelector value={traceContext} onChange={setTraceContext} suggest={Boolean(elkConnectionId || dynatraceConnectionId || (monitorBindings?.length ?? 0) > 0)} />
+                  <RunTraceContextSelector value={traceContext} onChange={setTraceContext} suggest={Boolean(elkConnectionId || dynatraceConnectionId || (monitorBindings?.length ?? 0) > 0)} />
+                  </div>
+                </details>
               </div>
             </section>
 
@@ -3575,7 +3692,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             </section>
           </div>
 
-          {scenario && <NewTestReadiness scenario={scenario} projectId={activeProjectID} />}
+          {scenario && <NewTestReadiness scenario={scenario} projectId={activeProjectID} summary />}
         </div>
 
         <aside className="new-test-sidebar-column" hidden={!scenario}>
@@ -3762,7 +3879,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               )}
               {launchBlockers.length > 0 && !creating && (
                 <div id="new-test-launch-blockers" className="new-test-launch-feedback warning" role="status">
-                  To launch: {launchBlockers.slice(0, 3).join(' · ')}{launchBlockers.length > 3 ? ` · and ${launchBlockers.length - 3} more` : ''}.
+                  To launch: {launchBlockers.slice(0, 3).map((blocker, index) => (
+                    <Fragment key={blocker.label}>
+                      {index > 0 && ' · '}
+                      {blocker.field ? <button type="button" className="new-test-blocker-link" onClick={() => focusLaunchField(blocker.field!)}>{blocker.label}</button> : blocker.label}
+                    </Fragment>
+                  ))}{launchBlockers.length > 3 ? ` · and ${launchBlockers.length - 3} more` : ''}.
                 </div>
               )}
               {immediateLaunchBlocked && (

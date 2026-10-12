@@ -121,7 +121,7 @@ test('New Test saves drafts without execution, retains both tabs and validates r
   const route = `/#/new-test?${scopeQuery(workspace)}&scenarioId=${scenarioId}`
   await page.goto(route)
   await page.reload()
-  await expect(page.getByRole('region', { name: 'Selected scenario', exact: true })).toContainText('Duplicate workload')
+  await expect(page.getByRole('group', { name: 'Selected scenario', exact: true })).toContainText('Duplicate workload')
   await page.getByRole('textbox', { name: 'Run Name', exact: true }).fill('Saved draft only')
   await page.getByRole('button', { name: 'Schedules', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Unsaved changes' })).not.toBeVisible()
@@ -181,7 +181,7 @@ test('New Test exposes editable groups and saves a paused recurring schedule wit
   const scenarioId = await seedScenario(request, workspace, scriptId, 'Review workload')
   await page.goto(`/#/new-test?${scopeQuery(workspace)}&scenarioId=${scenarioId}`)
   await page.reload()
-  await page.getByRole('button', { name: 'Show selected scenario', exact: true }).click()
+  // A scenario opened by link is chosen: its card shows its groups.
   await page.getByRole('button', { name: 'Edit settings for orders', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Edit orders', exact: true })
   await expect(editor).toBeVisible()
@@ -353,7 +353,7 @@ test('actual held-run serialization and an API-seeded queued copy preserve compl
   const originalScenario = await json(await request.get(`/api/v1/scenarios/${scenario}`))
   await page.goto(`/#/new-test?${scopeQuery(workspace)}&scenarioId=${scenario}`)
   await page.reload()
-  await page.getByRole('button', { name: 'Show selected scenario', exact: true }).click()
+  // A scenario opened by link is chosen: its card shows its groups.
   await page.getByRole('button', { name: 'Edit settings for orders', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Edit orders', exact: true })
   await editor.getByRole('spinbutton', { name: /^VUsers/ }).fill('4')

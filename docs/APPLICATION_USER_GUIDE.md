@@ -609,10 +609,20 @@ longer validates, a duration shorter than the ramp.
 Once you have a scenario, launch a run from the **New Test** page (or directly from a
 scenario).
 
-1. Confirm your scope, then choose the scenario.
-2. Confirm the target application and release — this is what the release trend keys off.
+1. Confirm your scope, then choose the scenario. Once you choose one (or arrive from
+   the scenario builder or the library with one), the list folds away and the
+   scenario's card shows its script groups, where **Edit settings** changes a group for
+   this run only. **Change scenario** opens the list again; the card's **More** menu
+   holds its history and Archive.
+2. Confirm the target application and release — this is what the release trend keys
+   off. A run in your workspace's application starts at your workspace's release,
+   unless the scenario is assigned to other releases of that application; then you
+   choose, with the assigned ones marked.
 3. Apply any run-time overrides (base URL, environment values, data-pool selections).
-4. Choose to start now or schedule a start time.
+   Monitor bindings, criteria, Elastic and Dynatrace capture and trace context are
+   under **Monitoring for this run**, folded unless one needs attention.
+4. Choose to start now or schedule a start time. If something blocks the launch, each
+   reason you can fix on the page links to its field.
 5. Start.
 
 Three things can happen between "start" and "running":

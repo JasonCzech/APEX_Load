@@ -73,6 +73,8 @@ test('[U10] preflight and estimate lead to an immediate launch that reaches RUNN
 
   await page.goto(`/#/new-test?scenarioId=${scenarioId}&${scopeQuery(workspace)}`)
   await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
+  // Capture options sit under "Monitoring for this run", folded until opened.
+  await page.getByText('Monitoring for this run', { exact: true }).click()
   const elkSelector = page.getByRole('combobox', { name: 'Elastic log capture', exact: true })
   await expect(elkSelector).toContainText('Tier-0 Elastic logs')
   await elkSelector.selectOption(elkConnectionId)
