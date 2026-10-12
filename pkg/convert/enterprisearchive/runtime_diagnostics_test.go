@@ -163,7 +163,7 @@ func TestSnapshotConflictsRemainIndependentAndReviewable(t *testing.T) {
 			}
 			files := map[string]string{"default.cfg": content}
 			rows := classifyRuntimeSelectedSections(collectRuntimeSections(files), "http")
-			refineRuntimeSettingDispositions(rows, rc, files, "http")
+			refineRuntimeSettingDispositions(rows, rc, files, "http", nil)
 			if row := rows["default.cfg"]["WEB"]["EnableSnapshotsInReplay"]; row.Status != tc.captureStatus {
 				t.Fatalf("parent row: %+v", row)
 			}

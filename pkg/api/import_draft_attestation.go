@@ -148,9 +148,10 @@ func (s *Server) attachImportDraftAttestations(
 			continue
 		}
 		seen[script] = struct{}{}
-		expiresAt, err := s.attachImportDraftAttestationWithExpirationPolicy(
+		expiresAt, projected, err := s.attachImportDraftAttestationProjecting(
 			r,
 			script,
+			opts.textMemo,
 			opts.DisableDraftExpiration,
 			opts.RecordingSessionID,
 			opts.RecordingSnapshotDigest,
@@ -168,6 +169,12 @@ func (s *Server) attachImportDraftAttestations(
 		}
 		if importDraftAttestationToken(script) != "" {
 			attached = append(attached, script)
+		}
+		if projected != nil {
+			if opts.attestedProjections == nil {
+				opts.attestedProjections = make(map[*dsl.Script]*dsl.Script, len(scripts))
+			}
+			opts.attestedProjections[script] = projected
 		}
 	}
 	return nil
@@ -211,17 +218,33 @@ func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
 	disableExpiration bool,
 	recordingSessionIDs ...string,
 ) (time.Time, error) {
+	expiresAt, _, err := s.attachImportDraftAttestationProjecting(r, script, nil, disableExpiration, recordingSessionIDs...)
+	return expiresAt, err
+}
+
+// attachImportDraftAttestationProjecting also returns the disclosure
+// projection fingerprinting computed for script (nil when it computed none),
+// scrubbing text through memo. Attestation changes only the draft's capability
+// marker, which the projection strips, so the projection still describes
+// script on return. Callers may read it, never modify it.
+func (s *Server) attachImportDraftAttestationProjecting(
+	r *http.Request,
+	script *dsl.Script,
+	memo *importProjectionTextMemo,
+	disableExpiration bool,
+	recordingSessionIDs ...string,
+) (time.Time, *dsl.Script, error) {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
-		return time.Time{}, nil
+		return time.Time{}, nil, nil
 	}
 	profile := strings.ToLower(strings.TrimSpace(script.Metadata.Import.Source))
 	if profile == "" {
-		return time.Time{}, nil
+		return time.Time{}, nil, nil
 	}
 	ensureCredentialPreservingImportMetadata(script, profile)
-	fingerprint, err := fingerprintImportDraftCredentials(script)
+	fingerprint, projection, err := fingerprintImportDraftCredentialsWithProjection(script, memo)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, nil, err
 	}
 	recordingSessionID := ""
 	recordingSnapshotDigest := ""
@@ -232,22 +255,22 @@ func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
 		recordingSnapshotDigest = strings.TrimSpace(recordingSessionIDs[1])
 	}
 	if recordingSessionID != "" && recordingSnapshotDigest == "" {
-		return time.Time{}, errors.New("recording preview snapshot digest is required")
+		return time.Time{}, nil, errors.New("recording preview snapshot digest is required")
 	}
-	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(script) || requiresExactRepairDraft(script)
+	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValuesFromProjection(script, projection) || requiresExactRepairDraft(script)
 	if hasUnavailableCredentials && fingerprint.FullDigest == "" {
 		fingerprint.FullDigest, err = fullImportDraftExecutionDigest(script)
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, nil, err
 		}
 	}
 	if !fingerprint.HasRawCredentials && !hasUnavailableCredentials && recordingSessionID == "" {
 		stripImportDraftAttestation(script)
-		return time.Time{}, nil
+		return time.Time{}, projection.script, nil
 	}
 	exactCandidate := cloneScriptDefinition(script)
 	if exactCandidate == nil {
-		return time.Time{}, errors.New("failed to clone import draft")
+		return time.Time{}, nil, errors.New("failed to clone import draft")
 	}
 	_, actor, _ := s.resolveAuditActor(r)
 	now := time.Now().UTC()
@@ -256,16 +279,16 @@ func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
 
 	protectedStorePresent, err := s.brunoArtifactStorePresent()
 	if err != nil {
-		return time.Time{}, markProtectedImportStoreUnavailable(err)
+		return time.Time{}, nil, markProtectedImportStoreUnavailable(err)
 	}
 	if protectedStorePresent {
 		protectedCandidate := cloneScriptDefinition(script)
 		if protectedCandidate == nil {
-			return time.Time{}, errors.New("failed to clone protected import draft")
+			return time.Time{}, nil, errors.New("failed to clone protected import draft")
 		}
 		protectedCandidate.ProjectID = projectID
 		if err := sanitizePersistentImportReviewSurfaces(protectedCandidate); err != nil {
-			return time.Time{}, err
+			return time.Time{}, nil, err
 		}
 		if protectedCandidate.Metadata != nil &&
 			protectedCandidate.Metadata.Import != nil &&
@@ -293,18 +316,18 @@ func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
 			// A configured protected store is an explicit durability boundary.
 			// Never silently downgrade its operational or filesystem failure to
 			// a process-local capability, even on a single controller.
-			return time.Time{}, err
+			return time.Time{}, nil, err
 		} else if strings.TrimSpace(sessionID) == "" {
-			return time.Time{}, errors.New("protected import draft session was not created")
+			return time.Time{}, nil, errors.New("protected import draft session was not created")
 		} else {
 			preserved := ensureScriptImportPreserved(script, profile)
 			preserved[importDraftAttestationMetadataKey] =
 				importDraftProtectedTokenPrefix + sessionID
-			return expiresAt, nil
+			return expiresAt, projection.script, nil
 		}
 	}
 	if s.haExecution {
-		return time.Time{}, errors.New("credential-preserving legacy import saves require shared protected sessions in HA mode")
+		return time.Time{}, nil, errors.New("credential-preserving legacy import saves require shared protected sessions in HA mode")
 	}
 
 	expiresAt := now.Add(importDraftAttestationTTL)
@@ -336,12 +359,12 @@ func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
 		s.importDraftAttestations = make(map[string]*importDraftAttestation)
 	}
 	if len(s.importDraftAttestations) >= importDraftAttestationCapacity {
-		return time.Time{}, errors.New("credential-preserving import save capacity is busy")
+		return time.Time{}, nil, errors.New("credential-preserving import save capacity is busy")
 	}
 	s.importDraftAttestations[token] = record
 	preserved := ensureScriptImportPreserved(script, profile)
 	preserved[importDraftAttestationMetadataKey] = token
-	return record.ExpiresAt, nil
+	return record.ExpiresAt, projection.script, nil
 }
 
 // claimImportDraftMutation authenticates an exact credential-bearing import
@@ -583,11 +606,11 @@ func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
 			return nil, err
 		}
 	}
-	attestedFingerprint, err := fingerprintImportDraftCredentials(candidate.Script)
+	attestedFingerprint, attestedProjection, err := fingerprintImportDraftCredentialsWithProjection(candidate.Script, nil)
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
 	}
-	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(candidate.Script) || requiresExactRepairDraft(candidate.Script)
+	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValuesFromProjection(candidate.Script, attestedProjection) || requiresExactRepairDraft(candidate.Script)
 	if hasUnavailableCredentials && attestedFingerprint.FullDigest == "" {
 		attestedFingerprint.FullDigest, err = fullImportDraftExecutionDigest(candidate.Script)
 		if err != nil {
@@ -901,24 +924,53 @@ func protectedImportDraftRecordingLineage(script *dsl.Script) (string, string, s
 func fingerprintImportDraftCredentials(
 	script *dsl.Script,
 ) (importDraftCredentialFingerprint, error) {
+	fingerprint, _, err := fingerprintImportDraftCredentialsWithProjection(script, nil)
+	return fingerprint, err
+}
+
+// importDraftProjection is a draft's maskScriptSecrets projection (script, nil
+// when projecting failed) with the JSON forms of the draft and of script that
+// fingerprinting compared (nil when not built). Projecting and converting a
+// large draft cost more than the rest of an import response, so callers that
+// need them again reuse these. Nothing may modify them.
+type importDraftProjection struct {
+	script                 *dsl.Script
+	rawJSON, projectedJSON any
+}
+
+// fingerprintImportDraftCredentialsWithProjection also returns the projection
+// it fingerprinted, which is empty when fingerprinting failed before
+// projecting. The projection scrubs text through memo (nil for a memo of its
+// own).
+func fingerprintImportDraftCredentialsWithProjection(
+	script *dsl.Script,
+	memo *importProjectionTextMemo,
+) (importDraftCredentialFingerprint, importDraftProjection, error) {
 	if script == nil {
-		return importDraftCredentialFingerprint{}, errors.New("import draft is required")
+		return importDraftCredentialFingerprint{}, importDraftProjection{}, errors.New("import draft is required")
 	}
 	executionGraphDigest, err := canonicalImportDraftExecutionGraphDigest(script)
 	if err != nil {
-		return importDraftCredentialFingerprint{}, err
+		return importDraftCredentialFingerprint{}, importDraftProjection{}, err
 	}
 	raw := importResponseRawScriptValue(script)
-	projectedScript := maskScriptSecrets(script)
+	projectedScript := maskScriptSecretsWithMemo(script, memo)
+	projection := importDraftProjection{script: projectedScript}
+	if _, converted := raw.(map[string]any); converted {
+		projection.rawJSON = raw
+	}
 	if projectedScript == nil {
 		digest, err := fullImportDraftExecutionDigest(script)
 		return importDraftCredentialFingerprint{
 			ExecutionGraphDigest: executionGraphDigest,
 			FullDigest:           digest,
 			HasRawCredentials:    err == nil,
-		}, err
+		}, projection, err
 	}
 	projected := importResponseRawScriptValue(projectedScript)
+	if _, converted := projected.(map[string]any); converted {
+		projection.projectedJSON = projected
+	}
 	requirements := secretBindingRequirementsForImportScripts(projected)
 	if opaqueImportSourceProjectionChanged(raw, projected) || unlocatedRequestBodyProjectionChanged(script, projectedScript, requirements) {
 		digest, err := fullImportDraftExecutionDigest(script)
@@ -926,7 +978,7 @@ func fingerprintImportDraftCredentials(
 			ExecutionGraphDigest: executionGraphDigest,
 			FullDigest:           digest,
 			HasRawCredentials:    err == nil,
-		}, err
+		}, projection, err
 	}
 	if len(requirements) == 0 {
 		if runtimeCredentialSourceProjectionChanged(script, projectedScript) ||
@@ -936,17 +988,17 @@ func fingerprintImportDraftCredentials(
 				ExecutionGraphDigest: executionGraphDigest,
 				FullDigest:           digest,
 				HasRawCredentials:    err == nil,
-			}, err
+			}, projection, err
 		}
 		return importDraftCredentialFingerprint{
 			ExecutionGraphDigest: executionGraphDigest,
-		}, nil
+		}, projection, nil
 	}
 	values := sourceSecretValuesForImportNodes(raw, projected, requirements)
 	if len(values) == 0 {
 		return importDraftCredentialFingerprint{
 			ExecutionGraphDigest: executionGraphDigest,
-		}, nil
+		}, projection, nil
 	}
 	if len(values) != len(requirements) {
 		digest, err := fullImportDraftExecutionDigest(script)
@@ -954,7 +1006,7 @@ func fingerprintImportDraftCredentials(
 			ExecutionGraphDigest: executionGraphDigest,
 			FullDigest:           digest,
 			HasRawCredentials:    err == nil,
-		}, err
+		}, projection, err
 	}
 	digests := make(map[string]int, len(values))
 	requirementsByID := make(map[string]SecretBindingRequirement, len(requirements))
@@ -978,14 +1030,14 @@ func fingerprintImportDraftCredentials(
 	}
 	structureDigest, err := canonicalImportDraftStructureDigestFromProjection(projectedScript)
 	if err != nil {
-		return importDraftCredentialFingerprint{}, err
+		return importDraftCredentialFingerprint{}, projection, err
 	}
 	return importDraftCredentialFingerprint{
 		CredentialDigests:    digests,
 		StructureDigest:      structureDigest,
 		ExecutionGraphDigest: executionGraphDigest,
 		HasRawCredentials:    true,
-	}, nil
+	}, projection, nil
 }
 
 // opaqueImportSourceProjectionChanged detects exact, inert source payloads

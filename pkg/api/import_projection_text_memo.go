@@ -6,9 +6,8 @@ import (
 )
 
 const (
-	minImportProjectionMemoTextBytes = 1024
-	maxImportProjectionMemoEntries   = 512
-	maxImportProjectionMemoBytes     = 8 << 20
+	maxImportProjectionMemoEntries = 1 << 16
+	maxImportProjectionMemoBytes   = 8 << 20
 )
 
 type importProjectionTextMemoKey struct {
@@ -16,16 +15,22 @@ type importProjectionTextMemoKey struct {
 	kind  uint8
 }
 
-// Memoize only pure text operations within one disclosure projection. Field,
-// semantic-name, URL, and inherited-sensitivity decisions still happen before
-// consulting this memo, and the three operations have separate namespaces.
+// Memoize only pure text operations. One memo can serve several disclosure
+// projections (an import response shares one across its drafts'
+// attestations), so a header value, label or snippet that repeats across
+// thousands of actions is scrubbed once, whatever its length.
+// Field, semantic-name, URL, and inherited-sensitivity decisions still happen
+// before consulting this memo, and the three operations have separate
+// namespaces. scrubMemo shares the scrub package's own text functions with the
+// script disclosure projector.
 type importProjectionTextMemo struct {
-	values map[importProjectionTextMemoKey]string
-	bytes  int
+	values    map[importProjectionTextMemoKey]string
+	bytes     int
+	scrubMemo *scrub.Memo
 }
 
 func (memo *importProjectionTextMemo) project(value string, kind uint8, apply func(string) string) string {
-	if memo == nil || len(value) < minImportProjectionMemoTextBytes {
+	if memo == nil || value == "" {
 		return apply(value)
 	}
 	key := importProjectionTextMemoKey{value: value, kind: kind}
@@ -44,9 +49,21 @@ func (memo *importProjectionTextMemo) project(value string, kind uint8, apply fu
 	return projected
 }
 
+// scrubber returns the memo's scrub.Memo; a nil memo has none, and a nil
+// *scrub.Memo scrubs without caching.
+func (memo *importProjectionTextMemo) scrubber() *scrub.Memo {
+	if memo == nil {
+		return nil
+	}
+	if memo.scrubMemo == nil {
+		memo.scrubMemo = &scrub.Memo{}
+	}
+	return memo.scrubMemo
+}
+
 func (memo *importProjectionTextMemo) scrubScriptText(value string) string {
 	return memo.project(value, 0, func(value string) string {
-		return scrubScriptText(value, false)
+		return scrubScriptTextWithProjector(value, false, memo.scrubber().Value)
 	})
 }
 
@@ -58,7 +75,7 @@ func (memo *importProjectionTextMemo) scrubReviewText(value string, freeText boo
 	return memo.project(value, kind, func(value string) string {
 		redacted, _ := sourceview.Redact(value)
 		if freeText {
-			redacted = scrub.Value(redacted, scrub.Policy{})
+			redacted = memo.scrubber().Value(redacted)
 		}
 		return redacted
 	})

@@ -393,7 +393,10 @@ func applyAnalyzedSourceCallSpans(functions []ParsedFunction, analysis *cTransac
 }
 
 func lexCTransactionTokens(content string, skipPreprocessor bool) []cTransactionToken {
-	tokens := make([]cTransactionToken, 0, len(content)/4)
+	// Long string literals are one token each, so archive sources holding
+	// request payloads have far fewer tokens than len/4. A bounded estimate
+	// lets append grow the rest instead of reserving 18 bytes per source byte.
+	tokens := make([]cTransactionToken, 0, min(len(content)/16, 16384))
 	offset := 0
 	line := 1
 	column := 1

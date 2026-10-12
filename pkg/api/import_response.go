@@ -95,6 +95,13 @@ type scriptImportResponseOptions struct {
 	// draftAttestationExpiresAt is populated only by the server-side response
 	// builder. It is never accepted from converter or client input.
 	draftAttestationExpiresAt time.Time
+	// attestedProjections holds the disclosure projection each attested draft's
+	// fingerprint computed. Projecting a large draft costs as much as the rest
+	// of the response, so the response's private projection reuses it.
+	attestedProjections map[*dsl.Script]*dsl.Script
+	// textMemo spans the response's draft attestations, so the disclosure
+	// projections they build scrub a repeated value once.
+	textMemo *importProjectionTextMemo
 }
 
 const (
@@ -168,13 +175,13 @@ func newScriptImportResponseWithProjection(opts scriptImportResponseOptions) (ma
 	// evidence and must never rewrite an import draft or its review material.
 	exactScripts := importResponseRawScriptValue(opts.Scripts)
 	exactScript := importResponseRawScriptValue(opts.Script)
-	scripts := credentialPreservingImportResponseValue(opts.Scripts)
+	scripts := credentialPreservingImportResponseValueFromExact(opts.Scripts, exactScripts, opts.attestedProjections)
 	// The primary convenience field normally repeats a member of scripts. Its
 	// private disclosure projection is read-only, so reuse that member instead
 	// of walking and scrubbing the same source-review tree a second time.
 	script, reused := primaryImportScriptProjection(exactScripts, scripts, exactScript)
 	if !reused {
-		script = credentialPreservingImportResponseValue(opts.Script)
+		script = credentialPreservingImportResponseValueFromExact(opts.Script, exactScript, opts.attestedProjections)
 	}
 	if isNilImportValue(scripts) {
 		if !isNilImportValue(opts.Script) {
@@ -428,7 +435,9 @@ func copyProtectedImportCredentialLocations(raw, projected any) {
 		}
 		id, _ := descriptor["id"].(string)
 		if locations, exists := rawByID[id]; exists {
-			descriptor["locations"] = locations
+			// A copy: the projection must not share a tree with raw, which the
+			// response may publish.
+			descriptor["locations"] = importResponseRawScriptValue(locations)
 		}
 	}
 }
@@ -458,15 +467,60 @@ func maskImportDraftForResponse(script *dsl.Script) *dsl.Script {
 }
 
 func credentialPreservingImportResponseValue(value any) any {
-	exact := importResponseRawScriptValue(value)
+	return credentialPreservingImportResponseValueFromExact(value, importResponseRawScriptValue(value), nil)
+}
+
+// credentialPreservingImportResponseValueFromExact projects value given exact,
+// its JSON form, which it only reads, so a caller may also publish exact. It
+// takes each script's disclosure projection from attested when it has one
+// there, instead of projecting that script again.
+func credentialPreservingImportResponseValueFromExact(value, exact any, attested map[*dsl.Script]*dsl.Script) any {
 	// Build a private disclosure projection for migration-requirement discovery.
 	// This value is never used as the imported script returned to the operator.
-	projected := maskScriptResponseValue(exact)
+	projected := maskScriptResponseValueReusing(value, exact, attested)
 	markCredentialPreservingImportJSON(projected)
 	// The projection strips capabilities by design. Copy back only validated
 	// opaque capability data needed by the binding flow.
 	copyImportDraftCapabilities(exact, projected)
 	return projected
+}
+
+// maskScriptResponseValueReusing returns maskScriptResponseValue(exact), where
+// exact is value's JSON form, taking a script's projection from attested when
+// value is that script or a slice holding it. maskScriptJSONObject would
+// derive the same projection: maskScriptSecrets' costly projection reads only
+// its input's JSON form, the script decoded from exact differs from the
+// attested draft only by the capability marker that projection strips, and
+// the cheap restores after it read the same values from the draft as from its
+// JSON copy (TestImportResponseReusesAttestationProjection pins this).
+func maskScriptResponseValueReusing(value, exact any, attested map[*dsl.Script]*dsl.Script) any {
+	if len(attested) == 0 {
+		return maskScriptResponseValue(exact)
+	}
+	reuse := func(script *dsl.Script, exact any) any {
+		object, isObject := exact.(map[string]any)
+		if projection := attested[script]; script != nil && projection != nil && isObject && isScriptJSONObject(object) {
+			if projected, err := scriptAsJSONValue(projection); err == nil {
+				return projected
+			}
+		}
+		return maskScriptResponseValue(exact)
+	}
+	switch typed := value.(type) {
+	case *dsl.Script:
+		return reuse(typed, exact)
+	case []*dsl.Script:
+		members, ok := exact.([]any)
+		if !ok || len(members) != len(typed) {
+			return maskScriptResponseValue(exact)
+		}
+		projected := make([]any, len(members))
+		for index, member := range members {
+			projected[index] = reuse(typed[index], member)
+		}
+		return projected
+	}
+	return maskScriptResponseValue(exact)
 }
 
 func markCredentialPreservingImportJSON(value any) {
@@ -774,6 +828,9 @@ func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
 // session. Migration descriptors remain value-free even though imported
 // scripts and source-review material retain their authored values.
 func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {
+	if opts.textMemo == nil {
+		opts.textMemo = &importProjectionTextMemo{}
+	}
 	protectedRequirements := opts.ProtectedRequirements
 	defer clearCredentialRequirementValues(protectedRequirements)
 	scriptsForCredentialReview := uniqueImportDraftScripts(importDraftScriptPointers(opts.Script, opts.Scripts))

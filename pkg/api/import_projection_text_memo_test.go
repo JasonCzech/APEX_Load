@@ -25,8 +25,14 @@ func TestImportProjectionTextMemoRetainsReviewContext(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal("memo changed a sensitivity or free-text context")
 	}
-	if len(memo.values) != 2 {
-		t.Fatalf("memo entries = %d, want separate review-only and review-free-text entries", len(memo.values))
+	entries := 0
+	for key := range memo.values {
+		if key.value == text {
+			entries++
+		}
+	}
+	if entries != 2 {
+		t.Fatalf("memo entries for the shared text = %d, want separate review-only and review-free-text entries", entries)
 	}
 	for _, key := range []string{"content", "ordinary", "password"} {
 		for _, sensitive := range []bool{false, true} {
@@ -70,7 +76,7 @@ func TestImportProjectionTextMemoBoundsAndReuse(t *testing.T) {
 		t.Fatal("memo reused an operation from another namespace")
 	}
 	for i := 0; i < maxImportProjectionMemoEntries+10; i++ {
-		memo.project(text+strconv.Itoa(i), 0, apply)
+		memo.project("v"+strconv.Itoa(i), 0, apply)
 	}
 	if len(memo.values) != maxImportProjectionMemoEntries || memo.bytes > maxImportProjectionMemoBytes {
 		t.Fatal("memo exceeded its entry or byte bound")
@@ -79,6 +85,17 @@ func TestImportProjectionTextMemoBoundsAndReuse(t *testing.T) {
 	memo.project(text, 0, apply)
 	memo.project("short", 0, apply)
 	if len(memo.values) != 0 {
-		t.Fatal("memo retained text beyond its byte budget or minimum length")
+		t.Fatal("memo retained text beyond its byte budget")
+	}
+	// Short values repeat across actions (header values, labels), so they are
+	// cached too, and a nil memo applies the operation directly.
+	calls = 0
+	memo = &importProjectionTextMemo{}
+	memo.project("short", 0, apply)
+	memo.project("short", 0, apply)
+	var none *importProjectionTextMemo
+	none.project("short", 0, apply)
+	if calls != 2 || len(memo.values) != 1 {
+		t.Fatal("short text was not cached once")
 	}
 }

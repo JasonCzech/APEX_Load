@@ -1328,8 +1328,13 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				}
 			}
 		case "manuallyextrafiles", "extrafiles":
-			if strings.TrimSpace(value) != "" {
-				cfg.ExtraFiles = append(cfg.ExtraFiles, value)
+			// VuGen lists each file as a key with an empty value ("globals.h=").
+			name := value
+			if strings.TrimSpace(name) == "" {
+				name = cleanRuntimePathValue(key)
+			}
+			if strings.TrimSpace(name) != "" {
+				cfg.ExtraFiles = append(cfg.ExtraFiles, name)
 			}
 		case "transactionsorder":
 			if normalizedKey == "order" {

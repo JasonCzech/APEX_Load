@@ -1455,17 +1455,31 @@ func scriptHasUnavailableImportCredentialValues(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
-	projected := maskScriptSecrets(script)
-	if projected == nil {
+	return scriptHasUnavailableImportCredentialValuesFromProjection(script, importDraftProjection{script: maskScriptSecrets(script)})
+}
+
+// scriptHasUnavailableImportCredentialValuesFromProjection reads projection,
+// script's projection from fingerprinting, without modifying it.
+func scriptHasUnavailableImportCredentialValuesFromProjection(script *dsl.Script, projection importDraftProjection) bool {
+	if script == nil {
+		return false
+	}
+	if projection.script == nil {
 		return true
 	}
-	rawValue, err := scriptAsJSONValue(script)
-	if err != nil {
-		return true
+	rawValue := projection.rawJSON
+	if rawValue == nil {
+		var err error
+		if rawValue, err = scriptAsJSONValue(script); err != nil {
+			return true
+		}
 	}
-	projectedValue, err := scriptAsJSONValue(projected)
-	if err != nil {
-		return true
+	projectedValue := projection.projectedJSON
+	if projectedValue == nil {
+		var err error
+		if projectedValue, err = scriptAsJSONValue(projection.script); err != nil {
+			return true
+		}
 	}
 	requirements := secretBindingRequirementsForImportScripts([]any{projectedValue})
 	requirements = annotateSecretBindingDestinationValues(

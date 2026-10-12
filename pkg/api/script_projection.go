@@ -55,6 +55,13 @@ var portableXMLTemplateAttributePattern = regexp.MustCompile(`(?is)(?:[\w.-]+:)?
 // (for example {{secret.api_token}} and *_secret reference fields) so an export
 // describes how to bind a secret without disclosing its value.
 func maskScriptSecrets(script *dsl.Script) *dsl.Script {
+	return maskScriptSecretsWithMemo(script, nil)
+}
+
+// maskScriptSecretsWithMemo is maskScriptSecrets scrubbing text through memo,
+// which a caller projecting several related scripts shares between them; nil
+// gives this projection a memo of its own.
+func maskScriptSecretsWithMemo(script *dsl.Script, memo *importProjectionTextMemo) *dsl.Script {
 	if script == nil {
 		return nil
 	}
@@ -68,7 +75,7 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	key := sha256.Sum256(payload)
 	encoded := maskedScripts.get(key)
 	if encoded == nil {
-		projected := projectScriptDisclosureCopy(script, payload)
+		projected := projectScriptDisclosureCopy(payload, memo)
 		if projected == nil {
 			return nil
 		}
@@ -89,8 +96,17 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 
 // projectScriptDisclosureCopy is the costly, payload-determined part of
 // maskScriptSecrets, and its result is fully masked. It comes from a JSON
-// decode, so it survives the cache's JSON round trip unchanged.
-func projectScriptDisclosureCopy(script *dsl.Script, payload []byte) *dsl.Script {
+// decode, so it survives the cache's JSON round trip unchanged. It reads only
+// payload, never a caller's in-memory Go values, so the cache key covers all
+// it depends on. Text is scrubbed through memo (nil for a memo of its own).
+func projectScriptDisclosureCopy(payload []byte, memo *importProjectionTextMemo) *dsl.Script {
+	if memo == nil {
+		memo = &importProjectionTextMemo{}
+	}
+	var source dsl.Script
+	if err := json.Unmarshal(payload, &source); err != nil {
+		return nil
+	}
 	var working dsl.Script
 	if err := json.Unmarshal(payload, &working); err != nil {
 		return nil
@@ -121,7 +137,7 @@ func projectScriptDisclosureCopy(script *dsl.Script, payload []byte) *dsl.Script
 	if err := json.Unmarshal(payload, &raw); err != nil {
 		return nil
 	}
-	projected := projectScriptNode(raw, scriptProjectionContext{})
+	projected := projectScriptNode(raw, scriptProjectionContext{textMemo: memo})
 	projectedPayload, err := json.Marshal(projected)
 	if err != nil {
 		return nil
@@ -142,12 +158,12 @@ func projectScriptDisclosureCopy(script *dsl.Script, payload []byte) *dsl.Script
 	}); err != nil || restored != len(protectedBodies) {
 		return nil
 	}
-	restoreBrunoNativeCompactProvenance(&masked, script)
-	projectedScript, err := scriptdisclosure.ProjectWithCredentialSource(&masked, script)
+	restoreBrunoNativeCompactProvenance(&masked, &source)
+	projectedScript, err := scriptdisclosure.ProjectWithCredentialSourceMemo(&masked, &source, memo.scrubber())
 	if err != nil {
 		return nil
 	}
-	maskRestoredImportBodies(projectedScript, script)
+	maskRestoredImportBodies(projectedScript, &source)
 	return projectedScript
 }
 
@@ -1058,7 +1074,7 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		if ctx.headerList {
-			return projectHeaderEntry(typed)
+			return projectHeaderEntry(typed, ctx.textMemo)
 		}
 		credentialValue := scriptMapHasCredentialValue(typed)
 		out := make(map[string]any, len(typed))
@@ -1207,7 +1223,7 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				childCtx.transactionFunction, _ = typed["function"].(string)
 			}
 			if ctx.headers {
-				out[key] = projectHeaderValue(key, child)
+				out[key] = projectHeaderValue(key, child, ctx.textMemo)
 				continue
 			}
 			out[key] = projectScriptNode(child, childCtx)
@@ -1402,12 +1418,12 @@ func scriptMapHasCredentialValue(value map[string]any) bool {
 	return false
 }
 
-func projectHeaderEntry(entry map[string]any) map[string]any {
+func projectHeaderEntry(entry map[string]any, memo *importProjectionTextMemo) map[string]any {
 	out := make(map[string]any, len(entry))
 	name, _ := entry["name"].(string)
 	for key, value := range entry {
 		if strings.EqualFold(key, "value") {
-			out[key] = projectHeaderValue(name, value)
+			out[key] = projectHeaderValue(name, value, memo)
 			continue
 		}
 		out[key] = projectScriptNode(value, scriptProjectionContext{key: key})
@@ -1415,10 +1431,10 @@ func projectHeaderEntry(entry map[string]any) map[string]any {
 	return out
 }
 
-func projectHeaderValue(name string, value any) any {
+func projectHeaderValue(name string, value any, memo *importProjectionTextMemo) any {
 	text, ok := value.(string)
 	if !ok {
-		return projectScriptNode(value, scriptProjectionContext{key: name, opaqueMap: true})
+		return projectScriptNode(value, scriptProjectionContext{key: name, opaqueMap: true, textMemo: memo})
 	}
 	if isBoundedNonSecretHeaderValue(name, text) {
 		return strings.TrimSpace(text)
@@ -1441,7 +1457,7 @@ func projectHeaderValue(name string, value any) any {
 	if isNonSecretIdentifierHeader(name) {
 		return scrub.ValueURL(text, scrub.Policy{})
 	}
-	return scrubScriptText(text, false)
+	return memo.scrubScriptText(text)
 }
 
 func isBoundedNonSecretHeaderValue(name, value string) bool {
@@ -1484,7 +1500,7 @@ func projectScriptString(value string, ctx scriptProjectionContext) string {
 		return maskScriptURL(value)
 	}
 	if ctx.label || credential.LabelField(ctx.key) {
-		return scrub.ValueLabel(value, scrub.Policy{})
+		return ctx.textMemo.scrubber().ValueLabel(value)
 	}
 	if ctx.opaqueMap || isScriptFreeTextKey(ctx.key) {
 		return ctx.textMemo.scrubScriptText(value)

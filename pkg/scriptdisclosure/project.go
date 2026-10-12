@@ -76,6 +76,8 @@ type projector struct {
 	sensitiveSourceColumns   map[string][]string
 	textScrubCache           map[string]string
 	textScrubCacheBytes      int
+	// scrubMemo caches the scrub package's text functions; nil scrubs directly.
+	scrubMemo *scrub.Memo
 }
 
 // Project returns a detached script whose credential material has been
@@ -94,6 +96,13 @@ func Project(script *dsl.Script) (*dsl.Script, error) {
 // field-aware projector has already masked the primary credential field but an
 // identical literal must still be removed from an otherwise neutral field.
 func ProjectWithCredentialSource(script, credentialSource *dsl.Script) (*dsl.Script, error) {
+	return ProjectWithCredentialSourceMemo(script, credentialSource, nil)
+}
+
+// ProjectWithCredentialSourceMemo is ProjectWithCredentialSource scrubbing text
+// through memo, which a caller projecting several related values shares
+// between them; nil gives this projection a memo of its own.
+func ProjectWithCredentialSourceMemo(script, credentialSource *dsl.Script, memo *scrub.Memo) (*dsl.Script, error) {
 	if script == nil {
 		return nil, nil
 	}
@@ -111,9 +120,13 @@ func ProjectWithCredentialSource(script, credentialSource *dsl.Script) (*dsl.Scr
 		return nil, fmt.Errorf("decode script disclosure copy: %w", err)
 	}
 
+	if memo == nil {
+		memo = &scrub.Memo{}
+	}
 	p := &projector{
 		credentialParameterNames: credentialParameterNames(credentialSource),
 		sensitiveSourceColumns:   sensitiveDataSourceColumns(credentialSource),
+		scrubMemo:                memo,
 	}
 	sourcePayload, err := json.Marshal(credentialSource)
 	if err != nil {
@@ -467,7 +480,7 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 		return p.replaceKnown(projectURL(value))
 	}
 	if ctx.label || credential.LabelField(ctx.key) {
-		return p.replaceKnown(scrub.ValueLabel(value, scrub.Policy{}))
+		return p.replaceKnown(p.scrubMemo.ValueLabel(value))
 	}
 	if ctx.opaque || isFreeTextKey(ctx.key) {
 		return p.replaceKnown(p.scrubText(value))
@@ -825,10 +838,6 @@ func projectURL(value string) string {
 		value = value[:authorityStart] + credential.Redacted + value[at:]
 	}
 	return value
-}
-
-func scrubText(value string) string {
-	return scrubWithTemplates(value, false)
 }
 
 func scrubWithTemplates(value string, urlValue bool) string {

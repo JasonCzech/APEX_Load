@@ -250,7 +250,7 @@ func TestWebRecordedScreenDimensionsDoNotClaimBrowserExecution(t *testing.T) {
 				t.Fatalf("status=%q want %q", row.Status, tc.status)
 			}
 			dispositions := classifyRuntimeSelectedSections(collectRuntimeSections(files), tc.protocol)
-			refineRuntimeSettingDispositions(dispositions, ParseRuntimeCfg(tc.config), files, tc.protocol)
+			refineRuntimeSettingDispositions(dispositions, ParseRuntimeCfg(tc.config), files, tc.protocol, nil)
 			for _, keys := range dispositions["default.cfg"] {
 				for _, d := range keys {
 					if d.ParityID != "browser_device_emulation" {
@@ -289,7 +289,7 @@ func TestWebCustomUserAgentMakesSavedBrowserIdentityDormant(t *testing.T) {
 	files := map[string]string{"default.cfg": "[WEB]\nCustomUserAgent=Custom-UA\nUseCustomAgent=1\nBrowserType=Microsoft Internet Explorer 4.0\nUseBrowserAgent=0\n"}
 	rc := ParseRuntimeCfg(files["default.cfg"])
 	dispositions := classifyRuntimeSelectedSections(collectRuntimeSections(files), "http")
-	refineRuntimeSettingDispositions(dispositions, rc, files, "http")
+	refineRuntimeSettingDispositions(dispositions, rc, files, "http", nil)
 	for _, key := range []string{"BrowserType", "UseBrowserAgent"} {
 		if row := dispositions["default.cfg"]["WEB"][key]; row.Status != RuntimeSettingDispositionNonApplicable {
 			t.Fatalf("dormant %s = %#v", key, row)

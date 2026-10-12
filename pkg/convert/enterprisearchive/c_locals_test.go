@@ -1,8 +1,14 @@
 package enterprisearchive
 
 import (
+	"maps"
+	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -38,6 +44,113 @@ func TestCLocalCandidatesRequireLiteralWrites(t *testing.T) {
 				t.Fatalf("candidates = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+var cLocalOracleRegexps sync.Map
+
+// cLocalOracleRegexp compiles each oracle pattern once per test binary.
+func cLocalOracleRegexp(pattern string) *regexp.Regexp {
+	if compiled, ok := cLocalOracleRegexps.Load(pattern); ok {
+		return compiled.(*regexp.Regexp)
+	}
+	compiled := regexp.MustCompile(pattern)
+	cLocalOracleRegexps.Store(pattern, compiled)
+	return compiled
+}
+
+// cLocalCandidatesOracle is the regexp form the linear scans in c_locals.go
+// replaced. It pins their semantics; it is too slow for large sources.
+func cLocalCandidatesOracle(content string) map[string]bool {
+	code := cCodeOnly(content)
+	declared := cLocalDeclarationCountsOracle(code)
+	candidates := map[string]bool{}
+	for name, count := range declared {
+		if count == 1 && !cLocalHasOtherWritesOracle(code, name) {
+			candidates[name] = true
+		}
+	}
+	return candidates
+}
+
+func cLocalDeclarationCountsOracle(code string) map[string]int {
+	declared := map[string]int{}
+	for _, match := range cLocalOracleRegexp(`\bint\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*-?\d+\s*;`).FindAllStringSubmatch(code, -1) {
+		declared[match[1]]++
+	}
+	return declared
+}
+
+func cLocalHasOtherWritesOracle(code, name string) bool {
+	quoted := regexp.QuoteMeta(name)
+	for _, pattern := range []string{
+		`\b` + quoted + `\s*(\+\+|--)`,
+		`(\+\+|--)\s*` + quoted + `\b`,
+		`\b` + quoted + `\s*(<<|>>|[-+*/%&|^])=`,
+		`(^|[^&])&\s*` + quoted + `\b`,
+	} {
+		if cLocalOracleRegexp(pattern).MatchString(code) {
+			return true
+		}
+	}
+	for _, location := range cLocalOracleRegexp(`\b`+quoted+`\s*=`).FindAllStringIndex(code, -1) {
+		rest := code[location[1]:]
+		if strings.HasPrefix(rest, "=") {
+			continue
+		}
+		stop := strings.IndexAny(rest, ";),")
+		if stop < 0 || rest[stop] != ';' || !cLocalIntegerLiteralValue.MatchString(rest[:stop]) || !cLocalWriteIsStatement(code[:location[0]]) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCLocalScansMatchRegexpOracle(t *testing.T) {
+	pieces := []string{
+		"int", "done", "d", "x", "_a1", "1done", "doneX", "do", "else", "for", "if",
+		" ", "  ", "\t", "\n", "\f", "\v", "\r",
+		"=", "==", "-", "--", "+", "++", "&", "&&", "<<", ">>", "<", ">", "*", "/", "%", "|", "^", "!",
+		";", ",", "(", ")", "{", "}", ":", ".", "->", "0", "12", "-3", "é", "\"", "'", "/*", "*/", "//",
+		// Whole statements, which random pieces seldom assemble.
+		"int done = 0;", "int d=-3;", "int x =\t- 4 ;", "int\f_a1\n=\r12\v;", "done = 1;", "x=-2;", "d = d2;",
+		"done++;", "--x;", "_a1 <<= 2;", "&done", "if (x) done = 1;", "for (d = 0;",
+	}
+	names := []string{"done", "d", "x", "_a1", "int", "do"}
+	rng := rand.New(rand.NewPCG(1, 2))
+	for iteration := range 30000 {
+		var source strings.Builder
+		for range 1 + rng.IntN(28) {
+			source.WriteString(pieces[rng.IntN(len(pieces))])
+		}
+		code := source.String()
+		if got, want := cLocalDeclarationCounts(code), cLocalDeclarationCountsOracle(code); !maps.Equal(got, want) {
+			t.Fatalf("iteration %d: declarations(%q) = %v, oracle %v", iteration, code, got, want)
+		}
+		for _, name := range names {
+			if got, want := cLocalHasOtherWrites(code, name), cLocalHasOtherWritesOracle(code, name); got != want {
+				t.Fatalf("iteration %d: otherWrites(%q, %q) = %v, oracle %v", iteration, code, name, got, want)
+			}
+		}
+		if got, want := cLocalCandidates(code), cLocalCandidatesOracle(code); !maps.Equal(got, want) {
+			t.Fatalf("iteration %d: candidates(%q) = %v, oracle %v", iteration, code, got, want)
+		}
+	}
+	err := filepath.WalkDir("testdata", func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || (filepath.Ext(path) != ".c" && filepath.Ext(path) != ".h") {
+			return err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if got, want := cLocalCandidates(string(content)), cLocalCandidatesOracle(string(content)); !maps.Equal(got, want) {
+			t.Errorf("%s: candidates = %v, oracle %v", path, got, want)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

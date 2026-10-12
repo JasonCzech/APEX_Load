@@ -33,11 +33,14 @@ func TestProjectionTextScrubCacheRetainsCredentialChecks(t *testing.T) {
 
 func TestProjectionTextScrubCacheBounds(t *testing.T) {
 	p := &projector{}
-	if got := p.scrubText("ordinary short text"); got != "ordinary short text" || len(p.textScrubCache) != 0 {
-		t.Fatal("short text entered the cache")
+	if got := p.scrubText("ordinary short text"); got != "ordinary short text" || len(p.textScrubCache) != 1 {
+		t.Fatal("short text was not cached")
+	}
+	if got := p.scrubText("token=short-secret-canary"); got != scrubWithTemplates("token=short-secret-canary", false) || strings.Contains(got, "short-secret-canary") {
+		t.Fatal("cached short text differs from a fresh scrub")
 	}
 	for i := 0; i < maxCachedScrubTexts+10; i++ {
-		p.scrubText(strings.Repeat("x ", 600) + strconv.Itoa(i))
+		p.scrubText("x" + strconv.Itoa(i))
 	}
 	if len(p.textScrubCache) != maxCachedScrubTexts || p.textScrubCacheBytes > maxCachedScrubTextBytes {
 		t.Fatal("entry or byte cache bound exceeded")

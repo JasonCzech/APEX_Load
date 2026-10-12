@@ -294,30 +294,30 @@ func collectRecordedResourceURLs(functions []ParsedFunction) []string {
 	return urls
 }
 
+// sanitizeNameReplacer replaces spaces and special chars with underscores.
+var sanitizeNameReplacer = strings.NewReplacer(
+	" ", "_",
+	"-", "_",
+	".", "_",
+	"/", "_",
+	"\\", "_",
+	"(", "",
+	")", "",
+	"[", "",
+	"]", "",
+	"'", "",
+	"\"", "",
+	",", "",
+	":", "_",
+)
+
 // sanitizeName converts a source step name to a valid DSL action name.
 func sanitizeName(name string) string {
 	if name == "" {
 		return "unnamed_action"
 	}
 
-	// Replace spaces and special chars with underscores
-	replacer := strings.NewReplacer(
-		" ", "_",
-		"-", "_",
-		".", "_",
-		"/", "_",
-		"\\", "_",
-		"(", "",
-		")", "",
-		"[", "",
-		"]", "",
-		"'", "",
-		"\"", "",
-		",", "",
-		":", "_",
-	)
-
-	result := replacer.Replace(name)
+	result := sanitizeNameReplacer.Replace(name)
 
 	// Remove consecutive underscores
 	for strings.Contains(result, "__") {
@@ -334,14 +334,15 @@ func sanitizeName(name string) string {
 	return result
 }
 
+// sourceParamReferencePattern matches {ParamName} but not {{already.converted}}.
+var sourceParamReferencePattern = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
 // convertParamReferences converts source {ParamName} references to APEX Load {{var.paramname}}.
 // Archive-level post-processing rewrites known .prm-backed parameters to {{param.name}},
 // leaving web_reg_save_param and other dynamic values as {{var.name}}.
 func convertParamReferences(s string) string {
-	// Match {ParamName} but not {{already.converted}}
-	re := regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-	return re.ReplaceAllStringFunc(s, func(token string) string {
-		match := re.FindStringSubmatch(token)
+	return sourceParamReferencePattern.ReplaceAllStringFunc(s, func(token string) string {
+		match := sourceParamReferencePattern.FindStringSubmatch(token)
 		if len(match) != 2 {
 			return token
 		}
