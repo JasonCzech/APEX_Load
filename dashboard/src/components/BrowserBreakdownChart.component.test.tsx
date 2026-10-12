@@ -83,7 +83,7 @@ describe('BrowserBreakdownChart', () => {
 
     expect(container.querySelector('[data-testid="x-axis"]')?.getAttribute('data-label')).toBe('Engine')
     expect(Array.from(container.querySelectorAll('[data-testid="line-series"]')).every(line => line.getAttribute('data-connect-nulls') === 'false')).toBe(true)
-    expect(container.textContent).toContain('missing values remain empty and gaps are not interpolated')
+    expect(container.textContent).toContain('missing values remain empty.')
     expect(Array.from(container.querySelectorAll('[data-testid="y-axis"]')).map(axis => axis.getAttribute('data-label'))).toEqual([
       'Timing (ms)',
       'CLS score',

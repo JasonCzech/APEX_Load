@@ -32,6 +32,7 @@ type pooledSlot interface {
 // Init and HealthCheck never run user code. Teardown only closes the slot;
 // the authored end action owns user lifecycle teardown.
 type PooledSlotProtocol struct {
+	nativeServiceBinding
 	slot      pooledSlot
 	target    string
 	timeout   time.Duration
@@ -124,6 +125,11 @@ func (p *PooledSlotProtocol) ExecuteStream(ctx context.Context, a *protocol.Acti
 	if err != nil {
 		return fail("pooled_parameters_invalid")
 	}
+	ctx, closeNative, err := p.nativeContext(ctx, "pooled-invoke")
+	if err != nil {
+		return fail("native_service_unavailable")
+	}
+	defer closeNative()
 	invocation, err := p.slot.Invoke(ctx, method, params, timeout)
 	if err != nil {
 		p.terminal.Store(true)

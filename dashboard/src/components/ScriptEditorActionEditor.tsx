@@ -1,4 +1,5 @@
 import { humanActionType } from './authorExperience'
+import NativeScriptActionFields from './NativeScriptActionFields'
 import { useActionParameterMenu } from './useActionParameterMenu'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
 import type { HTTP3ScriptContext } from './httpQUICModel'
@@ -80,6 +81,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   const isHTTPSequence = action.type === 'http_sequence'
   const isHTTPRuntimeControl = isHTTPRuntimeAction(action)
   const isSourceFunction = isSourceFunctionAction(action)
+  const isNativeScript = action.type === 'native_javascript'
+  const isNativeRendezvous = action.type === 'rendezvous' && !action.params?.function && !Array.isArray(action.params?.args)
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
     onBeginParameterEdit,
@@ -91,7 +94,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
       {inspector && <TabList className="inspector-section-tabs ux-underline-tabs" aria-label="Action property sections">
-        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" role="tab" key={value} id={`${sectionIdBase}-${value}-tab`} aria-controls={`${sectionIdBase}-${value}-panel`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
+        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" role="tab" key={value} id={`${sectionIdBase}-${value}-tab`} aria-controls={`${sectionIdBase}-${value}-panel`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isNativeRendezvous ? 'Rendezvous' : isNativeScript ? 'Host JavaScript' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
       </TabList>}
       <div hidden={inspector && section !== 'request'} {...sectionPanel('request')}>
       <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
@@ -131,7 +134,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             <ControlFlowFields action={action} index={index} onUpdate={onUpdate} />
           )}
 
-          {!isHTTPRuntimeControl && !isControlAction(action) && !isSourceFunction && (isWebSocketScript ? (
+          {(isNativeScript || isNativeRendezvous) && <NativeScriptActionFields action={action} onChange={params => onUpdate(index, 'params', params)} />}
+          {!isNativeScript && !isHTTPRuntimeControl && !isControlAction(action) && !isSourceFunction && (isWebSocketScript ? (
             <WebSocketActionFields
               action={action}
               index={index}
@@ -936,6 +940,8 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
             </>
           )}
         </>
+      ) : action.type === 'native_javascript' || (action.type === 'rendezvous' && !action.params?.function && !Array.isArray(action.params?.args)) ? (
+        <div className="form-hint full-width">This native action runs on the load generator and has no request target.</div>
       ) : isSourceFunctionAction(action) ? (
         <SourceFunctionSummary action={action} />
       ) : isRuntimeStateAction || isControlAction(action) ? (

@@ -444,6 +444,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		defer cancel()
 		continueOnError := session.ContinueOnError
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
+			LiveTableSeeds:  req.LiveTableSeeds,
 			ReplaySessionID: sessionID,
 			GroupName:       groupName,
 			RuntimeProfile:  &session.RuntimeProfile,

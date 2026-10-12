@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -15,6 +16,9 @@ import (
 func PreflightScriptRuntime(ctx context.Context, script *dsl.Script, resolver SecretResolver) (protocol.RuntimePreflightResult, error) {
 	if script == nil {
 		return protocol.RuntimePreflightResult{}, fmt.Errorf("script is required")
+	}
+	if err := nativeScriptExecutionHostError(script); err != nil {
+		return protocol.RuntimePreflightResult{}, err
 	}
 	instance, err := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol)))
 	if err != nil {
@@ -32,11 +36,21 @@ func PreflightScriptRuntime(ctx context.Context, script *dsl.Script, resolver Se
 		return protocol.RuntimePreflightResult{}, err
 	}
 	request := protocol.RuntimePreflightRequest{
-		Config:  buildProtoConfigForRunModeWithSecretResolver(script, "preflight", resolver),
-		Targets: targets,
+		RequiredFeatures: dsl.RequiredNativeRuntimeFeatures(script),
+		Config:           buildProtoConfigForRunModeWithSecretResolver(script, "preflight", resolver),
+		Targets:          targets,
 	}
 	result, _, err := protocol.RunRuntimePreflight(ctx, instance, request)
 	return result, err
+}
+
+// Check before any protocol initialization or preceding target action, including
+// direct engine and replay callers that do not use distributed staging.
+func nativeScriptExecutionHostError(script *dsl.Script) error {
+	if slices.Contains(dsl.RequiredNativeRuntimeFeatures(script), protocol.FeatureNativeJavaScriptV1) && !NativeJavaScriptAvailable() {
+		return nativeServiceUnavailable("native_javascript_v1 requires Linux hard memory and CPU limits")
+	}
+	return nil
 }
 
 func safeRuntimeWarningCode(value string) string {

@@ -48,6 +48,7 @@ type BrokerFacadeRequest struct {
 	Parameters          map[string]string                 `json:"parameters,omitempty"`
 }
 type BrokerFacadeResponse struct {
+	NativeData   bool                       `json:"native_data,omitempty"`
 	Contract     string                     `json:"contract"`
 	RequestID    string                     `json:"request_id"`
 	Failure      string                     `json:"failure,omitempty"`
@@ -240,6 +241,10 @@ func (f *BrokerFacade) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path != BrokerFacadePath || r.URL.RawQuery != "" || r.Method != http.MethodPost {
 		http.Error(w, "java_facade_request_invalid", http.StatusNotFound)
+		return
+	}
+
+	if javarunner.ServeNativeHTTP(w, r, broker.MaxSupervisorResponse, f.ServeHTTP) {
 		return
 	}
 	var q BrokerFacadeRequest
@@ -500,6 +505,7 @@ func (f *BrokerFacade) dispatch(ctx context.Context, q BrokerFacadeRequest, out 
 		out.State = "preparing"
 		if ready {
 			out.State = "ready"
+			out.NativeData = r.wave.NativeDataAvailable()
 		}
 		return nil
 	case "commit":

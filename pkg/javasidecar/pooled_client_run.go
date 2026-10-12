@@ -32,6 +32,7 @@ type PooledClientOptions struct {
 // It must not be copied. Close waits for positive runner cleanup; Err preserves
 // the first lifetime/lease failure even when cleanup also fails.
 type PooledClientRun struct {
+	nativeData          bool
 	client              *Client // separate owner snapshot; never follows Client.ClaimOwner
 	decision            PooledControlDecision
 	runID, token        string
@@ -231,6 +232,7 @@ func (r *PooledClientRun) Prepare(ctx context.Context, users []PooledSlotContext
 	}
 	r.mu.Lock()
 	r.prepared, r.reservation, r.deadline = true, allocation.ReservationID, deadline
+	r.nativeData = ready.NativeData
 	r.mu.Unlock()
 	return append([]*PooledClientSlot(nil), slots...), nil
 }
@@ -262,4 +264,10 @@ func (r *PooledClientRun) Commit(ctx context.Context) error {
 	r.committed = true
 	r.mu.Unlock()
 	return nil
+}
+
+func (r *PooledClientRun) NativeDataAvailable() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.prepared && !r.committed && r.nativeData && r.ctx.Err() == nil
 }

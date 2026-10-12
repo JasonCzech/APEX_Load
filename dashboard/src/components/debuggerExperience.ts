@@ -77,7 +77,7 @@ export function compareRuns(before: BrowserReplayReport, after: BrowserReplayRep
   })
 }
 // A run identity is per run, like the group name, so a profile does not keep one.
-export type DebugProfile = { name: string; options: Omit<ReplayOptionsState, 'variablesText' | 'groupName' | 'runId'> }
+export type DebugProfile = { name: string; options: Omit<ReplayOptionsState, 'variablesText' | 'groupName' | 'runId' | 'liveTableSeedsText'> }
 export function safeProfile(name: string, options: ReplayOptionsState): DebugProfile {
   // Whitelist only execution controls. Never persist variables, URLs, group
   // names, captured evidence or copied credentials in named presets.

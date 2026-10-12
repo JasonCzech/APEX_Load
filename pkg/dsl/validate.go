@@ -56,6 +56,9 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	if issues := validateRunIdentityTemplateIssues(script); len(issues) != 0 {
 		return issues
 	}
+	if _, err := ScriptDistributedRendezvous(script); err != nil {
+		return []string{err.Error()}
+	}
 	fileDataSourceIssues := validateFileDataSourceReferenceIssues(script)
 
 	var issues []string
@@ -119,6 +122,9 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 		issues = append(issues, validateSAPGUIScriptIssues(script)...)
 	}
 
+	if _, err := ScriptNativeServiceRequirements(script); err != nil {
+		issues = append(issues, err.Error())
+	}
 	issues = append(issues, validateDataSourceIssues(script)...)
 	issues = append(issues, fileDataSourceIssues...)
 	issues = append(issues, validateFileReferenceIssues(script)...)
@@ -278,6 +284,9 @@ func inspectRunIDActionScope(action Action, depth int) runTemplateScanResult {
 		}
 	}
 	for key, value := range action.Params {
+		if CanonicalActionType(action.Type) == "native_javascript" && key == "source" {
+			continue
+		}
 		if runIDTemplateInString(key) {
 			return runTemplateUnsupported
 		}
@@ -421,6 +430,21 @@ func inspectRunIdentityTemplatesMatching(value reflect.Value, seen map[runTempla
 	}
 	if !value.IsValid() {
 		return runTemplateValid
+	}
+	if value.Type() == reflect.TypeOf(Action{}) && value.CanInterface() {
+		action := value.Interface().(Action)
+		if CanonicalActionType(action.Type) == "native_javascript" {
+			if _, present := action.Params["source"]; present {
+				params := make(map[string]any, len(action.Params))
+				for key, child := range action.Params {
+					if key != "source" {
+						params[key] = child
+					}
+				}
+				action.Params = params
+				return inspectRunIdentityTemplatesMatching(reflect.ValueOf(action), seen, depth+1, matches)
+			}
+		}
 	}
 	switch value.Kind() {
 	case reflect.String:
@@ -1432,6 +1456,8 @@ func validateExtractorDFEIssues(label string, index int, ext Extractor, httpFami
 
 func validateEngineActionIssues(protocol string, path string, index int, action Action) []string {
 	switch action.Type {
+	case "live_table":
+		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateLiveTableAction(index, action))
 	case "source_verification":
 		if protocol != "http" {
 			return []string{fmt.Sprintf("%s: positional source verification requires the HTTP protocol", path)}

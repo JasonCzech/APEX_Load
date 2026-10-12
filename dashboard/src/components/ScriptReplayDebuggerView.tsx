@@ -1,3 +1,5 @@
+import LiveTableSandboxEditor from './LiveTableSandboxEditor'
+import { liveTableSandboxError } from './liveTableSandboxModel'
 import TooltipButton from './ux/TooltipButton'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord, responseBodyMessage } from './debuggerExperience'
@@ -380,8 +382,9 @@ export function ScriptReplayDebuggerView({
   }), [scriptId, replayReport, activeReplaySessionId, replayEditableActionsKey])
 
   useEffect(() => { if (debuggerSettingsOpen) debuggerSettingsRef.current?.querySelector<HTMLInputElement>('input')?.focus() }, [debuggerSettingsOpen, debuggerSettingsRef])
+  const variablesError = sessionVariablesError(replayOptions.variablesText)
   const runIdError = debugRunIdError(replayOptions.runId)
-  const optionsError = sessionVariablesError(replayOptions.variablesText) || runIdError
+  const optionsError = variablesError || runIdError || liveTableSandboxError(replayOptions.liveTableSeedsText)
   // What a test run of this script does after a failure, for the default choice.
   const testRunContinues = debugContinuesAfterFailure({ afterFailure: 'test-run' }, script)
   const [narrowPane, setNarrowPane] = useState<'outline' | 'editor' | 'inspector'>('editor')
@@ -503,9 +506,10 @@ export function ScriptReplayDebuggerView({
                   <div className="full-width replay-variables-field">
                     <span>Session Variables JSON</span>
                     <div className="replay-variables-editor" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
-                      <textarea aria-label="Session Variables JSON" aria-invalid={Boolean(optionsError)} value={replayOptions.variablesText} onChange={event => setReplayOptions(prev => ({ ...prev, variablesText: event.target.value }))} rows={5} />
+                      <textarea aria-label="Session Variables JSON" aria-invalid={Boolean(variablesError)} value={replayOptions.variablesText} onChange={event => setReplayOptions(prev => ({ ...prev, variablesText: event.target.value }))} rows={5} />
                     </div>
                   </div>
+                  <LiveTableSandboxEditor value={replayOptions.liveTableSeedsText} onChange={liveTableSeedsText => setReplayOptions(prev => ({ ...prev, liveTableSeedsText }))} />
                 </fieldset>
               </div>
             )}

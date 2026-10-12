@@ -15,6 +15,15 @@ import (
 // PooledIPCContract is experimental and negotiated separately from dedicated IPC v2.
 const PooledIPCContract = "apexload.java_vuser.ipc.v3"
 const pooledMaxFrame = 1 << 20
+const pooledNativeMaxFrame = (3 << 20) + 8192
+
+func pooledFrameLimit(op string) int {
+	if op == "native_call" || op == "native_reply" {
+		return pooledNativeMaxFrame
+	}
+	return pooledMaxFrame
+}
+
 const pooledMaxFields = 1024
 
 var ErrPooledFrame = errors.New("pooled_frame_invalid")
@@ -47,7 +56,7 @@ func (f PooledFrame) valid() bool {
 		return false
 	}
 	switch f.Operation {
-	case "ready", "open", "commit", "invoke", "interrupt", "close", "health":
+	case "ready", "open", "commit", "invoke", "interrupt", "close", "health", "native_call", "native_reply":
 	default:
 		return false
 	}
@@ -85,7 +94,7 @@ func EncodePooledFrame(f PooledFrame, secret []byte, response bool) ([]byte, err
 	for _, k := range keys {
 		pooledString(&b, k)
 		pooledString(&b, f.Fields[k])
-		if b.Len() > pooledMaxFrame-32 {
+		if b.Len() > pooledFrameLimit(f.Operation)-32 {
 			return nil, ErrPooledFrame
 		}
 	}
@@ -112,7 +121,7 @@ func ReadPooledFrame(r io.Reader, secret []byte, response bool) (PooledFrame, er
 	if err := binary.Read(r, binary.BigEndian, &n); err != nil {
 		return f, err
 	}
-	if n < 32 || n > pooledMaxFrame {
+	if n < 32 || n > pooledNativeMaxFrame {
 		return f, ErrPooledFrame
 	}
 	raw := make([]byte, int(n))
@@ -172,7 +181,7 @@ func ReadPooledFrame(r io.Reader, secret []byte, response bool) (PooledFrame, er
 		}
 		f.Fields[k] = v
 	}
-	if b.Len() != 0 || !f.valid() {
+	if b.Len() != 0 || !f.valid() || int(n) > pooledFrameLimit(f.Operation) {
 		return f, ErrPooledFrame
 	}
 	return f, nil

@@ -243,7 +243,20 @@ func (r *DedicatedPodRuntime) Ready(ctx context.Context) (err error) {
 	return nil
 }
 
+func (r *DedicatedPodRuntime) NativeDataAvailable() bool {
+	select {
+	case <-r.rootReady:
+	default:
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.session != nil && r.session.nativeCapable
+}
 func (r *DedicatedPodRuntime) Invoke(ctx context.Context, id, method string, params map[string]string) ([]byte, error) {
+	if javarunner.NativeDataCallbackFrom(ctx) != nil && !r.NativeDataAvailable() {
+		return nil, ErrPodRuntime
+	}
 	r.mu.Lock()
 	session := r.session
 	r.mu.Unlock()

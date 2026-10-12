@@ -240,7 +240,15 @@ export interface BrowserReplaySession {
   error?: string
 }
 
+export interface LiveTableSandboxSeed {
+  alias: string
+  profile?: 'native_queue' | 'vts_columns'
+  columns: string[]
+  rows: Array<{ values: Record<string, string> }>
+}
+
 export interface BrowserReplayStartRequest {
+  live_table_seeds?: LiveTableSandboxSeed[]
   group_name?: string
   project_id?: string
   replay_session_id?: string

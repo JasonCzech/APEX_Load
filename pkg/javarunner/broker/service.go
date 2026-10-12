@@ -62,6 +62,7 @@ type BrokerRequest struct {
 }
 
 type BrokerResponse struct {
+	NativeData   bool                `json:"native_data,omitempty"`
 	Capabilities *BrokerCapabilities `json:"capabilities,omitempty"`
 	Contract     string              `json:"contract"`
 	RequestID    string              `json:"request_id"`
@@ -255,6 +256,10 @@ func (s *BrokerService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	principal, ok := s.principal(r)
 	if !ok {
 		http.Error(w, "java_broker_unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if javarunner.ServeNativeHTTP(w, r, MaxSupervisorResponse+(512<<10), s.ServeHTTP) {
 		return
 	}
 	var q BrokerRequest
@@ -524,6 +529,7 @@ func (s *BrokerService) dispatch(ctx context.Context, p BrokerPrincipal, q Broke
 		out.LeaseTTLMS = wave.lease.Milliseconds()
 		return nil
 	case "ready":
+		out.NativeData = wave.wave.group.NativeDataAvailable()
 		wave.wave.mu.Lock()
 		out.State = wave.wave.phase
 		// Reserve publishes a preparing response before its asynchronous worker

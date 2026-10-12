@@ -461,3 +461,20 @@ func validHostContext(values map[string]string) bool {
 	}
 	return true
 }
+
+// NativeDataAvailable requires every host in this cold reservation to prove
+// the actual SDK callback contract. Unknown backends remain unsupported.
+func (s *HostSupervisor) NativeDataAvailable(epoch, reservation string) bool {
+	allocations, err := s.reservation(epoch, reservation, HostReady)
+	if err != nil {
+		return false
+	}
+	for _, a := range allocations {
+		runtime := s.runtime(a.ID)
+		native, ok := runtime.(interface{ NativeDataAvailable() bool })
+		if !ok || !native.NativeDataAvailable() {
+			return false
+		}
+	}
+	return true
+}

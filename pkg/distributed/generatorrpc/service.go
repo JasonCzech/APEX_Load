@@ -1489,10 +1489,19 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4, FeatureThroughputCapV1)
+		compatibleFeatures = append(compatibleFeatures, FeatureLiveTablesV1, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4, FeatureThroughputCapV1)
+		compatibleFeatures = append(compatibleFeatures, dsl.FeatureDistributedRendezvousV1, protocol.FeatureNativeDataServicesV1)
+		if engine.NativeJavaScriptAvailable() {
+			compatibleFeatures = append(compatibleFeatures, protocol.FeatureNativeJavaScriptV1)
+		}
 		javaHosts := s.javaHostCapabilities()
 		if javaHosts != nil {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)
+			if s.javaHostRuntime.Capabilities().NativeDataTransport {
+				// This advertises the negotiated callback transport. Each cold
+				// prepared JVM still proves SDK readiness before work commits.
+				compatibleFeatures = append(compatibleFeatures, protocol.FeatureNativeDataBrokerV1)
+			}
 		}
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		// Pongs and telemetry share the published clock. It re-anchors only

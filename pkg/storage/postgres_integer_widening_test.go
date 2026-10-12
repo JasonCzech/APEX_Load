@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -74,12 +76,35 @@ func TestPostgresOwnedTableNamesCoverSchema(t *testing.T) {
 		}
 		seen[name] = true
 	}
-	for _, required := range []string{"tests", "test_history", "scheduler_leases", "schema_migrations"} {
+	for _, required := range []string{"tests", "test_history", "scheduler_leases", "schema_migrations", "live_tables", "live_table_journal", "live_table_finalizations", "project_live_tables", "project_live_table_instances", "project_live_table_journal", "project_live_table_attachments", "project_live_table_operator_receipts", "run_rendezvous"} {
 		if !seen[required] {
 			t.Fatalf("owned tables missing %q: %v", required, names)
 		}
 	}
-	if len(names) < len(schemaCreateTableStatements()) {
-		t.Fatalf("owned tables = %d, fewer than %d CREATE TABLE statements", len(names), len(schemaCreateTableStatements()))
+	// The schema registry also carries indexes. Compare the owned-name parser
+	// against the independently materialized schema, not the statement count.
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "owned-tables.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	rows, err := store.db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var actual []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		actual = append(actual, name)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names, actual) {
+		t.Fatalf("PostgreSQL owned tables %v do not match materialized schema %v", names, actual)
 	}
 }

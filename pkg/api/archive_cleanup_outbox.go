@@ -306,6 +306,11 @@ func (s *Server) startArchiveCleanupRetry() {
 			if err := s.retryAnalysisCleanup(sweepCtx); err != nil && ctx.Err() == nil {
 				slog.Warn("analytical cleanup pending", "error", err)
 			}
+			if s.runner != nil {
+				if err := s.runner.projectLiveTableService().sweep(sweepCtx); err != nil && ctx.Err() == nil {
+					slog.Warn("project live table cleanup pending", "error", err)
+				}
+			}
 			if err := s.pruneManagementPollJournals(sweepCtx, time.Now().UTC()); err != nil && ctx.Err() == nil {
 				slog.Warn("management journal retention pending", "error", err)
 			}

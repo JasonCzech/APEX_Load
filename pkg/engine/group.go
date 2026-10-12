@@ -12,7 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/rendezvous"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/livetable"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -21,6 +23,11 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
+	DistributedRendezvousClient rendezvous.Client
+	distributedRendezvous       *rendezvous.Aggregator
+	LiveTableClient             livetable.Client
+	LiveTableClientID           string
+	LiveTableBindings           []LiveTableBinding
 	// RuntimeResourcePeakVUsers pins the admitted closed population ceiling.
 	// Zero uses VUsers; open workloads use their independent in-flight bound.
 	RuntimeResourcePeakVUsers int
@@ -415,6 +422,19 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			return nil, fmt.Errorf("group[%d] %q: effective group name duplicates group[%d]", i, effectiveName, previous)
 		}
 		effectiveGroupNames[effectiveNameKey] = i
+		if err := validateLiveTableBindings(g.Script, g.LiveTableClient, g.LiveTableClientID, g.LiveTableBindings); err != nil {
+			return nil, fmt.Errorf("group[%d] live tables: %w", i, err)
+		}
+		barriers, err := dsl.ScriptDistributedRendezvous(g.Script)
+		if err != nil {
+			return nil, err
+		}
+		if len(barriers) > 0 {
+			if g.DistributedRendezvousClient == nil || isOpenWorkload(g.Script) || g.VUsers < 1 || g.VUsers > rendezvous.MaxPopulation {
+				return nil, fmt.Errorf("distributed rendezvous requires an admitted fixed closed group of 1..100000 VUsers")
+			}
+			cfg.Groups[i].distributedRendezvous = rendezvous.NewAggregator(g.DistributedRendezvousClient, g.VUsers)
+		}
 		dataProvider, err := NewShardedDataProviderWithAssets(g.Script.DataSources, g.DataShard, g.StagedDataFiles)
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] %q: initialize data sources: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
@@ -1917,6 +1937,9 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		ExecutionGoals:               group.executionGoals,
 		ActionBoundaryCtx:            entitledBoundaryCtx,
 		DataProvider:                 group.dataProvider,
+		LiveTableClient:              group.LiveTableClient,
+		LiveTableClientID:            group.LiveTableClientID,
+		LiveTableBindings:            group.LiveTableBindings,
 	}
 	if phase != "teardown" {
 		vu.PauseControl = mge
@@ -2178,10 +2201,14 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			IterationRateLimiter:         prepared.group.rateLimiter,
 			ThroughputCap:                prepared.group.throughputCap,
 			Rendezvous:                   prepared.group.rendezvous,
+			DistributedRendezvous:        prepared.group.distributedRendezvous,
 			ExecutionGoals:               prepared.group.executionGoals,
 			HardStopCtx:                  prepared.shedCtx,
 			ActionBoundaryCtx:            prepared.boundaryCtx,
 			DataProvider:                 prepared.group.dataProvider,
+			LiveTableClient:              prepared.group.LiveTableClient,
+			LiveTableClientID:            prepared.group.LiveTableClientID,
+			LiveTableBindings:            prepared.group.LiveTableBindings,
 			SkipInit:                     groupLifecycleAtOnce(prepared.group),
 			SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
 		}
@@ -2698,6 +2725,9 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 			HardStopCtx:                  shedCtx,
 			ActionBoundaryCtx:            boundaryCtx,
 			DataProvider:                 group.dataProvider,
+			LiveTableClient:              group.LiveTableClient,
+			LiveTableClientID:            group.LiveTableClientID,
+			LiveTableBindings:            group.LiveTableBindings,
 			SkipInit:                     groupLifecycleAtOnce(group),
 			SkipTeardown:                 groupLifecycleAtOnce(group),
 		}
@@ -2775,6 +2805,10 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	if groupIndex < 0 {
 		mge.mu.Unlock()
 		return fmt.Errorf("group not found: %s", groupName)
+	}
+	if mge.groups[groupIndex].distributedRendezvous != nil && targetVUsers != mge.groups[groupIndex].VUsers {
+		mge.mu.Unlock()
+		return fmt.Errorf("distributed rendezvous participant population is fixed; changing VUsers requires a new run")
 	}
 	if dsl.RequiresJMeterMessaging(mge.groups[groupIndex].Script) {
 		current := mge.groups[groupIndex].VUsers

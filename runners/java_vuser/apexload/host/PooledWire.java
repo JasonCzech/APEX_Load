@@ -12,6 +12,8 @@ import java.util.*;
 public final class PooledWire {
     static final String CONTRACT = "apexload.java_vuser.ipc.v3";
     static final int MAX_FRAME = 1048576;
+ static final int MAX_NATIVE_FRAME=3*1048576+8192;
+ static int limit(String op){return "native_call".equals(op)||"native_reply".equals(op)?MAX_NATIVE_FRAME:MAX_FRAME;}
 
     static final class Frame {
         String generation, slot, request, operation;
@@ -56,7 +58,7 @@ public final class PooledWire {
         if (f.generation == null || !f.generation.matches("[A-Za-z0-9_-]{1,128}") || f.slot == null
                 || !f.slot.matches("[A-Za-z0-9_-]{0,128}") || f.sequence <= 0
                 || !Long.toString(f.sequence).equals(f.request)
-                || !Arrays.asList("ready", "open", "commit", "invoke", "interrupt", "close", "health").contains(f.operation)
+                || !Arrays.asList("ready", "open", "commit", "invoke", "interrupt", "close", "health", "native_call", "native_reply").contains(f.operation)
                 || f.fields.size() > 1024) throw new IOException("pooled_frame_invalid");
         for (Map.Entry<String,String> e : f.fields.entrySet()) {
             if (e.getKey().isEmpty() || e.getKey().getBytes(StandardCharsets.UTF_8).length > 128
@@ -67,7 +69,7 @@ public final class PooledWire {
 
     static Frame read(DataInputStream in, byte[] secret) throws Exception {
         int n = in.readInt();
-        if (n < 32 || n > MAX_FRAME) throw new IOException("pooled_frame_invalid");
+        if (n < 32 || n > MAX_NATIVE_FRAME) throw new IOException("pooled_frame_invalid");
         byte[] payload = new byte[n - 32], signature = new byte[32];
         in.readFully(payload);
         in.readFully(signature);
@@ -88,6 +90,7 @@ public final class PooledWire {
         }
         if (data.available() != 0) throw new IOException("pooled_frame_invalid");
         validate(f);
+ if(n>limit(f.operation)) throw new IOException("pooled_frame_invalid");
         return f;
     }
 
@@ -105,7 +108,7 @@ public final class PooledWire {
         for (Map.Entry<String,String> e : f.fields.entrySet()) {
             string(out, e.getKey());
             string(out, e.getValue());
-            if (buffer.size() > MAX_FRAME - 32) throw new IOException("pooled_frame_invalid");
+            if (buffer.size() > limit(f.operation) - 32) throw new IOException("pooled_frame_invalid");
         }
         byte[] payload = buffer.toByteArray();
         buffer.reset();

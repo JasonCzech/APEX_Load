@@ -11,5 +11,14 @@ func cloneScenarioDataPoolBindings(bindings []storage.ScenarioDataPoolBinding) [
 	}
 	cloned := make([]storage.ScenarioDataPoolBinding, len(bindings))
 	copy(cloned, bindings)
+	for index := range cloned {
+		if bindings[index].LiveOptions != nil {
+			options := *bindings[index].LiveOptions
+			if options.Columns != nil {
+				options.Columns = append([]string{}, options.Columns...)
+			}
+			cloned[index].LiveOptions = &options
+		}
+	}
 	return cloned
 }

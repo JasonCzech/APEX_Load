@@ -39,6 +39,7 @@ cmd/
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation
+  livetable/     — Bounded run- and project-scoped native queues and Shared columns tables with exact operation receipts
   engine/        — VUser goroutine engine, metrics collection, pacing
   dsl/           — JSON DSL parser, type definitions, action catalog
   controller/    — Test orchestration, scheduling, distribution, aggregation
@@ -171,6 +172,17 @@ Use the dashboard Swagger page, `GET /api/v1/docs/swagger.yaml`, or
 describe workflows and link to those generated artifacts instead of duplicating endpoint catalogs.
 
 ## Testing Policy
+Before every build or full API test-suite run, pull the latest `main` into the
+task's working branch. In an isolated checkout, `git fetch origin main` followed
+by integrating `origin/main` is equivalent. Resolve and review conflicts before
+building or starting the suite, regenerate affected artifacts, and validate the
+integrated code. Do not defer integration until after expensive validation.
+Never discard or stash another agent's uncommitted work to do this; use an
+isolated checkout when the shared checkout is dirty. This rule does not authorize
+a full API suite when the user has restricted testing to targeted checks.
+Finish dashboard asset generation before starting Go builds or tests that embed
+those assets; do not run these steps concurrently.
+
 Every new feature, bug fix, or refactor **must** include corresponding tests. This is a default
 requirement — not optional. When adding or modifying code:
 - Add unit tests for new functions and methods in `*_test.go` files alongside the source.

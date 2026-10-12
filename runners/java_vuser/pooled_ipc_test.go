@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,36 @@ func testPooledHostProof(t *testing.T, connection net.Conn, generation string, s
 	if !hmac.Equal(proof, mac.Sum(nil)) {
 		t.Fatal("JVM did not authenticate its control socket")
 	}
+}
+
+// The normal encoder rejects this frame. Construct a complete authenticated
+// ordinary invocation to verify the JVM still enforces its 1 MiB control limit
+// after admitting the larger envelope needed by native callbacks.
+func testOversizedPooledControlFrame(secret []byte) []byte {
+	var payload bytes.Buffer
+	writeString := func(value string) {
+		_ = binary.Write(&payload, binary.BigEndian, uint32(len(value)))
+		payload.WriteString(value)
+	}
+	for _, value := range []string{javarunner.PooledIPCContract, "gen-1", "a", "1", "invoke"} {
+		writeString(value)
+	}
+	_ = binary.Write(&payload, binary.BigEndian, uint64(1))
+	_ = binary.Write(&payload, binary.BigEndian, uint32(18))
+	writeString("method")
+	writeString("action")
+	for i := 0; i < 17; i++ {
+		writeString("p.value" + strconv.Itoa(i))
+		writeString(strings.Repeat("x", 65536))
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write(payload.Bytes())
+	var wire bytes.Buffer
+	_ = binary.Write(&wire, binary.BigEndian, uint32(payload.Len()+sha256.Size))
+	wire.Write(payload.Bytes())
+	wire.Write(mac.Sum(nil))
+	return wire.Bytes()
 }
 
 // These are real-JVM wire/component tests, not delegated containment evidence.
@@ -76,7 +107,7 @@ func TestPooledIPCRealJVM(t *testing.T) {
 		_ = listener.SetDeadline(time.Now().Add(5 * time.Second))
 		return listener, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 	}
-	for _, fault := range []string{"signature", "direction", "oversize", "replay", "generation"} {
+	for _, fault := range []string{"signature", "direction", "oversize", "oversize_control", "replay", "generation"} {
 		t.Run("reject_"+fault, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -118,8 +149,16 @@ func TestPooledIPCRealJVM(t *testing.T) {
 				wire[len(wire)-1] ^= 1
 			}
 			if fault == "oversize" {
+				// The length-only rejection must exceed the largest envelope,
+				// before an authenticated operation is available to narrow it.
 				wire = make([]byte, 4)
-				binary.BigEndian.PutUint32(wire, 1048577)
+				binary.BigEndian.PutUint32(wire, (3<<20)+8192+1)
+			}
+			if fault == "oversize_control" {
+				wire = testOversizedPooledControlFrame(secret)
+				if _, e = javarunner.ReadPooledFrame(bytes.NewReader(wire), secret, false); !errors.Is(e, javarunner.ErrPooledFrame) {
+					t.Fatalf("Go admitted oversized ordinary frame: %v", e)
+				}
 			}
 			if _, e = io.Copy(input, bytes.NewReader(wire)); e != nil {
 				t.Fatal(e)

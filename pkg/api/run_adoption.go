@@ -85,6 +85,9 @@ func (tr *TestRunner) runAdoptionGrace(test *ManagedTest) time.Duration {
 	if !tr.runAdoptionEnabled() || test == nil || effectiveFailoverPolicy(test.Assignment) != failoverPolicyContinue {
 		return 0
 	}
+	if validateLiveTableContinuation(test.DataPools, test.Assignment) != nil {
+		return 0
+	}
 	return defaultRunAdoptionGrace
 }
 
@@ -226,6 +229,12 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			} else if test.pinnedSecrets != nil {
 				test.pinnedSecrets.setIfAbsent(values)
 			}
+		}
+		if decodeErr == nil {
+			decodeErr = tr.restoreLiveTables(ctx, test, executionLeaseTerm{ownerID: ownerID, generation: generation})
+		}
+		if decodeErr == nil {
+			decodeErr = tr.restoreRendezvous(ctx, test, checkpoint.Shards, executionLeaseTerm{ownerID: ownerID, generation: generation})
 		}
 		if decodeErr == nil && checkpoint.ExecutionGeneration >= generation {
 			decodeErr = fmt.Errorf("checkpoint generation %d is not older than %d", checkpoint.ExecutionGeneration, generation)
@@ -749,6 +758,7 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 // generators that did adopt it and collects a best-effort archive through the
 // ordinary distributed failure path.
 func (tr *TestRunner) failRunAdoption(b *distributedExecutionBackend, test *ManagedTest, adopted map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, message string) {
+	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
 	slog.Warn("run adoption failed; the run will be marked FAILED", "test_id", test.ID, "execution_generation", generation, "reason", message)
 	tr.bindRunAdoptionOutcome(b, test, adopted, adopted, nil, nil, generation, ownerID, token, nil, "FAILED", message)
 }
@@ -790,6 +800,7 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 // control error remains FAILED. Generators still running the run under the
 // rotated token are stopped, and archives are collected where reachable.
 func (tr *TestRunner) finishStoppingRunAdoption(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, problems []string) {
+	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
 	if len(problems) > 0 {
 		slog.Warn("finishing a stopping run after controller failover with incomplete generator reach", "test_id", test.ID, "problems", strings.Join(problems, "; "))
 	}
@@ -1142,7 +1153,11 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	token := test.remoteRunSupervisionToken
 	active := tr.tests[test.ID] == test && runAdoptionStatus(test.Status)
 	tr.mu.Unlock()
-	if resume == nil || !ok || !active || executionCtx == nil {
+	if resume == nil {
+		return
+	}
+	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: resume.ownerID, generation: resume.generation})
+	if !ok || !active || executionCtx == nil {
 		return
 	}
 	if resume.finishStatus != "" {
@@ -1186,7 +1201,20 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		}
 	}
 
+	tr.mu.RLock()
+	liveShards := cloneGroupShardMap(test.remoteGroupShards)
+	tr.mu.RUnlock()
 	lifecycleCtx, lifecycleCancel := tr.executionOperationContext(context.Background())
+	if err := tr.openLiveTableChannels(lifecycleCtx, test.ID, resume.generation, token[:], liveShards, resume.adopted); err != nil {
+		lifecycleCancel()
+		fail(err.Error())
+		return
+	}
+	if err := tr.openRendezvousChannels(lifecycleCtx, test.ID, resume.generation, token[:], liveShards, resume.adopted); err != nil {
+		lifecycleCancel()
+		fail(err.Error())
+		return
+	}
 	streams := make(map[string]*generatorrpc.MetricsStream, len(resume.adopted))
 	for _, target := range orderedGeneratorTargets(resume.adopted, b.configuredTargets()) {
 		stream, err := b.openMetricsStream(lifecycleCtx, resume.adopted[target], test.ID, resume.generation)

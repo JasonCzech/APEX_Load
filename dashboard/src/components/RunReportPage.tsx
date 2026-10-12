@@ -13,6 +13,7 @@ import { OrchestrationReturn } from './OrchestrationReturn'
 import { parseAppViewFromHash, scopeAppViewToWorkspace, viewToLocationHash, workspaceScopeForAppView, type ReportFocus, type ReportSection, type RootCauseRouteState } from '../appRouting'
 import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
+import LiveTablesPanel from './LiveTablesPanel'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
 import ReportComposer from './ReportComposer'
 import { defaultReportPopulation, reportPopulationActions, reportPopulationOverview, populationLabels, type MetricPopulation } from './runReport/reportPresentation'
@@ -763,7 +764,10 @@ export default function RunReportPage({
           <details><summary>Raw evidence downloads</summary><button className="btn btn-secondary" onClick={() => void archiveModel.onDownloadArchive()}>Download evidence bundle</button>{renderEvidence('report-assets')}</details>
           <details data-report-focus="monitor-evidence"><summary>Archived intervals and monitor evidence</summary>{renderEvidence('report-summary-timeline')}</details>
         </>}
-        {area === 'Execution' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading} historyError={archiveSummaryError} />}
+        {area === 'Execution' && <>
+          <RunExecutionDetails manifestModel={manifestModel} test={test} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading} historyError={archiveSummaryError} />
+          {test.data_pools?.some(binding => binding.access_mode === 'live') && <LiveTablesPanel key={`live-${testId}`} testId={testId} projectId={test.project_id} />}
+        </>}
         {!hasArchive && area === 'Summary' && <>
           <RunExecutionFacts test={test} report={null} manifest={manifestModel.manifest} />
           <section className="run-report-panel"><h2>Investigate this run</h2>

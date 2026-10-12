@@ -448,6 +448,9 @@ func validateBrowserSyncPolicyIssues(label string, sync *BrowserSyncPolicy) []st
 func validateRendezvousActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 	var issues []string
+	if _, err := ParseDistributedRendezvous(action); err != nil {
+		issues = append(issues, label+": "+err.Error())
+	}
 	if count, ok := actionParamIntValue(action.Params, "count"); ok && count <= 0 {
 		issues = append(issues, fmt.Sprintf("%s: rendezvous count must be greater than zero", label))
 	}

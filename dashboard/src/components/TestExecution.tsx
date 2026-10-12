@@ -47,6 +47,7 @@ import GRPCDiagnosticsPanel from './GRPCDiagnosticsPanel'
 import WebSocketDiagnosticsPanel from './WebSocketDiagnosticsPanel'
 import PreparationControls from './PreparationControls'
 import { RunMonitorTimeline } from './RunMonitoring'
+import LiveTablesPanel from './LiveTablesPanel'
 import TestExecutionRunState from './TestExecutionRunState'
 import TestExecutionInfrastructure from './TestExecutionInfrastructure'
 import ErrorDiagnostic from './ErrorDiagnostic'
@@ -1136,6 +1137,7 @@ export default function TestExecution({
       {/* The selected tab's own content leads; run-wide supplementary evidence
           and the project panel builder follow it. */}
       <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
+      {test.data_pools?.some(binding => binding.access_mode === 'live') && <LiveTablesPanel key={`live-${testId}`} testId={testId} projectId={test.project_id} />}
       <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
       <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />

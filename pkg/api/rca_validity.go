@@ -93,6 +93,18 @@ func archiveRunValidity(manifest *RunArchiveManifest, intervals []rca.ValidityIn
 // archive.
 func archiveValidityInput(manifest *RunArchiveManifest, intervals []rca.ValidityInterval, summaries []IntervalSummaryRecord, resources []ResourceSample) rca.ValidityInput {
 	input := rca.ValidityInput{ArrivalModel: archiveArrivalModel(manifest.Provenance.Workload), Intervals: intervals}
+	for _, table := range manifest.Provenance.LiveTables {
+		evidence := rca.SharedDataEvidence{TableID: table.TableID, Redeliveries: table.Counts.Redeliveries}
+		if observed := boundedLiveTableObservations(table.Observations); observed != nil && observed.Version == 1 {
+			evidence.WaitCount, evidence.WaitTotalNS = observed.WaitCount, observed.WaitTotalNS
+			evidence.EmptyOutcomes, evidence.Throttled = observed.EmptyOutcomes, observed.Throttled
+			evidence.UnknownOutcomes, evidence.RecoveryGaps = observed.UnknownOutcomes, observed.RecoveryGaps
+			evidence.Incomplete = observed.Incomplete || observed.DroppedEvents > 0
+		} else {
+			evidence.Incomplete = true
+		}
+		input.SharedData = append(input.SharedData, evidence)
+	}
 
 	// A distributed run names its generators; its samples must say which one
 	// took them, or they are judged as one pool. Generators that reported

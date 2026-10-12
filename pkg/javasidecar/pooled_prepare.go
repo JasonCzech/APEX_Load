@@ -146,6 +146,7 @@ func (run *PooledRun) prepareControl(ctx context.Context, q PooledControlRequest
 		_ = run.ledger.Abort(run.owner.epoch, q.ReservationID)
 	}
 	p.err, p.response.Ready = err, err == nil
+	p.response.NativeData = err == nil && run.supervisor.NativeDataAvailable(run.owner.epoch, q.ReservationID)
 	close(p.done)
 	go run.reapPreparationCaptures(q.ReservationID, p)
 	return run.waitPreparation(ctx, q.ReservationID, p)

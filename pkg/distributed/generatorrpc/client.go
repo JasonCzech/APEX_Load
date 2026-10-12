@@ -32,9 +32,11 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	RuntimeResourceClaim *pb.RuntimeResourceClaim
-	PrepareOnly          bool
-	JavaHost             *pb.JavaHostSelection
+	RendezvousConfigJSON  []byte
+	LiveTableBindingsJSON []byte
+	RuntimeResourceClaim  *pb.RuntimeResourceClaim
+	PrepareOnly           bool
+	JavaHost              *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace         time.Duration
 	ArchiveSourceTarget   string
@@ -1838,6 +1840,8 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
+		RendezvousConfigJson:      append([]byte(nil), assignment.RendezvousConfigJSON...),
+		LiveTableBindingsJson:     append([]byte(nil), assignment.LiveTableBindingsJSON...),
 		RuntimeResourceClaim:      CloneRuntimeResourceClaim(assignment.RuntimeResourceClaim),
 		SourcePlan:                assignment.SourcePlan,
 		JavaHost:                  cloneJavaHostSelection(assignment.JavaHost),

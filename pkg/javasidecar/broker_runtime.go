@@ -340,3 +340,9 @@ func (p *PreparedBrokerRun) Cancel() { p.cancel(ErrFacadeLease) }
 
 // ID is the opaque reservation identity, never its authority token.
 func (p *PreparedBrokerRun) ID() string { return p.run.id }
+
+// NativeDataAvailable is valid only before Commit and comes from every actual
+// prepared JVM, through the existing authenticated owner/wave response.
+func (p *PreparedBrokerRun) NativeDataAvailable() bool {
+	return p.Err() == nil && p.run.NativeDataAvailable()
+}

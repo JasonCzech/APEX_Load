@@ -46,14 +46,15 @@ const (
 )
 
 type ReplayScriptRequest struct {
-	GroupName       string                 `json:"group_name,omitempty"`
-	ProjectID       string                 `json:"project_id,omitempty"`
-	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
-	StartPaused     bool                   `json:"start_paused,omitempty"`
-	Variables       map[string]string      `json:"variables,omitempty"`
-	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
-	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script            `json:"script,omitempty"`
+	LiveTableSeeds  []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
+	GroupName       string                        `json:"group_name,omitempty"`
+	ProjectID       string                        `json:"project_id,omitempty"`
+	ReplaySessionID string                        `json:"replay_session_id,omitempty"`
+	StartPaused     bool                          `json:"start_paused,omitempty"`
+	Variables       map[string]string             `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule        `json:"redaction_rules,omitempty"`
+	IgnoreThinkTime *bool                         `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script                   `json:"script,omitempty"`
 	// trustedPreservedImport is server-owned provenance. It is set only when
 	// replaying the unchanged durable script; JSON cannot opt into it.
 	trustedPreservedImport bool
@@ -164,6 +165,9 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 	if !prepared {
 		return
 	}
+	if !s.prepareReplayLiveTables(requestCtx, w, script, req.LiveTableSeeds) {
+		return
+	}
 	secretResolver := s.runner.secretResolverForScript(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
 	if !preflight.Valid {
@@ -205,6 +209,7 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 	}
 	report, err := s.runner.replayScriptDefinitionContext(replayCtx, script, engine.ReplayOptions{
 		ReplaySessionID: replaySessionID,
+		LiveTableSeeds:  req.LiveTableSeeds,
 		GroupName:       req.GroupName,
 		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: "info", IgnoreThinkTime: ignoreThinkTime},
 		Variables:       req.Variables,

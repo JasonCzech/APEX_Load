@@ -1343,10 +1343,18 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
 			appendPDFValueLine(lines, "Scripts", strings.Join(attribution.ScriptRevisions, ", "))
 			appendPDFValueLine(lines, "Generators", strings.Join(attribution.GeneratorVersions, ", "))
+			if d.Report.Manifest != nil {
+				appendLiveTableReportPDF(lines, d.Report.Manifest.Provenance.LiveTables)
+			}
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			attribution := d.Report.ChangeAttribution
+			if d.Report.Manifest != nil {
+				if err := writeLiveTableReportCSVRows(write, d.Report.Manifest.Provenance.LiveTables); err != nil {
+					return err
+				}
+			}
 			rows := [][2]string{
 				{"environment", attribution.Environment},
 				{"scenario_revision", attribution.ScenarioRevision},
@@ -1583,6 +1591,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			appendPDFValueLine(lines, "Total VUsers", fmt.Sprintf("%d", provenance.TotalVUsers))
 			appendPDFValueLine(lines, "Duration", provenance.Duration)
 			appendPDFValueLine(lines, "Start delay", provenance.StartDelay)
+			appendLiveTableReportPDF(lines, provenance.LiveTables)
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {

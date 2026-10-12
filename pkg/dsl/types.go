@@ -157,22 +157,23 @@ type ImportMetadata struct {
 }
 
 type ScriptConfig struct {
-	JMeter           *JMeterCompatibility `json:"jmeter,omitempty"`
-	SamplerSchedules []SamplerSchedule    `json:"sampler_schedules,omitempty"`
-	BaseURL          string               `json:"base_url"`
-	ThinkTime        ThinkTimeConfig      `json:"think_time,omitempty"`
-	Pacing           PacingConfig         `json:"pacing,omitempty"`
-	Bruno            BrunoConfig          `json:"bruno,omitempty,omitzero"`
-	HTTP             HTTPConfig           `json:"http,omitempty"`
-	WebRuntime       WebRuntimeConfig     `json:"web_runtime,omitempty"`
-	WebSocket        WebSocketConfig      `json:"websocket,omitempty"`
-	GRPC             GRPCConfig           `json:"grpc,omitempty"`
-	JavaHTTP         JavaHTTPConfig       `json:"java_http,omitempty"`
-	JavaVuser        JavaVuserConfig      `json:"java_vuser,omitempty"`
-	SOAP             SOAPConfig           `json:"soap,omitempty"`
-	Database         DatabaseConfig       `json:"database,omitempty"`
-	Network          NetworkConfig        `json:"network,omitempty"`
-	Browser          BrowserConfig        `json:"browser,omitempty"`
+	NativeServices   *NativeServicesConfig `json:"native_services,omitempty"`
+	JMeter           *JMeterCompatibility  `json:"jmeter,omitempty"`
+	SamplerSchedules []SamplerSchedule     `json:"sampler_schedules,omitempty"`
+	BaseURL          string                `json:"base_url"`
+	ThinkTime        ThinkTimeConfig       `json:"think_time,omitempty"`
+	Pacing           PacingConfig          `json:"pacing,omitempty"`
+	Bruno            BrunoConfig           `json:"bruno,omitempty,omitzero"`
+	HTTP             HTTPConfig            `json:"http,omitempty"`
+	WebRuntime       WebRuntimeConfig      `json:"web_runtime,omitempty"`
+	WebSocket        WebSocketConfig       `json:"websocket,omitempty"`
+	GRPC             GRPCConfig            `json:"grpc,omitempty"`
+	JavaHTTP         JavaHTTPConfig        `json:"java_http,omitempty"`
+	JavaVuser        JavaVuserConfig       `json:"java_vuser,omitempty"`
+	SOAP             SOAPConfig            `json:"soap,omitempty"`
+	Database         DatabaseConfig        `json:"database,omitempty"`
+	Network          NetworkConfig         `json:"network,omitempty"`
+	Browser          BrowserConfig         `json:"browser,omitempty"`
 	// BrowserEmulation drives HTTP-transport replay identity (User-Agent /
 	// Accept-Language) and browser-cache simulation. Nil means legacy behavior:
 	// http.user_agent / http.accept_language / http.cache_enabled stay in

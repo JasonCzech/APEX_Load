@@ -66,7 +66,7 @@ func validPooledControlResponse(q PooledControlRequest, r PooledControlResponse)
 	if (r.Decision.CommitEnabled && !r.Decision.PreparationEnabled) || (q.Operation != "commit" && r.Committed) || (q.Operation != "close_slot" && r.SlotClosed) || (q.Operation != "close_slot" && q.Operation != "invoke" && q.Operation != "diagnostics" && (r.HostID != "" || r.SlotID != "")) {
 		return false
 	}
-	if q.Operation != "prepare" && r.Ready {
+	if q.Operation != "prepare" && (r.Ready || r.NativeData) {
 		return false
 	}
 	if r.Contract != ContractVersion || r.PooledContract != PooledControlContract || r.Operation != q.Operation || r.RequestID != q.RequestID || !executionIDPattern.MatchString(r.RunID) || r.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() || d.Mode != "pooled_pilot" || !executionIDPattern.MatchString(d.ProfileID) || !executionIDPattern.MatchString(d.ResourceProfile) || d.ContainmentBackend != "delegated_linux" || d.SlotsPerHost < 2 || d.SlotsPerHost > 256 || d.MaxHosts < 1 || d.MaxHosts > 256 || d.MaxVUsers < d.SlotsPerHost || d.MaxVUsers > 256 || d.HostMemoryBytes <= 0 || d.MaxMemoryBytes < d.HostMemoryBytes {

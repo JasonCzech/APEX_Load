@@ -417,3 +417,10 @@ func (h *localManagedHost) Terminate(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+
+func (h *localManagedHost) NativeDataAvailable() bool {
+	h.mu.Lock()
+	transport, terminating := h.transport, h.terminating
+	h.mu.Unlock()
+	return !terminating && transport != nil && transport.NativeDataAvailable()
+}

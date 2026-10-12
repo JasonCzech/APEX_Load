@@ -53,6 +53,7 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'scheduling', group: 'Alerts & Scheduling', title: 'Schedule defaults', section: 'general', subsection: 'governance', governance: 'schedule-defaults', scope: 'deployment' },
   { id: 'retention', group: 'Data & Retention', title: 'Archive & HAR retention', section: 'capacity', subsection: 'retention', scope: 'deployment' },
   { id: 'test-data', group: 'Test Data', title: 'Shared data pools', section: 'data-pools', scope: 'project' },
+  { id: 'live-tables', group: 'Test Data', title: 'Project live tables', section: 'data-pools', scope: 'project' },
 ]
 
 export function settingsDestination(id?: string): SettingsDestination | undefined {
@@ -66,7 +67,7 @@ export function destinationTitle(id: string): string {
 
 export function settingsOwner(id: string): 'settings' | 'access' | 'repository' {
   if (settingsDestination(id)?.group === 'Access & Security') return 'access'
-  return id === 'test-data' ? 'repository' : 'settings'
+  return id === 'test-data' || id === 'live-tables' ? 'repository' : 'settings'
 }
 
 export function settingsHref(id: string, currentHash = typeof window === 'undefined' ? '' : window.location.hash, resourceId?: string): string {

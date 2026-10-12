@@ -23,6 +23,9 @@ func TestPostgresRewrittenSchemaIsWellFormed(t *testing.T) {
 		}
 		rewritten := rewriteSQL(statement, storeDialectPostgres)
 		compact := strings.Join(strings.Fields(rewritten), " ")
+		if name != "unknown" && !tableName.MatchString(rewritten) {
+			t.Errorf("%s: CREATE TABLE was removed by PostgreSQL rewrite", name)
+		}
 
 		// A trailing comma before the closing paren is the specific failure a
 		// stripped FOREIGN KEY line produces.
@@ -43,9 +46,9 @@ func TestPostgresRewrittenSchemaIsWellFormed(t *testing.T) {
 		if strings.Contains(rewritten, "REFERENCES") || strings.Contains(rewritten, "FOREIGN KEY") || strings.Contains(rewritten, "ON DELETE") {
 			t.Errorf("%s: a foreign key survived the Postgres rewrite: %s", name, compact)
 		}
-		// DATETIME is not a Postgres type.
-		if regexp.MustCompile(`(?i)\bDATETIME\b`).MatchString(rewritten) {
-			t.Errorf("%s: DATETIME survived the Postgres rewrite: %s", name, compact)
+		// DATETIME and BLOB are not PostgreSQL types.
+		if regexp.MustCompile(`(?i)\b(?:DATETIME|BLOB)\b`).MatchString(rewritten) {
+			t.Errorf("%s: SQLite-only type survived the Postgres rewrite: %s", name, compact)
 		}
 	}
 }
@@ -59,8 +62,8 @@ func TestPostgresRewrittenColumnMigrationsAreWellFormed(t *testing.T) {
 		if strings.Contains(rewritten, "REFERENCES") || strings.Contains(rewritten, "FOREIGN KEY") || strings.Contains(rewritten, "ON DELETE") {
 			t.Errorf("%s: a foreign key survived the Postgres rewrite: %s", migration.name, compact)
 		}
-		if regexp.MustCompile(`(?i)\bDATETIME\b`).MatchString(rewritten) {
-			t.Errorf("%s: DATETIME survived the Postgres rewrite: %s", migration.name, compact)
+		if regexp.MustCompile(`(?i)\b(?:DATETIME|BLOB)\b`).MatchString(rewritten) {
+			t.Errorf("%s: SQLite-only type survived the Postgres rewrite: %s", migration.name, compact)
 		}
 		if strings.Count(rewritten, "(") != strings.Count(rewritten, ")") {
 			t.Errorf("%s: unbalanced parentheses: %s", migration.name, compact)

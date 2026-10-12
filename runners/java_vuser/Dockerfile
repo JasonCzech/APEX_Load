@@ -19,10 +19,11 @@ FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec4
 RUN apk add --no-cache openjdk21-jdk
 WORKDIR /src
 COPY runners/java_vuser/Harness.java ./Harness.java
+COPY runners/java_vuser/apexload/ ./apexload/
 COPY runners/java_vuser/lrapi/lr.java ./lrapi/lr.java
 COPY runners/java_vuser/fixtures/SmokeActions.java ./fixtures/SmokeActions.java
 RUN mkdir -p /classes \
-    && javac --release 17 -d /classes lrapi/lr.java Harness.java \
+    && javac --release 17 -d /classes lrapi/lr.java Harness.java apexload/data/*.java apexload/bridge/Native*.java \
     && jar --create --file /java-vuser-runner.jar --main-class Harness -C /classes . \
     && mkdir -p /smoke \
     && javac --release 17 -d /smoke fixtures/SmokeActions.java

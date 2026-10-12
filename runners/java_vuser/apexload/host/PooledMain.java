@@ -18,6 +18,37 @@ public final class PooledMain {
     private final boolean qualifiedCleanup;
     private final byte[] secret;
     private final ArrayBlockingQueue<byte[]> responses = new ArrayBlockingQueue<byte[]>(64);
+    private final ArrayBlockingQueue<byte[]> nativeResponses = new ArrayBlockingQueue<byte[]>(4);
+    private final Semaphore nativePermits=new Semaphore(4);
+    private final ConcurrentHashMap<String,NativePending> nativePending=new ConcurrentHashMap<String,NativePending>();
+    private static final class NativePending {
+      final PooledWire.Frame invocation; final long sequence; final CompletableFuture<String> result=new CompletableFuture<String>();
+      NativePending(PooledWire.Frame frame,long sequence){this.invocation=frame;this.sequence=sequence;}
+    }
+    private static boolean nativeAvailable(){try {Class.forName("apexload.bridge.NativeBridge",false,PooledMain.class.getClassLoader());return true;}catch(ClassNotFoundException e){return false;}}
+    private String nativeCall(PooledWire.Frame invocation,long sequence,String payload) {
+      if(sequence<1||sequence>1024||payload.getBytes(StandardCharsets.UTF_8).length>1048576||!nativePermits.tryAcquire())throw new IllegalStateException("native_service_capacity");
+      NativePending pending=new NativePending(invocation,sequence);
+      if(nativePending.putIfAbsent(invocation.slot,pending)!=null){nativePermits.release();throw new IllegalStateException("native_service_busy");}
+      try {
+        PooledWire.Frame frame=invocation.reply();frame.operation="native_call";frame.fields.put("callback_sequence",Long.toString(sequence));
+        String encoded=Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
+        for(int i=0,pos=0;pos<encoded.length();i++,pos+=65536)frame.fields.put("payload"+i,encoded.substring(pos,Math.min(pos+65536,encoded.length())));
+        if(!nativeResponses.offer(PooledWire.encode(frame,secret)))throw new IOException("native_service_capacity");
+        return pending.result.get();
+      } catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException("native_service_canceled");}
+      catch(Exception e){throw new IllegalStateException("native_service_exchange_lost");}
+      finally {nativePending.remove(invocation.slot,pending);nativePermits.release();}
+    }
+    private void nativeReply(PooledWire.Frame frame)throws Exception {
+      NativePending pending=nativePending.get(frame.slot);
+      if(pending==null||!generation.equals(frame.generation)||frame.sequence!=pending.invocation.sequence||!frame.request.equals(pending.invocation.request)||!Long.toString(pending.sequence).equals(frame.fields.get("callback_sequence"))||frame.fields.size()<2||frame.fields.size()>44)throw new IOException("native_service_reply_invalid");
+      StringBuilder encoded=new StringBuilder();
+      for(int i=0;i<frame.fields.size()-1;i++){String part=frame.fields.get("payload"+i);if(part==null||part.isEmpty())throw new IOException("native_service_reply_invalid");encoded.append(part);}
+      byte[] raw=Base64.getDecoder().decode(encoded.toString());if(raw.length>2*1048576)throw new IOException("native_service_reply_invalid");
+      String value=StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(raw)).toString();
+      if(!pending.result.complete(value))throw new IOException("native_service_reply_invalid");
+    }
     private final Set<String> closing = Collections.newSetFromMap(new ConcurrentHashMap<String,Boolean>());
     private final Diagnostics diagnostics;
     private final GCPauses gcPauses;
@@ -92,11 +123,12 @@ public final class PooledMain {
             Map<String,String> parameters = new HashMap<String,String>();
             for (Map.Entry<String,String> entry : f.fields.entrySet()) {
                 if ("method".equals(entry.getKey())) continue;
+ if("native_services".equals(entry.getKey())&&"v1".equals(entry.getValue())&&nativeAvailable())continue;
                 if (!entry.getKey().startsWith("p.") || entry.getKey().length() == 2)
                     throw new IOException("pooled_frame_invalid");
                 parameters.put(entry.getKey().substring(2), entry.getValue());
             }
-            host.invoke(generation, f.slot, f.sequence, f.request, method, parameters).whenComplete((value, failure) -> {
+            host.invoke(generation, f.slot, f.sequence, f.request, method, parameters, "v1".equals(f.fields.get("native_services")) ? (seq,payload)->nativeCall(f,seq.longValue(),payload) : null).whenComplete((value, failure) -> {
                 Map<String,String> result = new HashMap<String,String>();
                 if (failure == null) {
                     result.put("return_code", Integer.toString(value.returnCode));
@@ -129,7 +161,7 @@ public final class PooledMain {
             } else {
                 Map<String,String> status = new HashMap<String,String>();
                 status.put("sealed", Boolean.toString(host.isSealed()));
-                if ("ready".equals(f.operation)) status.put("event_attribution", "slot_thread_v1");
+                if ("ready".equals(f.operation)) {status.put("event_attribution", "slot_thread_v1");if(nativeAvailable())status.put("native_data","v1");}
                 if ("health".equals(f.operation)) {
                     status.put("diagnostics_base64", diagnostics.snapshot());
                     status.put("diagnostics_dropped", Long.toString(diagnostics.dropped()));
@@ -195,7 +227,12 @@ public final class PooledMain {
                 generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
             Thread writer = new Thread(() -> {
                 try {
-                    for (;;) { output.write(main.responses.take()); output.flush(); }
+                    for (;;) {
+                      byte[] data=main.responses.poll();
+                      if(data==null)data=main.nativeResponses.poll();
+                      if(data==null)data=main.responses.poll(10,TimeUnit.MILLISECONDS);
+                      if(data!=null){output.write(data);output.flush();}
+                    }
                 } catch (Throwable failure) { main.fatal(); }
             }, "apexload-host-writer");
             writer.setDaemon(true);
@@ -203,6 +240,7 @@ public final class PooledMain {
             long sequence = 0;
             for (;;) {
                 PooledWire.Frame request = PooledWire.read(control, secret);
+                if("native_reply".equals(request.operation)){main.nativeReply(request);continue;}
                 if (request.sequence <= sequence) throw new IOException("stale_request");
                 sequence = request.sequence;
                 try { main.dispatch(request); }

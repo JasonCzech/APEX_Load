@@ -157,8 +157,9 @@ func TestAutoH3NeverRepeatsARequestTheTargetMayHaveSeen(t *testing.T) {
 		// Dropped before any response header: the target may or may not
 		// have processed it.
 		{"p", "headers=0", "possibly_sent"},
-		// Dropped mid-body: the response had started, so the request was
-		// sent and the router had already returned it.
+		// Dropped mid-body. CancelWrite can discard buffered headers, so
+		// the client may observe the reset before RoundTrip returns them.
+		// Either classification must preserve the no-repeat guarantee.
 		{"q", "", ""},
 	} {
 		target := fixture.URL("/partial?key=" + tc.key)
@@ -168,7 +169,8 @@ func TestAutoH3NeverRepeatsARequestTheTargetMayHaveSeen(t *testing.T) {
 		partial := &protocol.Action{Name: "write", Type: "POST", Target: target, Body: []byte("payload"), HTTPVersion: versionOverride(t, "auto+h3")}
 		failed := run(t, h, partial)
 		certainty, _ := failed.ProtocolEvidence["http3_failure_certainty"].(string)
-		if failed.Success || certainty != tc.certainty || failed.ProtocolEvidence["http_version_fallback"] != "none" || fixture.Ledger.Effects(tc.key) != 1 {
+		validCertainty := certainty == tc.certainty || (tc.key == "q" && certainty == "possibly_sent")
+		if failed.Success || !validCertainty || failed.ProtocolEvidence["http_version_fallback"] != "none" || fixture.Ledger.Effects(tc.key) != 1 {
 			t.Fatalf("a drop after the effect (%s): success=%v effects=%d receipt=%v", tc.key, failed.Success, fixture.Ledger.Effects(tc.key), failed.ProtocolEvidence)
 		}
 		if fixture.Ledger.Count(func(a h3fixture.Attempt) bool { return a.Key == tc.key && a.Listener == "tcp" }) != 0 {

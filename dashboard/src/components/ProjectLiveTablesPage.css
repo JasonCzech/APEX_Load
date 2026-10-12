@@ -1,0 +1,8 @@
+.project-live-tables-page { display: grid; gap: 1rem; min-width: 0; }
+.project-live-tables-page label { display: flex; flex-direction: column; gap: .35rem; }
+.project-live-tables-page input, .project-live-tables-page select, .project-live-tables-page textarea { max-width: 100%; min-width: 0; }
+.project-live-tables-page input[type=checkbox] { width: auto; margin-right: .5rem; }
+.project-live-tables-page fieldset { display: grid; gap: .8rem; padding: 1rem; min-width: 0; }
+.project-live-tables-page code { overflow-wrap: anywhere; }
+.project-live-table-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.project-live-tables-page .data-table { overflow-x: auto; }

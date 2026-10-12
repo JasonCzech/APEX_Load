@@ -289,10 +289,11 @@ func isStaticResource(resourceType, mimeType string) bool {
 // responses.
 type Server struct {
 	*httptest.Server
-	mu        sync.Mutex
-	recorded  []Recorded
-	responses map[string][]Response
-	served    map[string]int
+	mu         sync.Mutex
+	recorded   []Recorded
+	responses  map[string][]Response
+	served     map[string]int
+	webSockets []<-chan struct{}
 }
 
 // NewServer starts a fixture server for the given scripted responses.
@@ -360,6 +361,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // serveWebSocket upgrades the request, records each message the client
 // sends, and answers it.
 func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, recordedIndex int, behavior WebSocketBehavior) {
+	done := make(chan struct{})
+	s.mu.Lock()
+	s.webSockets = append(s.webSockets, done)
+	s.mu.Unlock()
+	defer close(done)
 	conn, err := (&gorillawebsocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -474,12 +480,33 @@ func ReplayOnce(ctx context.Context, script *dsl.Script, variables, secrets map[
 	return engine.ReplayScript(ctx, script, options)
 }
 
+// waitForWebSockets joins the fixture readers after replay closes its sockets.
+// A successful client write need not yet be visible in the server's ledger.
+func (s *Server) waitForWebSockets(ctx context.Context) error {
+	s.mu.Lock()
+	pending := append([]<-chan struct{}(nil), s.webSockets...)
+	s.mu.Unlock()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
 // Compare checks recorded requests against the expectation and returns one
 // line per mismatch. Requests must arrive in the expected order and no extra
 // requests are allowed.
 func (s *Server) Compare(expected []ExpectedRequest) []string {
-	recorded := s.Recorded()
 	var problems []string
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.waitForWebSockets(ctx); err != nil {
+		problems = append(problems, "WebSocket fixture did not finish recording after replay: "+err.Error())
+	}
+	recorded := s.Recorded()
 	next := 0
 	for i, want := range expected {
 		if next >= len(recorded) {

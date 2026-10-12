@@ -28,6 +28,13 @@ func convertJavaScriptWebZip(files map[string]string, projectFileName string, ac
 	if err != nil {
 		return nil, "", err
 	}
+	// Inspect original sources: JavaScript translation intentionally replaces
+	// unsupported expressions and would otherwise lose their VTS identity.
+	var vtsSources []*ParsedAction
+	for _, name := range actionFiles {
+		vtsSources = append(vtsSources, &ParsedAction{Filename: name, Phase: sourceActionPhase(name)})
+	}
+	appendVTSSourceGates(result, vtsSources, files)
 	note := fmt.Sprintf("Imported from VuGen JavaScript (%s): each web.* and lr.* call was translated into its C form.", strings.Join(actionFiles, ", "))
 	result.Warnings = append([]string{note}, append(warnings, result.Warnings...)...)
 	if result.DetectedProtocol != nil {

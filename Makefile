@@ -83,7 +83,7 @@ clients-release: desktop-release
 java-vuser-runner:
 	mkdir -p bin/java_vuser
 	rm -rf bin/java_vuser/classes bin/java_vuser/apexload-java-vuser-runner.jar
-	javac --release 17 -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
+	javac --release 17 -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java runners/java_vuser/apexload/data/*.java runners/java_vuser/apexload/bridge/Native*.java
 	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar --main-class Harness -C bin/java_vuser/classes .
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-vuser-runner ./cmd/apexload-java-vuser-runner
 
@@ -95,7 +95,7 @@ java-vuser-runner:
 java-vuser-runner-legacy:
 	mkdir -p bin/java_vuser
 	rm -rf bin/java_vuser/classes-java8 bin/java_vuser/apexload-java-vuser-runner-java8.jar
-	javac --release 8 -nowarn -d bin/java_vuser/classes-java8 runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
+	javac --release 8 -nowarn -d bin/java_vuser/classes-java8 runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java runners/java_vuser/apexload/data/*.java runners/java_vuser/apexload/bridge/Native*.java
 	jar --create --file bin/java_vuser/apexload-java-vuser-runner-java8.jar --main-class Harness -C bin/java_vuser/classes-java8 .
 	@echo "Built bin/java_vuser/apexload-java-vuser-runner-java8.jar (Java 8 bytecode)."
 	@echo "Point APEXLOAD_JAVA_VUSER_HARNESS_JAR at it and set APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA=true."
@@ -105,7 +105,7 @@ java-vuser-runner-legacy:
 .PHONY: java-vuser-slot-runtime
 java-vuser-slot-runtime:
 	mkdir -p bin/java_vuser/slot-api bin/java_vuser/slot-shim
-	javac --release 8 -d bin/java_vuser/slot-api runners/java_vuser/apexload/bridge/SlotRuntime.java runners/java_vuser/apexload/host/SlotLoader.java runners/java_vuser/apexload/host/SlotWorker.java runners/java_vuser/apexload/host/PooledHost.java runners/java_vuser/apexload/host/PooledWire.java runners/java_vuser/apexload/host/PooledMain.java runners/java_vuser/apexload/host/GCPauses.java
+	javac --release 8 -d bin/java_vuser/slot-api runners/java_vuser/apexload/bridge/SlotRuntime.java runners/java_vuser/apexload/host/SlotLoader.java runners/java_vuser/apexload/host/SlotWorker.java runners/java_vuser/apexload/host/PooledHost.java runners/java_vuser/apexload/host/PooledWire.java runners/java_vuser/apexload/host/PooledMain.java runners/java_vuser/apexload/host/GCPauses.java runners/java_vuser/apexload/data/*.java runners/java_vuser/apexload/bridge/Native*.java
 	javac --release 8 -cp bin/java_vuser/slot-api -d bin/java_vuser/slot-shim runners/java_vuser/lrapi/lr.java runners/java_vuser/lrapi/SlotBridge.java
 	jar --create --file bin/java_vuser/apexload-slot-api.jar -C bin/java_vuser/slot-api .
 	jar --create --file bin/java_vuser/apexload-slot-shim.jar -C bin/java_vuser/slot-shim .

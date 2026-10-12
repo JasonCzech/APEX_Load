@@ -46,6 +46,7 @@ type BrokerClient struct {
 	terminal                            atomic.Bool
 }
 type BrokerClientWave struct {
+	nativeData bool
 	client     *BrokerClient
 	id, digest string
 	mu         sync.Mutex
@@ -340,6 +341,7 @@ func (w *BrokerClientWave) Ready(ctx context.Context) (bool, error) {
 	}
 	if w.phase == "preparing" && out.State == "ready" {
 		w.phase = "ready"
+		w.nativeData = out.NativeData
 	}
 	return w.phase == "ready", nil
 }
@@ -503,7 +505,7 @@ func (c *BrokerClient) exchange(ctx context.Context, q BrokerRequest, allowEpoch
 		return out, ErrState
 	}
 	req.Header.Set("Content-Type", "application/json")
-	response, e := c.http.Do(req)
+	response, e := javarunner.DoNativeHTTP(c.http, req, MaxSupervisorResponse+(512<<10))
 	if e != nil {
 		// A known wave/host can be retired independently after caller
 		// cancellation. Lost claims/reservations and unknown transport loss
@@ -527,7 +529,7 @@ func (c *BrokerClient) exchange(ctx context.Context, q BrokerRequest, allowEpoch
 	c.mu.Lock()
 	epoch := c.brokerEpoch
 	c.mu.Unlock()
-	if dec.Decode(&out) != nil || dec.Decode(new(any)) != io.EOF || (q.Operation != "capabilities" && out.Capabilities != nil) || out.Contract != BrokerContract || out.RequestID != id || !name.MatchString(out.BrokerEpoch) || (!allowEpochChange && out.BrokerEpoch != epoch) {
+	if dec.Decode(&out) != nil || dec.Decode(new(any)) != io.EOF || (q.Operation != "capabilities" && out.Capabilities != nil) || (q.Operation != "ready" && out.NativeData) || out.Contract != BrokerContract || out.RequestID != id || !name.MatchString(out.BrokerEpoch) || (!allowEpochChange && out.BrokerEpoch != epoch) {
 		c.terminal.Store(true)
 		return BrokerResponse{}, ErrBrokerTransport
 	}
@@ -546,4 +548,10 @@ func (c *BrokerClient) exchange(ctx context.Context, q BrokerRequest, allowEpoch
 		return BrokerResponse{}, ErrBrokerTransport
 	}
 	return out, nil
+}
+
+func (w *BrokerClientWave) NativeDataAvailable() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.phase == "ready" && w.nativeData && !w.client.terminal.Load()
 }

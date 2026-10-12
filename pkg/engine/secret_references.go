@@ -170,7 +170,19 @@ func collectExecutableSecretNames(value any, path string, root, dedicatedField b
 				}
 			}
 		}
+		actionType, _ := typed["type"].(string)
 		for key, child := range typed {
+			if key == "params" && dsl.CanonicalActionType(actionType) == "native_javascript" {
+				if params, ok := child.(map[string]any); ok {
+					resolved := make(map[string]any, len(params))
+					for name, value := range params {
+						if name != "source" {
+							resolved[name] = value
+						}
+					}
+					child = resolved
+				}
+			}
 			normalizedKey := strings.ToLower(strings.TrimSpace(key))
 			// The selected codec already visited every executable decoded leaf.
 			// Rescanning the encoded body would miss form references and invent

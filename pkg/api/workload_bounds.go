@@ -30,6 +30,9 @@ func validateManagedTestWorkloadBounds(test *ManagedTest) error {
 	}
 	total := 0
 	for index, group := range test.Groups {
+		if _, err := distributedRendezvousContracts(test, group); err != nil {
+			return fmt.Errorf("group[%d]: %w", index, err)
+		}
 		if group.VUsers < 0 || group.VUsers > maxManagedTestVUsers {
 			return fmt.Errorf("group[%d] vusers must be between 0 and %d", index, maxManagedTestVUsers)
 		}

@@ -413,6 +413,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 
 		continueOnError := session.ContinueOnError
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
+			LiveTableSeeds:  req.LiveTableSeeds,
 			ReplaySessionID: sessionID,
 			GroupName:       groupName,
 			RuntimeProfile:  &session.RuntimeProfile,

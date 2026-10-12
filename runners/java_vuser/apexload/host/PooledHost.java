@@ -67,14 +67,15 @@ public final class PooledHost {
     }
 
     public CompletableFuture<SlotWorker.Result> invoke(String expectedGeneration, String slot, long sequence,
-                                                       String request, String method, Map<String,String> parameters) {
+                                                       String request, String method, Map<String,String> parameters) {return invoke(expectedGeneration,slot,sequence,request,method,parameters,null);}
+ public CompletableFuture<SlotWorker.Result> invoke(String expectedGeneration,String slot,long sequence,String request,String method,Map<String,String> parameters,java.util.function.BiFunction<Long,String,String> nativeCall) {
         final CompletableFuture<SlotWorker.Result> result;
         synchronized (lock) {
             checkGeneration(expectedGeneration);
             SlotWorker worker = slots.get(slot);
             if (!committed || reapRequired || worker == null || closing.contains(slot))
                 throw new IllegalStateException("slot_unavailable");
-            result = worker.invoke(sequence, request, method, parameters);
+            result = worker.invoke(sequence, request, method, parameters,nativeCall);
         }
         // Callback registration can synchronously execute if invocation already
         // completed. Never register it under the host's control lock.

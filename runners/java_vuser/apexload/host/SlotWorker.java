@@ -30,8 +30,10 @@ public final class SlotWorker {
         final long sequence;
         final String request, method;
         final Map<String,String> parameters;
+ final java.util.function.BiFunction<Long,String,String> nativeCall;
         final CompletableFuture<Result> result = new CompletableFuture<Result>();
-        Invocation(long sequence, String request, String method, Map<String,String> parameters) {
+        Invocation(long sequence, String request, String method, Map<String,String> parameters,java.util.function.BiFunction<Long,String,String> nativeCall) {
+ this.nativeCall=nativeCall;
             this.sequence = sequence; this.request = request; this.method = method;
             this.parameters = Collections.unmodifiableMap(new HashMap<String,String>(parameters));
         }
@@ -76,7 +78,8 @@ public final class SlotWorker {
 
     /** Exactly one outstanding invocation. Rejecting a second never releases
      * or interrupts the first. Sequence numbers are unique for the slot lifetime. */
-    public CompletableFuture<Result> invoke(long sequence, String request, String method, Map<String,String> parameters) {
+    public CompletableFuture<Result> invoke(long sequence, String request, String method, Map<String,String> parameters) {return invoke(sequence,request,method,parameters,null);}
+ public CompletableFuture<Result> invoke(long sequence,String request,String method,Map<String,String> parameters,java.util.function.BiFunction<Long,String,String> nativeCall) {
         if (sequence <= 0 || request == null || !request.matches("[A-Za-z0-9_-]{1,128}")
                 || !("init".equals(method) || "action".equals(method) || "end".equals(method))
                 || parameters == null || parameters.size() > 1024)
@@ -86,7 +89,7 @@ public final class SlotWorker {
             if (sequence <= lastSequence) throw new IllegalStateException("stale_request");
             if (ended || (!initialized && !"init".equals(method)) || (initialized && "init".equals(method)))
                 throw new IllegalStateException("invalid_lifecycle");
-            Invocation job = new Invocation(sequence, request, method, parameters);
+            Invocation job = new Invocation(sequence, request, method, parameters,nativeCall);
             // Publish the BUSY state before the worker sees the request.
             lastSequence = sequence; current = job; state = State.BUSY;
             if (!queue.offer(job)) {
@@ -152,7 +155,8 @@ public final class SlotWorker {
                             Class.forName(target, true, loader);
                             instance = type.getDeclaredConstructor().newInstance();
                         }
-                        Method method = instance.getClass().getMethod(job.method);
+                        if(job.nativeCall!=null) Class.forName("apexload.bridge.NativeBridge",true,parent).getMethod("begin",String.class,java.util.function.BiFunction.class).invoke(null,job.request,job.nativeCall);
+ Method method = instance.getClass().getMethod(job.method);
                         if (method.getReturnType() != Integer.TYPE && method.getReturnType() != Void.TYPE)
                             throw new IllegalStateException("target_return_type_invalid");
                         Object value = method.invoke(instance);
@@ -163,7 +167,7 @@ public final class SlotWorker {
                         if (exit == null || !"action".equals(job.method) || (exit.option != 1 && exit.option != 2)) throw cause;
                         bridge.handleExit(exit.option, exit.status);
                         result = new Result(0, exit, false, false);
-                    } finally { bridge.endInvocation(); }
+                    } finally {if(job.nativeCall!=null) Class.forName("apexload.bridge.NativeBridge",true,parent).getMethod("end").invoke(null); bridge.endInvocation(); }
                     result = new Result(result.returnCode, result.exit, bridge.eventFallbackUsed(), bridge.eventCaptureTruncated());
                 } catch (Throwable thrown) { invocationFailure = thrown; }
                 synchronized (lock) {

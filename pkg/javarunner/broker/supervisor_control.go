@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"io"
 	"net/http"
 	"net/url"
@@ -64,6 +65,7 @@ type SupervisorResponse struct {
 	PreparationTimeoutMS int64  `json:"preparation_timeout_ms"`
 	InvocationTimeoutMS  int64  `json:"invocation_timeout_ms"`
 	InvocationID         string `json:"invocation_id,omitempty"`
+	NativeData           bool   `json:"native_data,omitempty"`
 }
 
 type SupervisorControl struct {
@@ -216,6 +218,10 @@ func (c *SupervisorControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host_unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	if javarunner.ServeNativeHTTP(w, r, MaxSupervisorResponse, c.ServeHTTP) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 512<<10)
 	var q SupervisorRequest
 	dec := json.NewDecoder(r.Body)
@@ -232,6 +238,9 @@ func (c *SupervisorControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	payload, failure := c.handle(r.Context(), q)
 	c.mu.Lock()
 	response := SupervisorResponse{Contract: SupervisorContract, HostID: c.config.HostID, BrokerEpoch: c.config.BrokerEpoch, ConfigurationSHA256: c.config.ConfigurationSHA256, RequestID: q.RequestID, State: c.state, Failure: failure, Payload: payload}
+	if native, ok := c.runtime.(interface{ NativeDataAvailable() bool }); ok {
+		response.NativeData = native.NativeDataAvailable()
+	}
 	response.LeaseTTLMS = c.config.LeaseTTL.Milliseconds()
 	response.PreparationTimeoutMS = c.config.PreparationTimeout.Milliseconds()
 	response.InvocationTimeoutMS = c.config.InvocationTimeout.Milliseconds()
@@ -335,6 +344,15 @@ func (c *SupervisorControl) handle(ctx context.Context, q SupervisorRequest) ([]
 	c.busy = true
 	c.mu.Unlock()
 	invokeCtx, cancel := context.WithTimeout(c.ctx, c.config.InvocationTimeout)
+	if callback := javarunner.NativeDataCallbackFrom(ctx); callback != nil {
+		native, ok := c.runtime.(interface{ NativeDataAvailable() bool })
+		if !ok || !native.NativeDataAvailable() {
+			cancel()
+			c.retire("supervisor_invocation_failed")
+			return nil, "supervisor_invocation_failed"
+		}
+		invokeCtx = javarunner.WithNativeDataCallback(invokeCtx, callback)
+	}
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
 	defer cancel()

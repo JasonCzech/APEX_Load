@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"io"
 	"net"
 	"net/http"
@@ -133,6 +134,7 @@ type Server struct {
 
 	harnessHealthMu sync.Mutex
 	harnessHealthy  map[string]time.Time
+	harnessNative   map[string]bool
 
 	readinessMu sync.Mutex
 	readiness   *readinessCacheEntry
@@ -663,6 +665,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	} else {
 		response.Healthy = true
 		response.JavaMajor = jdk.Major
+		if strongContainment && s.verifyNativeHarness(operationCtx, RuntimeSettings{}) == nil {
+			response.Features = append(response.Features, protocol.FeatureNativeDataServicesV1, protocol.FeatureNativeDataSidecarV1)
+		}
 		if s.pooledControlEnabled() {
 			response.Features = append(response.Features, FeaturePooledReservationsV1)
 			for _, profile := range s.pooledControlProfiles.profiles {
@@ -771,12 +776,20 @@ func validationIssueForOutcome(ctx context.Context, index int) ValidationIssue {
 }
 
 func (s *Server) handleExecution(w http.ResponseWriter, r *http.Request) {
+	if javarunner.ServeNativeHTTP(w, r, MaxResponseBytes, s.handleExecution) {
+		return
+	}
+
 	var request ExecutionRequest
 	if !decodeRequest(w, r, &request) {
 		return
 	}
 	if request.Contract != ContractVersion {
 		writeError(w, http.StatusPreconditionFailed, "contract_version_mismatch")
+		return
+	}
+	if javarunner.NativeDataCallbackFrom(r.Context()) != nil && (request.SessionID == "" || strings.EqualFold(request.Command.Method, "full_lifecycle")) {
+		writeError(w, http.StatusUnprocessableEntity, "native_services_require_persistent_java")
 		return
 	}
 	if !executionIDPattern.MatchString(request.ExecutionID) {
@@ -1402,6 +1415,10 @@ func (s *Server) handlePersistentExecution(
 	runtimeLease *runtimeLease,
 ) {
 	started := time.Now()
+	if javarunner.NativeDataCallbackFrom(ctx) != nil && s.verifyNativeHarness(ctx, request.Runtime) != nil {
+		writeError(w, http.StatusUnprocessableEntity, "native_data_sidecar_unavailable")
+		return
+	}
 	if s.sessionUnusable(request.SessionID, generation, runtimeLease) {
 		writeJSON(w, http.StatusOK, ExecutionResponse{
 			Contract: ContractVersion, ExecutionID: request.ExecutionID,
@@ -2247,6 +2264,7 @@ func (s *Server) verifyHarness(ctx context.Context, prepared preparedRuntime) *s
 	// operator rotates the mounted harness in place.
 	clear(s.harnessHealthy)
 	s.harnessHealthy[cacheKey] = time.Now().Add(readinessSuccessTTL)
+	s.harnessNative = map[string]bool{cacheKey: harnessHealthFeature(outcome.stdout, protocol.FeatureNativeDataLocalV1)}
 	s.harnessHealthMu.Unlock()
 	return nil
 }
@@ -2343,6 +2361,7 @@ func (s *Server) runHarness(ctx context.Context, prepared preparedRuntime, comma
 }
 
 type harnessCommand struct {
+	NativeServices   bool           `json:"native_services,omitempty"`
 	ProtocolVersion  string         `json:"protocol_version,omitempty"`
 	EventContract    string         `json:"event_contract,omitempty"`
 	RequestID        string         `json:"request_id,omitempty"`

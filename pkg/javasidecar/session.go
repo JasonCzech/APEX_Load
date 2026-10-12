@@ -41,18 +41,20 @@ type persistentEnvelope struct {
 }
 
 type persistentSession struct {
-	readyNonce string
-	readyDone  chan struct{}
-	readyOnce  sync.Once
-	invokeMu   sync.Mutex
-	cmd        *exec.Cmd
-	stdin      io.WriteCloser
+	nativeCapable bool
+	readyNonce    string
+	readyDone     chan struct{}
+	readyOnce     sync.Once
+	invokeMu      sync.Mutex
+	cmd           *exec.Cmd
+	stdin         io.WriteCloser
 
-	responses  chan persistentEnvelope
-	waitDone   chan struct{}
-	stdoutDone chan struct{}
-	stderrDone chan struct{}
-	waitErr    error
+	nativeRequests chan string
+	responses      chan persistentEnvelope
+	waitDone       chan struct{}
+	stdoutDone     chan struct{}
+	stderrDone     chan struct{}
+	waitErr        error
 
 	sessionSecret [32]byte
 	bootstrapped  bool
@@ -168,7 +170,7 @@ func (s *Server) startPersistentSession(
 	}
 	session := &persistentSession{
 		readyNonce: s.persistentReadyNonce, readyDone: make(chan struct{}), killFunc: s.persistentKill,
-		responses: make(chan persistentEnvelope, 8), waitDone: make(chan struct{}),
+		nativeRequests: make(chan string, 1), responses: make(chan persistentEnvelope, 8), waitDone: make(chan struct{}),
 		stdoutDone: make(chan struct{}), stderrDone: make(chan struct{}),
 		sessionSecret: sessionSecret,
 		eventPath:     eventPath, diagnosticPath: diagnosticPath,
@@ -295,9 +297,28 @@ func newSessionFile(kind string) (string, *safeFailure) {
 func (s *persistentSession) readStdout(stdout io.Reader) {
 	defer close(s.stdoutDone)
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64<<10), maxPersistentFrameBytes)
+	scanner.Buffer(make([]byte, 64<<10), javarunner.NativeDataFrameBytes+128)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.HasPrefix(line, javarunner.NativeDataPrefix) {
+			select {
+			case s.nativeRequests <- strings.TrimPrefix(line, javarunner.NativeDataPrefix):
+			default:
+				return
+			}
+			continue
+		}
+		if len(line) > maxPersistentFrameBytes {
+			return
+		}
+		if s.readyNonce != "" && line == "APEXLOAD_JAVA_HOST_NATIVE_V1 "+s.readyNonce {
+			select {
+			case <-s.readyDone:
+			default:
+				s.nativeCapable = true
+			}
+			continue
+		}
 		if s.readyNonce != "" && line == "APEXLOAD_JAVA_HOST_READY_V1 "+s.readyNonce {
 			s.readyOnce.Do(func() { close(s.readyDone) })
 			continue
@@ -339,7 +360,7 @@ func (s *persistentSession) invoke(ctx context.Context, request ExecutionRequest
 	}
 	command := harnessCommand{
 		ProtocolVersion: harnessIPCContract, EventContract: harnessEventContract,
-		RequestID: request.ExecutionID, ActionName: request.Command.ActionName,
+		NativeServices: javarunner.NativeDataCallbackFrom(ctx) != nil, RequestID: request.ExecutionID, ActionName: request.Command.ActionName,
 		ActionType: request.Command.ActionType, ClassName: strings.TrimSpace(request.Command.ClassName),
 		Method: method, SourceArchiveRef: request.Command.SourceArchiveRef,
 		StartupTimeoutMS: request.Runtime.StartupTimeoutMS, UserClasspath: append([]string(nil), s.userClasspath...),
@@ -373,6 +394,32 @@ func (s *persistentSession) invoke(ctx context.Context, request ExecutionRequest
 	}
 	for {
 		select {
+		case encoded := <-s.nativeRequests:
+			callback := javarunner.NativeDataCallbackFrom(ctx)
+			frame, err := javarunner.DecodeNativeDataFrame(encoded, s.sessionSecret[:], false)
+			if err != nil || callback == nil || frame.Scope != "dedicated" || frame.Invocation != request.ExecutionID {
+				return s.failAndReap("session_unusable")
+			}
+			frame.Payload, err = callback(ctx, frame.Sequence, frame.Payload)
+			if err != nil {
+				return s.failAndReap("session_unusable")
+			}
+			reply, err := javarunner.EncodeNativeDataFrame(frame, s.sessionSecret[:], true)
+			if err != nil {
+				return s.failAndReap("session_unusable")
+			}
+			written := make(chan error, 1)
+			go func() { _, e := io.WriteString(s.stdin, javarunner.NativeDataPrefix+reply+"\n"); written <- e }()
+			select {
+			case err = <-written:
+				if err != nil {
+					return s.failAndReap("session_unusable")
+				}
+			case <-ctx.Done():
+				return s.failAndReap(contextErrorCode(ctx))
+			case <-s.waitDone:
+				return s.failAndReap("session_unusable")
+			}
 		case envelope := <-s.responses:
 			if envelope.RequestID != request.ExecutionID {
 				continue

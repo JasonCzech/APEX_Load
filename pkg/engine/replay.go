@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +20,11 @@ import (
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
+var replaySandboxSecretReference = regexp.MustCompile(`\{\{\s*secret\.`)
+
 type ReplayOptions struct {
+	// LiveTableSeeds are isolated ephemeral seeds; replay never accepts a live run client.
+	LiveTableSeeds  []LiveTableSandboxSeed
 	GroupName       string
 	ReplaySessionID string
 	ScriptRevision  string
@@ -315,6 +320,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := nativeScriptExecutionHostError(script); err != nil {
+		return nil, err
+	}
 	if err := ValidateParameterAllocationTopology(script); err != nil {
 		return nil, err
 	}
@@ -322,6 +330,13 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, err
 	}
 
+	aliases, err := dsl.ScriptLiveTableAliases(script)
+	if err != nil {
+		return nil, err
+	}
+	if len(aliases) > 0 && len(opts.LiveTableSeeds) == 0 {
+		return nil, fmt.Errorf("live_table replay requires explicit isolated sandbox seeds")
+	}
 	groupName := opts.GroupName
 	if groupName == "" {
 		groupName = "replay"
@@ -363,6 +378,49 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
+	// Inline sandbox contents are executable data, not evidence. Reject managed
+	// secrets in values, schema and identities before initializing them; redacting
+	// any of these strings would change the input. Imported literals keep their policy.
+	managedValues := allRuntimeSecretValues(redactionConfig)
+	importedValues := allRuntimeScriptSourcedValues(redactionConfig)
+	containsManagedSecret := func(value string) bool {
+		if replaySandboxSecretReference.MatchString(value) {
+			return true
+		}
+		for secret := range managedValues {
+			if _, imported := importedValues[secret]; !imported && strings.Contains(value, secret) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, seed := range opts.LiveTableSeeds {
+		if containsManagedSecret(seed.Alias) {
+			return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+		}
+		for _, column := range seed.Columns {
+			if containsManagedSecret(column) {
+				return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+			}
+		}
+		for _, row := range seed.Rows {
+			if containsManagedSecret(row.ID) {
+				return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+			}
+			for key, value := range row.Values {
+				if containsManagedSecret(key) || containsManagedSecret(value) {
+					return nil, fmt.Errorf("managed secrets cannot seed isolated live tables")
+				}
+			}
+		}
+	}
+	liveClient, liveBindings, liveClientID, err := NewLiveTableSandbox(opts.LiveTableSeeds)
+	if err != nil {
+		return nil, fmt.Errorf("initialize isolated replay tables: %w", err)
+	}
+	if err := validateLiveTableBindings(script, liveClient, liveClientID, liveBindings); err != nil {
+		return nil, err
+	}
 	groupName = scrubReplayGroupName(groupName, redactionConfig)
 
 	proto, err := protocol.Get(script.Protocol)
@@ -372,6 +430,20 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 
 	_, captureCorrelationEvidence := opts.DebugController.(ReplayDebugControllerCorrelationObserver)
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)
+	requiredFeatures := dsl.RequiredNativeRuntimeFeatures(script)
+	if protocol.RuntimeFeaturesSatisfy(requiredFeatures, protocol.FeatureNativeDataJavaV1) {
+		targets, err := runtimePreflightTargets(ctx, script, secretResolver)
+		if err != nil {
+			return nil, fmt.Errorf("native runtime preflight: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		}
+		_, supported, err := protocol.RunRuntimePreflight(ctx, proto, protocol.RuntimePreflightRequest{Config: protoConfig, Targets: targets, RequiredFeatures: requiredFeatures})
+		if err != nil {
+			return nil, fmt.Errorf("native runtime preflight: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		}
+		if !supported {
+			return nil, nativeServiceUnavailable("native Java preflight unavailable")
+		}
+	}
 	if captureCorrelationEvidence {
 		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
 	}
@@ -471,6 +543,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Metrics:                      NewMetricsCollector(16),
 		Variables:                    make(map[string]string),
 		DataProvider:                 dataProvider,
+		LiveTableClient:              liveClient,
+		LiveTableClientID:            liveClientID,
+		LiveTableBindings:            liveBindings,
 		SecretResolver:               secretResolver,
 		RedactionConfig:              redactionConfig,
 		importedCredentialInspection: importedCredentials,
@@ -494,6 +569,8 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err := vu.prepareRuntimeState(); err != nil {
 		return nil, fmt.Errorf("prepare replay data: %w", err)
 	}
+	defer vu.closeLiveTables()
+	vu.startLiveTableRenewal(ctx)
 	for key, value := range opts.Variables {
 		vu.Variables[key] = value
 	}

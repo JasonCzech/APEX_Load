@@ -153,7 +153,7 @@ func readScenarioAuthoringSnapshotTx(tx *storeTx, id string) (*ScenarioAuthoring
 	return &ScenarioAuthoringSnapshot{Scenario: scenario, Scripts: scripts, DataPools: pools, LibraryAssignment: placement, MonitorBindings: monitors, ProjectID: project, ContentRevision: revision}, nil
 }
 func readScenarioAuthoringPoolsTx(tx *storeTx, id, project string) ([]ScenarioDataPoolBinding, error) {
-	rows, err := tx.Query(`SELECT b.id,b.scenario_id,b.pool_id,b.alias,b.access_mode,b.selection_strategy,b.created_at,b.updated_at,p.id,COALESCE(p.project_id,'') FROM scenario_data_pool_bindings b LEFT JOIN shared_data_pools p ON p.id=b.pool_id WHERE b.scenario_id=? ORDER BY b.alias,b.id`, id)
+	rows, err := tx.Query(`SELECT b.id,b.scenario_id,COALESCE(b.pool_id,''),b.alias,b.access_mode,b.selection_strategy,b.created_at,b.updated_at,p.id,COALESCE(p.project_id,''),COALESCE(b.live_options_json,'null'),COALESCE(b.scope,''),COALESCE(b.project_table_id,''),pt.project_id FROM scenario_data_pool_bindings b LEFT JOIN shared_data_pools p ON p.id=b.pool_id LEFT JOIN project_live_tables pt ON pt.id=b.project_table_id WHERE b.scenario_id=? ORDER BY b.alias,b.id`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +161,19 @@ func readScenarioAuthoringPoolsTx(tx *storeTx, id, project string) ([]ScenarioDa
 	out := []ScenarioDataPoolBinding{}
 	for rows.Next() {
 		var b ScenarioDataPoolBinding
-		var poolID sql.NullString
+		var poolID, projectOwner sql.NullString
 		var owner string
-		if err := rows.Scan(&b.ID, &b.ScenarioID, &b.PoolID, &b.Alias, &b.AccessMode, &b.SelectionStrategy, &b.CreatedAt, &b.UpdatedAt, &poolID, &owner); err != nil {
+		var liveOptions string
+		if err := rows.Scan(&b.ID, &b.ScenarioID, &b.PoolID, &b.Alias, &b.AccessMode, &b.SelectionStrategy, &b.CreatedAt, &b.UpdatedAt, &poolID, &owner, &liveOptions, &b.Scope, &b.ProjectTableID, &projectOwner); err != nil {
 			return nil, err
 		}
-		if !poolID.Valid || normalizeProjectID(owner) != project {
+		if err := json.Unmarshal([]byte(liveOptions), &b.LiveOptions); err != nil {
+			return nil, ErrScenarioAuthoringUnavailable
+		}
+		if b.Scope == "project" && (!projectOwner.Valid || projectOwner.String != project || b.AccessMode != "live" || b.PoolID != "") {
+			return nil, ErrScenarioAuthoringUnavailable
+		}
+		if (!poolID.Valid || normalizeProjectID(owner) != project) && !liveBindingHasNoSeedPool(b) {
 			return nil, ErrScenarioAuthoringUnavailable
 		}
 		out = append(out, b)
@@ -615,8 +622,37 @@ func updateScenarioAuthoredRowTx(tx *storeTx, scenario *Scenario, assignment, go
 // tuple locks prevent a pool archive from racing a successful authoring save.
 func validateScenarioAuthoringPoolsActiveTx(tx *storeTx, pools []ScenarioDataPoolBinding) error {
 	ids := map[string]bool{}
+	projectIDs := map[string]bool{}
 	for _, binding := range pools {
+		if binding.Scope == "project" {
+			if !liveBindingHasNoSeedPool(binding) {
+				return errors.New("invalid project live table binding")
+			}
+			projectIDs[binding.ProjectTableID] = true
+			continue
+		}
+		if binding.PoolID == "" && liveBindingHasNoSeedPool(binding) {
+			continue
+		}
 		ids[binding.PoolID] = true
+	}
+	projectOrder := make([]string, 0, len(projectIDs))
+	for id := range projectIDs {
+		projectOrder = append(projectOrder, id)
+	}
+	sort.Strings(projectOrder)
+	for _, id := range projectOrder {
+		result, err := tx.Exec(`UPDATE project_live_tables SET updated_at=updated_at WHERE id=? AND state='active'`, id)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			return errors.New("scenario project live table is unavailable or not active")
+		}
 	}
 	ordered := make([]string, 0, len(ids))
 	for id := range ids {

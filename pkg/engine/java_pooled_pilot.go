@@ -156,6 +156,9 @@ func (p *javaPooledPilot) stage(ctx context.Context, cancelRun context.CancelFun
 	if err != nil {
 		return errors.New("pooled_pilot_preparation_failed")
 	}
+	if e.script.Config.NativeServices != nil && len(e.script.Config.NativeServices.LiveTables) > 0 && !p.run.NativeDataAvailable() {
+		return errors.New("native_data_pooled_v1 capability unavailable")
+	}
 	hosts := map[string]*javaHostEvidenceCollector{}
 	for _, slot := range slots {
 		adapter, err := javaadapter.NewPooledSlotProtocol(slot, p.options.ActionTimeout)

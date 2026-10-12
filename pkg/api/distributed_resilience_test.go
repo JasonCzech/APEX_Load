@@ -19,6 +19,8 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/livetable"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -67,10 +69,18 @@ type setupRecordingEvacuationClient struct {
 	beforeAssign        func()
 	beforeCommit        func() error
 	beforeAdjust        func() error
+	beforeLiveChannel   func() error
 	commitCalls         atomic.Int32
 	setupTimeout        atomic.Int64
 	durationMu          sync.Mutex
 	durationAdjustments []generatorrpc.DurationAdjustment
+}
+
+func (c *setupRecordingEvacuationClient) OpenLiveTables(ctx context.Context, testID, group string, generation uint64, token []byte, client livetable.Client) error {
+	if c.beforeLiveChannel != nil {
+		return c.beforeLiveChannel()
+	}
+	return c.Client.OpenLiveTables(ctx, testID, group, generation, token, client)
 }
 
 func (c *setupRecordingEvacuationClient) CommitWorkSupervisedAt(ctx context.Context, testID string, generation uint64, startAt time.Time, token []byte) (generatorrpc.WorkCommitResult, error) {
@@ -1301,6 +1311,10 @@ func TestDistributedEvacuationCheckpointWriteFailures(t *testing.T) {
 	}
 }
 
+func TestLiveTableEvacuationChannelFailureReleasesRunnerLock(t *testing.T) {
+	runEvacuationProvisionScenarioWithFault(t, false, "live-channel")
+}
+
 func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, checkpointFailure string) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
@@ -1502,7 +1516,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		}
 	}
 
-	if checkpointFailure != "" {
+	if checkpointFailure != "" && checkpointFailure != "live-channel" {
 		runner.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, rejectWrite: func(next string) bool {
 			var guard runEvacuationCheckpoint
 			if json.Unmarshal([]byte(next), &guard) != nil || guard.Version != runEvacuationCheckpointVersion {
@@ -1513,6 +1527,38 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced) ||
 				(checkpointFailure == "replacement-committed" && guard.Phase == runEvacuationPhaseReplacementCommitted)
 		}}
+	}
+	if checkpointFailure == "live-channel" {
+		// Inject only after replacement staging, at the positive source fence,
+		// so this reaches the channel-open rollback boundary being exercised.
+		originalStop := failedClient.stopHook
+		failedClient.stopHook = func() {
+			originalStop()
+			runner.liveTablesMu.Lock()
+			runner.liveTables = map[string]*runLiveTables{test.ID: {ready: true, bindings: []engine.LiveTableBinding{{Alias: "jobs", TableID: "jobs"}}}}
+			runner.liveTablesMu.Unlock()
+			replacementClient.beforeLiveChannel = func() error { return errors.New("injected live channel failure") }
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance window")
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err == nil || !strings.Contains(err.Error(), "injected live channel failure") {
+				t.Fatalf("wrong channel failure: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("channel-open rollback deadlocked with the runner lock held")
+		}
+		if !runner.mu.TryLock() {
+			t.Fatal("channel-open failure leaked the runner read lock")
+		}
+		runner.mu.Unlock()
+		cancel()
+		backend.closeRemoteResources(runner, test)
+		return
 	}
 
 	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance window")

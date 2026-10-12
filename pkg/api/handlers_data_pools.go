@@ -815,11 +815,25 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) validateScenarioDataPoolProjects(projectID string, bindings []storage.ScenarioDataPoolBinding) error {
+	if hasLiveDataPools(bindings) {
+		if err := s.runner.validateLiveTablePolicy(normalizeProjectID(projectID)); err != nil {
+			return err
+		}
+	}
 	if s.store == nil || len(bindings) == 0 {
 		return nil
 	}
 	expectedProjectID := normalizeProjectID(projectID)
 	for _, binding := range bindings {
+		if binding.Scope == "project" {
+			if err := validateProjectLiveTableReference(s.store, expectedProjectID, binding); err != nil {
+				return err
+			}
+			continue
+		}
+		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
+			continue
+		}
 		pool, err := s.store.GetDataPool(binding.PoolID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

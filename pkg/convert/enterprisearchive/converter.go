@@ -172,7 +172,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		if a == nil {
 			continue
 		}
-		hasCSourceParseFailures = hasCSourceParseFailures || len(a.ParseFailures) > 0
+		hasCSourceParseFailures = hasCSourceParseFailures || len(a.ParseFailures) > 0 || len(a.vtsReferences) > 0
 		for _, fn := range a.Functions {
 			if fn.Phase == "" {
 				fn.Phase = a.Phase
@@ -1061,6 +1061,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	)
 
 	appendCSourceParseFailureGates(result, actions)
+	appendVTSSourceGates(result, actions, nil)
 	if !opts.deferArchiveFinalization {
 		appendSplicedCommentWarnings(result, actions) // ConvertZip reports them for every protocol
 	}

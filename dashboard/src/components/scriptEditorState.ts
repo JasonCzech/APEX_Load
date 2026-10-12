@@ -54,6 +54,7 @@ export interface ParameterCandidate {
 }
 
 export interface ReplayOptionsState {
+  liveTableSeedsText?: string
   capture?: 'diagnostic' | 'errors' | 'script'
   groupName: string
   ignoreThinkTime: boolean
@@ -166,6 +167,7 @@ export const DEFAULT_REPLAY_OPTIONS: ReplayOptionsState = {
   breakOnFailure: false,
   logLevel: 'info',
   variablesText: '{\n  \n}',
+  liveTableSeedsText: '',
   afterFailure: 'test-run',
   runId: '',
 }

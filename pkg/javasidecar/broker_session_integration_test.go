@@ -53,7 +53,7 @@ func (r *facadeRuntime) Invoke(ctx context.Context, id, method string, params ma
 func facadeBrokerFixture(t *testing.T, block bool) (*broker.BrokerClient, *facadeRuntime, *broker.Store, string) {
 	return facadeBrokerFixtureWrapped(t, block, nil)
 }
-func facadeBrokerFixtureWrapped(t *testing.T, block bool, wrap func(http.Handler) http.Handler) (*broker.BrokerClient, *facadeRuntime, *broker.Store, string) {
+func facadeBrokerFixtureWrapped(t *testing.T, block bool, wrap func(http.Handler) http.Handler, prepared ...broker.PreparedRuntime) (*broker.BrokerClient, *facadeRuntime, *broker.Store, string) {
 	t.Helper()
 	key, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if e != nil {
@@ -118,7 +118,11 @@ func facadeBrokerFixtureWrapped(t *testing.T, block bool, wrap func(http.Handler
 				return nil, e
 			}
 			cfg := broker.SupervisorConfig{HostID: r.ID, BrokerEpoch: epoch, ConfigurationSHA256: digest, BrokerClientURI: brokerURI, LeaseTTL: 5 * time.Second, PreparationTimeout: 10 * time.Second, InvocationTimeout: 10 * time.Second}
-			control, e := broker.NewSupervisorControl(t.Context(), cfg, runtime)
+			var guest broker.PreparedRuntime = runtime
+			if len(prepared) > 0 {
+				guest = prepared[0]
+			}
+			control, e := broker.NewSupervisorControl(t.Context(), cfg, guest)
 			if e != nil {
 				return nil, e
 			}

@@ -51,14 +51,15 @@ type runnerEnvelope struct {
 }
 
 type runnerSession struct {
-	cmd        *exec.Cmd
-	stdin      io.WriteCloser
-	responses  chan runnerEnvelope
-	waitDone   chan struct{}
-	stdoutDone chan struct{}
-	stdoutExit chan error
-	stderrDone chan struct{}
-	waitErr    error
+	cmd            *exec.Cmd
+	stdin          io.WriteCloser
+	responses      chan runnerEnvelope
+	nativeRequests chan string
+	waitDone       chan struct{}
+	stdoutDone     chan struct{}
+	stdoutExit     chan error
+	stderrDone     chan struct{}
+	waitErr        error
 
 	sessionSecret [32]byte
 	bootstrapped  bool
@@ -117,6 +118,9 @@ func (b *synchronizedCappedBuffer) markTruncated() {
 }
 
 func (j *JavaVuser) executePersistent(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (*protocol.Result, error) {
+	if j.hasNative() && (checkHarnessFeature(ctx, j.cfg, protocol.FeatureNativeDataLocalV1) != nil || !j.supportsStrongProcessContainmentAvailable(ctx)) {
+		return nil, errors.New("native_data_local_unavailable")
+	}
 	start := time.Now()
 	if action == nil {
 		return &protocol.Result{StartTime: start, StatusCode: 500, ErrorMessage: "java_vuser action is required"}, nil
@@ -209,7 +213,15 @@ func (j *JavaVuser) executePersistent(ctx context.Context, action *protocol.Acti
 	runStart := time.Now()
 	result.StartTime = runStart
 	result.CorrelationID = request.RequestID
-	envelope, events, eventBytes, eventTruncated, invokeErr := j.session.invoke(runCtx, request)
+	native, nativeErr := j.beginNative(runCtx, request.RequestID)
+	if nativeErr != nil {
+		finalizeResult(result, start, action, errors.New("native_service_invocation_failed"), "", "", "")
+		return result, nil
+	}
+	request.NativeServices = native != nil
+	runCtx, closeNative := nativeInvocationContext(runCtx, native)
+	defer closeNative()
+	envelope, events, eventBytes, eventTruncated, invokeErr := j.session.invokeNative(runCtx, request, native)
 	if envelope.Fatal && invokeErr == nil {
 		message := strings.TrimSpace(envelope.Error)
 		if message == "" {
@@ -274,6 +286,7 @@ func (j *JavaVuser) startPersistentSession(ctx context.Context, first runCommand
 	}
 	s := &runnerSession{
 		responses:         make(chan runnerEnvelope, 8),
+		nativeRequests:    make(chan string, 1),
 		waitDone:          make(chan struct{}),
 		stdoutDone:        make(chan struct{}),
 		stdoutExit:        make(chan error, 1),
@@ -456,9 +469,22 @@ func (s *runnerSession) readStdout(stdout io.Reader) {
 		close(s.stdoutDone)
 	}()
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64<<10), maxSessionFrameBytes)
+	scanner.Buffer(make([]byte, 64<<10), javarunner.NativeDataFrameBytes+128)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.HasPrefix(line, javarunner.NativeDataPrefix) {
+			select {
+			case s.nativeRequests <- strings.TrimPrefix(line, javarunner.NativeDataPrefix):
+			default:
+				scanErr = errors.New("native_callback_queue_overflow")
+				return
+			}
+			continue
+		}
+		if len(line) > maxSessionFrameBytes {
+			scanErr = errors.New("session_frame_too_large")
+			return
+		}
 		if !strings.HasPrefix(line, sessionFramePrefix) {
 			_, _ = s.stdoutNoise.Write(append([]byte(line), '\n'))
 			continue
@@ -481,6 +507,10 @@ func (s *runnerSession) readStdout(stdout io.Reader) {
 }
 
 func (s *runnerSession) invoke(ctx context.Context, command runCommand) (runnerEnvelope, []runnerEvent, int, bool, error) {
+	return s.invokeNative(ctx, command, nil)
+}
+
+func (s *runnerSession) invokeNative(ctx context.Context, command runCommand, native protocol.NativeInvocation) (runnerEnvelope, []runnerEvent, int, bool, error) {
 	if err := s.resetEventFile(); err != nil {
 		return runnerEnvelope{}, nil, 0, false, fmt.Errorf("reset java_vuser event stream: %w", err)
 	}
@@ -524,6 +554,30 @@ func (s *runnerSession) invoke(ctx context.Context, command runCommand) (runnerE
 
 	for {
 		select {
+		case encoded := <-s.nativeRequests:
+			frame, frameErr := javarunner.DecodeNativeDataFrame(encoded, s.sessionSecret[:], false)
+			if frameErr != nil || frame.Scope != "dedicated" || frame.Invocation != command.RequestID || native == nil {
+				return runnerEnvelope{}, nil, 0, false, errors.New("native_callback_invalid")
+			}
+			payload, callErr := invokeNativeData(ctx, native, frame.Sequence, frame.Payload)
+			if callErr != nil {
+				return runnerEnvelope{}, nil, 0, false, callErr
+			}
+			frame.Payload = payload
+			reply, frameErr := javarunner.EncodeNativeDataFrame(frame, s.sessionSecret[:], true)
+			if frameErr != nil {
+				return runnerEnvelope{}, nil, 0, false, frameErr
+			}
+			writeDone := make(chan error, 1)
+			go func() { _, err := io.WriteString(s.stdin, javarunner.NativeDataPrefix+reply+"\n"); writeDone <- err }()
+			select {
+			case err := <-writeDone:
+				if err != nil {
+					return runnerEnvelope{}, nil, 0, false, errors.New("native_callback_write_failed")
+				}
+			case <-ctx.Done():
+				return runnerEnvelope{}, nil, 0, false, ctx.Err()
+			}
 		case envelope := <-s.responses:
 			if envelope.RequestID != command.RequestID {
 				continue

@@ -471,12 +471,19 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	tr.mu.Unlock()
 	poolProjectErr := validateDataPoolProjects(poolStore, projectID, dataPools)
 	poolArchiveErr := validateDataPoolsNotArchived(poolStore, dataPools)
+	var livePolicyErr error
+	if hasLiveDataPools(dataPools) {
+		livePolicyErr = tr.validateLiveTablePolicy(projectID)
+	}
 	tr.mu.Lock()
 	if poolProjectErr != nil {
 		return nil, poolProjectErr
 	}
 	if poolArchiveErr != nil {
 		return nil, poolArchiveErr
+	}
+	if livePolicyErr != nil {
+		return nil, livePolicyErr
 	}
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
@@ -656,15 +663,24 @@ func normalizeDataPoolBindingIntentWithLegacy(bindings []storage.ScenarioDataPoo
 	}
 	out := make([]storage.ScenarioDataPoolBinding, len(bindings))
 	seenAliases := make(map[string]struct{}, len(bindings))
+	liveCount := 0
 	for index, original := range bindings {
 		binding := original
 		binding.PoolID = strings.TrimSpace(binding.PoolID)
+		binding.Scope = strings.TrimSpace(binding.Scope)
+		binding.ProjectTableID = strings.TrimSpace(binding.ProjectTableID)
+		if binding.Scope != "" && binding.Scope != "run" && binding.Scope != "project" {
+			return nil, fmt.Errorf("unsupported data binding scope")
+		}
+		if binding.Scope != "project" && binding.ProjectTableID != "" {
+			return nil, fmt.Errorf("project_table_id requires project scope")
+		}
+		if binding.Scope == "project" && binding.AccessMode != "live" {
+			return nil, fmt.Errorf("project scope requires live access")
+		}
 		binding.Alias = strings.TrimSpace(binding.Alias)
 		binding.AccessMode = strings.TrimSpace(binding.AccessMode)
 		binding.SelectionStrategy = strings.TrimSpace(binding.SelectionStrategy)
-		if binding.PoolID == "" {
-			return nil, fmt.Errorf("data pool id is required")
-		}
 		if binding.Alias == "" {
 			return nil, fmt.Errorf("data pool binding alias is required")
 		}
@@ -679,14 +695,32 @@ func normalizeDataPoolBindingIntentWithLegacy(bindings []storage.ScenarioDataPoo
 		}
 		switch binding.AccessMode {
 		case "read_only":
+		case "live":
+			liveCount++
+			if liveCount > maxLiveTablesPerRun {
+				return nil, fmt.Errorf("at most %d live tables are supported per run", maxLiveTablesPerRun)
+			}
+			var err error
+			binding, err = normalizeLiveTableBinding(binding)
+			if err != nil {
+				return nil, err
+			}
+			out[index] = binding
+			continue
 		case "read_write", "consume":
 			if allowLegacyModes {
 				binding.AccessMode = "read_only"
 			} else {
-				return nil, fmt.Errorf("unsupported data pool access mode %q for binding %q; only \"read_only\" is currently supported", binding.AccessMode, binding.Alias)
+				return nil, fmt.Errorf("unsupported data pool access mode %q for binding %q; use \"read_only\" or \"live\"", binding.AccessMode, binding.Alias)
 			}
 		default:
-			return nil, fmt.Errorf("unsupported data pool access mode %q for binding %q; only \"read_only\" is currently supported", binding.AccessMode, binding.Alias)
+			return nil, fmt.Errorf("unsupported data pool access mode %q for binding %q; use \"read_only\" or \"live\"", binding.AccessMode, binding.Alias)
+		}
+		if binding.PoolID == "" {
+			return nil, fmt.Errorf("data pool id is required")
+		}
+		if binding.LiveOptions != nil {
+			return nil, fmt.Errorf("live_options require access_mode live")
 		}
 		if binding.SelectionStrategy == "" {
 			binding.SelectionStrategy = "sequential"

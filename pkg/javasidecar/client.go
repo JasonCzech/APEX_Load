@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"io"
 	"net/http"
 	"net/url"
@@ -302,7 +303,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload any, desti
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	response, err := c.httpClient.Do(request)
+	response, err := javarunner.DoNativeHTTP(c.httpClient, request, MaxResponseBytes)
 	if err != nil {
 		return requestFailure("Java runner sidecar is unavailable", true)
 	}

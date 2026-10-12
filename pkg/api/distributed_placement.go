@@ -705,6 +705,12 @@ func groupRequiredRuntimeFeature(group TestGroup) string {
 		return group.requiredRuntimeFeature
 	}
 	base := groupBaseRuntimeFeature(group)
+	for _, feature := range groupRequiredDataRuntimeFeatures(group) {
+		if base != "" {
+			base += "+"
+		}
+		base += feature
+	}
 	for _, feature := range append(append(append(requiredMessagingFeaturesForGroup(group), dsl.RequiredCompositionRuntimeFeatures(group.script)...), requiredBrowserFeaturesForGroup(group)...), dsl.RequiredHTTPRuntimeFeatures(group.script)...) {
 		if base != "" {
 			base += "+"
@@ -731,6 +737,22 @@ func groupRequiredRuntimeFeature(group TestGroup) string {
 	}
 	return base
 }
+
+func groupRequiredDataRuntimeFeatures(group TestGroup) []string {
+	features := dsl.RequiredNativeRuntimeFeatures(group.script)
+	if javaHostSettings(group) != nil {
+		for i, feature := range features {
+			if feature == protocol.FeatureNativeDataJavaV1 {
+				features[i] = protocol.FeatureNativeDataBrokerV1
+			}
+		}
+	}
+	if barriers, _ := dsl.ScriptDistributedRendezvous(group.script); len(barriers) > 0 {
+		features = append(features, dsl.FeatureDistributedRendezvousV1)
+	}
+	return features
+}
+
 func groupBaseRuntimeFeature(group TestGroup) string {
 	detail := group.script != nil && scriptRequestsSuccessfulMessageDetail(group.script)
 	parallel := group.script != nil && scriptRequestsControlParallel(group.script)

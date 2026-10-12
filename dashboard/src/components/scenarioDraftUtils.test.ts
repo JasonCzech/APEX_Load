@@ -482,3 +482,9 @@ it('preserves explicit run monitor overrides when revising a queued test without
   draft.revisionContext!.monitorBindings![0].required = false
   expect(cloned.revisionContext?.monitorBindings?.[0].required).toBe(true)
 })
+
+it('keeps an explicit live-table binding and its isolated seed policy when creating a rerun draft', () => {
+ const test = { id: 'live-run', name: 'Live run', status: 'COMPLETE', total_vusers: 1, duration: '1m', created_at: '', data_pools: [{ pool_id: 'pool', alias: 'work', access_mode: 'live', selection_strategy: 'manual', live_options: { profile: 'native_queue', seed_policy: 'current_at_start', columns: ['id'] } }], groups: [{ name: 'Load', script_id: 'script', protocol: 'http', vusers: 1 }] } as Parameters<typeof buildScenarioDraftFromTest>[0]
+ const result = buildScenarioDraftFromTest(test)
+ expect(result.revisionContext?.dataPools[0]).toMatchObject({ access_mode: 'live', live_options: { seed_policy: 'current_at_start' } })
+})

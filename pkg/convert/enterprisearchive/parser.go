@@ -82,6 +82,9 @@ type ParsedAction struct {
 	Phase         string
 	Functions     []ParsedFunction
 	ParseFailures []CSourceParseFailure
+	// vtsReferences preserves unsupported shared-data dependencies even when
+	// they occur in assignments, predicates, macros or function aliases.
+	vtsReferences []vtsSourceReference
 	// SplicedCommentLines are code lines a backslash-continued // comment
 	// swallows; they are reported, not imported.
 	SplicedCommentLines []CSplicedCommentLine
@@ -194,7 +197,12 @@ var (
 // web_submit_data call in the file and silently demote the import to
 // review-only. The legacy scanner extracts calls block-by-block regardless of
 // surrounding C validity, so it recovers the valid steps the AST parser drops.
-func ParseActionFile(filename string, content string) (*ParsedAction, error) {
+func ParseActionFile(filename string, content string) (parsed *ParsedAction, parseErr error) {
+	defer func() {
+		if parsed != nil {
+			parsed.vtsReferences = scanVTSSourceReferences(content)
+		}
+	}()
 	analysis := analyzeCTransactionSource(filename, content)
 	spliced := findSplicedCommentLines(content)
 	astParsed, astErr := parseActionFileASTWithAnalysis(filename, content, analysis)

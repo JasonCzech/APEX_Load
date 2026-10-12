@@ -1303,6 +1303,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
+	if err := tr.prepareLiveTables(executionCtx, test); err != nil {
+		failStartup("initialize live tables: " + err.Error())
+		return
+	}
+	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: executionLeaseOwnerID, generation: executionGeneration})
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
 	initialLoadByTarget := make(map[string]generatorLoadSnapshot, len(loadByTarget))
 	for target, snapshot := range loadByTarget {
@@ -1404,6 +1409,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			shards[i].RuntimeResourceClaim = claim
 		}
 		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
+		if err := tr.prepareGroupRendezvous(executionCtx, test, group, shards, false, executionLeaseTerm{ownerID: executionLeaseOwnerID, generation: executionGeneration}); err != nil {
+			failStartup("initialize distributed rendezvous: " + err.Error())
+			return
+		}
+		liveBindingsJSON := tr.liveBindingJSONForGroup(test.ID, group.Name)
 
 		secretProjectID := group.script.ProjectID
 		if strings.TrimSpace(secretProjectID) == "" {
@@ -1464,6 +1474,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		for i := range plans {
 			plans[i].jointEvidence = generatorAcceptsJointEvidence(loadByTarget[plans[i].target].CompatibleFeatures)
 			plans[i].throughputCap = generatorAcceptsThroughputCap(loadByTarget[plans[i].target].CompatibleFeatures)
+			if len(liveBindingsJSON) > 0 && !stringSliceContainsEqualFold(loadByTarget[plans[i].target].CompatibleFeatures, generatorrpc.FeatureLiveTablesV1) {
+				failStartup("generator does not support live_tables_v1: " + plans[i].target)
+				return
+			}
 		}
 		if !distributedRunStartable(tr, test) {
 			cleanup(true)
@@ -1493,6 +1507,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			},
 			generatorrpc.Assignment{PrepareOnly: test.preparationID != "",
 				SourcePlan:                 sourcePlan,
+				LiveTableBindingsJSON:      liveBindingsJSON,
+				RendezvousConfigJSON:       tr.rendezvousAssignment(test.ID, group.Name),
 				TerminationMode:            test.TerminationMode,
 				TestID:                     test.ID,
 				ExecutionGeneration:        executionGeneration,
@@ -1615,6 +1631,14 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 		stopRunSupervisionKeeper = b.startRunSupervisionKeeper(executionCtx, tr, test, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
+	}
+	if err := tr.openLiveTableChannels(remoteLifecycleCtx, test.ID, executionGeneration, runSupervisionTokenBytes, activeGroupShards, assignedClients); err != nil {
+		failStartup(err.Error())
+		return
+	}
+	if err := tr.openRendezvousChannels(remoteLifecycleCtx, test.ID, executionGeneration, runSupervisionTokenBytes, activeGroupShards, assignedClients); err != nil {
+		failStartup(err.Error())
+		return
 	}
 	// Every generator now holds this run's supervision lease and placement is
 	// final, so a successor would have everything it needs to adopt the run.

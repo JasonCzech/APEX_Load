@@ -17,22 +17,29 @@ var ErrPooledHostReaped = errors.New("pooled_host_reaped")
 // reservations until strong containment proves termination. It does not launch
 // Java, negotiate production capabilities, or establish a security sandbox.
 type PooledTransport struct {
-	mu         sync.Mutex
-	generation string
-	secret     []byte
-	input      io.ReadCloser
-	output     io.WriteCloser
-	writes     chan []byte
-	done       chan struct{}
-	pending    map[uint64]pooledPending
-	sequence   uint64
-	stopped    bool
+	mu            sync.Mutex
+	generation    string
+	secret        []byte
+	input         io.ReadCloser
+	output        io.WriteCloser
+	writes        chan []byte
+	nativeWrites  chan []byte
+	nativeSlots   chan struct{}
+	nativeCapable bool
+	done          chan struct{}
+	pending       map[uint64]pooledPending
+	sequence      uint64
+	stopped       bool
 	// Must begin whole-host containment cleanup immediately and return promptly.
 	onFailure func(error)
 }
 type pooledPending struct {
-	frame  PooledFrame
-	result chan pooledReply
+	frame          PooledFrame
+	result         chan pooledReply
+	native         NativeDataCallback
+	nativeCtx      context.Context
+	nativeSequence uint64
+	nativeBusy     bool
 }
 type pooledReply struct {
 	frame PooledFrame
@@ -49,7 +56,7 @@ func NewPooledTransport(input io.ReadCloser, output io.WriteCloser, generation s
 	if input == nil || output == nil || !pooledID(generation, false) || len(secret) != 32 || onFailure == nil {
 		return nil, ErrPooledFrame
 	}
-	t := &PooledTransport{generation: generation, secret: append([]byte(nil), secret...), input: input, output: output, writes: make(chan []byte, 64), done: make(chan struct{}), pending: make(map[uint64]pooledPending), onFailure: onFailure}
+	t := &PooledTransport{generation: generation, secret: append([]byte(nil), secret...), input: input, output: output, writes: make(chan []byte, 64), nativeWrites: make(chan []byte, 4), nativeSlots: make(chan struct{}, 4), done: make(chan struct{}), pending: make(map[uint64]pooledPending), onFailure: onFailure}
 	go t.writeLoop()
 	go t.readLoop()
 	return t, nil
@@ -77,10 +84,19 @@ func (t *PooledTransport) fail(cause error) {
 }
 func (t *PooledTransport) writeLoop() {
 	for {
+
+		var data []byte
 		select {
-		case <-t.done:
-			return
-		case data := <-t.writes:
+		case data = <-t.writes:
+		default:
+			select {
+			case <-t.done:
+				return
+			case data = <-t.writes:
+			case data = <-t.nativeWrites:
+			}
+		}
+		{
 			for len(data) > 0 {
 				n, err := t.output.Write(data)
 				if err != nil || n <= 0 {
@@ -138,6 +154,10 @@ func validPooledReply(f PooledFrame) bool {
 		}
 		if f.Operation == "ready" {
 			allowed["event_attribution"] = true
+			allowed["native_data"] = true
+			if v, ok := f.Fields["native_data"]; ok && v != "v1" {
+				return false
+			}
 			if f.Fields["event_attribution"] != "slot_thread_v1" {
 				return false
 			}
@@ -180,10 +200,21 @@ func (t *PooledTransport) readLoop() {
 		}
 		t.mu.Lock()
 		p, ok := t.pending[f.Sequence]
-		if !ok || f.Generation != p.frame.Generation || f.Slot != p.frame.Slot || f.Request != p.frame.Request || f.Operation != p.frame.Operation || !validPooledReply(f) {
+		if ok && f.Operation == "native_call" {
+			t.mu.Unlock()
+			if !t.nativeCall(f) {
+				t.fail(ErrPooledFrame)
+				return
+			}
+			continue
+		}
+		if !ok || p.nativeBusy || f.Generation != p.frame.Generation || f.Slot != p.frame.Slot || f.Request != p.frame.Request || f.Operation != p.frame.Operation || !validPooledReply(f) {
 			t.mu.Unlock()
 			t.fail(ErrPooledFrame)
 			return
+		}
+		if f.Operation == "ready" {
+			t.nativeCapable = f.Fields["native_data"] == "v1"
 		}
 		delete(t.pending, f.Sequence)
 		var resultErr error
@@ -199,11 +230,14 @@ func (t *PooledTransport) readLoop() {
 	}
 }
 func (t *PooledTransport) send(slot, op string, fields map[string]string) (<-chan pooledReply, error) {
+	return t.sendContext(context.Background(), slot, op, fields)
+}
+func (t *PooledTransport) sendContext(ctx context.Context, slot, op string, fields map[string]string) (<-chan pooledReply, error) {
 	if len(fields) > pooledMaxFields {
 		return nil, ErrPooledFrame
 	}
 	t.mu.Lock()
-	if t.stopped {
+	if t.stopped || (NativeDataCallbackFrom(ctx) != nil && op == "invoke" && !t.nativeCapable) {
 		t.mu.Unlock()
 		return nil, ErrPooledHostReaped
 	}
@@ -230,7 +264,7 @@ func (t *PooledTransport) send(slot, op string, fields map[string]string) (<-cha
 	select {
 	case t.writes <- data:
 		t.sequence = sequence
-		t.pending[sequence] = pooledPending{frame: f, result: result}
+		t.pending[sequence] = pooledPending{frame: f, result: result, native: NativeDataCallbackFrom(ctx), nativeCtx: ctx}
 		t.mu.Unlock()
 		return result, nil
 	default:
@@ -246,7 +280,7 @@ func (t *PooledTransport) Call(ctx context.Context, slot, op string, fields map[
 	if err := ctx.Err(); err != nil {
 		return PooledFrame{}, err
 	}
-	pending, err := t.send(slot, op, fields)
+	pending, err := t.sendContext(ctx, slot, op, fields)
 	if err != nil {
 		return PooledFrame{}, err
 	}
@@ -276,10 +310,13 @@ func (t *PooledTransport) InvokeWithClosure(ctx context.Context, slot, method st
 		return PooledFrame{}, false, ErrPooledFrame
 	}
 	fields := map[string]string{"method": method}
+	if NativeDataCallbackFrom(ctx) != nil {
+		fields["native_services"] = "v1"
+	}
 	for k, v := range parameters {
 		fields["p."+k] = v
 	}
-	pending, err := t.send(slot, "invoke", fields)
+	pending, err := t.sendContext(ctx, slot, "invoke", fields)
 	if err != nil {
 		return PooledFrame{}, false, err
 	}
@@ -292,4 +329,11 @@ func (t *PooledTransport) InvokeWithClosure(ctx context.Context, slot, method st
 		closed, err := t.Call(grace, slot, "interrupt", nil)
 		return PooledFrame{}, err == nil && closed.Fields["reap"] == "false", ctx.Err()
 	}
+}
+
+// NativeDataAvailable is proof from the authenticated worker ready frame.
+func (t *PooledTransport) NativeDataAvailable() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.nativeCapable && !t.stopped
 }

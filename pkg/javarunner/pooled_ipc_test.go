@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -38,7 +39,7 @@ func TestPooledWireRoundTripAndForgery(t *testing.T) {
 			case "truncated":
 				damaged = damaged[:len(damaged)-1]
 			case "oversize":
-				binary.BigEndian.PutUint32(damaged, pooledMaxFrame+1)
+				binary.BigEndian.PutUint32(damaged, pooledNativeMaxFrame+1)
 			case "contract":
 				damaged[8] ^= 1
 				damaged = resignWire(damaged, secret)
@@ -64,6 +65,8 @@ func TestPooledWireRoundTripAndForgery(t *testing.T) {
 			}
 			if _, err := ReadPooledFrame(bytes.NewReader(damaged), secret, response); err == nil {
 				t.Fatal("accepted invalid frame")
+			} else if name == "oversize" && !errors.Is(err, ErrPooledFrame) {
+				t.Fatalf("oversize header must reject before waiting for its body: %v", err)
 			}
 		})
 	}

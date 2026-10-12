@@ -14,26 +14,27 @@ import (
 )
 
 type ScriptDebugStartRequest struct {
-	GroupName         string                       `json:"group_name,omitempty"`
-	ProjectID         string                       `json:"project_id,omitempty"`
-	ReplaySessionID   string                       `json:"replay_session_id,omitempty"`
-	ReplayProfile     string                       `json:"replay_profile,omitempty"`
-	RuntimeProfile    *engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
-	Variables         map[string]string            `json:"variables,omitempty"`
-	RedactionRules    []engine.RedactionRule       `json:"redaction_rules,omitempty"`
-	StartPaused       bool                         `json:"start_paused,omitempty"`
-	Breakpoints       []ScriptDebugBreakpoint      `json:"breakpoints,omitempty"`
-	BreakOnFailure    bool                         `json:"break_on_failure,omitempty"`
-	RunID             string                       `json:"run_id,omitempty"`
-	ContinueOnError   *bool                        `json:"continue_on_error,omitempty"`
-	LogLevel          string                       `json:"log_level,omitempty"`
-	Browser           *dsl.BrowserConfig           `json:"browser,omitempty"`
-	IgnoreThinkTime   *bool                        `json:"ignore_think_time,omitempty"`
-	Script            *dsl.Script                  `json:"script,omitempty"`
-	Mode              string                       `json:"-"`
-	Preflight         *ReplayPreflight             `json:"-"`
-	SecretResolver    engine.SecretResolver        `json:"-"`
-	ActionGraphDigest string                       `json:"-"`
+	LiveTableSeeds    []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
+	GroupName         string                        `json:"group_name,omitempty"`
+	ProjectID         string                        `json:"project_id,omitempty"`
+	ReplaySessionID   string                        `json:"replay_session_id,omitempty"`
+	ReplayProfile     string                        `json:"replay_profile,omitempty"`
+	RuntimeProfile    *engine.ReplayRuntimeProfile  `json:"runtime_profile,omitempty"`
+	Variables         map[string]string             `json:"variables,omitempty"`
+	RedactionRules    []engine.RedactionRule        `json:"redaction_rules,omitempty"`
+	StartPaused       bool                          `json:"start_paused,omitempty"`
+	Breakpoints       []ScriptDebugBreakpoint       `json:"breakpoints,omitempty"`
+	BreakOnFailure    bool                          `json:"break_on_failure,omitempty"`
+	RunID             string                        `json:"run_id,omitempty"`
+	ContinueOnError   *bool                         `json:"continue_on_error,omitempty"`
+	LogLevel          string                        `json:"log_level,omitempty"`
+	Browser           *dsl.BrowserConfig            `json:"browser,omitempty"`
+	IgnoreThinkTime   *bool                         `json:"ignore_think_time,omitempty"`
+	Script            *dsl.Script                   `json:"script,omitempty"`
+	Mode              string                        `json:"-"`
+	Preflight         *ReplayPreflight              `json:"-"`
+	SecretResolver    engine.SecretResolver         `json:"-"`
+	ActionGraphDigest string                        `json:"-"`
 	// trustedPreservedImport is set only after loading the unchanged durable
 	// import snapshot. A request body cannot establish this trust.
 	trustedPreservedImport  bool
@@ -269,6 +270,9 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 	)
 	warnings := append(validationWarnings(script), refWarnings...)
 	warnings = append(warnings, scriptDebugParityWarnings(script)...)
+	if !s.prepareReplayLiveTables(r.Context(), w, script, req.LiveTableSeeds) {
+		return
+	}
 	secretResolver := s.runner.secretResolverForScript(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
 	if !preflight.Valid {

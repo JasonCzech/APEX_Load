@@ -51,7 +51,7 @@ public final class Harness {
             System.out.println(SESSION_PREFIX
                     + "{\"contract\":\"" + IPC_CONTRACT
                     + "\",\"kind\":\"capabilities\",\"event_contract\":\"" + EVENT_CONTRACT
-                    + "\",\"features\":[\"java_vuser_phase_lifecycle_v1\",\"java_vuser_persistent_lifecycle_v1\",\"java_vuser_session_frame_token_v1\",\"java_vuser_validation_only_v1\",\"java_vuser_dedicated_classloader_v1\"]}");
+                    + "\",\"features\":[\"java_vuser_phase_lifecycle_v1\",\"java_vuser_persistent_lifecycle_v1\",\"java_vuser_session_frame_token_v1\",\"java_vuser_validation_only_v1\",\"java_vuser_dedicated_classloader_v1\"" + (nativeServicesAvailable() ? ",\"native_data_local_v1\"" : "") + "]}");
             return;
         }
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -113,6 +113,7 @@ public final class Harness {
                 throw new IllegalArgumentException("Invalid host readiness nonce");
             }
             System.setIn(new ByteArrayInputStream(new byte[0]));
+            try {Class.forName("apexload.bridge.NativeSession",false,Harness.class.getClassLoader());protocolOut.println("APEXLOAD_JAVA_HOST_NATIVE_V1 "+readyNonce);}catch(ClassNotFoundException unavailable){}
             protocolOut.println("APEXLOAD_JAVA_HOST_READY_V1 " + readyNonce);
             protocolOut.flush();
         }
@@ -136,6 +137,7 @@ public final class Harness {
                 String error = "";
                 String frameToken = "";
                 boolean invocationStarted = false;
+                boolean nativeStarted = false;
                 try {
                     if (!IPC_CONTRACT.equals(command.protocolVersion)) {
                         fatalSession = true;
@@ -161,6 +163,10 @@ public final class Harness {
                         throw new IllegalStateException("persistent session_secret may only be bootstrapped once");
                     }
                     frameToken = sessionFrameToken(sessionSecret, command.requestId);
+                    if (command.nativeServices && (!nativeServicesAvailable() || !isLifecycleMethod(command.method))) {
+                        fatalSession = true;
+                        throw new IllegalStateException("native data lifecycle unavailable");
+                    }
                     String configuration = command.sessionConfiguration();
                     if (!command.sourceArchiveRef.isEmpty()) {
                         System.setProperty("apexload.java_vuser.source_archive_ref", command.sourceArchiveRef);
@@ -174,6 +180,11 @@ public final class Harness {
                     } else if (!sessionClass.equals(command.className) || !sessionConfiguration.equals(configuration)) {
                         fatalSession = true;
                         throw new IllegalStateException("persistent session configuration changed");
+                    }
+                    if (command.nativeServices) {
+                        Class.forName("apexload.bridge.NativeSession").getMethod("begin", String.class, byte[].class, BufferedReader.class, PrintStream.class)
+                            .invoke(null, command.requestId, sessionSecret, reader, protocolOut);
+                        nativeStarted = true;
                     }
                     invokeLifecycleWithContext(
                             actions,
@@ -190,6 +201,10 @@ public final class Harness {
                     }
                     error = boundedError(unwrap(ex).toString());
                 } finally {
+                    if (nativeStarted) {
+                        try { Class.forName("apexload.bridge.NativeSession").getMethod("end").invoke(null); }
+                        catch (Throwable nativeEndError) { fatalSession = true; success = false; }
+                    }
                     if (invocationStarted) {
                         try {
                             lr.__apexload_end_invocation();
@@ -293,6 +308,11 @@ public final class Harness {
         } finally {
             thread.setContextClassLoader(previous);
         }
+    }
+
+    private static boolean nativeServicesAvailable() {
+        try { Class.forName("apexload.bridge.NativeSession", false, Harness.class.getClassLoader()); return true; }
+        catch (ClassNotFoundException absent) { return false; }
     }
 
     private static boolean isLifecycleMethod(String method) {
@@ -727,6 +747,7 @@ public final class Harness {
         int startupTimeoutMs = 0;
         boolean dedicatedClassLoader = false;
         boolean validationOnly = false;
+        boolean nativeServices = false;
         List<String> userClasspath = new ArrayList<>();
         Map<String, String> lrParameters = new LinkedHashMap<>();
 
@@ -756,6 +777,7 @@ public final class Harness {
             command.protocolVersion = jsonString(jsonLine, "protocol_version");
             command.eventContract = jsonString(jsonLine, "event_contract");
             command.dedicatedClassLoader = jsonBoolean(jsonLine, "dedicated_class_loader");
+            command.nativeServices = jsonBoolean(jsonLine, "native_services");
             command.validationOnly = hasFlag(args, "--validate") || jsonBoolean(jsonLine, "validation_only");
             command.userClasspath.addAll(jsonStringArray(jsonLine, "user_classpath"));
             String paramsObject = jsonObject(jsonLine, "params");
@@ -768,6 +790,7 @@ public final class Harness {
             return className + "\u0000"
                     + sourceArchiveRef + "\u0000"
                     + dedicatedClassLoader + "\u0000"
+                    + nativeServices + "\u0000"
                     + String.join("\u0000", userClasspath);
         }
 

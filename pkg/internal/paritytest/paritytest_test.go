@@ -1,17 +1,58 @@
 package paritytest
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	gorillawebsocket "github.com/gorilla/websocket"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func strPtr(value string) *string { return &value }
+
+func TestCompareWaitsForFinalWebSocketMessage(t *testing.T) {
+	server := NewServer([]Response{{Method: "GET", Path: "/chat", WebSocket: &WebSocketBehavior{}}})
+	defer server.Close()
+	conn, _, err := gorillawebsocket.DefaultDialer.Dial(server.Expand(WebSocketOrigin)+"/chat", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.WriteMessage(gorillawebsocket.TextMessage, []byte("leave")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if problems := server.Compare([]ExpectedRequest{{Method: "GET", Path: "/chat", Messages: []string{"leave"}}}); len(problems) != 0 {
+		t.Fatalf("final message was not recorded: %v", problems)
+	}
+	if problems := server.Compare([]ExpectedRequest{{Method: "GET", Path: "/chat", Messages: []string{"leave", "missing"}}}); len(problems) == 0 {
+		t.Fatal("waiting for completion must not hide a missing message")
+	}
+}
+
+func TestWebSocketFixtureWaitHonorsDeadline(t *testing.T) {
+	server := NewServer([]Response{{Method: "GET", Path: "/chat", WebSocket: &WebSocketBehavior{}}})
+	defer server.Close()
+	conn, _, err := gorillawebsocket.DefaultDialer.Dial(server.Expand(WebSocketOrigin)+"/chat", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := server.waitForWebSockets(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unfinished socket wait = %v, want deadline", err)
+	}
+}
 
 func TestServerServesScriptedResponsesInOrderAndRepeatsTheLast(t *testing.T) {
 	server := NewServer([]Response{

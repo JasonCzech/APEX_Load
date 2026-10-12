@@ -13,12 +13,14 @@ import (
 // PolicySHA256 binds the complete operator placement/resource/transport profile;
 // ConfigurationSHA256 separately identifies the immutable supervisor image file.
 type BrokerCapabilities struct {
-	Mode           string                    `json:"mode"`
-	Containment    string                    `json:"containment"`
-	MaxHosts       int                       `json:"max_hosts"`
-	MaxVUsers      int                       `json:"max_vusers"`
-	MaxMemoryBytes int64                     `json:"max_memory_bytes"`
-	Profiles       []BrokerProfileCapability `json:"profiles"`
+	// Transport support only; each prepared host must separately prove SDK readiness.
+	NativeDataTransport bool                      `json:"native_data_transport,omitempty"`
+	Mode                string                    `json:"mode"`
+	Containment         string                    `json:"containment"`
+	MaxHosts            int                       `json:"max_hosts"`
+	MaxVUsers           int                       `json:"max_vusers"`
+	MaxMemoryBytes      int64                     `json:"max_memory_bytes"`
+	Profiles            []BrokerProfileCapability `json:"profiles"`
 }
 type BrokerProfileCapability struct {
 	ID                  string `json:"id"`
@@ -32,7 +34,7 @@ type BrokerProfileCapability struct {
 }
 
 func (s *BrokerService) capabilities(p BrokerPrincipal) *BrokerCapabilities {
-	caps := &BrokerCapabilities{Mode: "dedicated", Containment: "execution_pod", MaxHosts: s.store.config.Budget.MaxHosts, MaxVUsers: s.store.config.Budget.MaxVUsers, MaxMemoryBytes: s.store.config.Budget.MaxMemoryBytes}
+	caps := &BrokerCapabilities{NativeDataTransport: true, Mode: "dedicated", Containment: "execution_pod", MaxHosts: s.store.config.Budget.MaxHosts, MaxVUsers: s.store.config.Budget.MaxVUsers, MaxMemoryBytes: s.store.config.Budget.MaxMemoryBytes}
 	for _, id := range p.Profiles {
 		profile := s.profiles[id]
 		caps.Profiles = append(caps.Profiles, BrokerProfileCapability{ID: id, ConfigurationSHA256: profile.ConfigurationSHA256, PolicySHA256: profile.PolicySHA256, MemoryBytes: profile.MemoryBytes, HostLeaseMS: profile.HostLeaseTTL.Milliseconds(), PreparationMS: profile.PreparationTimeout.Milliseconds(), InvocationMS: profile.InvocationTimeout.Milliseconds(), MaxRunMS: profile.maxRun().Milliseconds()})

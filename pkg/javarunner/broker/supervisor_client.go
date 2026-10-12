@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"io"
 	"net"
 	"net/http"
@@ -27,12 +28,13 @@ func (e *SupervisorFailure) Error() string { return e.Code }
 // admission. Control requests have a separate lane, so renewal/close can proceed
 // while Java blocks. A successful Close is not a termination receipt.
 type SupervisorClient struct {
-	config   SupervisorConfig
-	url      string
-	http     *http.Client
-	invokeMu sync.Mutex
-	sequence uint64
-	terminal atomic.Bool
+	config        SupervisorConfig
+	url           string
+	http          *http.Client
+	invokeMu      sync.Mutex
+	sequence      uint64
+	terminal      atomic.Bool
+	nativeCapable atomic.Bool
 }
 
 func NewSupervisorClient(endpoint, serverURI string, cfg SupervisorConfig, config *tls.Config) (*SupervisorClient, error) {
@@ -123,6 +125,9 @@ func (c *SupervisorClient) Control(ctx context.Context, operation string) (Super
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	out, e := c.exchange(ctx, SupervisorRequest{Operation: operation})
+	if e == nil && operation == "ready" && out.State == "ready" {
+		c.nativeCapable.Store(out.NativeData)
+	}
 	if e != nil || operation == "close" {
 		c.terminal.Store(true)
 	}
@@ -134,7 +139,7 @@ func (c *SupervisorClient) Invoke(ctx context.Context, method string, params map
 		return SupervisorResponse{}, ErrState
 	}
 	defer c.invokeMu.Unlock()
-	if c.terminal.Load() || c.sequence == ^uint64(0) || ctx.Err() != nil {
+	if c.terminal.Load() || c.sequence == ^uint64(0) || ctx.Err() != nil || (javarunner.NativeDataCallbackFrom(ctx) != nil && !c.nativeCapable.Load()) {
 		return SupervisorResponse{}, ErrState
 	}
 	q := SupervisorRequest{Operation: "invoke", Sequence: c.sequence + 1, Method: method, Parameters: params}
@@ -173,7 +178,7 @@ func (c *SupervisorClient) exchange(ctx context.Context, q SupervisorRequest) (S
 		return out, ErrState
 	}
 	req.Header.Set("Content-Type", "application/json")
-	response, e := c.http.Do(req)
+	response, e := javarunner.DoNativeHTTP(c.http, req, MaxSupervisorResponse)
 	if e != nil {
 		return out, ErrSupervisorTransport
 	}

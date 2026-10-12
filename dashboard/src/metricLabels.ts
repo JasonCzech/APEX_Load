@@ -4,6 +4,8 @@
  * values carry it after the number ("1,006 ms", via formatMs).
  */
 export const METRIC_LABELS = {
+  tableOpMean: { label: 'Average table operation', unit: 'ms' },
+  tableOpMax: { label: 'Maximum table operation', unit: 'ms' },
   avg: { label: 'Avg', unit: 'ms' },
   art: { label: 'ART', unit: 'ms' },
   p50: { label: 'P50', unit: 'ms' },

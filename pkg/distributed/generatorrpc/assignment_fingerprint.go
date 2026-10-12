@@ -135,6 +135,14 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 			fingerprintWriteString(h, dimension)
 		}
 	}
+	if body := assignment.GetLiveTableBindingsJson(); len(body) > 0 {
+		fingerprintWriteString(h, FeatureLiveTablesV1)
+		fingerprintWriteBytes(h, body)
+	}
+	if body := assignment.GetRendezvousConfigJson(); len(body) > 0 {
+		fingerprintWriteString(h, "distributed_rendezvous_v1")
+		fingerprintWriteBytes(h, body)
+	}
 	// Written only when set, so an uncapped assignment keeps the fingerprint
 	// older controllers and generators compute.
 	if assignment.GetThroughputCapEnabled() {

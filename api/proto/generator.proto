@@ -52,6 +52,14 @@ service GeneratorControl {
   // and the generator streams metrics batches back.
   rpc StreamMetrics(stream ControlSignal) returns (stream MetricsBatch);
 
+  // Authoritative live-table operations. The controller opens the stream;
+  // generator requests flow on the response side, separately from telemetry.
+  rpc LiveTableChannel(stream LiveTableReply) returns (stream LiveTableRequest);
+
+  // Bounded per-generator rendezvous batches and round watches. This channel
+  // does not share operation slots with live tables or supervision.
+  rpc RendezvousChannel(stream RendezvousReply) returns (stream RendezvousRequest);
+
   // Heartbeat is a bidirectional keepalive stream.
   rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatPong);
 
@@ -264,11 +272,15 @@ message WorkAssignment {
   // The run's joint evidence v4 projection, frozen at Start. Send only to
   // native_joint_evidence_v4 peers; omission publishes no joint evidence.
   JointEvidenceProjection joint_evidence_projection = 47;
+  // Bounded versioned engine binding descriptors. Sent only to live_tables_v1.
+  bytes live_table_bindings_json = 48;
+  // Frozen group contracts; send only to distributed_rendezvous_v1 peers.
+  bytes rendezvous_config_json = 49;
   // Goal-run throughput cap for this shard's group, in passed transactions per
   // second; zero suspends the group. Send only to throughput_cap_v1 peers;
   // omission leaves the group uncapped.
-  bool throughput_cap_enabled = 48;
-  double throughput_cap_tps = 49;
+  bool throughput_cap_enabled = 50;
+  double throughput_cap_tps = 51;
 }
 
 // JointEvidenceProjection chooses up to three dimensions of one population
@@ -1073,4 +1085,39 @@ message HTTP3ProbeResult {
   // Why the origin was not checked; empty when it was.
   string skipped = 9;
   int64 checked_at_unix_nano = 10;
+}
+
+// Each message is bounded to 1 MiB before decoding. The first reply opens the
+// channel under the exact run supervision scope; subsequent replies correlate
+// one operation. Payloads use the versioned native livetable request/result DTO.
+message LiveTableRequest {
+  string group_name = 1;
+  uint64 request_id = 2;
+  string table_id = 3;
+  bytes request_json = 4;
+  int64 timeout_milliseconds = 5;
+}
+message LiveTableReply {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  bytes run_supervision_token = 3;
+  string group_name = 4;
+  uint64 request_id = 5;
+  bytes result_json = 6;
+  string error_code = 7;
+}
+
+message RendezvousRequest {
+  string group_name = 1;
+  uint64 request_id = 2;
+  bytes batch_json = 3;
+}
+message RendezvousReply {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  bytes run_supervision_token = 3;
+  string group_name = 4;
+  uint64 request_id = 5;
+  bytes outcome_json = 6;
+  string error_code = 7;
 }
