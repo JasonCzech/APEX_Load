@@ -408,6 +408,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		}
 
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
+			LiveTableSeeds:  req.LiveTableSeeds,
 			ReplaySessionID: sessionID,
 			GroupName:       groupName,
 			RuntimeProfile:  &session.RuntimeProfile,

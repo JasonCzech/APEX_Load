@@ -10,15 +10,16 @@ import (
 )
 
 type BrowserReplayStartRequest struct {
-	GroupName       string                 `json:"group_name,omitempty"`
-	ProjectID       string                 `json:"project_id,omitempty"`
-	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
-	Variables       map[string]string      `json:"variables,omitempty"`
-	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
-	StartPaused     bool                   `json:"start_paused,omitempty"`
-	Breakpoints     []int                  `json:"breakpoints,omitempty"`
-	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
-	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	LiveTableSeeds  []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
+	GroupName       string                        `json:"group_name,omitempty"`
+	ProjectID       string                        `json:"project_id,omitempty"`
+	ReplaySessionID string                        `json:"replay_session_id,omitempty"`
+	Variables       map[string]string             `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule        `json:"redaction_rules,omitempty"`
+	StartPaused     bool                          `json:"start_paused,omitempty"`
+	Breakpoints     []int                         `json:"breakpoints,omitempty"`
+	Browser         *dsl.BrowserConfig            `json:"browser,omitempty"`
+	IgnoreThinkTime *bool                         `json:"ignore_think_time,omitempty"`
 	// RecordHAR records a native HAR of the replay. It is opt-in: a
 	// recording runs under the HAR size, memory and owner limits, which close
 	// the browser context, so an unrequested one could fail a replay that
@@ -161,6 +162,9 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		refIssues...,
 	)
 	warnings := append(validationWarnings(script), refWarnings...)
+	if !s.prepareReplayLiveTables(r.Context(), w, script, req.LiveTableSeeds) {
+		return
+	}
 	secretResolver := s.runner.secretResolverForScript(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
 	if !preflight.Valid {

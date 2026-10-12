@@ -12,6 +12,22 @@ import (
 // performed automatically after a run. Keep both finalization paths aligned.
 const liveTablePersistenceServiceAccountScope = "scripts:write"
 
+// Continuation requires every live table to survive the controller process.
+// Recovery restores all tables before generator ownership rotates; memory-only
+// bindings retain the existing fail-on-controller-loss behavior.
+var errLiveTableHAContinuationUnavailable = errors.New("live controller continuation requires durable tables; choose durable mode or fail-on-controller-loss")
+
+func validateLiveTableContinuation(bindings []storage.ScenarioDataPoolBinding, assignment *GeneratorAssignmentSettings) error {
+	if effectiveFailoverPolicy(assignment) == failoverPolicyContinue {
+		for _, binding := range bindings {
+			if binding.AccessMode == "live" && (binding.LiveOptions == nil || !strings.EqualFold(strings.TrimSpace(binding.LiveOptions.Durability), "durable")) {
+				return errLiveTableHAContinuationUnavailable
+			}
+		}
+	}
+	return nil
+}
+
 func (tr *TestRunner) validateLiveTablePolicy(projectID string) error {
 	if tr.projectStore == nil {
 		return errors.New("live table project policy is unavailable")

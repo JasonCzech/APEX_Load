@@ -152,6 +152,36 @@ func TestOpenAPICrossPackageModelSchemasAreResolved(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIReplaySandboxSeedsHaveNativeTypes(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document oasDoc
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/api/v1/scripts/{id}/replay",
+		"/api/v1/scripts/{id}/debug/sessions",
+		"/api/v1/scripts/{id}/replay/sessions",
+		"/api/v1/scripts/{id}/browser-replay/sessions",
+	} {
+		body := document.Paths[path]["post"].RequestBody
+		if body == nil {
+			t.Fatalf("%s has no request body", path)
+		}
+		seeds := body.Content["application/json"].Schema.Properties["live_table_seeds"]
+		if seeds.Type != "array" || seeds.Items == nil || seeds.Items.Properties["profile"].Type != "string" {
+			t.Fatalf("%s sandbox profile is not a native string: %#v", path, seeds)
+		}
+		rows := seeds.Items.Properties["rows"]
+		if rows.Type != "array" || rows.Items == nil || rows.Items.Properties["values"].Type != "object" {
+			t.Fatalf("%s sandbox rows are not typed: %#v", path, rows)
+		}
+	}
+}
+
 func TestGeneratedOpenAPIRoutesUseCrossPackageSchemas(t *testing.T) {
 	data, err := GenerateOpenAPIYAML("server.go")
 	if err != nil {

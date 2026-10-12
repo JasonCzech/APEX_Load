@@ -88,6 +88,7 @@ func reportTokenLabel(value string) string {
 }
 
 var profileHTMLFuncMap = template.FuncMap{
+	"liveTableObservations":    boundedLiveTableObservations,
 	"tokenLabel":               reportTokenLabel,
 	"legacyBrowserSummaryNote": func() string { return legacyBrowserSummaryNote },
 	"reportRunName":            reportRunName,

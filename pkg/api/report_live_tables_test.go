@@ -6,6 +6,9 @@ import (
 	"encoding/csv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/livetable"
 )
 
 func TestLiveTableDownloadableReportsContainMetadataWithoutRows(t *testing.T) {
@@ -87,5 +90,84 @@ func TestLiveTableReportMetadataEscapesUntrustedArchiveText(t *testing.T) {
 		if len(row) == 4 && row[0] == "live_table" && row[1] != "'=formula<script>alert(1)</script>" {
 			t.Fatalf("CSV alias not escaped: %q", row[1])
 		}
+	}
+}
+
+func TestLiveTableReportsRetainBoundedObservationEvidence(t *testing.T) {
+	report := samplePDFRunArchiveReport()
+	at := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	report.Manifest.Provenance.LiveTables = []RunArchiveLiveTableSummary{{TableID: "work", Alias: "work", Profile: "native_queue", Counts: livetable.Counts{Redeliveries: 3}, Observations: &livetable.Observations{Version: 1, CapturedAt: at, WaitCount: 7, WaitTotalNS: 23000000, EmptyOutcomes: 2, Throttled: 4, UnknownOutcomes: 1, UnknownPopAttempts: 1, RecoveryGaps: 1, Incomplete: true, Events: []livetable.ObservationEvent{{Kind: "recovery_observation_gap", First: at, Last: at.Add(time.Second), Count: 1}}}}}
+	html, err := renderRunArchiveHTMLReportWithProfile(report, "audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pdf, csvBody bytes.Buffer
+	if err := writeRunArchiveReportPDFWithProfile(report, &pdf, "audit"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBody, "audit"); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"HTML": string(html), "PDF": pdf.String(), "CSV": csvBody.String()} {
+		if !strings.Contains(body, "recovery_observation_gap") {
+			t.Errorf("%s missing retained event", name)
+		}
+	}
+	rows, err := csv.NewReader(bytes.NewReader(csvBody.Bytes())).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := map[string]string{}
+	for _, row := range rows {
+		if len(row) == 4 && row[0] == "live_table" {
+			metrics[row[2]] = row[3]
+		}
+	}
+	for name, want := range map[string]string{"wait_count": "7", "wait_total_ns": "23000000", "capacity_rejections": "4", "unknown_pop_attempts": "1", "redeliveries": "3", "observation_coverage_incomplete": "true"} {
+		if metrics[name] != want {
+			t.Errorf("%s=%q want %q", name, metrics[name], want)
+		}
+	}
+	// Export ordering must remain stable for the same retained evidence.
+	var second bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &second, "audit"); err != nil {
+		t.Fatal(err)
+	}
+	if csvBody.String() != second.String() {
+		t.Fatal("retained CSV is nondeterministic")
+	}
+}
+
+func TestLiveTableReportBoundsUntrustedObservationEvents(t *testing.T) {
+	report := samplePDFRunArchiveReport()
+	at := time.Now().UTC()
+	observed := &livetable.Observations{Version: 1}
+	for i := 0; i < 100; i++ {
+		observed.Events = append(observed.Events, livetable.ObservationEvent{Kind: "empty", First: at, Last: at, Count: 1})
+	}
+	observed.Events[0].Kind = "private-unrecognized-event"
+	report.Manifest.Provenance.LiveTables = []RunArchiveLiveTableSummary{{Alias: "bounded", Observations: observed}}
+	bounded := boundedLiveTableObservations(observed)
+	if len(bounded.Events) != 15 || bounded.DroppedEvents != 85 || !bounded.Incomplete || len(observed.Events) != 100 {
+		t.Fatalf("invalid event normalization: %+v", bounded)
+	}
+	html, err := renderRunArchiveHTMLReportWithProfile(report, "audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pdf, csvBody bytes.Buffer
+	if err := writeRunArchiveReportPDFWithProfile(report, &pdf, "audit"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBody, "audit"); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"HTML": string(html), "PDF": pdf.String(), "CSV": csvBody.String()} {
+		if strings.Contains(body, "private-unrecognized-event") || strings.Count(body, "occurrences") > 16 {
+			t.Errorf("%s unbounded or unvalidated events", name)
+		}
+	}
+	if strings.Contains(csvBody.String(), "shared_data_event_16") {
+		t.Fatal("CSV ignored event bound")
 	}
 }

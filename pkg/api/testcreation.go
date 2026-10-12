@@ -1385,6 +1385,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, fmt.Errorf("project quota evidence changed or is unavailable; retry test creation")
 	}
 	if hasLiveDataPools(req.DataPools) {
+		if err := validateLiveTableContinuation(req.DataPools, req.Assignment); err != nil {
+			return nil, err
+		}
 		if err := tr.validateLiveTablePolicy(projectID); err != nil {
 			return nil, err
 		}

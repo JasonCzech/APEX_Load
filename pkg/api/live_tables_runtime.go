@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -39,6 +40,8 @@ type runLiveTables struct {
 	releasedAt        time.Time // guarded by liveTablesMu
 	closed            bool
 	ready             bool
+	lastNotification  atomic.Int64
+	notificationSeq   atomic.Uint64
 }
 type runLiveTable struct {
 	table                     *livetable.Table
@@ -161,6 +164,9 @@ func (tr *TestRunner) prepareLiveTables(ctx context.Context, test *ManagedTest) 
 	if !hasLiveDataPools(bindings) {
 		return nil
 	}
+	if err := validateLiveTableContinuation(bindings, assignment); err != nil {
+		return err
+	}
 	normalized, err := normalizeDataPoolBindingIntent(bindings)
 	if err != nil {
 		return err
@@ -228,9 +234,6 @@ func (tr *TestRunner) prepareLiveTables(ctx context.Context, test *ManagedTest) 
 		o := b.LiveOptions
 		if o.Durability == "durable" && (!term.valid() || tr.continuityKeyWrapper == nil) {
 			return errors.New("durable live tables require execution fencing and a configured wrapping key")
-		}
-		if effectiveFailoverPolicy(assignment) == failoverPolicyContinue && o.Durability != "durable" {
-			return errors.New("controller continuation requires durable live tables")
 		}
 		if o.EndMode != "discard" {
 			if err := tr.authorizeLiveTablePersistence(test); err != nil {
@@ -417,6 +420,7 @@ func (tr *TestRunner) liveClient(testID, scope string) livetable.Client {
 		if rt.binding.LiveOptions.Durability == "durable" {
 			tr.checkpointLiveTable(ctx, run, rt, false)
 		}
+		tr.notifyLiveTableChange(run, time.Now())
 		return result, err
 	})
 }
@@ -516,6 +520,7 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 	var actualBudget int64
 	var recoveryBytes int
 	interruptedFinalization := false
+	continuationErr := validateLiveTableContinuation(test.DataPools, test.Assignment)
 	for _, record := range records {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -579,6 +584,9 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 			}
 		}
 		closed := table.Stats().Closed
+		if !closed {
+			table.RecordRecoveryGap()
+		}
 		if recovery.Table.State == "closed" && !closed {
 			return errors.New("closed live table recovery checkpoint is not closed")
 		}
@@ -608,22 +616,25 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 		tr.liveTables = map[string]*runLiveTables{}
 	}
 	run.ready = true
-	run.closed = interruptedFinalization
+	run.closed = interruptedFinalization || continuationErr != nil
 	tr.liveTables[test.ID] = run
 	tr.liveTablesMu.Unlock()
-	if interruptedFinalization {
+	if run.closed {
 		// Reconciliation closes only table data. It neither resumes generators
 		// nor bypasses the existing positive generator-stop proof. FAILED keeps
 		// reusable pools unchanged while preserving output for explicit recovery.
 		cleanupErr := tr.finalizeLiveTables(ctx, test, "FAILED")
 		if cleanupErr != nil {
-			tr.enqueueTerminalRetry("live-tables:"+test.ID, "interrupted live table finalization", func() error {
+			tr.enqueueTerminalRetry("live-tables:"+test.ID, "live table recovery finalization", func() error {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				defer cancel()
 				return tr.finalizeLiveTables(cleanupCtx, test, "FAILED")
 			})
 		}
-		return errors.Join(errLiveTableFinalizationInterrupted, cleanupErr)
+		if interruptedFinalization {
+			return errors.Join(errLiveTableFinalizationInterrupted, continuationErr, cleanupErr)
+		}
+		return errors.Join(continuationErr, cleanupErr)
 	}
 	return nil
 }

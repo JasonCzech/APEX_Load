@@ -217474,6 +217474,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 project_id:
                   type: string
                 record_har:
@@ -221718,6 +221750,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 log_level:
                   type: string
                 project_id:
@@ -226694,6 +226758,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 project_id:
                   type: string
                 redaction_rules:
@@ -228816,6 +228912,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 log_level:
                   type: string
                 project_id:
@@ -251859,6 +251987,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 project_id:
                   type: string
                 record_har:
@@ -262071,6 +262231,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 log_level:
                   type: string
                 project_id:
@@ -310181,6 +310373,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 project_id:
                   type: string
                 redaction_rules:
@@ -312285,6 +312509,38 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                live_table_seeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      alias:
+                        type: string
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            delivery_attempts:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            state:
+                              type: string
+                            values:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: integer
+                              format: int64
                 log_level:
                   type: string
                 project_id:
@@ -369239,8 +369495,48 @@ paths:
                               type: string
                             counts:
                               type: object
-                              description: 'Go type: livetable.Counts'
-                              additionalProperties: true
+                              properties:
+                                acknowledged:
+                                  type: integer
+                                  format: int64
+                                available:
+                                  type: integer
+                                  format: int64
+                                delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                discarded:
+                                  type: integer
+                                  format: int64
+                                leased:
+                                  type: integer
+                                  format: int64
+                                popped:
+                                  type: integer
+                                  format: int64
+                                pushed:
+                                  type: integer
+                                  format: int64
+                                quarantined:
+                                  type: integer
+                                  format: int64
+                                redeliveries:
+                                  type: integer
+                                  format: int64
+                                seeded:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - acknowledged
+                                - available
+                                - delivery_attempts
+                                - discarded
+                                - leased
+                                - popped
+                                - pushed
+                                - quarantined
+                                - redeliveries
+                                - seeded
                             data_bytes:
                               type: integer
                               format: int64
@@ -369265,6 +369561,60 @@ paths:
                                 - mode
                                 - state
                                 - table_id
+                              nullable: true
+                            observations:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_events:
+                                  type: integer
+                                  format: int64
+                                empty_outcomes:
+                                  type: integer
+                                  format: int64
+                                events:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ObservationEvent'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                recovery_gaps:
+                                  type: integer
+                                  format: int64
+                                throttled:
+                                  type: integer
+                                  format: int64
+                                unknown_outcomes:
+                                  type: integer
+                                  format: int64
+                                unknown_pop_attempts:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                                wait_count:
+                                  type: integer
+                                  format: int64
+                                wait_total_ns:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - dropped_events
+                                - empty_outcomes
+                                - incomplete
+                                - recovery_gaps
+                                - throttled
+                                - unknown_outcomes
+                                - unknown_pop_attempts
+                                - version
+                                - wait_count
+                                - wait_total_ns
                               nullable: true
                             op_count:
                               type: integer
@@ -372116,8 +372466,48 @@ paths:
                               type: string
                             counts:
                               type: object
-                              description: 'Go type: livetable.Counts'
-                              additionalProperties: true
+                              properties:
+                                acknowledged:
+                                  type: integer
+                                  format: int64
+                                available:
+                                  type: integer
+                                  format: int64
+                                delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                discarded:
+                                  type: integer
+                                  format: int64
+                                leased:
+                                  type: integer
+                                  format: int64
+                                popped:
+                                  type: integer
+                                  format: int64
+                                pushed:
+                                  type: integer
+                                  format: int64
+                                quarantined:
+                                  type: integer
+                                  format: int64
+                                redeliveries:
+                                  type: integer
+                                  format: int64
+                                seeded:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - acknowledged
+                                - available
+                                - delivery_attempts
+                                - discarded
+                                - leased
+                                - popped
+                                - pushed
+                                - quarantined
+                                - redeliveries
+                                - seeded
                             data_bytes:
                               type: integer
                               format: int64
@@ -372142,6 +372532,60 @@ paths:
                                 - mode
                                 - state
                                 - table_id
+                              nullable: true
+                            observations:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_events:
+                                  type: integer
+                                  format: int64
+                                empty_outcomes:
+                                  type: integer
+                                  format: int64
+                                events:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ObservationEvent'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                recovery_gaps:
+                                  type: integer
+                                  format: int64
+                                throttled:
+                                  type: integer
+                                  format: int64
+                                unknown_outcomes:
+                                  type: integer
+                                  format: int64
+                                unknown_pop_attempts:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                                wait_count:
+                                  type: integer
+                                  format: int64
+                                wait_total_ns:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - dropped_events
+                                - empty_outcomes
+                                - incomplete
+                                - recovery_gaps
+                                - throttled
+                                - unknown_outcomes
+                                - unknown_pop_attempts
+                                - version
+                                - wait_count
+                                - wait_total_ns
                               nullable: true
                             op_count:
                               type: integer
@@ -383625,7 +384069,6 @@ paths:
                                   type: string
                                 counts:
                                   type: object
-                                  description: 'Go type: livetable.Counts'
                                   additionalProperties: true
                                 data_bytes:
                                   type: integer
@@ -383635,6 +384078,10 @@ paths:
                                 end_mode:
                                   type: string
                                 finalization:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
+                                observations:
                                   type: object
                                   additionalProperties: true
                                   nullable: true
@@ -385194,7 +385641,6 @@ paths:
                                   type: string
                                 counts:
                                   type: object
-                                  description: 'Go type: livetable.Counts'
                                   additionalProperties: true
                                 data_bytes:
                                   type: integer
@@ -385204,6 +385650,10 @@ paths:
                                 end_mode:
                                   type: string
                                 finalization:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
+                                observations:
                                   type: object
                                   additionalProperties: true
                                   nullable: true
@@ -442233,8 +442683,104 @@ paths:
             application/json:
               schema:
                 type: object
-                description: 'Go type: livetable.Result'
-                additionalProperties: true
+                properties:
+                  cells:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        present:
+                          type: boolean
+                        value:
+                          type: string
+                      required:
+                        - present
+                  columns:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer
+                    format: int64
+                  lease:
+                    type: object
+                    properties:
+                      client_id:
+                        type: string
+                      delivery_attempt:
+                        type: integer
+                        format: int64
+                      expires_at:
+                        type: string
+                        format: date-time
+                      max_expires_at:
+                        type: string
+                        format: date-time
+                      record_id:
+                        type: string
+                      token:
+                        type: string
+                    required:
+                      - client_id
+                      - delivery_attempt
+                      - expires_at
+                      - max_expires_at
+                      - record_id
+                      - token
+                    nullable: true
+                  revision:
+                    type: integer
+                    format: int64
+                  row:
+                    type: object
+                    properties:
+                      delivery_attempts:
+                        type: integer
+                        format: int64
+                      id:
+                        type: string
+                      state:
+                        type: string
+                      values:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - values
+                      - version
+                    nullable: true
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        delivery_attempts:
+                          type: integer
+                          format: int64
+                        id:
+                          type: string
+                        state:
+                          type: string
+                        values:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        version:
+                          type: integer
+                          format: int64
+                      required:
+                        - values
+                        - version
+                  status:
+                    type: string
+                  value:
+                    type: string
+                required:
+                  - revision
+                  - status
         "400":
           description: Bad Request
           content:

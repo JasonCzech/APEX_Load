@@ -85,6 +85,9 @@ func (tr *TestRunner) runAdoptionGrace(test *ManagedTest) time.Duration {
 	if !tr.runAdoptionEnabled() || test == nil || effectiveFailoverPolicy(test.Assignment) != failoverPolicyContinue {
 		return 0
 	}
+	if validateLiveTableContinuation(test.DataPools, test.Assignment) != nil {
+		return 0
+	}
 	return defaultRunAdoptionGrace
 }
 

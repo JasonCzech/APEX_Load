@@ -998,6 +998,11 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <tbody><tr><td>{{.Counts.Seeded}}</td><td>{{.Counts.Pushed}}</td><td>{{.Counts.Available}}</td><td>{{.Counts.Leased}}</td><td>{{.Counts.Acknowledged}}</td><td>{{.Counts.Popped}}</td><td>{{.Counts.Quarantined}}</td><td>{{.Counts.Discarded}}</td><td>{{.Counts.DeliveryAttempts}}</td></tr></tbody></table>
 <table><thead><tr><th>Operations</th><th>Errors</th><th>Unknown outcomes</th><th>Total operation latency (ns)</th><th>Max operation latency (ns)</th></tr></thead>
 <tbody><tr><td>{{.OpCount}}</td><td>{{.OpErrors}}</td><td>{{.OpUnknown}}</td><td>{{.OpLatencyTotalNS}}</td><td>{{.OpLatencyMaxNS}}</td></tr></tbody></table>
+<p>Lease redeliveries: {{.Counts.Redeliveries}}.</p>
+{{with liveTableObservations .Observations}}<h4>Retained shared-data evidence</h4>
+<p>Wait component: {{.WaitCount}} waits, {{.WaitTotalNS}} ns total. Empty outcomes: {{.EmptyOutcomes}}. Capacity rejections: {{.Throttled}}. Unknown outcomes: {{.UnknownOutcomes}} (pop attempts: {{.UnknownPopAttempts}}).</p>
+<p>Recovery observation gaps: {{.RecoveryGaps}}. Incomplete coverage: {{.Incomplete}}. Older event groups omitted: {{.DroppedEvents}}. A recovery gap bounds missing observations since a checkpoint; it is not an exact outage duration or proof of target-side completion.</p>
+<ul>{{range .Events}}<li>{{.Kind}}: {{.Count}} occurrences; {{.First}} to {{.Last}}</li>{{end}}</ul>{{end}}
 {{with .Finalization}}<p>Output: {{.Mode}} · {{.State}}{{if .OutputPoolID}} · pool <span class="mono">{{.OutputPoolID}}</span>{{end}}{{if .Reason}} · {{.Reason}}{{end}}</p>{{end}}
 {{end}}{{end}}{{end}}
 {{end}}

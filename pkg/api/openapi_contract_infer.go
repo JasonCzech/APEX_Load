@@ -190,6 +190,7 @@ var openAPICrossPackageDirectories = map[string]string{
 	"engine":          "engine",
 	"hostnet":         "hostnet",
 	"k6":              "convert/k6",
+	"livetable":       "livetable",
 	"protocol":        "protocol",
 	"recorder":        "recorder",
 	"sample":          "convert/sample",

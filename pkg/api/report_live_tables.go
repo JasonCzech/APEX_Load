@@ -25,6 +25,13 @@ func appendLiveTableReportPDF(lines *[]string, tables []RunArchiveLiveTableSumma
 		if final := table.Finalization; final != nil {
 			*lines = append(*lines, fmt.Sprintf("  Output: %s %s; pool %s; reason %s", final.Mode, final.State, reportProvidedValue(final.OutputPoolID), reportProvidedValue(final.Reason)))
 		}
+		if observed := boundedLiveTableObservations(table.Observations); observed != nil {
+			*lines = append(*lines, fmt.Sprintf("  Shared-data wait component: %d waits, %.3f ms total; empty outcomes %d; capacity rejections %d; redeliveries %d", observed.WaitCount, float64(observed.WaitTotalNS)/1e6, observed.EmptyOutcomes, observed.Throttled, table.Counts.Redeliveries),
+				fmt.Sprintf("  Retained evidence: unknown outcomes %d (pop attempts %d); recovery gaps %d; incomplete %t; omitted events %d", observed.UnknownOutcomes, observed.UnknownPopAttempts, observed.RecoveryGaps, observed.Incomplete, observed.DroppedEvents))
+			for _, event := range observed.Events {
+				*lines = append(*lines, fmt.Sprintf("  %s: %d occurrences; %s — %s", event.Kind, event.Count, event.First.Format("2006-01-02T15:04:05Z"), event.Last.Format("2006-01-02T15:04:05Z")))
+			}
+		}
 	}
 }
 
@@ -48,6 +55,20 @@ func writeLiveTableReportCSVRows(write reportCSVWriteFunc, tables []RunArchiveLi
 		}
 		for i, upper := range []string{"1", "5", "10", "50", "100", "1000", "10000", "inf"} {
 			rows = append(rows, [2]string{"op_latency_bucket_upper_ms_" + upper, strconv.FormatUint(table.OpLatencyBuckets[i], 10)})
+		}
+		if observed := boundedLiveTableObservations(table.Observations); observed != nil {
+			for _, counter := range []struct {
+				name  string
+				value uint64
+			}{
+				{"wait_count", observed.WaitCount}, {"wait_total_ns", observed.WaitTotalNS}, {"empty_outcomes", observed.EmptyOutcomes}, {"capacity_rejections", observed.Throttled}, {"retained_unknown_outcomes", observed.UnknownOutcomes}, {"unknown_pop_attempts", observed.UnknownPopAttempts}, {"recovery_gaps", observed.RecoveryGaps}, {"redeliveries", table.Counts.Redeliveries}, {"omitted_events", observed.DroppedEvents},
+			} {
+				rows = append(rows, [2]string{counter.name, strconv.FormatUint(counter.value, 10)})
+			}
+			rows = append(rows, [2]string{"observation_coverage_incomplete", strconv.FormatBool(observed.Incomplete)})
+			for index, event := range observed.Events {
+				rows = append(rows, [2]string{fmt.Sprintf("shared_data_event_%d", index+1), fmt.Sprintf("%s; count=%d; first=%s; last=%s", event.Kind, event.Count, event.First.Format("2006-01-02T15:04:05Z"), event.Last.Format("2006-01-02T15:04:05Z"))})
+			}
 		}
 		if final := table.Finalization; final != nil {
 			rows = append(rows, [2]string{"finalization_mode", final.Mode}, [2]string{"finalization_state", final.State}, [2]string{"output_pool_id", final.OutputPoolID}, [2]string{"finalization_reason", final.Reason})

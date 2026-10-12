@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -494,6 +495,8 @@ var validityRuleText = map[string]string{
 	rca.RuleGeneratorStatsMissing: "generator statistics are missing for more than %.0f%% of judged intervals",
 	rca.RuleEvidenceIncomplete:    "run evidence is incomplete",
 	rca.RuleNoIntervals:           "no intervals were archived",
+	rca.RuleSharedDataThrottled:   "live table capacity rejected operations",
+	rca.RuleSharedDataUnknown:     "live table operations have unknown outcomes",
 }
 
 func validityRootCauseDetail(validity *rca.Validity) string {
@@ -520,7 +523,7 @@ func validityRootCauseDetail(validity *rca.Validity) string {
 		}
 		parts = append(parts, text)
 	}
-	if validity.Rules.SustainIntervals > 1 && (validity.Verdict == rca.ValiditySuspect) {
+	if validity.Rules.SustainIntervals > 1 && validity.Verdict == rca.ValiditySuspect && !slices.Contains(validity.Reasons, rca.RuleSharedDataThrottled) && !slices.Contains(validity.Reasons, rca.RuleSharedDataUnknown) {
 		return fmt.Sprintf("%s for %d or more consecutive intervals at a steady load (%d interval(s) flagged).", capitalizeFirst(strings.Join(parts, "; ")), validity.Rules.SustainIntervals, len(validity.Windows))
 	}
 	return capitalizeFirst(strings.Join(parts, "; ")) + "."

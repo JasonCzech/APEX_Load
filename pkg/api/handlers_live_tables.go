@@ -76,6 +76,8 @@ func (s *Server) handleListLiveTables(w http.ResponseWriter, r *http.Request) {
 				state = "unavailable"
 			} else if run.closed {
 				state = "closed"
+			} else if !run.ready {
+				state = "recovering"
 			}
 			var finalization *storage.LiveTableFinalizationResult
 			if rt.final != nil {

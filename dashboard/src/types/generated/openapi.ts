@@ -69730,7 +69730,18 @@ export interface operations {
               }) | null;
               "live_tables"?: Array<{
                 "alias": string;
-                "counts": Record<string, unknown>;
+                "counts": {
+                  "acknowledged": number;
+                  "available": number;
+                  "delivery_attempts": number;
+                  "discarded": number;
+                  "leased": number;
+                  "popped": number;
+                  "pushed": number;
+                  "quarantined": number;
+                  "redeliveries": number;
+                  "seeded": number;
+                };
                 "data_bytes": number;
                 "durability": string;
                 "end_mode": string;
@@ -69740,6 +69751,20 @@ export interface operations {
                   "reason"?: string;
                   "state": string;
                   "table_id": string;
+                }) | null;
+                "observations"?: ({
+                  "captured_at": string;
+                  "dropped_events": number;
+                  "empty_outcomes": number;
+                  "events"?: Array<Record<string, unknown>>;
+                  "incomplete": boolean;
+                  "recovery_gaps": number;
+                  "throttled": number;
+                  "unknown_outcomes": number;
+                  "unknown_pop_attempts": number;
+                  "version": number;
+                  "wait_count": number;
+                  "wait_total_ns": number;
                 }) | null;
                 "op_count": number;
                 "op_errors": number;
@@ -70690,7 +70715,18 @@ export interface operations {
               }) | null;
               "live_tables"?: Array<{
                 "alias": string;
-                "counts": Record<string, unknown>;
+                "counts": {
+                  "acknowledged": number;
+                  "available": number;
+                  "delivery_attempts": number;
+                  "discarded": number;
+                  "leased": number;
+                  "popped": number;
+                  "pushed": number;
+                  "quarantined": number;
+                  "redeliveries": number;
+                  "seeded": number;
+                };
                 "data_bytes": number;
                 "durability": string;
                 "end_mode": string;
@@ -70700,6 +70736,20 @@ export interface operations {
                   "reason"?: string;
                   "state": string;
                   "table_id": string;
+                }) | null;
+                "observations"?: ({
+                  "captured_at": string;
+                  "dropped_events": number;
+                  "empty_outcomes": number;
+                  "events"?: Array<Record<string, unknown>>;
+                  "incomplete": boolean;
+                  "recovery_gaps": number;
+                  "throttled": number;
+                  "unknown_outcomes": number;
+                  "unknown_pop_attempts": number;
+                  "version": number;
+                  "wait_count": number;
+                  "wait_total_ns": number;
                 }) | null;
                 "op_count": number;
                 "op_errors": number;
@@ -74059,6 +74109,7 @@ export interface operations {
                   "durability": string;
                   "end_mode": string;
                   "finalization"?: (Record<string, unknown>) | null;
+                  "observations"?: (Record<string, unknown>) | null;
                   "op_count": number;
                   "op_errors": number;
                   "op_latency_buckets": Array<number>;
@@ -74554,6 +74605,7 @@ export interface operations {
                   "durability": string;
                   "end_mode": string;
                   "finalization"?: (Record<string, unknown>) | null;
+                  "observations"?: (Record<string, unknown>) | null;
                   "op_count": number;
                   "op_errors": number;
                   "op_latency_buckets": Array<number>;
@@ -96433,7 +96485,39 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "cells"?: Array<{
+              "present": boolean;
+              "value"?: string;
+            }>;
+            "columns"?: Array<string>;
+            "count"?: number;
+            "lease"?: ({
+              "client_id": string;
+              "delivery_attempt": number;
+              "expires_at": string;
+              "max_expires_at": string;
+              "record_id": string;
+              "token": string;
+            }) | null;
+            "revision": number;
+            "row"?: ({
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values": Record<string, string>;
+              "version": number;
+            }) | null;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values": Record<string, string>;
+              "version": number;
+            }>;
+            "status": string;
+            "value"?: string;
+          };
         };
       };
       "400": {
@@ -129697,6 +129781,18 @@ export interface operations {
         "application/json": {
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "project_id"?: string;
           "redaction_rules"?: Array<{
             "name"?: string;
@@ -130507,6 +130603,18 @@ export interface operations {
         "application/json": {
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "project_id"?: string;
           "redaction_rules"?: Array<{
             "name"?: string;
@@ -143129,6 +143237,18 @@ export interface operations {
           }) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "project_id"?: string;
           "record_har"?: (boolean) | null;
           "redaction_rules"?: Array<{
@@ -144586,6 +144706,18 @@ export interface operations {
           }) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "project_id"?: string;
           "record_har"?: (boolean) | null;
           "redaction_rules"?: Array<{
@@ -146107,6 +146239,18 @@ export interface operations {
           }) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "log_level"?: string;
           "project_id"?: string;
           "redaction_rules"?: Array<{
@@ -147663,6 +147807,18 @@ export interface operations {
           }) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "log_level"?: string;
           "project_id"?: string;
           "redaction_rules"?: Array<{
@@ -149220,6 +149376,18 @@ export interface operations {
           }) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "log_level"?: string;
           "project_id"?: string;
           "redaction_rules"?: Array<{
@@ -150776,6 +150944,18 @@ export interface operations {
           }) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "live_table_seeds"?: Array<{
+            "alias"?: string;
+            "columns"?: Array<string>;
+            "profile"?: string;
+            "rows"?: Array<{
+              "delivery_attempts"?: number;
+              "id"?: string;
+              "state"?: string;
+              "values"?: Record<string, string>;
+              "version"?: number;
+            }>;
+          }>;
           "log_level"?: string;
           "project_id"?: string;
           "redaction_rules"?: Array<{
