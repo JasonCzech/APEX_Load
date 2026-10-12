@@ -491,7 +491,9 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
     return {
       id: `live-${signatureId}`,
       signature: pattern.signature,
-      title: pattern.signature || `Error pattern ${index + 1}`,
+      // Titled by a real example ("expected status 200, got 503"); the
+      // normalized signature only groups the failures.
+      title: pattern.sample?.trim() || pattern.signature || `Error pattern ${index + 1}`,
       group,
       transaction: pattern.actions?.[0] || pattern.snapshot_url || 'Transaction evidence',
       count: pattern.count,
@@ -508,6 +510,20 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
       latestEvidenceId: pattern.latest_evidence_id,
     }
   })
+}
+
+// The signature an error is grouped by, when it says something its title does not.
+function errorPatternGrouping(pattern: ErrorPattern) {
+  const signature = pattern.signature?.trim()
+  return signature && signature !== pattern.title ? signature : ''
+}
+
+// The line under an error's title: the signature it is grouped by, otherwise its sample.
+function errorPatternSubtext(pattern: ErrorPattern) {
+  const grouping = errorPatternGrouping(pattern)
+  if (grouping) return `Grouped as ${grouping}`
+  const sample = pattern.sample.trim()
+  return sample !== pattern.title ? sample : ''
 }
 
 function buildGroupsWithTargets(prototypeGroups: CommandGroup[], targets: Record<string, number>) {
@@ -3055,7 +3071,7 @@ function ErrorDetailsTable({
         <table className="command-data-table command-error-table" role="grid" aria-label="Error patterns">
           <thead>
             <tr>
-              <SortableHeader label="Signature" sortKey="title" sort={sort} onSort={onSort} />
+              <SortableHeader label="Error" sortKey="title" sort={sort} onSort={onSort} />
               <SortableHeader label="Count" sortKey="count" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Share of errors" sortKey="rate" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Status" sortKey="statusCode" sort={sort} onSort={onSort} align="right" />
@@ -3076,7 +3092,7 @@ function ErrorDetailsTable({
                 onClick={() => onErrorSelect(row.id)}
                 onKeyDown={event => activateSelectableRow(event, () => onErrorSelect(row.id))}
               >
-                <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
+                <td><strong>{row.title}</strong><span className="command-table-subtext">{errorPatternSubtext(row)}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
                 <td className="numeric">{formatPercent(row.rate)}</td>
                 <td className="numeric">{row.statusCode || MISSING_VALUE}</td>
@@ -3131,7 +3147,7 @@ function ErrorEvidencePanel({
     <div className="command-evidence-panel" aria-label="Live error evidence" aria-busy={loading}>
       <div className="command-evidence-header">
         <div>
-          <span>Selected Signature</span>
+          <span>Selected error</span>
           <strong>{selectedError.title}</strong>
         </div>
         <small>{selectedError.evidenceCount ?? evidence.length} captured samples</small>
@@ -4440,7 +4456,7 @@ function ErrorDrilldown({
     <section className={`command-panel command-error-panel ${compact ? 'compact' : ''}`} aria-label="Error drill-down">
       <div className="command-panel-header">
         <div>
-          <h3>Error Drill-down</h3>
+          <h3>Error drill-down</h3>
           <p>Grouped failure signatures with transaction evidence.</p>
         </div>
       </div>
@@ -4470,6 +4486,12 @@ function ErrorDrilldown({
           <span>{selectedError.transaction}</span>
           <strong>{selectedError.sample}</strong>
           <dl>
+            {errorPatternGrouping(selectedError) && (
+              <div>
+                <dt>Grouped as</dt>
+                <dd>{errorPatternGrouping(selectedError)}</dd>
+              </div>
+            )}
             <div>
               <dt>Group</dt>
               <dd>{selectedError.group}</dd>

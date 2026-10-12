@@ -125,9 +125,12 @@ export default function RunExecutionDetails({ test, report, history = [], histor
         <strong>{event.label}</strong><span>{executionDate(event.created_at)}{event.status ? ` · ${event.status}` : ''}</span>
       </li>)}</ol> : !manifestLoading && !manifestError && manifest && <p>No lifecycle event history was retained. Missing events do not establish that an action never occurred.</p>}
     </section>
-    {manifest && <TelemetryPolicy evidence={manifest.telemetry_policy} />}
+    {/* On the evidence tabs the telemetry budget receipt is shown; on Execution it
+        is evidence about the run, not its story, so it waits with the manifest. */}
+    {manifest && evidenceOnly && <TelemetryPolicy evidence={manifest.telemetry_policy} />}
     <TelemetryAcceptanceVerdict verdict={report?.telemetry_acceptance} />
     <details className="run-execution-records"><summary>Configuration and infrastructure evidence</summary>
+      {manifest && !evidenceOnly && <TelemetryPolicy evidence={manifest.telemetry_policy} />}
       <p>{manifest?.source === 'archive' ? 'Archived run manifest.' : 'Retained controller record.'} Document generated: {executionDate(manifest?.generated_at)}. Generation time is not the time the run was captured.</p>
       {manifest?.warnings?.map(warning => <p key={warning}>{warning}</p>)}
       <p>{facts.immutable ? 'Initial configuration is immutable.' : 'Initial configuration is not verified as immutable.'}</p>

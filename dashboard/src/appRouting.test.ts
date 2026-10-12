@@ -461,8 +461,9 @@ it('round trips an archive-tab focus on the report and drops unknown focus targe
 describe('terminal run route compatibility', () => {
   it.each(['COMPLETE', 'FAILED', 'ABORTED'])('keeps %s runs inside Results regardless of legacy entry point', status => {
     const scope = { projectId: 'p', applicationId: 'a', releaseId: 'r' }
-    expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'execution' })
-    for (const [tab, section] of [['overview', 'execution'], ['control', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
+    expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'summary' })
+    expect(terminalRunReportView({ page: 'test', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'summary' })
+    for (const [tab, section] of [['overview', 'summary'], ['control', 'execution'], ['configuration', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
       const focus = ['action-summary', 'load-impact', 'transaction-drilldown'].includes(tab) ? { focus: tab } : {}
       expect(terminalRunReportView({ page: 'test', testId: 'run', tab, ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section, ...focus })
     }

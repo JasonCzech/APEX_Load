@@ -748,7 +748,12 @@ transactions.
 When errors climb, drill into the live error evidence to see representative failures
 rather than guessing — a 500 from your application and a connection reset from an
 exhausted generator look identical in an error-rate chart and call for opposite
-responses.
+responses. Each failure is titled by a real example ("expected status 200, got
+503"); the signature that groups the similar ones is shown beneath it.
+
+When a run ends, Command Center hands over to the run report's **Summary**. The
+**Execution** tab keeps the plan, groups and events; the run's telemetry budget
+receipt is under its **Configuration and infrastructure evidence** disclosure.
 
 ## Scheduling Recurring Runs
 

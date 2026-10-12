@@ -20,12 +20,15 @@ for (const status of ['FAILED', 'COMPLETE', 'ABORTED']) {
       identity: {}, initial_configuration: {}, current_configuration: {}, load_generators: { execution_settings: {} }, runtime_changes: [],
     } }))
     await page.goto(`/#/test/${id}?tab=overview&${scopeQuery(workspace)}`)
-    await expect(page).toHaveURL(new RegExp(`/report/${id}\\?section=execution`))
+    // An ended run's overview hands over to the report's Summary.
+    await expect(page).toHaveURL(new RegExp(`/report/${id}\\?section=summary`))
     await expect(page.getByRole('heading', { name: record.name, exact: true })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Execution', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.locator('nav.sidebar-nav').getByRole('button', { name: 'Results', exact: true })).toHaveClass(/active/)
     if (status === 'FAILED') await expect(page.getByText(record.error!, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Saved archive unavailable' })).toBeVisible()
+    await page.getByRole('button', { name: 'Review execution events', exact: true }).click()
+    await expect(page.getByRole('tab', { name: 'Execution', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByText('No group configuration was retained.')).toBeVisible()
     await page.getByRole('tab', { name: 'Evidence', exact: true }).click()
     await expect(page.getByText('No lifecycle event history was retained.', { exact: false })).toBeVisible()

@@ -2080,7 +2080,10 @@ describe('CommandCenterPrototype', () => {
 
     expect(container.textContent).toContain('Live Checkout Ramp')
     expect(container.textContent).toContain('Live Checkout')
-    expect(container.textContent).toContain('HTTP 500 checkout spike')
+    // A failure is titled by its example; the signature only groups it.
+    const drillDown = container.querySelector('[aria-label="Error drill-down"]')!
+    expect(drillDown.querySelector('.command-error-item span')?.textContent).toBe('inventory reservation returned status 500')
+    expect(drillDown.textContent).toContain('Grouped asHTTP 500 checkout spike')
     // One per-signature rate definition, named as such (not a windowed "Error rate").
     expect(container.textContent).toContain('Share of errors')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
@@ -2329,6 +2332,12 @@ describe('CommandCenterPrototype', () => {
     await click(tabNamed('Error Details'))
     await flush()
     expect(container.textContent).toContain('RUN A EVIDENCE')
+    // The row is titled by its example, with the signature that groups it beneath.
+    const errorTable = container.querySelector('table[aria-label="Error patterns"]')!
+    expect(errorTable.querySelector('thead th')?.textContent).toContain('Error')
+    expect(errorTable.querySelector('tbody td strong')?.textContent).toBe('shared failure')
+    expect(errorTable.querySelector('tbody td .command-table-subtext')?.textContent).toBe('Grouped as HTTP 500 shared signature')
+    expect(container.querySelector('[aria-label="Live error evidence"] .command-evidence-header strong')?.textContent).toBe('shared failure')
 
     await act(async () => {
       root.render(<CommandCenterPrototype testId="run-b" initialTest={withEvidencePattern('run-b', 'Run B')} history={[]} />)

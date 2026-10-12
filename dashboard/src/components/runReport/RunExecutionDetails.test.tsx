@@ -24,7 +24,7 @@ vi.mock('recharts', () => ({
 vi.mock('../SeriesChartExport', () => ({
   default: ({ rows, children }: { rows: Array<Record<string, unknown>>; children?: ReactNode }) => { captured.exportRows = rows; return <div>{children}</div> },
 }))
-vi.mock('../TelemetryPolicy', () => ({ default: () => null }))
+vi.mock('../TelemetryPolicy', () => ({ default: () => <section aria-label="Telemetry budget policy" /> }))
 vi.mock('../TelemetryAcceptanceVerdict', () => ({ default: () => null }))
 
 const START = Date.parse('2026-10-11T22:00:00Z')
@@ -72,5 +72,15 @@ describe('RunExecutionDetails load timeline', () => {
     expect(container.querySelector('.load-plan-legend')?.textContent).toBe('Browse')
     expect(captured.exportRows.length).toBeGreaterThan(0)
     expect(captured.exportRows.every(row => 'planned' in row)).toBe(true)
+  })
+
+  it('keeps the telemetry receipt with the manifest on Execution, and in view on the evidence tabs', async () => {
+    const withManifest = { ...(manifestModel as object), manifest: { telemetry_policy: {}, runtime_changes: [] } } as never
+    await act(async () => root.render(<RunExecutionDetails test={run} report={null} history={[]} manifestModel={withManifest} />))
+    expect(container.querySelector('[aria-label="Telemetry budget policy"]')?.closest('details')?.querySelector('summary')?.textContent).toBe('Configuration and infrastructure evidence')
+
+    await act(async () => root.render(<RunExecutionDetails test={run} report={null} manifestModel={withManifest} evidenceOnly />))
+    expect(container.querySelectorAll('[aria-label="Telemetry budget policy"]')).toHaveLength(1)
+    expect(container.querySelector('[aria-label="Telemetry budget policy"]')?.closest('details')).toBeNull()
   })
 })

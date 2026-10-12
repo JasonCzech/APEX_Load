@@ -714,12 +714,14 @@ export function terminalRunReportView(view: AppView, status: string, enabled: bo
   if (!enabled || !['COMPLETE', 'FAILED', 'ABORTED'].includes(status)) return view
   if (view.page !== 'test' && view.page !== 'command-center') return view
   if (!view.testId) return view
+  // A run's overview (and Command Center) hands over to the report's Summary;
+  // its configuration and control tabs to Execution.
   const sections: Partial<Record<TestWorkspaceTabID, ReportSection>> = {
-    overview: 'execution', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
+    overview: 'summary', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
     archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'performance', 'transaction-drilldown': 'diagnostics',
   }
   const focus = view.page === 'test' && REPORT_FOCUS.includes(view.tab as ReportFocus) ? view.tab as ReportFocus : undefined
   return { page: 'report', testId: view.testId, ...workspaceScopeForAppView(view),
-    section: view.page === 'test' && view.tab ? sections[view.tab] || 'execution' : 'execution',
+    section: view.page === 'test' && view.tab ? sections[view.tab] || 'summary' : 'summary',
     ...(focus ? { focus } : {}) }
 }
