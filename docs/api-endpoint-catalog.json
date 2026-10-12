@@ -7013,7 +7013,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "GET",
@@ -7023,7 +7023,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "POST",
@@ -7033,7 +7033,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
     },
     {
       "method": "GET",
@@ -7043,7 +7043,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "GET",

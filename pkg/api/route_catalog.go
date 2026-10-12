@@ -17,10 +17,12 @@ type apiRouteAuthRule struct {
 // domain apiRouteCatalog. Migrated domains contribute their access requirements
 // directly from the canonical route specifications below.
 var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
-	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables", viewerProjectAccess(resolveTestProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/rows", viewerProjectAccess(resolveTestProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/export", viewerProjectAccess(resolveTestProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/tests/{id}/live-tables/{tableID}/finalize", editorProjectAccess(resolveTestProjectID)),
+	// Live tables disclose and persist shared data, so use the same explicit
+	// scopes as data pools despite being addressed beneath a run URL.
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables", withServiceAccountScope(viewerProjectAccess(resolveTestProjectID), "read")),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/rows", withServiceAccountScope(viewerProjectAccess(resolveTestProjectID), "read")),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/export", withServiceAccountScope(viewerProjectAccess(resolveTestProjectID), "read")),
+	routeAuth(http.MethodPost, "/api/v1/tests/{id}/live-tables/{tableID}/finalize", withServiceAccountScope(editorProjectAccess(resolveTestProjectID), liveTablePersistenceServiceAccountScope)),
 	routeAuth(http.MethodGet, "/api/v1/auth/diagnostics", systemAdminAccess()),
 	routeAuth(http.MethodGet, "/api/v1/auth/service-accounts", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodPost, "/api/v1/auth/service-accounts", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
@@ -452,6 +454,11 @@ func viewerGlobalAccess() accessRequirement {
 
 func withDomainFeature(requirement accessRequirement, featureID string) accessRequirement {
 	requirement.DomainFeatureID = featureID
+	return requirement
+}
+
+func withServiceAccountScope(requirement accessRequirement, scope string) accessRequirement {
+	requirement.ServiceAccountScope = scope
 	return requirement
 }
 

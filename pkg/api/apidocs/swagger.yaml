@@ -442036,7 +442036,7 @@ paths:
   /api/v1/tests/{id}/live-tables:
     get:
       summary: List Live Tables
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleListLiveTables
       responses:
         "200":
@@ -442066,7 +442066,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -442079,7 +442079,7 @@ paths:
   /api/v1/tests/{id}/live-tables/{tableID}/export:
     get:
       summary: Export Live Table
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleExportLiveTable
       responses:
         "200":
@@ -442120,7 +442120,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -442144,7 +442144,7 @@ paths:
   /api/v1/tests/{id}/live-tables/{tableID}/finalize:
     post:
       summary: Finalize Live Table
-      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       operationId: handleFinalizeLiveTable
       requestBody:
         required: true
@@ -442206,7 +442206,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       parameters:
         - name: id
           in: path
@@ -442224,7 +442224,7 @@ paths:
   /api/v1/tests/{id}/live-tables/{tableID}/rows:
     get:
       summary: Live Table Rows
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleLiveTableRows
       responses:
         "200":
@@ -442267,7 +442267,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path

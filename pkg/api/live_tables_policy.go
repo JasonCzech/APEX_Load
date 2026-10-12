@@ -8,6 +8,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// Persisting live output is a reusable data-pool write, including when it is
+// performed automatically after a run. Keep both finalization paths aligned.
+const liveTablePersistenceServiceAccountScope = "scripts:write"
+
 func (tr *TestRunner) validateLiveTablePolicy(projectID string) error {
 	if tr.projectStore == nil {
 		return errors.New("live table project policy is unavailable")
@@ -57,7 +61,7 @@ func (tr *TestRunner) authorizeLiveTablePersistence(test *ManagedTest) error {
 		if err != nil || account == nil || !account.Active || (account.ExpiresAt != nil && !account.ExpiresAt.After(time.Now())) {
 			return errors.New("live table output actor is no longer active")
 		}
-		if !serviceAccountAllowsScopes(&AuthenticatedServiceAccount{ID: account.ID, Scopes: account.Scopes}, []string{"write"}) {
+		if !serviceAccountAllowsScopes(&AuthenticatedServiceAccount{ID: account.ID, Scopes: account.Scopes}, []string{liveTablePersistenceServiceAccountScope}) {
 			return errors.New("live table output requires current data pool write scope")
 		}
 		user = authenticatedUserFromServiceAccount(account)

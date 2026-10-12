@@ -51,7 +51,7 @@ func TestLiveTablePersistenceRequiresServiceAccountWriteScope(t *testing.T) {
 	for _, tc := range []struct {
 		scope   string
 		allowed bool
-	}{{"results:read", false}, {"write", true}} {
+	}{{"results:read", false}, {"tests:run", false}, {"read", false}, {"write", false}, {"scripts:write", true}, {"*", true}, {"automation:*", true}} {
 		t.Run(tc.scope, func(t *testing.T) {
 			runner, store, test := newLiveRuntimeFixture(t, "memory", "write_back")
 			account := &storage.ServiceAccount{ID: "live-automation", Name: "Live automation", KeyHash: "test-only", Active: true, GlobalRoles: []string{"editor"}, Scopes: []string{tc.scope}, CreatedAt: time.Now(), UpdatedAt: time.Now()}
