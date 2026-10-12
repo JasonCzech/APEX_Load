@@ -452,7 +452,7 @@ export default function TestExecution({
       },
       {
         id: 'test-notes',
-        label: 'Test notes',
+        label: 'Run notes',
         compactLabel: 'Notes',
         tone: 'secondary',
         onClick: () => setShowTestNotes(true),

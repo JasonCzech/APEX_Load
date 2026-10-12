@@ -10,7 +10,7 @@ interface BuildNavigationShortcutOptions {
 const NAVIGATION_SHORTCUTS: Array<{ id: string; label: string; keys: string; page: NavPage; hidden?: (options: BuildNavigationShortcutOptions) => boolean }> = [
   { id: 'dashboard', label: 'Go to Dashboard', keys: 'g d', page: 'dashboard' },
   { id: 'command-center', label: 'Go to Command Center', keys: 'g c', page: 'command-center' },
-  { id: 'new-test', label: 'Go to New Test', keys: 'g n', page: 'new-test' },
+  { id: 'new-test', label: 'Go to New run', keys: 'g n', page: 'new-test' },
   { id: 'scenarios', label: 'Go to Scenarios', keys: 'g t', page: 'tests' },
   { id: 'repository', label: 'Go to Repository', keys: 'g p', page: 'repository' },
   { id: 'activity', label: 'Go to Activity', keys: 'g v', page: 'activity' },

@@ -812,7 +812,7 @@ export default function ScriptCreateOptions({
                             </button>
                             <div className="script-table-meta">
                               <span className="protocol-badge">{script.protocol}</span>
-                              <span className="script-health-token">v{script.version || '—'}</span>
+                              <span className="script-health-token script-version-token">v{script.version || '—'}</span>
                               <ObjectInfoBadge name={script.name} refKey={script.ref_key} createdAt={script.created_at} activity={script.activity} />
                             </div>
                           </td>

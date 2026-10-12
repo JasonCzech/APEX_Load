@@ -582,7 +582,7 @@ function ReleaseSnapshotPanel({
               </div>
               <div className="release-panel-actions" aria-label="Release operations links">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onMonitoring}>Monitoring</button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New Test</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New run</button>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>Results</button>
               </div>
             </div>
@@ -1603,13 +1603,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   </svg>
                 </span>
                 <span>No tests currently running</span>
-                <span className="dash-empty-hint">Start a scenario from the New Test page</span>
+                <span className="dash-empty-hint">Start a scenario from the New run page</span>
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
                   onClick={navigateToNewTest}
                 >
-                  Start New Test
+                  Start a new run
                 </button>
               </div>
             ) : (
@@ -1770,7 +1770,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <div className="dash-empty compact">
                 <span>No completed tests yet</span>
                 <span className="dash-empty-hint">Start a test to build activity, performance, and release history.</span>
-                <button type="button" className="btn btn-primary btn-sm" onClick={navigateToNewTest}>Start New Test</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={navigateToNewTest}>Start a new run</button>
               </div>
             ) : (
               <div className="trend-table-wrap" ref={activityTableBounds.ref} style={activityTableBounds.style}>

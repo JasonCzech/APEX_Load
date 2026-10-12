@@ -56,7 +56,7 @@ ready-to-load script. In outline:
    scripts, scenarios, and results are all filtered by it.
 2. Create or import a script, add at least one assertion, then **Validate Script(s)**
    and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
-3. Build a one-group scenario, launch it from **New Test**, and watch it in
+3. Build a one-group scenario, launch it from **New run**, and watch it in
    **Command Center**.
 4. When the run reaches `COMPLETE`, read the report from **Results** and pin it as the
    release baseline.
@@ -74,7 +74,7 @@ your main map:
 | Sidebar item | What it is for |
 | --- | --- |
 | **Dashboard** | Live overview of tests and recent activity. |
-| **New Test** | Launch a run from a scenario, and manage run schedules. |
+| **New run** | Launch a run from a scenario, and manage run schedules. |
 | **Command Center** | Active-run overview and live run controls. |
 | **Results** | Browse completed runs and their reports. |
 | **Scripts** | Author, import, and manage test scripts. |
@@ -98,7 +98,7 @@ Navigation shortcuts are two-key sequences: press `g`, release, then the second 
 | --- | --- |
 | `g` `d` | Dashboard |
 | `g` `c` | Command Center |
-| `g` `n` | New Test |
+| `g` `n` | New run |
 | `g` `t` | Scenarios |
 | `g` `s` | Scripts |
 | `g` `p` | Repository |
@@ -575,10 +575,10 @@ long, and under what conditions. Build scenarios from the **Scenarios** page.
 
 The scenario builder has five steps. **Start** takes the scenario's name and its script
 groups, one row per group (an empty draft can instead copy a saved scenario).
-**Model & Shape** picks the load model: choosing Fixed VUsers or Stepped Ramp selects
+**Model & shape** picks the load model: choosing Fixed VUsers or Stepped Ramp selects
 its recommended variant, another variant can be picked instead, and **Next** moves on.
 Goal-Driven asks for its targets in a sizing dialog, and Traffic Profile for its
-demand source. **Run Settings** has one row of tabs for target load, ramp pattern, run
+demand source. **Run settings** has one row of tabs for target load, ramp pattern, run
 phases, advanced settings, the browser and script runtime, and generator assignment;
 then come **Data** and **Review**. **Edit** opens a saved scenario at Start, and the
 row's **Edit run settings** and **Edit data** open it at those steps. Every step it
@@ -589,7 +589,7 @@ A scenario brings together:
 - **Groups** — each group runs one script with its own VUser count, ramp-up, ramp-down,
   and optional iteration cap. Use multiple groups to model a realistic mix, for example
   80% browse and 20% checkout. A group's `role` distinguishes a normal **load** group
-  from an **observer** group (shown as **Observer Canary**) — a browser experience
+  from an **observer** group (shown as **Observer canary**) — a browser experience
   canary that measures what a real user sees while the load groups generate the pressure.
 - **Load model** — total VUsers, ramp pattern, and duration. Multi-stage groups let you
   express step loads (ramp to 100, hold, ramp to 300, hold) rather than a single slope.
@@ -597,7 +597,7 @@ A scenario brings together:
   starts the first VUser at once and the rest evenly through the ramp, a ramp stage
   adds its VUsers in equal steps with the first one interval in, and at the end of the
   duration each group stops its VUsers evenly through its ramp-down. The scenario
-  builder, New Test, Command Center and the run's results draw the same chart on
+  builder, New run, Command Center and the run's results draw the same chart on
   elapsed time; during and after a run, the observed VUsers are drawn over it.
 - **Runtime settings** — per-group options such as think time, pacing, network
   simulation, and IP spoofing (a pool of source IPs so the run presents many client
@@ -623,7 +623,7 @@ longer validates, a duration shorter than the ramp.
 
 ## Launching A Test
 
-Once you have a scenario, launch a run from the **New Test** page (or directly from a
+Once you have a scenario, launch a run from the **New run** page (or directly from a
 scenario).
 
 1. Confirm your scope, then choose the scenario. Once you choose one (or arrive from
@@ -691,7 +691,7 @@ error percentage, timing, and metric freshness. Elapsed and remaining time leave
 time spent paused, which a run makes up after it resumes; remaining time is an
 estimate, and a paused run shows Paused instead.
 
-When there are no active runs, choose **New Test** or **Browse scenarios**. New Test
+When there are no active runs, choose **New run** or **Browse scenarios**. New run
 requires permission to manage tests. Select a release before opening Results; if
 none exists, open the Repository to configure the workspace. A failed refresh shows
 an error and Retry instead of claiming the scope is empty; previously loaded runs
@@ -746,7 +746,7 @@ responses.
 
 To run a scenario on a cadence — a nightly regression, a weekly soak — use scheduling.
 
-1. Go to **New Test** and switch to the **Schedules** view.
+1. Go to **New run** and switch to the **Schedules** view.
 2. Pick a stored scenario.
 3. Define when it should run with the visual **cron builder**: a five-field editor over
    a standard cron expression, so you do not have to remember cron syntax.

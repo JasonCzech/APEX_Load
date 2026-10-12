@@ -531,7 +531,7 @@ export default function TestExecutionStatusPanels({
         <div className="goal-status-card">
           <div className="goal-status-header">
             <div>
-              <h3 className="goal-status-title">Goal Controller</h3>
+              <h3 className="goal-status-title">Goal controller</h3>
               <p className="goal-status-subtitle">{goalDescription}</p>
             </div>
             <div className={`goal-status-badge ${goalStatus?.stop_triggered ? 'danger' : goalStatus?.breach_active ? 'warning' : 'healthy'}`}>

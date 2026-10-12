@@ -59,7 +59,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     id: 'new-test',
-    label: 'New Test',
+    label: 'New run',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -769,14 +769,14 @@ export default function Sidebar({
           <TooltipButton
             className={`nav-item nav-item-primary ${active === 'new-test' ? 'active' : ''}`}
             onClick={() => navigateTo('new-test')}
-            aria-label="New Test"
-            title={collapsed ? 'New Test' : undefined}
+            aria-label="New run"
+            title={collapsed ? 'New run' : undefined}
             tooltipPlacement="right"
             aria-current={active === 'new-test' ? 'page' : undefined}
-            data-nav-label="New Test"
+            data-nav-label="New run"
           >
             <span className="nav-icon">{visibleNavItemsById.get('new-test')?.icon}</span>
-            {!collapsed && <span className="nav-label">New Test</span>}
+            {!collapsed && <span className="nav-label">New run</span>}
           </TooltipButton>
         )}
         {NAV_GROUPS.map(group => {

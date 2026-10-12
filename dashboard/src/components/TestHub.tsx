@@ -192,8 +192,8 @@ type ScenarioSettingsSection = 'composition' | 'stages' | 'phases' | 'advanced'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'scripts', label: 'Start' },
-  { id: 'source', label: 'Model & Shape' },
-  { id: 'run', label: 'Run Settings' },
+  { id: 'source', label: 'Model & shape' },
+  { id: 'run', label: 'Run settings' },
   { id: 'data', label: 'Data' },
   { id: 'review', label: 'Review' },
 ]
@@ -202,15 +202,15 @@ const SCENARIO_AUTOSAVE_DELAY_MS = 1500
 
 const RUN_SETTINGS_STEP_INDEX = scenarioWizardSteps.findIndex(step => step.id === 'run')
 
-// Run Settings is one level of tabs: the scenario's own sections, then the
+// Run settings is one level of tabs: the scenario's own sections, then the
 // runtime and generator settings.
 const runSettingsSections: Array<{ label: string; tab: RunSettingsTab; section?: ScenarioSettingsSection }> = [
-  { label: 'Target Load', tab: 'scenario', section: 'composition' },
-  { label: 'Ramp Pattern', tab: 'scenario', section: 'stages' },
-  { label: 'Run Phases', tab: 'scenario', section: 'phases' },
-  { label: 'Advanced Settings', tab: 'scenario', section: 'advanced' },
-  { label: 'Browser/Script Runtime', tab: 'runtime' },
-  { label: 'Controller/Generator', tab: 'infrastructure' },
+  { label: 'Target load', tab: 'scenario', section: 'composition' },
+  { label: 'Ramp pattern', tab: 'scenario', section: 'stages' },
+  { label: 'Run phases', tab: 'scenario', section: 'phases' },
+  { label: 'Advanced settings', tab: 'scenario', section: 'advanced' },
+  { label: 'Browser/script runtime', tab: 'runtime' },
+  { label: 'Controller/generator', tab: 'infrastructure' },
 ]
 
 function runSettingsTabId(item: { tab: RunSettingsTab; section?: ScenarioSettingsSection }) {
@@ -807,10 +807,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const scenarioOpenGenerationRef = useRef(0)
   const originalShapeIdRef = useRef('')
   // The variant a model-family click picked on the author's behalf. Until the
-  // author picks a variant or reaches Run Settings, another family replaces it.
+  // author picks a variant or reaches Run settings, another family replaces it.
   const autoPickedShapeRef = useRef('')
   const wizardPanelRef = useRef<HTMLDivElement>(null)
-  // Run Settings' tab row scrolls when its column is too narrow; its ends say so.
+  // Run settings' tab row scrolls when its column is too narrow; its ends say so.
   const [runTabsScroller, setRunTabsScroller] = useState<HTMLDivElement | null>(null)
   const runTabEdges = useScrollEdges(runTabsScroller)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('scripts')
@@ -1839,7 +1839,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setWizardStep(mode === 'existing' ? 'scripts' : 'source')
   }
 
-  // Script and group fixes live on the New Scenario path of the Start step.
+  // Script and group fixes live on the New scenario path of the Start step.
   const openScriptComposition = () => {
     setScenarioStartPath('new')
     setWizardStep('scripts')
@@ -1852,7 +1852,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setModelFamilyChoice(familyId)
     // A draft without a load model takes the family's recommended variant (its
     // primary shape) with the family, so one pick and Next is enough. Until
-    // the author picks a variant or reaches Run Settings, that pick is the
+    // the author picks a variant or reaches Run settings, that pick is the
     // family's, so another family replaces it. A chosen, templated or copied
     // model is replaced only by picking a variant.
     const autoPicked = Boolean(selectedShapeId) && selectedShapeId === autoPickedShapeRef.current && maxVisitedWizardIndex < RUN_SETTINGS_STEP_INDEX
@@ -2062,7 +2062,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setGoalBaselineLoadingId('')
     setGoalSizingError('')
 	setWizardStep('run')
-	// Reached from the Model & Shape step, so an edit must stay bound to its scenario.
+	// Reached from the Model & shape step, so an edit must stay bound to its scenario.
 	await loadCompletedGoalBaselines()
   }
 
@@ -3275,13 +3275,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
   // A new scenario's VUsers and duration start from builder defaults. Until the
   // author has chosen a model (shape, template, goal or cloned scenario) or
-  // reached Run Settings, Save draft keeps a browser checkpoint rather than
+  // reached Run settings, Save draft keeps a browser checkpoint rather than
   // creating a launchable project scenario with load the author never set.
   const newScenarioLoadUnconfigured = !editingId && !sourceStepComplete && maxVisitedWizardIndex < RUN_SETTINGS_STEP_INDEX
   const draftSaveHelp = newScenarioLoadUnconfigured
-    ? 'Save draft keeps this scenario in this browser until its load is set in Model & Shape or Run Settings; it is not added to the project or launchable yet.'
+    ? 'Save draft keeps this scenario in this browser until its load is set in Model & shape or Run settings; it is not added to the project or launchable yet.'
     : 'Incomplete or blocked drafts are saved in this browser. Configured scenarios are saved to the project; neither launches a run.'
-  // Only offer "Start Over" for a new build (not an edit) once there's progress to discard.
+  // Only offer "Start over" for a new build (not an edit) once there's progress to discard.
   const builderHasProgress = !editingId && hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
 
   const renderScenarioRunsContent = (scenario: StoredScenario) => {
@@ -3292,7 +3292,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       <div className="scenario-linked-runs-content">
         <div className="scenario-linked-runs-header">
           <div>
-            <strong>Past Scenario Runs</strong>
+            <strong>Past scenario runs</strong>
             <span>{loading ? 'Loading runs…' : `${runs.length} linked run${runs.length === 1 ? '' : 's'}`}</span>
           </div>
           <span className="scenario-table-assignment-detail">{scenario.name}</span>
@@ -3304,7 +3304,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <table data-table-pagination="on">
               <thead>
                 <tr>
-                  <SortHeader label="Run Name" field="name" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
+                  <SortHeader label="Run name" field="name" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
                   <SortHeader label="Status" field="status" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
                   <SortHeader label="Release ID" field="release_id" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
                   <SortHeader label="Started" field="start_time" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
@@ -3345,7 +3345,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
   const renderSourceScenarioRunsPanel = () => {
     if (scenarioSourceMode !== 'existing' || !selectedCloneScenario) return null
-    // Copies show their source's runs beside the copy table; edits show their own runs on Model & Shape.
+    // Copies show their source's runs beside the copy table; edits show their own runs on Model & shape.
     const copying = wizardStep === 'scripts' && scenarioStartPath === 'copy'
     const editing = wizardStep === 'source' && Boolean(editingId)
     if (!copying && !editing) return null
@@ -3380,7 +3380,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     <div className="scenario-subpanel" data-testid="pre-run-assurance">
       <div className="scenario-assignment-header">
         <div>
-          <h4>Pre-Run Assurance</h4>
+          <h4>Pre-run assurance</h4>
           <p>Run a one-pass canary/shakeout immediately before full load. Passing starts the run automatically; failures pause with evidence for continue/cancel.</p>
         </div>
       </div>
@@ -3409,14 +3409,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     <div className="scenario-subpanel" data-testid="protect-the-run">
       <div className="scenario-assignment-header">
         <div>
-          <h4>Protect the Run</h4>
+          <h4>Protect the run</h4>
           <p>Optionally stop when the error rate remains at or above a threshold for a sustained active-runtime window.</p>
         </div>
       </div>
       <div className="stepped-ramp-protection">
         <label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateGuidedEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>The active load level and partial interval evidence are retained in alerts and results.</small></span></label>
-        <label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input aria-label="Protect the Run error rate threshold" className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
-        <DurationField className="scenario-field" label="Protect the Run sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
+        <label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input aria-label="Protect the run error rate threshold" className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
+        <DurationField className="scenario-field" label="Protect the run sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
       </div>
     </div>
   )
@@ -3438,7 +3438,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           >
             <div className="modal-header">
               <div>
-                <h3 id="scenario-script-library-dialog-title">Choose Script</h3>
+                <h3 id="scenario-script-library-dialog-title">Choose script</h3>
                 <p id="scenario-script-library-dialog-description" className="modal-subtitle">
                   Select a script for {targetLabel}.
                 </p>
@@ -3448,7 +3448,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <div className="scenario-script-library-dialog-body">
               <div className="library-toolbar">
                 <div>
-                  <h4 className="section-title">Existing Scripts Library ({scripts.length})</h4>
+                  <h4 className="section-title">Existing scripts library ({scripts.length})</h4>
                   {!canManageScripts && <p>Script creation requires script-management permission. Ask a project administrator to add a script to this library.</p>}
                   <button className="btn btn-secondary" disabled={!canManageScripts} title={!canManageScripts ? 'Ask a script author or administrator to create a script in this project.' : undefined} onClick={() => { setPrerequisiteScript('start-new') }}>Create script</button>
                   <button className="btn btn-secondary" disabled={!canManageScripts} title={!canManageScripts ? 'Ask a script author or administrator to create a script in this project.' : undefined} onClick={() => { setPrerequisiteScript('source') }}>Import script</button>
@@ -3473,9 +3473,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 </label>
               </div>
               <div className="settings-grid scenario-picker-filters">
-                <label className="scenario-field">Readiness<select className="settings-input" value={scriptReadinessFilter} onChange={event => setScriptReadinessFilter(event.target.value)}><option value="all">All readiness states</option><option value="unblocked">No known authoring blockers</option><option value="blocked">Blocked</option></select></label>
-                <label className="scenario-field">Protocol<select className="settings-input" value={scriptProtocolFilter} onChange={event => setScriptProtocolFilter(event.target.value)}><option value="all">All protocols</option>{[...new Set(scripts.flatMap(scriptProtocols))].sort().map(protocol => <option key={protocol}>{protocol}</option>)}</select></label>
-                <button type="button" className="btn btn-secondary" disabled={!pickedScriptIds.length} onClick={() => {
+                <label className="scenario-field"><span>Readiness</span><select className="settings-input" value={scriptReadinessFilter} onChange={event => setScriptReadinessFilter(event.target.value)}><option value="all">All readiness states</option><option value="unblocked">No known authoring blockers</option><option value="blocked">Blocked</option></select></label>
+                <label className="scenario-field"><span>Protocol</span><select className="settings-input" value={scriptProtocolFilter} onChange={event => setScriptProtocolFilter(event.target.value)}><option value="all">All protocols</option>{[...new Set(scripts.flatMap(scriptProtocols))].sort().map(protocol => <option key={protocol}>{protocol}</option>)}</select></label>
+                <button type="button" className="btn btn-secondary scenario-picker-bulk-add" disabled={!pickedScriptIds.length} onClick={() => {
                   const selected = pickedScriptIds.map(id => scripts.find(script => script.id === id)).filter((script): script is StoredScript => !!script)
                   setForm(current => {
                     const groups = [...current.groups]
@@ -3496,6 +3496,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     <tr>
                       <SortHeader label="Script" field="name" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} />
                       <SortHeader label="Protocol(s)" field="protocol" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} />
+                      <th>Readiness</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
@@ -3503,13 +3504,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     {visibleScriptLibrary.map(script => {
                       const targetScriptId = formGroups[scriptSelectionTargetIndex]?.script_id || ''
                       const selectedForTarget = Boolean(targetScriptId) && targetScriptId === script.id
+                      const readiness = scriptReadiness.get(script.id)
+                      const needsReview = script.authoring_health?.status === 'needs_review'
                       return (
                         <tr key={script.id} className={selectedForTarget ? 'selected' : ''}>
                           <td className="cell-name">
                             <label className="scenario-picker-selection"><input type="checkbox" aria-label={`Select ${script.name} for bulk addition`} checked={pickedScriptIds.includes(script.id)} onChange={event => setPickedScriptIds(current => event.target.checked ? [...current, script.id] : current.filter(id => id !== script.id))} />{script.name}</label>
                             <div className="script-table-meta">
-                              <span className="script-health-token">v{script.version || '—'}</span>
-                              <ScriptReadinessBadge name={script.name} readiness={scriptReadiness.get(script.id)} needsReview={script.authoring_health?.status === 'needs_review'} />
+                              <span className="script-health-token script-version-token">v{script.version || '—'}</span>
                               <ObjectInfoBadge name={script.name} refKey={script.ref_key} createdAt={script.created_at} activity={script.activity}>
                                 <div><dt>Last run</dt><dd>{formatDate(script.last_run_at)}</dd></div>
                                 <div><dt>Scenarios</dt><dd>{formatScriptScenarioCount(script)}{script.associated_scenarios?.length ? ` · ${associatedScenarioList(script)}` : ''}</dd></div>
@@ -3522,6 +3524,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                               {scriptProtocols(script).map(protocol => <span key={protocol} className="protocol-badge">{protocol}</span>)}
                             </div>
                           </td>
+                          {/* The Readiness filter's column: a flag when a script is blocked or wants review, else its state. */}
+                          <td>{readiness && (readiness.blocked || needsReview)
+                            ? <ScriptReadinessBadge name={script.name} readiness={readiness} needsReview={needsReview} />
+                            : <span className="cell-muted">{readiness?.label ?? '—'}</span>}</td>
                           <td style={{ textAlign: 'right' }}>
                             <button
                               className="btn btn-sm btn-secondary"
@@ -3643,7 +3649,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const renderScenarioNameField = () => (
     <div className="settings-grid scenario-core-grid">
       <label className="scenario-field">
-        <span>Scenario Name</span>
+        <span>Scenario name</span>
         <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
       </label>
     </div>
@@ -3653,7 +3659,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     <div className="scenario-clone-path">
       <div className="scenario-assignment-header">
         <div>
-          <h4>Choose A Scenario To Copy</h4>
+          <h4>Choose a scenario to copy</h4>
           <p>Its scripts, load model, run settings, data pools, and generator defaults are copied into this draft. The original scenario is not changed.</p>
         </div>
       </div>
@@ -3663,7 +3669,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               <span className="scenario-shape-guidance-name">{`Copied ${selectedCloneScenario.name}`}</span>
               <span className="scenario-shape-guidance-category">{`${formGroups.length} script group${formGroups.length === 1 ? '' : 's'}`}</span>
             </div>
-            <p className="scenario-shape-guidance-copy">This draft now uses its scripts and settings. Name the new scenario above, review the copied scripts, or continue to Model & Shape.</p>
+            <p className="scenario-shape-guidance-copy">This draft now uses its scripts and settings. Name the new scenario above, review the copied scripts, or continue to Model & shape.</p>
             <div className="scenario-shape-actions">
               <button type="button" className="btn btn-sm btn-secondary" onClick={() => setScenarioStartPath('new')}>Review copied scripts</button>
             </div>
@@ -3756,7 +3762,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
             <div>
-              <h4>Choose A Load Model</h4>
+              <h4>Choose a load model</h4>
               <p>Pick how load is generated for the selected scripts. Each model offers variants and optional starter templates.</p>
             </div>
           </div>
@@ -3815,19 +3821,19 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
             <div>
-              <h4>Start Your Scenario</h4>
+              <h4>Start your scenario</h4>
               <p>{showStartChoice ? 'Build a new scenario from scripts, or copy a saved scenario and adjust it. Either way, choose the load model on the next step.' : 'Name the scenario and set up its script groups. Load and ramp are set on the next steps.'}</p>
             </div>
           </div>
           {renderScenarioNameField()}
           {showStartChoice && <div className="scenario-source-grid" role="group" aria-label="How to start this scenario">
             <button type="button" aria-pressed={scenarioStartPath === 'new'} className={`scenario-source-card ${scenarioStartPath === 'new' ? 'selected' : ''}`} onClick={() => setScenarioStartPath('new')}>
-              <span>New Scenario</span>
+              <span>New scenario</span>
               <strong>Add scripts</strong>
               <small>Choose the scripts that participate in this scenario and set up their groups.</small>
             </button>
             <button type="button" disabled={scenarios.length === 0} aria-pressed={scenarioStartPath === 'copy'} className={`scenario-source-card ${scenarioStartPath === 'copy' ? 'selected' : ''}`} onClick={() => setScenarioStartPath('copy')}>
-              <span>Copy Existing Scenario</span>
+              <span>Copy existing scenario</span>
               <strong>Start from a saved scenario</strong>
               <small>{scenarios.length === 0 ? 'No saved scenarios in this workspace yet.' : 'Reuse its scripts, load model, run settings, and data pools. The original is not changed.'}</small>
             </button>
@@ -3835,12 +3841,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {scenarioStartPath === 'copy' && showStartChoice ? renderCloneScenarioPanel() : (<>
           <div className="scenario-assignment-header">
             <div>
-              <h4>Scripts And Groups</h4>
-              <p>One row per script group. Tune VUsers and ramp on the Run Settings step.</p>
+              <h4>Scripts and groups</h4>
+              <p>One row per script group. Tune VUsers and ramp on the Run settings step.</p>
             </div>
             {/* Copying stays within reach of a draft that has scripts (when there is
                 a saved scenario to copy); it asks before replacing them. */}
-            {!showStartChoice && !editingId && scenarios.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setScenarioStartPath('copy')}>Copy Existing Scenario</button>}
+            {!showStartChoice && !editingId && scenarios.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setScenarioStartPath('copy')}>Copy existing scenario</button>}
           </div>
           {/* One row per group: group, script, VUsers, initialization scope and role. */}
           <div className="scenario-script-group-list scenario-script-group-list-spacious scenario-group-table" role="table" aria-label="Script groups">
@@ -3869,7 +3875,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 >
                   <div className="scenario-group-cell" role="cell">
                     <label className="scenario-field">
-                      <span className="scenario-group-label">Group Name</span>
+                      <span className="scenario-group-label">Group name</span>
                       <input
                         className="settings-input"
                         value={group.name}
@@ -3886,10 +3892,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       type="button"
                       className={`scenario-script-select-button ${selectedScript ? 'has-script' : ''}`}
                       onClick={() => chooseScriptForGroup(index)}
-                      aria-label={selectedScript ? `${selectedScript.name}: change the script for ${groupLabel}` : `Add Script to ${groupLabel}`}
+                      aria-label={selectedScript ? `${selectedScript.name}: change the script for ${groupLabel}` : `Add script to ${groupLabel}`}
                     >
                       <span className="scenario-script-select-copy">
-                        <strong>{selectedScript?.name || 'Add Script'}</strong>
+                        <strong>{selectedScript?.name || 'Add script'}</strong>
                         {selectedScript && <small>v{selectedScript.version || '—'} · {selectedScript.archived_at ? 'Archived' : readiness?.label}</small>}
                       </span>
                       {selectedScript && <span className="protocol-badge">{selectedScript.protocol || 'http'}</span>}
@@ -3898,13 +3904,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   </div>
                   {/* A group a traffic profile maps, or any group of a goal-oriented
                       scenario without one, has its VUsers sized for it; its count is a seed. */}
-                  <div className="scenario-group-cell scenario-group-vusers" role="cell" title={vusersSizedBy ? `Sized from ${vusersSizedBy} on the Run Settings step` : 'Set on the Run Settings step'}>
+                  <div className="scenario-group-cell scenario-group-vusers" role="cell" title={vusersSizedBy ? `Sized from ${vusersSizedBy} on the Run settings step` : 'Set on the Run settings step'}>
                     <span className="scenario-group-label" aria-hidden="true">VUsers</span>
                     <strong>{vusersSizedBy ? 'Auto' : maxStageVUsers(group.stages) || Number(group.vusers) || 0}</strong>
                   </div>
                   <div className="scenario-group-cell" role="cell">
                     <label className="scenario-field">
-                      <span className="scenario-group-label">Initialization Scope</span>
+                      <span className="scenario-group-label">Initialization scope</span>
                       <select className="settings-input" value={group.initialization} onChange={event => updateScenarioGroup(index, { initialization: event.target.value as ScenarioFormGroup['initialization'] })}>
                         <option value="at_runtime">Init/teardown per VUser</option>
                         <option value="at_once">Init/teardown once per group</option>
@@ -3936,7 +3942,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       >
                         <option value="load">Load</option>
                         <option value="observer" disabled={selectedScript?.protocol !== 'browser'}>
-                          Observer Canary{selectedScript?.protocol !== 'browser' ? ' (browser scripts only)' : ''}
+                          Observer canary{selectedScript?.protocol !== 'browser' ? ' (browser scripts only)' : ''}
                         </option>
                       </select>
                       {group.role === 'observer' && <small>Observer canaries are capped at {OBSERVER_MAX_VUSERS} VUsers.</small>}
@@ -3957,7 +3963,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             title={!canAddScenarioGroup ? addScenarioGroupBlockedReason : undefined}
           >
             <span>+</span>
-            <strong>Add Group</strong>
+            <strong>Add group</strong>
             {!canAddScenarioGroup && <small>{scenarioGroupNameError || 'Add a script to every existing group first'}</small>}
           </button>
           {selectedScriptProtocols.length > 1 && <p className="scenario-assignment-copy secondary" role="note">This scenario mixes {selectedScriptProtocols.join(', ')} scripts. Capacity advice accounts for each protocol's density.</p>}
@@ -3985,14 +3991,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
       const renderGuidedScenarioExtras = () => <>
         {scenarioSettingsSection === 'stages' && !isSteppedRamp && <div className="scenario-subpanel">
-          <h4>Ramp Pattern</h4>
+          <h4>Ramp pattern</h4>
           <p className="scenario-assignment-copy secondary">This model manages its load curve automatically. Select Stepped Ramp in Model &amp; Shape to configure equal load steps.</p>
         </div>}
         {scenarioSettingsSection === 'phases' && <div className="scenario-subpanel">
-          {!isGuidedClosedVUser && <div className="scenario-assignment-header"><div><h4>Run Phases</h4><p>Set the run window and an optional delay before load begins.</p></div></div>}
+          {!isGuidedClosedVUser && <div className="scenario-assignment-header"><div><h4>Run phases</h4><p>Set the run window and an optional delay before load begins.</p></div></div>}
           <div className="settings-grid scenario-core-grid">
             {!isGuidedClosedVUser && <DurationField className="scenario-field" label="Duration" value={form.duration} disabled={form.termination_mode === 'iterations'} required showPresets onChange={value => isSteppedRamp ? updateSteppedRamp(undefined, undefined, value) : setForm(previous => ({ ...previous, duration: value, scenario_mode: 'goal_oriented' }))} />}
-            <DurationField className="scenario-field" label="Start Delay" value={form.start_delay} allowEmpty compact onChange={value => setForm(previous => ({ ...previous, start_delay: value }))} />
+            <DurationField className="scenario-field" label="Start delay" value={form.start_delay} allowEmpty compact onChange={value => setForm(previous => ({ ...previous, start_delay: value }))} />
           </div>
         </div>}
         {scenarioSettingsSection === 'advanced' && <>
@@ -4014,7 +4020,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       return (
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
-            <h4>Run Settings</h4>
+            <h4>Run settings</h4>
             <p>Configure duration, group load, stage modeling, protection, SLAs, browser defaults, and generator assignment.</p>
           </div>
           {renderShapeGuidance()}
@@ -4052,7 +4058,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 						<div className="stepped-ramp-worksheet goal-driven-worksheet" data-settings-tab={scenarioSettingsSection}>
 							<div className="stepped-ramp-heading">
 								<span>Guided worksheet</span>
-								<h3>Goal-Driven Scenario Setup</h3>
+								<h3>Goal-Driven scenario setup</h3>
 								<p>Define requested throughput, estimate the adaptive seed from response time, and set safe operating guardrails.</p>
 							</div>
 							<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="goal-throughput-title">
@@ -4102,7 +4108,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 										<DurationField className="scenario-field" label="Breach window" value={form.goal_config?.sla_breach_window || '1m'} compact onChange={value => updateGoalDrivenGuardrail('sla_breach_window', value)} />
 									</div>
 									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.stop_on_sla_breach)} onChange={event => updateGoalDrivenGuardrail('stop_on_sla_breach', event.target.checked)} /><span><strong>Stop on sustained guardrail breach</strong><small>Stop only after the configured breach window.</small></span></label>
-									<div className="goal-driven-advanced"><h5>Advanced Guardrails</h5><CreateTestGoalSettings advancedOnly goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></div>
+									<div className="goal-driven-advanced"><h5>Advanced guardrails</h5><CreateTestGoalSettings advancedOnly goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></div>
 								</div>
 							</section>
 							{renderGuidedScenarioExtras()}
@@ -4114,7 +4120,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 						<div className="stepped-ramp-worksheet closed-vuser-worksheet" data-settings-tab={scenarioSettingsSection}>
 							<div className="stepped-ramp-heading">
 								<span>Guided worksheet</span>
-								<h3>Closed VUser Setup</h3>
+								<h3>Closed VUser setup</h3>
 								<p>Ramp continuously to a fixed load, measure steady-state performance, and optionally ramp down before the run ends.</p>
 							</div>
 							<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="closed-target-title">
@@ -4155,14 +4161,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 					<div className="stepped-ramp-worksheet" data-settings-tab={scenarioSettingsSection}>
 						<div className="stepped-ramp-heading">
 							<span>Guided worksheet</span>
-							<h3>Stepped Ramp Setup</h3>
+							<h3>Stepped Ramp setup</h3>
 							<p>Define equal-duration load levels to compare throughput, latency, and errors as demand increases.</p>
 						</div>
 						<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="stepped-range-title">
 							<div className="stepped-ramp-number">1</div>
 							<div className="stepped-ramp-section-body">
 								<h4 id="stepped-range-title">Load range</h4>
-								<p>Set the initial and final load levels. Run Phases controls total duration.</p>
+								<p>Set the initial and final load levels. Run phases controls total duration.</p>
 								<div className="stepped-ramp-fields three">
 									<label className="scenario-field"><span>Starting load level</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} value={activeSteppedRampDefinition.start_vusers} onChange={event => updateSteppedRamp({ start_vusers: Math.max(0, Number(event.target.value) || 0) })} /><span>VUsers</span></div></label>
 									<label className="scenario-field"><span>Ending load level</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={1} value={activeSteppedRampDefinition.end_vusers} onChange={event => updateSteppedRamp({ end_vusers: Math.max(0, Number(event.target.value) || 0) })} /><span>VUsers</span></div></label>
@@ -4218,7 +4224,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           >
             <div className="scenario-assignment-header">
               <div>
-                <h4>Load Per Group</h4>
+                <h4>Load per group</h4>
                 <p>{form.scenario_mode === 'goal_oriented' ? 'Review the current runtime seed estimate. Goal-oriented demand is controlled by throughput and guardrails.' : 'Set the VUser count and simple ramp for each script group participating in this scenario.'}</p>
               </div>
             </div>
@@ -4265,7 +4271,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <div className="scenario-subpanel">
               <div className="scenario-assignment-header">
                 <div>
-                  <h4>Goal Controller</h4>
+                  <h4>Goal controller</h4>
                   <p>Persist target envelope settings with this scenario draft.</p>
                 </div>
               </div>
@@ -4277,14 +4283,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           )}
 		  </>}
           {scenarioSettingsSection === 'phases' && <div className="scenario-subpanel">
-            <div className="scenario-assignment-header"><div><h4>Run Phases</h4><p>Set the run window and simple ramp timing. Use Ramp Pattern when you need explicit load stages.</p></div></div>
+            <div className="scenario-assignment-header"><div><h4>Run phases</h4><p>Set the run window and simple ramp timing. Use Ramp pattern when you need explicit load stages.</p></div></div>
             <div className="settings-grid scenario-core-grid">
               <DurationField className="scenario-field" label="Duration" value={form.duration} disabled={form.termination_mode === 'iterations'} required showPresets onChange={value => {
                 setForm(previous => ({ ...previous, duration: value }))
                 setLoadModelValidation(null)
                 setLoadModelValidationError('')
               }} />
-              <DurationField className="scenario-field" label="Start Delay" value={form.start_delay} allowEmpty compact onChange={value => setForm(previous => ({ ...previous, start_delay: value }))} />
+              <DurationField className="scenario-field" label="Start delay" value={form.start_delay} allowEmpty compact onChange={value => setForm(previous => ({ ...previous, start_delay: value }))} />
             </div>
             {formGroups.length > 1 && <label className="scenario-field">
               <span>Load group</span>
@@ -4293,9 +4299,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               </select>
             </label>}
             <div className="settings-grid scenario-group-grid">
-              <DurationField className="scenario-field" label="Start Offset" value={activeStageGroup.start_offset || ''} allowEmpty compact onChange={value => updateScenarioGroup(activeGroupIndex, { start_offset: value })} />
-              <DurationField className="scenario-field" label="Ramp Up" value={activeStageGroup.ramp_up} allowEmpty compact disabled={activeStageGroup.stages.length > 0 || Boolean(activeProfileMapping)} onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_up: value })} />
-              <DurationField className="scenario-field" label="Ramp Down" value={activeStageGroup.ramp_down} allowEmpty compact disabled={activeStageGroup.stages.length > 0 || Boolean(activeProfileMapping)} onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_down: value })} />
+              <DurationField className="scenario-field" label="Start offset" value={activeStageGroup.start_offset || ''} allowEmpty compact onChange={value => updateScenarioGroup(activeGroupIndex, { start_offset: value })} />
+              <DurationField className="scenario-field" label="Ramp up" value={activeStageGroup.ramp_up} allowEmpty compact disabled={activeStageGroup.stages.length > 0 || Boolean(activeProfileMapping)} onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_up: value })} />
+              <DurationField className="scenario-field" label="Ramp down" value={activeStageGroup.ramp_down} allowEmpty compact disabled={activeStageGroup.stages.length > 0 || Boolean(activeProfileMapping)} onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_down: value })} />
             </div>
             {(activeStageGroup.stages.length > 0 || activeProfileMapping) && <p className="scenario-assignment-copy secondary" role="note">{activeProfileMapping ? 'The traffic profile controls this group’s load changes.' : 'Explicit stages control this group’s load changes.'} Simple ramp timing is available when that pattern is removed.</p>}
           </div>}
@@ -4317,8 +4323,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <div hidden={Boolean(activeProfileMapping)}>
             <div className="scenario-assignment-header">
               <div>
-                <h4>Ramp Pattern</h4>
-                <p>Use simple ramp timing in Run Phases for common runs, or enable explicit stages when each interval needs its own VUser/TPS target.</p>
+                <h4>Ramp pattern</h4>
+                <p>Use simple ramp timing in Run phases for common runs, or enable explicit stages when each interval needs its own VUser/TPS target.</p>
               </div>
               <div className="scenario-stage-actions">
                 {activeStageGroup.stages.length > 0 && (
@@ -4327,7 +4333,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   </button>
                 )}
                 <button type="button" className="btn btn-secondary" onClick={activeStageGroup.stages.length > 0 ? addStage : enableDefaultStages}>
-                  {activeStageGroup.stages.length > 0 ? '+ Add Stage' : 'Enable Stages'}
+                  {activeStageGroup.stages.length > 0 ? '+ Add stage' : 'Enable stages'}
                 </button>
               </div>
             </div>
@@ -4342,7 +4348,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   <span className={`scenario-stage-status ${activeStageTimeline.status}`}>{formatLoadModelDimension(activeStageTimeline.status)}</span>
                   {activeStageTimeline.message && <span>{activeStageTimeline.message}</span>}
                   <button type="button" className="btn btn-sm btn-ghost" onClick={enableDefaultStages}>
-                    {selectedShape ? `Regenerate for ${selectedShape.support.name}` : 'Regenerate From Simple Ramp'}
+                    {selectedShape ? `Regenerate for ${selectedShape.support.name}` : 'Regenerate from simple ramp'}
                   </button>
                 </div>
                 {activeStageGroup.stages.map((stage, index) => (
@@ -4457,7 +4463,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               <div className="scenario-subpanel">
             <div className="scenario-assignment-header">
               <div>
-                <h4>Controller / Generator Assignment</h4>
+                <h4>Controller / generator assignment</h4>
                 <p>Use automatic placement, host pinning, capability labels, or weighted regions and load zones for the scenario default.</p>
               </div>
               {estimateLoading && <span className="scenario-assignment-status">Estimating…</span>}
@@ -4466,7 +4472,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               <div className="scenario-assignment-footprint">
                 <div className="scenario-assignment-metric"><span>Footprint</span><strong>{draftEstimate.footprint.total_vusers} VUsers</strong><small>{draftEstimate.footprint.duration}</small></div>
                 <div className="scenario-assignment-metric"><span>Complexity</span><strong>{draftEstimate.footprint.complexity_score.toFixed(2)}</strong><small>derived from current script mix</small></div>
-                <div className="scenario-assignment-metric"><span>Estimated Load</span><strong>{draftEstimate.footprint.estimated_cpu_cores.toFixed(2)} CPU</strong><small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small></div>
+                <div className="scenario-assignment-metric"><span>Estimated load</span><strong>{draftEstimate.footprint.estimated_cpu_cores.toFixed(2)} CPU</strong><small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small></div>
               </div>
             )}
             {assignmentRecommendation?.summary && <p className="scenario-assignment-copy">{assignmentRecommendation.summary}</p>}
@@ -4492,7 +4498,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <div className="scenario-group-placement-panel">
               <div className="scenario-assignment-header compact">
                 <div>
-                  <h4>Per-Group Generator Placement</h4>
+                  <h4>Per-group generator placement</h4>
                   <p>Groups inherit the scenario default unless they explicitly use automatic placement, host pinning, or a required capability.</p>
                 </div>
               </div>
@@ -4532,7 +4538,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       return (
         <section className="scenario-wizard-panel scenario-data-editor">
           <div className="scenario-wizard-panel-header">
-            <h4>Data Pools</h4>
+            <h4>Data pools</h4>
             <p>Attach data pools for scripts that need coordinated parameter data.</p>
           </div>
           <details><summary>Create a data pool without leaving this draft</summary>
@@ -4572,11 +4578,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       <section className="scenario-wizard-panel">
         <div className="scenario-wizard-panel-header">
           <div>
-            <h4>Review And Validate</h4>
+            <h4>Review and validate</h4>
             <p>Validate modeled demand, capacity, data fit, and generator placement before saving.</p>
           </div>
           <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={sourcePending || savePending || loadModelValidationLoading || Boolean(blockingStageTimelineMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>
-            {loadModelValidationLoading ? 'Validating…' : 'Validate Load Model'}
+            {loadModelValidationLoading ? 'Validating…' : 'Validate load model'}
           </button>
         </div>
         <FormField className="scenario-field scenario-name-prompt" label="Scenario name" htmlFor="scenario-review-name" hint="Save a reusable draft now; validate it before creating a run.">
@@ -4617,8 +4623,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 <th>Script</th>
                 <th>Role</th>
                 <th>VUsers</th>
-                <th>Ramp Up</th>
-                <th>Ramp Down</th>
+                <th>Ramp up</th>
+                <th>Ramp down</th>
                 <th>Initialization</th>
               </tr>
             </thead>
@@ -4629,7 +4635,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   <tr key={`${group.script_id || 'group'}-review-${index}`}>
                     <td>{group.name || `Group ${index + 1}`}</td>
                     <td>{script?.name || 'Unassigned script'}</td>
-                    <td>{group.role === 'observer' ? 'Observer Canary' : 'Load'}</td>
+                    <td>{group.role === 'observer' ? 'Observer canary' : 'Load'}</td>
                     <td>{group.vusers}</td>
                     <td>{group.ramp_up || 'None'}</td>
                     <td>{group.ramp_down || 'None'}</td>
@@ -4738,10 +4744,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             </div>
           </div>
 
-          <p className="setting-desc">Checkmarks indicate valid fields, including defaults; they do not indicate an operator review.</p><div className="scenario-wizard-stepper" aria-label="Scenario builder steps">
+          <div className="scenario-wizard-stepper" aria-label="Scenario builder steps">
             {scenarioWizardSteps.map((step, index) => {
               const needsAttention = step.id === 'scripts' && blockedScriptGroups.length > 0
-              const stepComplete = !needsAttention && index <= maxVisitedWizardIndex && wizardStepCompletion[step.id]
+              // A step is done once the author has been through it (visited and
+              // moved on) and it is valid; arriving on a step does not tick it.
+              const stepComplete = !needsAttention && wizardStep !== step.id && index <= maxVisitedWizardIndex && wizardStepCompletion[step.id]
               return (
                 <button
                   key={step.id}
@@ -4749,7 +4757,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   className={`scenario-wizard-step ${wizardStep === step.id ? 'active' : ''} ${stepComplete ? 'complete' : ''}`}
                   onClick={() => needsAttention ? openScriptComposition() : setWizardStep(step.id)}
                   aria-current={wizardStep === step.id ? 'step' : undefined}
-                  aria-label={`${step.label}${needsAttention ? ' needs attention' : stepComplete ? ' valid' : ''}`}
+                  aria-label={`${step.label}${needsAttention ? ' needs attention' : stepComplete ? ' done' : ''}`}
                 >
                   <span className="scenario-wizard-step-marker" aria-hidden="true">{needsAttention ? '!' : stepComplete ? '✓' : index + 1}</span>
                   <span className="scenario-wizard-step-label">{step.label}</span>
@@ -4848,7 +4856,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 onClick={startBlankScenario}
                 title="Discard this in-progress draft and start a new blank scenario"
               >
-                Start Over
+                Start over
               </button>
             )}
             {currentWizardIndex > 0 && (
@@ -5011,11 +5019,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       <button className="btn btn-sm btn-secondary" onClick={(event) => {
                         event.stopPropagation()
                         void toggleScenarioRuns(scenario)
-                      }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
+                      }}>{expandedScenarioId === scenario.id ? 'Hide runs' : 'View runs'}</button>
                       {canManageTests ? (
                         <>
                           {onCreateTestFromScenario && (
-                            <button className="btn btn-sm btn-secondary" disabled={!!scenario.archived_at} aria-label={`New test from ${scenario.name}`} onClick={(event) => { event.stopPropagation(); onCreateTestFromScenario(scenario.id) }}>New test</button>
+                            <button className="btn btn-sm btn-secondary" disabled={!!scenario.archived_at} aria-label={`New run from ${scenario.name}`} onClick={(event) => { event.stopPropagation(); onCreateTestFromScenario(scenario.id) }}>New run</button>
                           )}
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} aria-label={`Edit ${scenario.name}`} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
                           <RowActions className="scenario-more-actions" label={scenario.name}>
@@ -5087,7 +5095,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                           {item.local_item_id && (
                             <button className="btn btn-sm btn-ghost" onClick={() => void scenarioFederation.compareItems(item.local_item_id!, item)}>Compare</button>
                           )}
-                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Remote Workspace</a>}
+                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in remote workspace</a>}
                         </>
                       ) : (
                         <span className="cell-muted">Read-only</span>

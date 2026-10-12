@@ -519,7 +519,7 @@ describe('CommandCenterPrototype', () => {
     vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect)
     await scrollPage()
     expect(shelf.classList.contains('compact')).toBe(false)
-    expect(shelf.textContent).toContain('Test notes')
+    expect(shelf.textContent).toContain('Run notes')
 
     vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: -400, bottom: -300 } as DOMRect)
     vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 60 } as DOMRect)
@@ -528,7 +528,7 @@ describe('CommandCenterPrototype', () => {
     // The essentials, each named: load, throughput in the page's unit, time and errors.
     expect(Array.from(shelf.querySelectorAll('[role="group"][aria-label="Run summary"] strong')).map(label => label.textContent)).toEqual(['Load', expect.stringMatching(/^(Requests\/s|TPS)$/), 'Time', 'Errors'])
     // Every control stays within reach; only the summary pills fold into one line.
-    expect(Array.from(shelf.querySelectorAll('button')).map(button => button.textContent)).toEqual(expect.arrayContaining(['Pause', 'Stop', 'Abort', 'Test notes']))
+    expect(Array.from(shelf.querySelectorAll('button')).map(button => button.textContent)).toEqual(expect.arrayContaining(['Pause', 'Stop', 'Abort', 'Run notes']))
     expect(shelf.querySelectorAll('[aria-label="Run summary"]')).toHaveLength(1)
 
     vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100 } as DOMRect)
@@ -576,7 +576,7 @@ describe('CommandCenterPrototype', () => {
     const selector = container.querySelector<HTMLSelectElement>('select[aria-label="Current run"]')!
     expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
     await click(buttonNamed('Pause'))
-    await confirmRunAction('Pause Test')
+    await confirmRunAction('Pause run')
     expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
     await act(async () => { resolvePause?.(jsonResponse({})); await Promise.resolve() })
     await flush()
@@ -584,7 +584,7 @@ describe('CommandCenterPrototype', () => {
     expect(selector.selectedOptions[0].textContent).toContain('PAUSED')
     expect(Array.from(selector.options).find(option => option.value === other.id)?.textContent).toContain('RUNNING')
     await click(buttonNamed('Resume'))
-    await confirmRunAction('Resume Test')
+    await confirmRunAction('Resume run')
     await flush()
     expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
     expect(buttonNamed('Pause')).toBeDefined()
@@ -599,7 +599,7 @@ describe('CommandCenterPrototype', () => {
     await act(async () => { root.render(<CommandCenterPrototype testId={runA.id} initialTest={runA} />) })
     await flush()
     await click(buttonNamed('Pause'))
-    await confirmRunAction('Pause Test')
+    await confirmRunAction('Pause run')
     await act(async () => { root.render(<CommandCenterPrototype testId={runB.id} initialTest={runB} />) })
     await flush()
     await act(async () => { resolvePause?.(jsonResponse({})); await Promise.resolve() })
@@ -660,11 +660,11 @@ describe('CommandCenterPrototype', () => {
     await act(async () => { root.render(<CommandCenterPrototype projectId="project-1" onSelectRun={vi.fn()} onOpenResults={onResults}
       overviewActions={{ onNewTest, newTestDisabledReason: 'Viewer cannot create runs', onSelectRelease, releases: [] }} />) })
     await flush()
-    expect(buttonNamed('New Test').disabled).toBe(true)
+    expect(buttonNamed('New run').disabled).toBe(true)
     expect(buttonNamed('Open Results').disabled).toBe(true)
     expect(container.textContent).toContain('No releases are available')
     expect(container.textContent).not.toContain('Open analysis')
-    await click(buttonNamed('New Test'))
+    await click(buttonNamed('New run'))
     expect(onNewTest).not.toHaveBeenCalled()
     await click(buttonNamed('Open Results'))
     expect(onResults).not.toHaveBeenCalled()
@@ -766,7 +766,7 @@ describe('CommandCenterPrototype', () => {
     })
     await flush()
 
-    await click(buttonNamed('Test notes'))
+    await click(buttonNamed('Run notes'))
     await flush()
 
     expect(container.querySelector('.test-notes-dialog')).not.toBeNull()
@@ -1350,7 +1350,7 @@ describe('CommandCenterPrototype', () => {
     await renderPrototype()
 
     await click(buttonNamed('Pause'))
-    await confirmRunAction('Pause Test')
+    await confirmRunAction('Pause run')
 
     expect(container.textContent).toContain('PAUSED')
     expect(container.textContent).toContain('Run paused at the next action boundary.')
@@ -1399,7 +1399,7 @@ describe('CommandCenterPrototype', () => {
     expect(shelfButton('Abort')?.disabled).toBe(false)
 
     await click(buttonNamed('Stop'))
-    await confirmRunAction('Stop Test')
+    await confirmRunAction('Stop run')
 
     expect(container.textContent).toContain('STOPPING')
     // Stop is no longer offered once the graceful stop is underway (canStop excludes STOPPING),
@@ -1410,7 +1410,7 @@ describe('CommandCenterPrototype', () => {
     expect(abortDuringStopping?.disabled).toBe(false)
 
     await click(abortDuringStopping as HTMLButtonElement)
-    await confirmRunAction('Abort Test')
+    await confirmRunAction('Abort run')
 
     expect(container.textContent).toContain('ABORTED')
     // Once fully terminal, Abort is no longer offered.
@@ -1426,7 +1426,7 @@ describe('CommandCenterPrototype', () => {
     const runActions = container.querySelector('.command-run-actions') as HTMLElement
     const abort = Array.from(runActions.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Abort') as HTMLButtonElement
     await click(abort)
-    await confirmRunAction('Abort Test')
+    await confirmRunAction('Abort run')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
@@ -1461,7 +1461,7 @@ describe('CommandCenterPrototype', () => {
     expect(shelfButton('Resume')).toBeDefined()
 
     await click(shelfButton('Stop') as HTMLButtonElement)
-    await confirmRunAction('Stop Test')
+    await confirmRunAction('Stop run')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/stop'),
@@ -1476,7 +1476,7 @@ describe('CommandCenterPrototype', () => {
     expect(abort?.disabled).toBe(false)
 
     await click(abort as HTMLButtonElement)
-    await confirmRunAction('Abort Test')
+    await confirmRunAction('Abort run')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
@@ -2458,12 +2458,12 @@ describe('CommandCenterPrototype', () => {
 
     const controlShelf = container.querySelector('[aria-label="Command center run controls"]')
     expect(controlShelf?.textContent).toContain('RESERVED')
-    expect(controlShelf?.textContent).toContain('Start Test')
+    expect(controlShelf?.textContent).toContain('Start run')
     expect(controlShelf?.textContent).not.toContain('Pause')
     expect(controlShelf?.textContent).not.toContain('Stop')
 
-    await click(buttonNamed('Start Test'))
-    await confirmRunAction('Start Test')
+    await click(buttonNamed('Start run'))
+    await confirmRunAction('Start run')
     await act(async () => {
       await Promise.resolve()
     })

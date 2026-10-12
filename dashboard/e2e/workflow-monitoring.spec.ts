@@ -162,7 +162,7 @@ test('New Test preserves multiple Elastic bindings, exact-window criteria and dr
   await expect(bindings.getByRole('checkbox', { name: 'OpenSearch logs (elastic)', exact: true })).toBeChecked()
   await page.getByRole('navigation').getByRole('button', { name: 'Dashboard', exact: true }).click()
   await page.getByRole('dialog', { name: /^Unsaved changes$/i }).getByRole('button', { name: 'Save changes', exact: true }).click()
-  await page.getByRole('navigation').getByRole('button', { name: 'New Test', exact: true }).click()
+  await page.getByRole('navigation').getByRole('button', { name: 'New run', exact: true }).click()
   await page.getByRole('button', { name: 'Restore saved draft', exact: true }).click()
   // The folded section says what the restored draft captures, then opens to it.
   const monitoringSummary = page.locator('details.new-test-monitoring > summary')

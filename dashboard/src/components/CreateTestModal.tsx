@@ -462,7 +462,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             <section className="assignment-settings">
               <div className="assignment-settings-header">
                 <div>
-                  <h4>Controller / Generator Assignment</h4>
+                  <h4>Controller / generator assignment</h4>
                   <p>Overall size is derived from the scenario footprint, current generator capacity profile, and the configured distributed targets.</p>
                 </div>
               </div>
@@ -480,7 +480,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                     <small>script design score</small>
                   </div>
                   <div className="assignment-footprint-card">
-                    <span>Estimated Load</span>
+                    <span>Estimated load</span>
                     <strong>{footprint.estimated_cpu_cores.toFixed(2)} CPU</strong>
                     <small>{Math.round(footprint.estimated_memory_mb)} MB / {Math.round(footprint.estimated_network_mbps)} Mbps</small>
                   </div>

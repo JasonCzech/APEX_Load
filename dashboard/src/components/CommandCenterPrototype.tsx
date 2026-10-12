@@ -1947,7 +1947,7 @@ function RunControlShelf({
         {onOpenTestNotes && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
             <NotesIcon />
-            Test notes
+            Run notes
           </button>
         )}
         {onCreateQueuedCopy && (
@@ -1964,7 +1964,7 @@ function RunControlShelf({
           <>
             {canStart && (
               <button type="button" className="btn btn-sm btn-success" onClick={onStart} disabled={readOnly} aria-describedby={readOnlyNoteId}>
-                Start Test
+                Start run
               </button>
             )}
             {canPauseResume && (

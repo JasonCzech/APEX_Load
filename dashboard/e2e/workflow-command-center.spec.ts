@@ -14,8 +14,8 @@ test('Command Center supports empty actions, run triage, persistent switching an
   const overview = page.getByRole('region', { name: 'Active run overview', exact: true })
   await expect(overview.getByRole('heading', { name: 'No active runs', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open analysis', exact: true })).toHaveCount(0)
-  await expect(overview.getByRole('button', { name: 'New Test', exact: true })).toBeEnabled()
-  await overview.getByRole('button', { name: 'New Test', exact: true }).click()
+  await expect(overview.getByRole('button', { name: 'New run', exact: true })).toBeEnabled()
+  await overview.getByRole('button', { name: 'New run', exact: true }).click()
   await expect(page).toHaveURL(/#\/new-test/)
   await page.getByRole('button', { name: 'Command Center', exact: true }).click()
 
@@ -64,7 +64,7 @@ test('Command Center supports empty actions, run triage, persistent switching an
   await page.reload()
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true })).toHaveValue(ids[0])
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Pause this test run?' })
+  const dialog = page.getByRole('dialog', { name: 'Pause this run?' })
   await expect(dialog).toContainText('Audit checkout 0')
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
@@ -198,7 +198,7 @@ exportTest('pause waits for controller confirmation and preserves running state 
  // External boundary failure: the real dashboard must preserve the live state.
  await page.route(path, route => route.fulfill({ status: 409, json: { error: 'Processor pause quiescence is unconfirmed' } }))
  await page.getByRole('button', { name: 'Pause', exact: true }).click()
- await page.getByRole('dialog', { name: 'Pause this test run?' }).getByRole('button', { name: 'Pause Test' }).click()
+ await page.getByRole('dialog', { name: 'Pause this run?' }).getByRole('button', { name: 'Pause run' }).click()
  await expect(page.getByText('Processor pause quiescence is unconfirmed', { exact: true })).toBeVisible()
  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveCount(0)
  await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('RUNNING')
@@ -211,7 +211,7 @@ exportTest('pause waits for controller confirmation and preserves running state 
  await page.route(path, async route => { markPending(); await pending; await route.continue() })
  try {
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Pause this test run?' }).getByRole('button', { name: 'Pause Test' }).click()
+  await page.getByRole('dialog', { name: 'Pause this run?' }).getByRole('button', { name: 'Pause run' }).click()
   await seen
   // The UI cannot publish PAUSED ahead of the controller's committed response.
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
@@ -224,7 +224,7 @@ exportTest('pause waits for controller confirmation and preserves running state 
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('PAUSED')
   await page.screenshot({ path: testInfo.outputPath('acknowledged-pause.png'), fullPage: true })
   await page.getByRole('button', { name: 'Resume', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Resume this test run?' }).getByRole('button', { name: 'Resume Test' }).click()
+  await page.getByRole('dialog', { name: 'Resume this run?' }).getByRole('button', { name: 'Resume run' }).click()
   await expect.poll(async () => (await json(await request.get(`/api/v1/tests/${run.testId}`))).status).toBe('RUNNING')
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('RUNNING')

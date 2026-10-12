@@ -746,7 +746,7 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
 			ramp_up: '',
 			stages: buildSteppedRampPlan({ durationSeconds: 60 * 60, startVusers: 0, endVusers: 60, incrementBy: 'step_count', stepCount: 6 }).stages,
     }],
-		guidance: 'Measure performance at equal-duration load levels. Configure the range, increment, scope, and protection settings on Run Settings.',
+		guidance: 'Measure performance at equal-duration load levels. Configure the range, increment, scope, and protection settings on Run settings.',
   },
   'spike-rendezvous': {
     duration: '8m',

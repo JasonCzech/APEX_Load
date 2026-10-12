@@ -1461,7 +1461,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                     Compare
                   </button>
                 )}
-                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in Remote Workspace</a>}
+                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in remote workspace</a>}
               </>
             ) : (
               <span className="cell-muted">-</span>

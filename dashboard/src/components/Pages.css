@@ -3100,6 +3100,13 @@
   letter-spacing: var(--label-tracking, 0.04em);
 }
 
+/* A version reads as written ("v1.0.0"), not cased like a label. */
+.script-health-token.script-version-token,
+:root[data-theme] body .script-health-token.script-version-token {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .script-health-token.healthy {
   border-color: rgba(var(--success-rgb), 0.28);
   color: var(--success-text);

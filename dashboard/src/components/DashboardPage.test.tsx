@@ -560,7 +560,7 @@ describe('DashboardPage', () => {
     expect(panelText).toContain('Pending Runs')
     expect(panelText).not.toContain('Release Quality')
 
-    clickButtonByText('New Test')
+    clickButtonByText('New run')
     expect(onNavigate).toHaveBeenCalledWith('new-test')
   })
 
@@ -1426,9 +1426,9 @@ describe('DashboardPage', () => {
       .find(element => element.textContent?.includes('No tests currently running'))
 
     expect(activeTestsEmptyState).toBeDefined()
-    expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the New Test page')
+    expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the New run page')
     const startButton = Array.from(activeTestsEmptyState?.querySelectorAll('button') || [])
-      .find(button => button.textContent?.trim() === 'Start New Test')
+      .find(button => button.textContent?.trim() === 'Start a new run')
     expect(startButton).toBeDefined()
     await act(async () => {
       startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1453,7 +1453,7 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
     expect(container.textContent).toContain('Start a test to build activity, performance, and release history.')
-    clickButtonByText('Start New Test')
+    clickButtonByText('Start a new run')
     expect(onNavigate).toHaveBeenCalledWith('new-test')
   })
 

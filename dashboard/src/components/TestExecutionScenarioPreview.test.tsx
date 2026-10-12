@@ -167,7 +167,7 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(summaryRow?.getAttribute('role')).toBe('button')
     expect(editButton).toBeDefined()
-    expect(container.textContent).toContain('Start Delay')
+    expect(container.textContent).toContain('Start delay')
     expect(container.textContent).toContain('30s')
     expect(container.textContent).toContain('Target Avg TPS')
     expect(container.textContent).toContain('P95 Latency Ceiling')

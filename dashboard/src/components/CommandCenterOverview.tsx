@@ -43,7 +43,7 @@ export default function CommandCenterOverview(props: CommandCenterOverviewProps)
     <div className="command-overview-heading">
       <div><h2>{!scopeReady ? 'Choose a workspace' : empty ? 'No active runs' : 'Active runs'}</h2><p>{scopeLabel}</p></div>
       <div className="command-overview-actions">
-        {props.onNewTest && <button className="btn btn-primary" type="button" disabled={Boolean(props.newTestDisabledReason)} title={props.newTestDisabledReason} onClick={props.onNewTest}>New Test</button>}
+        {props.onNewTest && <button className="btn btn-primary" type="button" disabled={Boolean(props.newTestDisabledReason)} title={props.newTestDisabledReason} onClick={props.onNewTest}>New run</button>}
         {props.onBrowseScenarios && <button className="btn btn-secondary" type="button" onClick={props.onBrowseScenarios}>Browse scenarios</button>}
         <button className="btn btn-secondary" type="button" disabled={!scopeReady || loading} onClick={onRefresh}>{error ? 'Retry active runs' : 'Refresh runs'}</button>
       </div>

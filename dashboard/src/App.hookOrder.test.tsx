@@ -413,7 +413,7 @@ describe('AppShell hook-order stability across navigation', () => {
       ['Scenarios', 'page-tests'],
       ['Dashboard', 'page-dashboard'],
       ['Scenarios', 'page-tests'],
-      ['New Test', 'page-new-test'],
+      ['New run', 'page-new-test'],
       ['Dashboard', 'page-dashboard'],
     ]
 

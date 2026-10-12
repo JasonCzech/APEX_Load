@@ -103,7 +103,7 @@ export default function TestExecutionLiveControls({
               Pause VUsers
             </button>
             <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
-              Stop Test
+              Stop run
             </button>
             <button type="button" className="btn btn-sm btn-danger" onClick={onAbort}>
               Abort

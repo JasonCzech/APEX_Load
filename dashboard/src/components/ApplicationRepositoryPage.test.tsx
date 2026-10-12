@@ -387,7 +387,7 @@ describe('ApplicationRepositoryPage', () => {
     await act(async () => {
       scenariosTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const newTest = findButton(container, 'New Test')
+    const newTest = findButton(container, 'New run')
     await act(async () => {
       newTest?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

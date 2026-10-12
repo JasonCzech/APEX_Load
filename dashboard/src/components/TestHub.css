@@ -2509,7 +2509,11 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
 }
 .scenario-script-library-dialog .data-table table { min-width: 0; table-layout: fixed; width: 100%; }
-.scenario-script-library-dialog .data-table th:first-child { width: 58%; }
+.scenario-script-library-dialog .data-table th:first-child { width: 44%; }
+/* The bulk action is a button of the usual size, level with the filters beside it. */
+.scenario-picker-filters > .scenario-picker-bulk-add { align-self: end; justify-self: start; }
+/* The chooser's filter labels read like its search label: one label style. */
+.scenario-picker-filters .scenario-field > span { color: var(--text-secondary); font-weight: 700; }
 .scenario-script-library-dialog td { white-space: normal; overflow-wrap: anywhere; }
 .scenario-script-library-dialog td:last-child .btn { white-space: normal; }
 .scenario-script-library-dialog details { margin-top: 8px; }

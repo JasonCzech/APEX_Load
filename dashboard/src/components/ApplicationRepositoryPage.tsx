@@ -1140,7 +1140,7 @@ export default function ApplicationRepositoryPage({
       return <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${row.name}`} onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
     }
     if (row.kind === 'scenario' && onCreateTestFromScenario) {
-      return <button type="button" className="btn btn-sm btn-secondary" aria-label={`New test from ${row.name}`} onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New Test</button>
+      return <button type="button" className="btn btn-sm btn-secondary" aria-label={`New run from ${row.name}`} onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New run</button>
     }
     if (row.kind === 'test' && onOpenTest) {
       return (

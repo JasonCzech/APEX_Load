@@ -15,33 +15,33 @@ export interface RunActionConfirmationCopy {
 
 const RUN_ACTION_CONFIRMATIONS: Record<RunActionConfirmationKind, RunActionConfirmationCopy> = {
   start: {
-    title: 'Start this test run?',
+    title: 'Start this run?',
     description: 'Load generation begins immediately against the target environment.',
-    confirmLabel: 'Start Test',
+    confirmLabel: 'Start run',
     tone: 'primary',
   },
   pause: {
-    title: 'Pause this test run?',
+    title: 'Pause this run?',
     description: 'VUsers hold at their next action boundary. The run stays active and you can resume it at any time.',
-    confirmLabel: 'Pause Test',
+    confirmLabel: 'Pause run',
     tone: 'secondary',
   },
   resume: {
-    title: 'Resume this test run?',
+    title: 'Resume this run?',
     description: 'VUsers release from the pause gate and load generation continues against the target environment.',
-    confirmLabel: 'Resume Test',
+    confirmLabel: 'Resume run',
     tone: 'primary',
   },
   stop: {
-    title: 'Stop this test run?',
+    title: 'Stop this run?',
     description: 'VUsers finish the action already in flight, then the run ends and is finalized. A stopped run cannot be resumed.',
-    confirmLabel: 'Stop Test',
+    confirmLabel: 'Stop run',
     tone: 'danger',
   },
   abort: {
-    title: 'Abort this test run?',
+    title: 'Abort this run?',
     description: 'Generator work is cancelled immediately. Transactions in flight are lost and the run cannot be resumed.',
-    confirmLabel: 'Abort Test',
+    confirmLabel: 'Abort run',
     tone: 'danger',
   },
   'apply-target': {

@@ -108,7 +108,7 @@ describe('TestExecutionLiveControls', () => {
     expect(container.querySelector('.run-actions-drawer')).toBeNull()
     expect(toolbarButtonByText('Pause')).not.toBeUndefined()
     expect(toolbarButtonByText('Pause VUsers')).not.toBeUndefined()
-    expect(toolbarButtonByText('Stop Test')).not.toBeUndefined()
+    expect(toolbarButtonByText('Stop run')).not.toBeUndefined()
     expect(toolbarButtonByText('Abort')).not.toBeUndefined()
     expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
@@ -176,7 +176,7 @@ describe('TestExecutionLiveControls', () => {
     expect(container.querySelector('.run-actions-inline')?.textContent).toContain('Active')
     expect(toolbarButtonByText('Pause')).not.toBeUndefined()
     expect(toolbarButtonByText('Pause VUsers')).not.toBeUndefined()
-    expect(toolbarButtonByText('Stop Test')).not.toBeUndefined()
+    expect(toolbarButtonByText('Stop run')).not.toBeUndefined()
     expect(toolbarButtonByText('Abort')).not.toBeUndefined()
     expect(document.body.querySelector('.run-actions-drawer')).toBeNull()
 
@@ -240,8 +240,8 @@ describe('TestExecutionLiveControls', () => {
     })
 
     expect(container.querySelector('.run-actions-inline')?.textContent).toContain('Stopping')
-    // Stop Test stays disabled once a graceful stop is underway, but Abort must remain the escalation path.
-    const stopButton = toolbarButtonByText('Stop Test') as HTMLButtonElement | undefined
+    // Stop run stays disabled once a graceful stop is underway, but Abort must remain the escalation path.
+    const stopButton = toolbarButtonByText('Stop run') as HTMLButtonElement | undefined
     expect(stopButton?.disabled).toBe(true)
     const abortButton = toolbarButtonByText('Abort') as HTMLButtonElement | undefined
     expect(abortButton).not.toBeUndefined()

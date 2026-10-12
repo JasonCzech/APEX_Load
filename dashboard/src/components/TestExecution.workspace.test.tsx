@@ -86,8 +86,8 @@ describe('TestExecution advanced details', () => {
     await render()
     const text = container.querySelector('[data-testid="topbar"]')?.textContent || ''
     expect(text).toContain('Back to Command Center')
-    expect(text).toContain('Test notes')
-    expect(text).not.toMatch(/Pause|Resume|Stop|Abort|Start Test|Pause VUsers|Revise/)
+    expect(text).toContain('Run notes')
+    expect(text).not.toMatch(/Pause|Resume|Stop|Abort|Start run|Pause VUsers|Revise/)
   })
 
   it('shows investigation evidence in the appropriate sections', async () => {

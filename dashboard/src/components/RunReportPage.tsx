@@ -643,7 +643,7 @@ export default function RunReportPage({
           <button className="btn btn-primary" type="button" disabled={!hasArchive} aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
           {/* The desktop window's own address is not a link anyone else can open. */}
           {/^https?:$/.test(window.location.protocol) && <button className="btn btn-ghost" type="button" onClick={() => void copyReportLink()}>Copy link</button>}
-          <button className="btn btn-ghost" type="button" onClick={() => setShowNotes(true)}>Test notes</button>
+          <button className="btn btn-ghost" type="button" onClick={() => setShowNotes(true)}>Run notes</button>
         </div>
       </div>
       {linkCopied && <p className="run-report-muted" role="status">{linkCopied}</p>}

@@ -39,7 +39,7 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   await expect.poll(() => target.count()).toBeGreaterThan(first)
   await expect.poll(() => runStatus(request, id)).toBe('RUNNING')
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Stop this test run?' }).getByRole('button', { name: 'Stop Test' }).click()
+  await page.getByRole('dialog', { name: 'Stop this run?' }).getByRole('button', { name: 'Stop run' }).click()
   await expect.poll(() => runStatus(request, id), { timeout: 90_000 }).toBe('COMPLETE')
   await expect.poll(async () => (await request.get(`/api/v1/tests/${id}/archive/manifest`)).ok(), { timeout: 60_000 }).toBe(true)
   await page.getByRole('button', { name: 'Results', exact: true }).first().click()

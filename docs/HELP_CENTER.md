@@ -67,7 +67,7 @@ Choose **Validate Script(s)** and resolve every reported issue. Validation check
 
 1. Open [Scenarios](#/tests) and create a scenario with one group using First_HTTP_Test.
 2. Set 1 VUser, a 5-second ramp and a 30-second duration. Validate the load model and save.
-3. Open [New Test](#/new-test), choose that scenario, confirm the application/release and start. This creates a run and sends traffic to the configured target.
+3. Open [New run](#/new-test), choose that scenario, confirm the application/release and start. This creates a run and sends traffic to the configured target.
 4. Watch the run in [Command Center](#/command-center). Confirm the Check_Service action succeeds and throughput is near one iteration per second after ramp-up. Scheduling and service time can lower the observed rate.
 5. When it reaches COMPLETE, open [Results](#/results) and inspect errors, timing and the SLA verdict. COMPLETE describes lifecycle completion; it does not by itself establish an SLA pass.
 

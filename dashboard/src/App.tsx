@@ -3494,7 +3494,7 @@ function AppShell({
                   onOpenOverview={() => navigateToCommandCenter()}
                   overviewActions={{
                     onNewTest: () => handleNavigate("new-test"),
-                    newTestDisabledReason: !effectiveAccessLoaded ? "Checking permissions…" : effectiveAccessError ? "Permissions could not be verified. Open New Test from the sidebar to retry." : !isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false) ? "Your current role cannot create test runs." : undefined,
+                    newTestDisabledReason: !effectiveAccessLoaded ? "Checking permissions…" : effectiveAccessError ? "Permissions could not be verified. Open New run from the sidebar to retry." : !isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false) ? "Your current role cannot create test runs." : undefined,
                     onBrowseScenarios: () => handleNavigate("tests"),
                     releases,
                     onSelectRelease: handleSidebarReleaseChange,

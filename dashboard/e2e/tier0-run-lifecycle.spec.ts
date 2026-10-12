@@ -65,7 +65,7 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     // S8 — dismissing confirmation must be inert, then the confirmed action must
     // be observable in both the API and the controls a user is looking at.
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
-    const pauseDialog = page.getByRole('dialog', { name: 'Pause this test run?' })
+    const pauseDialog = page.getByRole('dialog', { name: 'Pause this run?' })
     await expect(pauseDialog).toBeVisible()
     await expect(pauseDialog).toContainText('Paused time does not count against the')
     await pauseDialog.getByRole('button', { name: 'Cancel' }).click()
@@ -73,12 +73,12 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     expect(await status(request, testId), 'cancelled confirmation must not pause the run').toBe('RUNNING')
 
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Pause this test run?' }).getByRole('button', { name: 'Pause Test' }).click()
+    await page.getByRole('dialog', { name: 'Pause this run?' }).getByRole('button', { name: 'Pause run' }).click()
     await waitForStatus(request, testId, value => value === 'PAUSED', 'pause')
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Resume this test run?' }).getByRole('button', { name: 'Resume Test' }).click()
+    await page.getByRole('dialog', { name: 'Resume this run?' }).getByRole('button', { name: 'Resume run' }).click()
     await waitForStatus(request, testId, value => value === 'RUNNING', 'resume')
 
     const target = page.getByRole('spinbutton', { name: 'smoke target VUsers', exact: true })
@@ -105,7 +105,7 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     // below rather than accepted as "whatever happened": a prior review recorded
     // stop being upgraded to ABORTED in some paths, so the value carries meaning.
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Stop this test run?' }).getByRole('button', { name: 'Stop Test' }).click()
+    await page.getByRole('dialog', { name: 'Stop this run?' }).getByRole('button', { name: 'Stop run' }).click()
     const terminal = await waitForStatus(request, testId, value => TERMINAL.has(value), 'stop', 120_000)
     expect(terminal, 'a graceful stop must preserve successful terminal semantics').toBe('COMPLETE')
 
@@ -165,7 +165,7 @@ test('[U13 U14] abort force-cancels a live run with exact terminal semantics', a
   const run = await seedLiveRun({ label: 'tier0-abort' })
   await openLiveControls(page, run.testId)
   await page.getByRole('button', { name: 'Abort', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Abort this test run?' }).getByRole('button', { name: 'Abort Test' }).click()
+  await page.getByRole('dialog', { name: 'Abort this run?' }).getByRole('button', { name: 'Abort run' }).click()
   const terminal = await waitForStatus(request, run.testId, value => TERMINAL.has(value), 'abort', 120_000)
   expect(terminal, 'force abort must not be reported as a graceful completion').toBe('ABORTED')
 })

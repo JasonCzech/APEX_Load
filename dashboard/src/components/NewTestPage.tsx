@@ -1885,7 +1885,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       if (navigate) openCreatedRun(test.id, false)
       return true
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Unable to create test'))
+      setError(getErrorMessage(err, 'Unable to create run'))
       return false
     } finally {
       creatingRef.current = false
@@ -2030,7 +2030,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   scheduleDirtyRef.current = hasUnsavedChanges && scheduleDraftDirty
   const newTestGuard = useMemo<NavigationGuard>(() => ({
     id: 'new-test-run-setup',
-    label: 'New Test draft (saving does not create or start a test)',
+    label: 'New run draft (saving does not create or start a run)',
     isDirty: () => newTestDirtyRef.current || scheduleDirtyRef.current,
     save: () => saveDraftRef.current(),
     discard: () => {
@@ -2847,7 +2847,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const newTestViewControls = useMemo(() => (
     <PageViewToggle
       value={pageMode}
-      ariaLabel="New test page view"
+      ariaLabel="New run page view"
       className="new-test-view-toggle topbar-page-section-toggle"
       onChange={nextMode => runGuarded(() => setPageMode(nextMode), ['new-test-run-setup'])}
       options={[
@@ -2858,7 +2858,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   ), [pageMode, runGuarded])
   const newTestTopbarContribution = useMemo(() => ({
     id: 'new-test-page',
-    title: 'New Test',
+    title: 'New run',
     controls: newTestViewControls,
     priority: 10,
   }), [newTestViewControls])
@@ -2869,7 +2869,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>New Test</h2>
+          <h2>New run</h2>
           <p className="page-subtitle">Choose the release context, scenario, and run setup.</p>
         </div>
         {!hasTopbarContributionProvider && (
@@ -2893,7 +2893,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         {savedDraft && !scenarioCatalogReady && <span id="new-test-restore-help">The scenario list must load before this draft can be restored.</span>}
       </div>
       {draftNotice && <p role="status">{draftNotice}</p>}
-      {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
+      {error && <ErrorDiagnostic error={error} fallback="Unable to create or load run setup" compact className="new-test-error-diagnostic" />}
       {effectiveAccessLoaded && effectiveAccessError && (
         <div className="settings-error-inline page-error-banner" role="alert">
           {effectiveAccessError}. Permissions could not be verified, so run and schedule changes remain disabled.
@@ -3261,7 +3261,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                               <th>Materialized</th>
                                               <th>Status</th>
                                               <th>Reason</th>
-                                              <th>Test</th>
+                                              <th>Run</th>
                                               <th>Approval</th>
                                               <th>Conflict</th>
 										  <th>Resolution</th>

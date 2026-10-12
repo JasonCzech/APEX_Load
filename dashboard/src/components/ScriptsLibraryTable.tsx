@@ -403,7 +403,7 @@ export default function ScriptsLibraryTable({
                     </button>
                     <div className="script-table-meta">
                       <span className="protocol-badge">{script.protocol}</span>
-                      <span className="script-health-token">v{script.version || '—'}</span>
+                      <span className="script-health-token script-version-token">v{script.version || '—'}</span>
                       {/* Reference key and who created or changed it live behind one info badge. */}
                       <ScriptInfoBadge name={script.name} refKey={script.ref_key} createdAt={script.created_at} activity={script.activity} duplicateName={duplicateName} />
                       {script.archived_at && <span className="script-health-token">Archived</span>}
@@ -679,7 +679,7 @@ export default function ScriptsLibraryTable({
                   <div>{item.name || item.id}</div>
                   <div className="script-table-meta">
                     {item.protocol && <span className="protocol-badge">{item.protocol}</span>}
-                    {item.version && <span className="script-health-token">v{item.version}</span>}
+                    {item.version && <span className="script-health-token script-version-token">v{item.version}</span>}
                     {item.has_archive && <span className="script-health-token healthy">archive</span>}
                   </div>
                 </td>
@@ -705,7 +705,7 @@ export default function ScriptsLibraryTable({
                       {item.local_item_id && (
                         <button className="btn btn-sm btn-ghost" onClick={() => federation.onCompare(item.local_item_id!, item)}>Compare</button>
                       )}
-                      {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Remote Workspace</a>}
+                      {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in remote workspace</a>}
                     </>
                   ) : (
                     <span className="cell-muted">Read-only</span>

@@ -129,15 +129,15 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { await Promise.resolve() })
   }
 
-  // Goal setup is started from the Goal-Driven family on the Model & Shape step.
+  // Goal setup is started from the Goal-Driven family on the Model & shape step.
   async function openBuildFromGoal() {
     const click = async (element: Element | undefined) => {
       expect(element).toBeDefined()
       await act(async () => { element?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     }
-    await click(Array.from(container.querySelectorAll('.scenario-wizard-step')).find(step => step.textContent?.includes('Model & Shape')))
+    await click(Array.from(container.querySelectorAll('.scenario-wizard-step')).find(step => step.textContent?.includes('Model & shape')))
     await click(Array.from(container.querySelectorAll('.scenario-source-card')).find(card => card.querySelector('span')?.textContent === 'Goal-Driven'))
-    await click(findButton(container, 'Use Goal-Driven Scenario'))
+    await click(findButton(container, 'Use Goal-Driven scenario'))
   }
 
   it('opens Build from Goal in the guided worksheet and imports matching baseline ART', async () => {
@@ -151,7 +151,7 @@ describe('TestHub build-from-goal', () => {
     await flush()
 
     expect(apiMock.listTests).toHaveBeenCalled()
-    expect(container.textContent).toContain('Goal-Driven Scenario Setup')
+    expect(container.textContent).toContain('Goal-Driven scenario setup')
     expect(container.textContent).toContain('Throughput goal')
     expect(container.textContent).toContain('Estimate adaptive demand')
     expect(container.textContent).not.toContain('Scenario Mode')
@@ -256,13 +256,13 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     const picker = container.querySelector<HTMLSelectElement>('[aria-label="Completed baseline run"]')!
     await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
-    await act(async () => findButton(container, 'Start Over')?.click())
+    await act(async () => findButton(container, 'Start over')?.click())
     await act(async () => report.resolve({
       manifest: { provenance: { groups: [{ name: 'Checkout', script_id: 'script-a', script_name: 'Checkout', protocol: 'http', vusers: 1 }] } },
       by_group: { Checkout: { transactions: 10, avg_response_ms: 3000 } },
       overview: { transactions: 10, avg_response_ms: 3000 },
     }))
-    await act(async () => findButton(container, 'Run Settings')?.click())
+    await act(async () => findButton(container, 'Run settings')?.click())
     expect(container.querySelector('[aria-label="Scenario Mode"]')).toBeNull()
     expect(container.querySelector('.goal-driven-worksheet')).toBeNull()
     expect(container.querySelector('.composition-timeline')).not.toBeNull()

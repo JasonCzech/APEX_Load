@@ -351,7 +351,7 @@ export default function TestExecutionScenarioPreview({
                 <span className="scenario-preview-stat-value">{test.resource_baseline ? '5m pre/post' : 'Disabled'}</span>
               </div>
               <div className="scenario-preview-stat">
-                <span className="scenario-preview-stat-label">Start Delay</span>
+                <span className="scenario-preview-stat-label">Start delay</span>
                 <span className="scenario-preview-stat-value">{test.start_delay || 'Disabled'}</span>
               </div>
             </div>
@@ -447,7 +447,7 @@ export default function TestExecutionScenarioPreview({
               <span className="scenario-setting-value">{test.duration}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Start Delay</span>
+              <span className="scenario-setting-label">Start delay</span>
               <span className="scenario-setting-value">{test.start_delay || 'Disabled'}</span>
             </div>
             <div className="scenario-setting-card">
