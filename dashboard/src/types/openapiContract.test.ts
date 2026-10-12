@@ -206,6 +206,7 @@ const SCENARIO_DATA_POOL_BINDING_CONTRACT = {
     'alias',
     'created_at',
     'id',
+    'live_options',
     'pool_id',
     'pool_name',
     'scenario_id',

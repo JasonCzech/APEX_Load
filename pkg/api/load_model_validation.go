@@ -348,6 +348,14 @@ func validateLoadModelDataPoolBindings(poolStore dataPoolPersistence, bindings [
 		if alias == "" {
 			alias = strings.TrimSpace(binding.PoolID)
 		}
+		// Live rows are shared mutable state. Empty and frozen seeds do not
+		// depend on a current pool, and snapshot row-demand calculations cannot
+		// predict data supplied or consumed by concurrent scripts.
+		liveItem := LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "ready", Summary: "Live table is initialized at run start; row availability is governed by its producers, consumers and empty-table policy."}
+		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
+			items = append(items, liveItem)
+			continue
+		}
 		pool, err := poolStore.GetDataPool(binding.PoolID)
 		if err != nil {
 			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not load data pool: %v", err)})
@@ -355,6 +363,10 @@ func validateLoadModelDataPoolBindings(poolStore dataPoolPersistence, bindings [
 		}
 		if archivedErr := errDataPoolArchived(pool); archivedErr != nil {
 			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: "Data pool is archived; restore it before running this scenario."})
+			continue
+		}
+		if binding.AccessMode == "live" {
+			items = append(items, liveItem)
 			continue
 		}
 		rows, err := poolStore.ListDataPoolRows(binding.PoolID)

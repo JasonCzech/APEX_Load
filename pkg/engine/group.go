@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/livetable"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -21,6 +22,9 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
+	LiveTableClient   livetable.Client
+	LiveTableClientID string
+	LiveTableBindings []LiveTableBinding
 	// RuntimeResourcePeakVUsers pins the admitted closed population ceiling.
 	// Zero uses VUsers; open workloads use their independent in-flight bound.
 	RuntimeResourcePeakVUsers int
@@ -403,6 +407,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			return nil, fmt.Errorf("group[%d] %q: effective group name duplicates group[%d]", i, effectiveName, previous)
 		}
 		effectiveGroupNames[effectiveNameKey] = i
+		if err := validateLiveTableBindings(g.Script, g.LiveTableClient, g.LiveTableClientID, g.LiveTableBindings); err != nil {
+			return nil, fmt.Errorf("group[%d] live tables: %w", i, err)
+		}
 		dataProvider, err := NewShardedDataProviderWithAssets(g.Script.DataSources, g.DataShard, g.StagedDataFiles)
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] %q: initialize data sources: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
@@ -1893,6 +1900,9 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		ExecutionGoals:               group.executionGoals,
 		ActionBoundaryCtx:            entitledBoundaryCtx,
 		DataProvider:                 group.dataProvider,
+		LiveTableClient:              group.LiveTableClient,
+		LiveTableClientID:            group.LiveTableClientID,
+		LiveTableBindings:            group.LiveTableBindings,
 	}
 	if phase != "teardown" {
 		vu.PauseControl = mge
@@ -2157,6 +2167,9 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			HardStopCtx:                  prepared.shedCtx,
 			ActionBoundaryCtx:            prepared.boundaryCtx,
 			DataProvider:                 prepared.group.dataProvider,
+			LiveTableClient:              prepared.group.LiveTableClient,
+			LiveTableClientID:            prepared.group.LiveTableClientID,
+			LiveTableBindings:            prepared.group.LiveTableBindings,
 			SkipInit:                     groupLifecycleAtOnce(prepared.group),
 			SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
 		}
@@ -2673,6 +2686,9 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 			HardStopCtx:                  shedCtx,
 			ActionBoundaryCtx:            boundaryCtx,
 			DataProvider:                 group.dataProvider,
+			LiveTableClient:              group.LiveTableClient,
+			LiveTableClientID:            group.LiveTableClientID,
+			LiveTableBindings:            group.LiveTableBindings,
 			SkipInit:                     groupLifecycleAtOnce(group),
 			SkipTeardown:                 groupLifecycleAtOnce(group),
 		}

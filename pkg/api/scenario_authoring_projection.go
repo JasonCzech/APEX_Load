@@ -39,11 +39,12 @@ type ScenarioAuthoringGroup struct {
 // ScenarioAuthoringDataPoolBinding keeps the binding's stable identity but not
 // its clocks or the joined pool name.
 type ScenarioAuthoringDataPoolBinding struct {
-	ID                string `json:"id"`
-	PoolID            string `json:"pool_id"`
-	Alias             string `json:"alias"`
-	AccessMode        string `json:"access_mode"`
-	SelectionStrategy string `json:"selection_strategy"`
+	ID                string                    `json:"id"`
+	PoolID            string                    `json:"pool_id"`
+	Alias             string                    `json:"alias"`
+	AccessMode        string                    `json:"access_mode"`
+	SelectionStrategy string                    `json:"selection_strategy"`
+	LiveOptions       *storage.LiveTableOptions `json:"live_options,omitempty"`
 }
 
 // ScenarioAuthoringDocument holds only persisted authored fields, with
@@ -162,10 +163,11 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
 		})
 	}
-	for _, binding := range snapshot.DataPools {
+	for _, binding := range cloneScenarioDataPoolBindings(snapshot.DataPools) {
 		document.DataPools = append(document.DataPools, ScenarioAuthoringDataPoolBinding{
 			ID: binding.ID, PoolID: binding.PoolID, Alias: binding.Alias,
 			AccessMode: binding.AccessMode, SelectionStrategy: binding.SelectionStrategy,
+			LiveOptions: binding.LiveOptions,
 		})
 	}
 	placement := ScenarioAuthoringPlacement{ReleaseIDs: []string{}}

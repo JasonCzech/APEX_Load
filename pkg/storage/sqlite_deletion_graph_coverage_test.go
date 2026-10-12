@@ -36,6 +36,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"scenario_scripts", "script_recordings", "scripts", "shared_data_pool_rows",
 	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "tests",
 	"usage_accounting_snapshots", "import_assets",
+	"live_tables", "live_table_finalizations",
 )
 
 // Cleanup jobs and audit history intentionally outlive their owner. The former
@@ -61,6 +62,7 @@ var manuallyHandledTestTables = stringSet(
 	"powerbi_publishes", "run_archives", "scenario_schedule_occurrences",
 	"runtime_secret_provisioning_attempts", "scenario_schedules", "test_history",
 	"test_interval_summaries", "test_notes",
+	"live_tables",
 )
 
 var retainedAfterTestDeletionTables = stringSet(

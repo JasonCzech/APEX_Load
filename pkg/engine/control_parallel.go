@@ -177,6 +177,10 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		ResultSink:                   sink,
 		Variables:                    variables,
 		DataProvider:                 vu.DataProvider,
+		LiveTableClient:              vu.LiveTableClient,
+		LiveTableClientID:            vu.LiveTableClientID,
+		LiveTableBindings:            vu.LiveTableBindings,
+		liveTables:                   vu.liveTables,
 		Parameters:                   NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID),
 		SecretResolver:               vu.SecretResolver,
 		RedactionConfig:              vu.RedactionConfig,
@@ -190,6 +194,16 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		ActionBoundaryCtx:            vu.ActionBoundaryCtx,
 		extractedVariables:           make(map[string]int),
 		sourceTransactions:           make(map[string]*sourceTransactionRuntimeState),
+	}
+	if vu.liveTables != nil {
+		branchVU.liveTableLane = vu.liveTables.branchLane(vu.liveTableLane, index)
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := branchVU.settleLiveTableLeases(cleanupCtx, false, true); err != nil {
+				result.err, result.failed = err, true
+			}
+		}()
 	}
 	// A branch's samples belong to the parent's iteration.
 	branchVU.currentIteration.Store(vu.currentIteration.Load())

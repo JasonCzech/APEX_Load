@@ -89,6 +89,7 @@ func TestEngineActionTypeMembership(t *testing.T) {
 		"source_metric", "source_parameter", "source_json", "source_xml",
 		"source_database", "source_secret", "source_external", "source_review",
 		"custom_call", "review_required",
+		"live_table",
 	}
 	for _, actionType := range expected {
 		if !isEngineActionType(actionType) {

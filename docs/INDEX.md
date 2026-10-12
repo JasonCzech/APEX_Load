@@ -23,6 +23,9 @@ kept for planning or audit context only.
 | [BASELINE_COMPARISON.md](BASELINE_COMPARISON.md) | Current | Pinned baseline selection, matched-load evidence, advisory policies and saved comparison exports |
 | [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator tasks, library assignments, and project secrets |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API orientation, authentication, workflows, and automation |
+| [Live data tables](LIVE_DATA_TABLES_RUNTIME.md) | Current | Explicit per-run live bindings, action semantics, recovery limits, and protected output |
+| [VTS compatibility](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) | Current | Supported authoring primitives and blocked vendor imports without unproven parity |
+| [Live table design](LIVE_DATA_TABLES_REVISED_PLAN.md) | Design | Rationale, compatibility contract, and staged rollout criteria |
 | [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Current | Project object history, disclosure-safe activity and archive workflows |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |

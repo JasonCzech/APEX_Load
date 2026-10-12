@@ -23,8 +23,8 @@ it('shows the HTTP version mix, both ratios, the finding and per-version phases'
   act(() => root.render(<RunReportDiagnostics report={report} />))
   const mix = container.querySelector('table[aria-label="HTTP version mix"]')!
   expect(Array.from(mix.querySelectorAll('tbody tr')).map(row => row.textContent)).toEqual(['HTTP/22' + '50.0%', 'HTTP/31' + '25.0%', 'No response (version unknown)1' + '25.0%'])
-  expect(container.textContent).toContain('Fell back to TCP50.0% (1 of 2 upgrade-eligible auto+h3 actions)')
-  expect(container.textContent).toContain('QUIC failures66.7% (2 of 3 QUIC attempts)')
+  expect(container.textContent).toContain('Fell back to TCP50.00% (1 of 2 upgrade-eligible auto+h3 actions)')
+  expect(container.textContent).toContain('QUIC failures66.67% (2 of 3 QUIC attempts)')
   expect(container.textContent).toContain('HTTP attempts (HTTP/3 actions)5')
   expect(container.textContent).toContain('Routing: Upgraded to HTTP/3 (2), Exact HTTP/3 policy (1), TCP: HTTP/3 not yet advertised (1)')
   expect(container.querySelector('[role="note"]')?.textContent).toBe('Protocol Mix: 50.0% of upgrade-eligible auto+h3 actions fell back to TCP.')

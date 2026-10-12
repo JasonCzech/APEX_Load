@@ -251,6 +251,17 @@ describe('RunReportPage', () => {
     vi.clearAllMocks()
   })
 
+  it.each([true, false])('keeps terminal live-table reconciliation reachable in Execution with archive=%s', async archive => {
+    const binding = { pool_id: '', alias: 'work', access_mode: 'live' as const, selection_strategy: 'manual' as const }
+    mocks.polling.test = { ...buildTest('FAILED', archive), project_id: 'project', data_pools: [binding] }
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="execution" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('[role="tabpanel"] [aria-label="Live data tables"]')).not.toBeNull()
+    expect(container.textContent).toContain('No live tables yet.')
+    mocks.polling.test = { ...mocks.polling.test, data_pools: [{ ...binding, access_mode: 'read_only', selection_strategy: 'sequential' }] }
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="execution" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('[aria-label="Live data tables"]')).toBeNull()
+  })
+
   it('switches from request metrics to named transactions when opening an SLA row', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 } }, sla_rows: { Checkout: { name: 'Checkout', volume: 5, result_kind: 'na' } } } as unknown as RunArchiveReport

@@ -26,7 +26,12 @@ import (
 )
 
 func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (bool, error) {
+	if err := vu.liveTableLeaseError(); err != nil {
+		return true, err
+	}
 	switch dsl.CanonicalActionType(action.Type) {
+	case "live_table":
+		return true, vu.executeLiveTableAction(ctx, action)
 	case "rendezvous":
 		return true, vu.waitAtRendezvous(ctx, action)
 	case "error_message":

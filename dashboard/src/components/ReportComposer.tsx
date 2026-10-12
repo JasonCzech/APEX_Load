@@ -1,3 +1,4 @@
+import LiveTableReportSummary from './LiveTableReportSummary'
 import { createPortal } from 'react-dom'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { reportAcceptance, formatReportPercent, defaultReportPopulation, populationLabels, reportPopulationOverview } from './runReport/reportPresentation'
@@ -589,6 +590,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
               </section>
             )}
 
+            {(has('provenance', isAudit) || has('test_setup', isEngineer)) && <LiveTableReportSummary tables={report.manifest.provenance?.live_tables} />}
             {has('evidence_tiers', isAudit) && (
               <section className="report-section">
                 <h2>Audit evidence</h2>

@@ -408,6 +408,12 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				if !ok || helperFile.action == nil {
 					continue
 				}
+				if len(helperFile.action.vtsReferences) > 0 {
+					// Inlining may drop expressions whose return values cannot be
+					// translated. Retain the shared-data dependency from the actual
+					// helper file, including helpers in unscheduled action files.
+					parsedActions = append(parsedActions, &ParsedAction{Filename: file, Phase: phase, vtsReferences: helperFile.action.vtsReferences})
+				}
 				for _, failure := range helperFile.action.ParseFailures {
 					if strings.TrimSpace(failure.Filename) == "" {
 						failure.Filename = file
@@ -662,6 +668,7 @@ func finalizeEnterpriseArchiveImportResult(
 		return nil
 	}
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
+	appendVTSSourceGates(result, ctx.ParsedActions, ctx.Files)
 	appendSplicedCommentWarnings(result, ctx.ParsedActions)
 	applySourceParamBraces(result, ctx.ProjectConfig)
 	for _, script := range result.effectiveScripts() {
@@ -1492,6 +1499,7 @@ func sourceActionForLifecycleDeclaration(
 		Filename:            parsed.Filename,
 		Phase:               phase,
 		SplicedCommentLines: parsed.SplicedCommentLines,
+		vtsReferences:       parsed.vtsReferences,
 	}
 
 	phases := make(map[string]struct{})

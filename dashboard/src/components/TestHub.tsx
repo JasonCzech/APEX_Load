@@ -1322,7 +1322,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const showModelPreview = showForm && wizardStep !== 'scripts' && !sourcePending && (wizardStep !== 'source' || Boolean(scenarioStartChoice))
   const showCompositionPreview = wizardStep === 'run' && runSettingsTab === 'scenario' && form.scenario_mode === 'vuser_driven' && !isSteppedRamp && !isGuidedClosedVUser && !isGoalDriven
 
-  const scenarioBindings: ScenarioDataPoolBinding[] = (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' }))
+  const scenarioBindings: ScenarioDataPoolBinding[] = (form.data_pools || []).map(binding => ({ ...binding, access_mode: binding.access_mode === 'live' ? 'live' : 'read_only' }))
   const bindingErrors = dataBindingErrors(scenarioBindings)
   const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current, data_pools: bindings.map(binding => ({...binding})) }))
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => (
@@ -1859,8 +1859,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         pool_id: binding.pool_id,
         pool_name: binding.pool_name,
         alias: binding.alias,
-        access_mode: 'read_only',
+        access_mode: binding.access_mode === 'live' ? 'live' : 'read_only',
         selection_strategy: binding.selection_strategy,
+        ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}),
       })),
     }))
   }
@@ -3277,7 +3278,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
   }, [api, showForm])
 
-  const dataPoolLabel = scenarioBindings.length ? scenarioBindings.map(binding => `${binding.alias || 'Unnamed alias'}: ${dataPools.find(pool => pool.id === binding.pool_id)?.name || 'Unavailable pool'}`).join(', ') : 'No data pool'
+  const dataPoolLabel = scenarioBindings.length ? scenarioBindings.map(binding => `${binding.alias || 'Unnamed alias'}: ${binding.access_mode === 'live' && binding.live_options?.seed_policy === 'empty' ? 'Empty live table' : binding.access_mode === 'live' && binding.live_options?.seed_policy === 'original_seed' ? 'Prior run seed' : dataPools.find(pool => pool.id === binding.pool_id)?.name || 'Unavailable pool'}`).join(', ') : 'No data pool'
   const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : scenarioSourceMode === 'csv_driven' ? 'CSV Driven' : 'Manual shape')
   const goalSizingIncomplete = isGoalDriven && formGroups.some((_, index) => !(Number(goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.art?.art_ms) > 0))
   const validationLabel = loadModelValidationLoading ? 'Checking' : loadModelValidationError ? 'Validation failed' : loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
@@ -4569,7 +4570,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           </details>
 
           {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} scenarioTag={scenarioBaseline?.etag} onSaved={() => void adoptBaselineAfterBindingsSave()} onScenarioChanged={() => setScenarioConflict(conflict => conflict || { reason: scenarioConflictReason(new ApiError('scenario changed', 412)), loading: false, current: null })} />}
-          <ScenarioDataBindings bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} onChange={updateDataBindings} />
+          <ScenarioDataBindings bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} canManageLiveOutput={isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_data_pools')} onChange={updateDataBindings} />
         </section>
       )
     }

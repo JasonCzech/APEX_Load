@@ -76,6 +76,19 @@ function testFromCreate(payload: CreateTestPayload, id: string): TestSummary {
 }
 
 describe('scenario assembly', () => {
+  it('preserves explicit live bindings through form edits, save, reopen, and run creation', () => {
+    const stored = kitchenSinkScenario()
+    const binding = { pool_id: '', alias: 'work', access_mode: 'live' as const, selection_strategy: 'manual' as const, live_options: { seed_policy: 'empty' as const, columns: ['id', 'email'], end_mode: 'discard' as const } }
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    form.data_pools = [binding]
+    const draft = scenarioDraftFromForm(form)
+    const saved = scenarioUpsertPayload(draft)
+    expect(saved.data_pools).toEqual([binding])
+    expect(scenarioUpsertPayload(scenarioDraftFromStoredScenario(storedFromUpsert(saved, stored.id))).data_pools).toEqual([binding])
+    expect(scenarioCreatePayload(draft).data_pools).toEqual([binding])
+    binding.live_options.columns.push('later_edit')
+    expect(draft.dataPools?.[0].live_options?.columns).toEqual(['id', 'email'])
+  })
   it('round-trips every field of a saved scenario through save and reload (TestHub)', () => {
     const stored = kitchenSinkScenario()
     const first = scenarioUpsertPayload(scenarioDraftFromStoredScenario(stored, ), { projectId: 'proj', workloadShapeId: 'custom' })

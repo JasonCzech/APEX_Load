@@ -227,6 +227,9 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				test.pinnedSecrets.setIfAbsent(values)
 			}
 		}
+		if decodeErr == nil {
+			decodeErr = tr.restoreLiveTables(ctx, test, executionLeaseTerm{ownerID: ownerID, generation: generation})
+		}
 		if decodeErr == nil && checkpoint.ExecutionGeneration >= generation {
 			decodeErr = fmt.Errorf("checkpoint generation %d is not older than %d", checkpoint.ExecutionGeneration, generation)
 		}
@@ -1186,7 +1189,15 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		}
 	}
 
+	tr.mu.RLock()
+	liveShards := cloneGroupShardMap(test.remoteGroupShards)
+	tr.mu.RUnlock()
 	lifecycleCtx, lifecycleCancel := tr.executionOperationContext(context.Background())
+	if err := tr.openLiveTableChannels(lifecycleCtx, test.ID, resume.generation, token[:], liveShards, resume.adopted); err != nil {
+		lifecycleCancel()
+		fail(err.Error())
+		return
+	}
 	streams := make(map[string]*generatorrpc.MetricsStream, len(resume.adopted))
 	for _, target := range orderedGeneratorTargets(resume.adopted, b.configuredTargets()) {
 		stream, err := b.openMetricsStream(lifecycleCtx, resume.adopted[target], test.ID, resume.generation)

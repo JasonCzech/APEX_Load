@@ -337,8 +337,9 @@ export function scenarioFormStateFromStoredScenario(
       pool_id: binding.pool_id,
       pool_name: binding.pool_name,
       alias: binding.alias,
-      access_mode: 'read_only',
+      access_mode: binding.access_mode === 'live' ? 'live' : 'read_only',
       selection_strategy: binding.selection_strategy,
-    } : { ...binding, access_mode: 'read_only' }),
+      ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}),
+    } : { ...binding, access_mode: binding.access_mode === 'live' ? 'live' : 'read_only', ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}) }),
   }
 }

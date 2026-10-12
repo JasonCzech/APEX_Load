@@ -9507,6 +9507,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveLiveTableSummary'
+                                additionalProperties: true
                             policy_pins:
                               type: array
                               items:
@@ -10001,6 +10007,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveLiveTableSummary'
+                                additionalProperties: true
                             policy_pins:
                               type: array
                               items:
@@ -13533,6 +13545,58 @@ paths:
                             format: date-time
                           id:
                             type: string
+                          live_options:
+                            type: object
+                            properties:
+                              columns:
+                                type: array
+                                items:
+                                  type: string
+                              durability:
+                                type: string
+                              empty_policy:
+                                type: string
+                              end_mode:
+                                type: string
+                              lease_ttl_ms:
+                                type: integer
+                                format: int64
+                              max_bytes:
+                                type: integer
+                                format: int64
+                              max_delivery_attempts:
+                                type: integer
+                                format: int64
+                              max_lease_lifetime_ms:
+                                type: integer
+                                format: int64
+                              max_receipts:
+                                type: integer
+                                format: int64
+                              max_result_bytes:
+                                type: integer
+                                format: int64
+                              max_rows:
+                                type: integer
+                                format: int64
+                              operation_timeout_ms:
+                                type: integer
+                                format: int64
+                              output_pool_name:
+                                type: string
+                              profile:
+                                type: string
+                              retry_window_ms:
+                                type: integer
+                                format: int64
+                              seed_policy:
+                                type: string
+                              seed_run_id:
+                                type: string
+                              wait_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           pool_id:
                             type: string
                           pool_name:
@@ -52879,6 +52943,10 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -52959,6 +53027,10 @@ paths:
                                 format: date-time
                               id:
                                 type: string
+                              live_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               pool_id:
                                 type: string
                               pool_name:
@@ -53162,6 +53234,10 @@ paths:
                                 format: date-time
                               id:
                                 type: string
+                              live_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               pool_id:
                                 type: string
                               pool_name:
@@ -53291,6 +53367,10 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -53372,6 +53452,10 @@ paths:
                                 format: date-time
                               id:
                                 type: string
+                              live_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               pool_id:
                                 type: string
                               pool_name:
@@ -83582,6 +83666,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -84627,6 +84763,58 @@ paths:
                             format: date-time
                           id:
                             type: string
+                          live_options:
+                            type: object
+                            properties:
+                              columns:
+                                type: array
+                                items:
+                                  type: string
+                              durability:
+                                type: string
+                              empty_policy:
+                                type: string
+                              end_mode:
+                                type: string
+                              lease_ttl_ms:
+                                type: integer
+                                format: int64
+                              max_bytes:
+                                type: integer
+                                format: int64
+                              max_delivery_attempts:
+                                type: integer
+                                format: int64
+                              max_lease_lifetime_ms:
+                                type: integer
+                                format: int64
+                              max_receipts:
+                                type: integer
+                                format: int64
+                              max_result_bytes:
+                                type: integer
+                                format: int64
+                              max_rows:
+                                type: integer
+                                format: int64
+                              operation_timeout_ms:
+                                type: integer
+                                format: int64
+                              output_pool_name:
+                                type: string
+                              profile:
+                                type: string
+                              retry_window_ms:
+                                type: integer
+                                format: int64
+                              seed_policy:
+                                type: string
+                              seed_run_id:
+                                type: string
+                              wait_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           pool_id:
                             type: string
                           pool_name:
@@ -86798,6 +86986,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -93105,6 +93345,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -99413,6 +99705,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -105733,6 +106077,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -112053,6 +112449,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -118373,6 +118821,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -124693,6 +125193,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -145953,6 +146505,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -148174,6 +148778,10 @@ paths:
                                   type: string
                                 id:
                                   type: string
+                                live_options:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 pool_id:
                                   type: string
                                 selection_strategy:
@@ -148517,6 +149125,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -151384,6 +152044,10 @@ paths:
                                       type: string
                                     id:
                                       type: string
+                                    live_options:
+                                      type: object
+                                      additionalProperties: true
+                                      nullable: true
                                     pool_id:
                                       type: string
                                     selection_strategy:
@@ -151727,6 +152391,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -154157,6 +154873,58 @@ paths:
                                   type: string
                                 id:
                                   type: string
+                                live_options:
+                                  type: object
+                                  properties:
+                                    columns:
+                                      type: array
+                                      items:
+                                        type: string
+                                    durability:
+                                      type: string
+                                    empty_policy:
+                                      type: string
+                                    end_mode:
+                                      type: string
+                                    lease_ttl_ms:
+                                      type: integer
+                                      format: int64
+                                    max_bytes:
+                                      type: integer
+                                      format: int64
+                                    max_delivery_attempts:
+                                      type: integer
+                                      format: int64
+                                    max_lease_lifetime_ms:
+                                      type: integer
+                                      format: int64
+                                    max_receipts:
+                                      type: integer
+                                      format: int64
+                                    max_result_bytes:
+                                      type: integer
+                                      format: int64
+                                    max_rows:
+                                      type: integer
+                                      format: int64
+                                    operation_timeout_ms:
+                                      type: integer
+                                      format: int64
+                                    output_pool_name:
+                                      type: string
+                                    profile:
+                                      type: string
+                                    retry_window_ms:
+                                      type: integer
+                                      format: int64
+                                    seed_policy:
+                                      type: string
+                                    seed_run_id:
+                                      type: string
+                                    wait_ms:
+                                      type: integer
+                                      format: int64
+                                  nullable: true
                                 pool_id:
                                   type: string
                                 selection_strategy:
@@ -155394,6 +156162,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -157615,6 +158435,10 @@ paths:
                                   type: string
                                 id:
                                   type: string
+                                live_options:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 pool_id:
                                   type: string
                                 selection_strategy:
@@ -157958,6 +158782,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -160723,6 +161599,10 @@ paths:
                                   type: string
                                 id:
                                   type: string
+                                live_options:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 pool_id:
                                   type: string
                                 selection_strategy:
@@ -161066,6 +161946,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -163814,6 +164746,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -164639,6 +165623,10 @@ paths:
                                   type: string
                                 id:
                                   type: string
+                                live_options:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 pool_id:
                                   type: string
                                 selection_strategy:
@@ -164982,6 +165970,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -167863,6 +168903,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -171333,6 +172425,58 @@ paths:
                             format: date-time
                           id:
                             type: string
+                          live_options:
+                            type: object
+                            properties:
+                              columns:
+                                type: array
+                                items:
+                                  type: string
+                              durability:
+                                type: string
+                              empty_policy:
+                                type: string
+                              end_mode:
+                                type: string
+                              lease_ttl_ms:
+                                type: integer
+                                format: int64
+                              max_bytes:
+                                type: integer
+                                format: int64
+                              max_delivery_attempts:
+                                type: integer
+                                format: int64
+                              max_lease_lifetime_ms:
+                                type: integer
+                                format: int64
+                              max_receipts:
+                                type: integer
+                                format: int64
+                              max_result_bytes:
+                                type: integer
+                                format: int64
+                              max_rows:
+                                type: integer
+                                format: int64
+                              operation_timeout_ms:
+                                type: integer
+                                format: int64
+                              output_pool_name:
+                                type: string
+                              profile:
+                                type: string
+                              retry_window_ms:
+                                type: integer
+                                format: int64
+                              seed_policy:
+                                type: string
+                              seed_run_id:
+                                type: string
+                              wait_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           pool_id:
                             type: string
                           pool_name:
@@ -173176,6 +174320,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -175254,6 +176450,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -176960,6 +178208,58 @@ paths:
                             format: date-time
                           id:
                             type: string
+                          live_options:
+                            type: object
+                            properties:
+                              columns:
+                                type: array
+                                items:
+                                  type: string
+                              durability:
+                                type: string
+                              empty_policy:
+                                type: string
+                              end_mode:
+                                type: string
+                              lease_ttl_ms:
+                                type: integer
+                                format: int64
+                              max_bytes:
+                                type: integer
+                                format: int64
+                              max_delivery_attempts:
+                                type: integer
+                                format: int64
+                              max_lease_lifetime_ms:
+                                type: integer
+                                format: int64
+                              max_receipts:
+                                type: integer
+                                format: int64
+                              max_result_bytes:
+                                type: integer
+                                format: int64
+                              max_rows:
+                                type: integer
+                                format: int64
+                              operation_timeout_ms:
+                                type: integer
+                                format: int64
+                              output_pool_name:
+                                type: string
+                              profile:
+                                type: string
+                              retry_window_ms:
+                                type: integer
+                                format: int64
+                              seed_policy:
+                                type: string
+                              seed_run_id:
+                                type: string
+                              wait_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           pool_id:
                             type: string
                           pool_name:
@@ -178803,6 +180103,58 @@ paths:
                               format: date-time
                             id:
                               type: string
+                            live_options:
+                              type: object
+                              properties:
+                                columns:
+                                  type: array
+                                  items:
+                                    type: string
+                                durability:
+                                  type: string
+                                empty_policy:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                lease_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                max_bytes:
+                                  type: integer
+                                  format: int64
+                                max_delivery_attempts:
+                                  type: integer
+                                  format: int64
+                                max_lease_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                                max_receipts:
+                                  type: integer
+                                  format: int64
+                                max_result_bytes:
+                                  type: integer
+                                  format: int64
+                                max_rows:
+                                  type: integer
+                                  format: int64
+                                operation_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                output_pool_name:
+                                  type: string
+                                profile:
+                                  type: string
+                                retry_window_ms:
+                                  type: integer
+                                  format: int64
+                                seed_policy:
+                                  type: string
+                                seed_run_id:
+                                  type: string
+                                wait_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                             pool_id:
                               type: string
                             pool_name:
@@ -180406,6 +181758,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -334202,6 +335606,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -338141,6 +339597,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -351575,6 +353083,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -367670,6 +369230,87 @@ paths:
                           - dimensions
                           - population
                         nullable: true
+                      live_tables:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            alias:
+                              type: string
+                            counts:
+                              type: object
+                              description: 'Go type: livetable.Counts'
+                              additionalProperties: true
+                            data_bytes:
+                              type: integer
+                              format: int64
+                            durability:
+                              type: string
+                            end_mode:
+                              type: string
+                            finalization:
+                              type: object
+                              properties:
+                                mode:
+                                  type: string
+                                output_pool_id:
+                                  type: string
+                                reason:
+                                  type: string
+                                state:
+                                  type: string
+                                table_id:
+                                  type: string
+                              required:
+                                - mode
+                                - state
+                                - table_id
+                              nullable: true
+                            op_count:
+                              type: integer
+                              format: int64
+                            op_errors:
+                              type: integer
+                              format: int64
+                            op_latency_buckets:
+                              type: array
+                              items:
+                                type: integer
+                                format: int64
+                            op_latency_max_ns:
+                              type: integer
+                              format: int64
+                            op_latency_total_ns:
+                              type: integer
+                              format: int64
+                            op_unknown:
+                              type: integer
+                              format: int64
+                            profile:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            state:
+                              type: string
+                            table_id:
+                              type: string
+                          required:
+                            - alias
+                            - counts
+                            - data_bytes
+                            - durability
+                            - end_mode
+                            - op_count
+                            - op_errors
+                            - op_latency_buckets
+                            - op_latency_max_ns
+                            - op_latency_total_ns
+                            - op_unknown
+                            - profile
+                            - revision
+                            - state
+                            - table_id
                       policy_pins:
                         type: array
                         items:
@@ -370466,6 +372107,87 @@ paths:
                           - dimensions
                           - population
                         nullable: true
+                      live_tables:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            alias:
+                              type: string
+                            counts:
+                              type: object
+                              description: 'Go type: livetable.Counts'
+                              additionalProperties: true
+                            data_bytes:
+                              type: integer
+                              format: int64
+                            durability:
+                              type: string
+                            end_mode:
+                              type: string
+                            finalization:
+                              type: object
+                              properties:
+                                mode:
+                                  type: string
+                                output_pool_id:
+                                  type: string
+                                reason:
+                                  type: string
+                                state:
+                                  type: string
+                                table_id:
+                                  type: string
+                              required:
+                                - mode
+                                - state
+                                - table_id
+                              nullable: true
+                            op_count:
+                              type: integer
+                              format: int64
+                            op_errors:
+                              type: integer
+                              format: int64
+                            op_latency_buckets:
+                              type: array
+                              items:
+                                type: integer
+                                format: int64
+                            op_latency_max_ns:
+                              type: integer
+                              format: int64
+                            op_latency_total_ns:
+                              type: integer
+                              format: int64
+                            op_unknown:
+                              type: integer
+                              format: int64
+                            profile:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            state:
+                              type: string
+                            table_id:
+                              type: string
+                          required:
+                            - alias
+                            - counts
+                            - data_bytes
+                            - durability
+                            - end_mode
+                            - op_count
+                            - op_errors
+                            - op_latency_buckets
+                            - op_latency_max_ns
+                            - op_latency_total_ns
+                            - op_unknown
+                            - profile
+                            - revision
+                            - state
+                            - table_id
                       policy_pins:
                         type: array
                         items:
@@ -381894,6 +383616,73 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          live_tables:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                alias:
+                                  type: string
+                                counts:
+                                  type: object
+                                  description: 'Go type: livetable.Counts'
+                                  additionalProperties: true
+                                data_bytes:
+                                  type: integer
+                                  format: int64
+                                durability:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                finalization:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
+                                op_count:
+                                  type: integer
+                                  format: int64
+                                op_errors:
+                                  type: integer
+                                  format: int64
+                                op_latency_buckets:
+                                  type: array
+                                  items:
+                                    type: integer
+                                    format: int64
+                                op_latency_max_ns:
+                                  type: integer
+                                  format: int64
+                                op_latency_total_ns:
+                                  type: integer
+                                  format: int64
+                                op_unknown:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                state:
+                                  type: string
+                                table_id:
+                                  type: string
+                              required:
+                                - alias
+                                - counts
+                                - data_bytes
+                                - durability
+                                - end_mode
+                                - op_count
+                                - op_errors
+                                - op_latency_buckets
+                                - op_latency_max_ns
+                                - op_latency_total_ns
+                                - op_unknown
+                                - profile
+                                - revision
+                                - state
+                                - table_id
                           policy_pins:
                             type: array
                             items:
@@ -383396,6 +385185,73 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          live_tables:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                alias:
+                                  type: string
+                                counts:
+                                  type: object
+                                  description: 'Go type: livetable.Counts'
+                                  additionalProperties: true
+                                data_bytes:
+                                  type: integer
+                                  format: int64
+                                durability:
+                                  type: string
+                                end_mode:
+                                  type: string
+                                finalization:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
+                                op_count:
+                                  type: integer
+                                  format: int64
+                                op_errors:
+                                  type: integer
+                                  format: int64
+                                op_latency_buckets:
+                                  type: array
+                                  items:
+                                    type: integer
+                                    format: int64
+                                op_latency_max_ns:
+                                  type: integer
+                                  format: int64
+                                op_latency_total_ns:
+                                  type: integer
+                                  format: int64
+                                op_unknown:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                state:
+                                  type: string
+                                table_id:
+                                  type: string
+                              required:
+                                - alias
+                                - counts
+                                - data_bytes
+                                - durability
+                                - end_mode
+                                - op_count
+                                - op_errors
+                                - op_latency_buckets
+                                - op_latency_max_ns
+                                - op_latency_total_ns
+                                - op_unknown
+                                - profile
+                                - revision
+                                - state
+                                - table_id
                           policy_pins:
                             type: array
                             items:
@@ -395964,6 +397820,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -409342,6 +411250,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -428601,6 +430561,58 @@ paths:
                           format: date-time
                         id:
                           type: string
+                        live_options:
+                          type: object
+                          properties:
+                            columns:
+                              type: array
+                              items:
+                                type: string
+                            durability:
+                              type: string
+                            empty_policy:
+                              type: string
+                            end_mode:
+                              type: string
+                            lease_ttl_ms:
+                              type: integer
+                              format: int64
+                            max_bytes:
+                              type: integer
+                              format: int64
+                            max_delivery_attempts:
+                              type: integer
+                              format: int64
+                            max_lease_lifetime_ms:
+                              type: integer
+                              format: int64
+                            max_receipts:
+                              type: integer
+                              format: int64
+                            max_result_bytes:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            operation_timeout_ms:
+                              type: integer
+                              format: int64
+                            output_pool_name:
+                              type: string
+                            profile:
+                              type: string
+                            retry_window_ms:
+                              type: integer
+                              format: int64
+                            seed_policy:
+                              type: string
+                            seed_run_id:
+                              type: string
+                            wait_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         pool_id:
                           type: string
                         pool_name:
@@ -440021,6 +442033,287 @@ paths:
       tags:
         - Tests
       x-handler: handleResolveInterruptedRun
+  /api/v1/tests/{id}/live-tables:
+    get:
+      summary: List Live Tables
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleListLiveTables
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleListLiveTables
+  /api/v1/tests/{id}/live-tables/{tableID}/export:
+    get:
+      summary: Export Live Table
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleExportLiveTable
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleExportLiveTable
+  /api/v1/tests/{id}/live-tables/{tableID}/finalize:
+    post:
+      summary: Finalize Live Table
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleFinalizeLiveTable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                output_pool_name:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleFinalizeLiveTable
+  /api/v1/tests/{id}/live-tables/{tableID}/rows:
+    get:
+      summary: Live Table Rows
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleLiveTableRows
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: 'Go type: livetable.Result'
+                additionalProperties: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tableID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: "0"
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: "100"
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleLiveTableRows
   /api/v1/tests/{id}/manifest:
     get:
       summary: Get Test Manifest
@@ -460845,6 +463138,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:
@@ -464359,6 +466704,58 @@ paths:
                         format: date-time
                       id:
                         type: string
+                      live_options:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          durability:
+                            type: string
+                          empty_policy:
+                            type: string
+                          end_mode:
+                            type: string
+                          lease_ttl_ms:
+                            type: integer
+                            format: int64
+                          max_bytes:
+                            type: integer
+                            format: int64
+                          max_delivery_attempts:
+                            type: integer
+                            format: int64
+                          max_lease_lifetime_ms:
+                            type: integer
+                            format: int64
+                          max_receipts:
+                            type: integer
+                            format: int64
+                          max_result_bytes:
+                            type: integer
+                            format: int64
+                          max_rows:
+                            type: integer
+                            format: int64
+                          operation_timeout_ms:
+                            type: integer
+                            format: int64
+                          output_pool_name:
+                            type: string
+                          profile:
+                            type: string
+                          retry_window_ms:
+                            type: integer
+                            format: int64
+                          seed_policy:
+                            type: string
+                          seed_run_id:
+                            type: string
+                          wait_ms:
+                            type: integer
+                            format: int64
+                        nullable: true
                       pool_id:
                         type: string
                       pool_name:

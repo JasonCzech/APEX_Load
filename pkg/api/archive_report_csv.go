@@ -239,6 +239,9 @@ func writeChangeAttributionCSVRows(write reportCSVWriteFunc, attribution RunArch
 }
 
 func writeArchiveProvenanceCSVRows(write reportCSVWriteFunc, provenance RunArchiveProvenance) error {
+	if err := writeLiveTableReportCSVRows(write, provenance.LiveTables); err != nil {
+		return err
+	}
 	rows := []struct {
 		metric string
 		value  string

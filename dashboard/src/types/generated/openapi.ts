@@ -3403,6 +3403,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "joint_evidence"?: (Record<string, unknown>) | null;
+                "live_tables"?: Array<Record<string, unknown>>;
                 "policy_pins"?: (Array<{
                   "applied"?: boolean;
                   "id"?: string;
@@ -3586,6 +3587,7 @@ export interface operations {
                   }>;
                 }) | null;
                 "joint_evidence"?: (Record<string, unknown>) | null;
+                "live_tables"?: Array<Record<string, unknown>>;
                 "policy_pins"?: (Array<{
                   "applied"?: boolean;
                   "id"?: string;
@@ -4924,6 +4926,26 @@ export interface operations {
               "alias"?: string;
               "created_at"?: string;
               "id"?: string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -18030,6 +18052,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -20120,6 +20162,7 @@ export interface operations {
                   "access_mode": string;
                   "alias": string;
                   "id": string;
+                  "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
                   "selection_strategy": string;
                 }>;
@@ -20221,6 +20264,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -21217,6 +21280,7 @@ export interface operations {
                   "access_mode": string;
                   "alias": string;
                   "id": string;
+                  "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
                   "selection_strategy": string;
                 }>;
@@ -21318,6 +21382,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -33108,6 +33192,7 @@ export interface operations {
               "alias"?: string;
               "created_at"?: string;
               "id"?: string;
+              "live_options"?: (Record<string, unknown>) | null;
               "pool_id"?: string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -33145,6 +33230,7 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: (Record<string, unknown>) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -34748,6 +34834,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -35129,6 +35235,26 @@ export interface operations {
               "alias"?: string;
               "created_at"?: string;
               "id"?: string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -35895,6 +36021,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -38138,6 +38284,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -38981,6 +39147,7 @@ export interface operations {
                   "access_mode": string;
                   "alias": string;
                   "id": string;
+                  "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
                   "selection_strategy": string;
                 }>;
@@ -39082,6 +39249,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -42236,6 +42423,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -43574,6 +43781,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -49453,6 +49680,26 @@ export interface operations {
               "alias"?: string;
               "created_at"?: string;
               "id"?: string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -50121,6 +50368,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -50711,6 +50978,26 @@ export interface operations {
               "alias"?: string;
               "created_at"?: string;
               "id"?: string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id"?: string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -51379,6 +51666,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -53755,6 +54062,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -56111,6 +56438,53 @@ export interface operations {
       };
     };
   };
+  "handleExportLiveTable": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": string;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleExportRecording": {
     parameters: {
       "path": {
@@ -56450,6 +56824,66 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleFinalizeLiveTable": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "output_pool_name"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -60878,6 +61312,7 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: (Record<string, unknown>) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -65977,6 +66412,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -69273,6 +69728,30 @@ export interface operations {
                 "dimensions": Array<string>;
                 "population": string;
               }) | null;
+              "live_tables"?: Array<{
+                "alias": string;
+                "counts": Record<string, unknown>;
+                "data_bytes": number;
+                "durability": string;
+                "end_mode": string;
+                "finalization"?: ({
+                  "mode": string;
+                  "output_pool_id"?: string;
+                  "reason"?: string;
+                  "state": string;
+                  "table_id": string;
+                }) | null;
+                "op_count": number;
+                "op_errors": number;
+                "op_latency_buckets": Array<number>;
+                "op_latency_max_ns": number;
+                "op_latency_total_ns": number;
+                "op_unknown": number;
+                "profile": string;
+                "revision": number;
+                "state": string;
+                "table_id": string;
+              }>;
               "policy_pins": (Array<{
                 "applied": boolean;
                 "id": string;
@@ -70209,6 +70688,30 @@ export interface operations {
                 "dimensions": Array<string>;
                 "population": string;
               }) | null;
+              "live_tables"?: Array<{
+                "alias": string;
+                "counts": Record<string, unknown>;
+                "data_bytes": number;
+                "durability": string;
+                "end_mode": string;
+                "finalization"?: ({
+                  "mode": string;
+                  "output_pool_id"?: string;
+                  "reason"?: string;
+                  "state": string;
+                  "table_id": string;
+                }) | null;
+                "op_count": number;
+                "op_errors": number;
+                "op_latency_buckets": Array<number>;
+                "op_latency_max_ns": number;
+                "op_latency_total_ns": number;
+                "op_unknown": number;
+                "profile": string;
+                "revision": number;
+                "state": string;
+                "table_id": string;
+              }>;
               "policy_pins": (Array<{
                 "applied": boolean;
                 "id": string;
@@ -73549,6 +74052,24 @@ export interface operations {
                   "dimensions": Array<string>;
                   "population": string;
                 }) | null;
+                "live_tables"?: Array<{
+                  "alias": string;
+                  "counts": Record<string, unknown>;
+                  "data_bytes": number;
+                  "durability": string;
+                  "end_mode": string;
+                  "finalization"?: (Record<string, unknown>) | null;
+                  "op_count": number;
+                  "op_errors": number;
+                  "op_latency_buckets": Array<number>;
+                  "op_latency_max_ns": number;
+                  "op_latency_total_ns": number;
+                  "op_unknown": number;
+                  "profile": string;
+                  "revision": number;
+                  "state": string;
+                  "table_id": string;
+                }>;
                 "policy_pins": (Array<{
                   "applied": boolean;
                   "id": string;
@@ -74026,6 +74547,24 @@ export interface operations {
                   "dimensions": Array<string>;
                   "population": string;
                 }) | null;
+                "live_tables"?: Array<{
+                  "alias": string;
+                  "counts": Record<string, unknown>;
+                  "data_bytes": number;
+                  "durability": string;
+                  "end_mode": string;
+                  "finalization"?: (Record<string, unknown>) | null;
+                  "op_count": number;
+                  "op_errors": number;
+                  "op_latency_buckets": Array<number>;
+                  "op_latency_max_ns": number;
+                  "op_latency_total_ns": number;
+                  "op_unknown": number;
+                  "profile": string;
+                  "revision": number;
+                  "state": string;
+                  "table_id": string;
+                }>;
                 "policy_pins": (Array<{
                   "applied": boolean;
                   "id": string;
@@ -75715,6 +76254,7 @@ export interface operations {
                   "access_mode": string;
                   "alias": string;
                   "id": string;
+                  "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
                   "selection_strategy": string;
                 }>;
@@ -75816,6 +76356,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -76681,6 +77241,26 @@ export interface operations {
                 "access_mode": string;
                 "alias": string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "selection_strategy": string;
               }>;
@@ -81432,6 +82012,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -94671,6 +95271,39 @@ export interface operations {
       };
     };
   };
+  "handleListLiveTables": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleListMonitoringCollectors": {
     parameters: {
       "query"?: {
@@ -95773,6 +96406,57 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleLiveTableRows": {
+    parameters: {
+      "path": {
+        "id": string;
+        "tableID": string;
+      };
+      "query"?: {
+        "0"?: string;
+        "100"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -102708,6 +103392,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -106572,6 +107276,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -118928,6 +119652,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -120963,6 +121707,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -122998,6 +123762,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -125033,6 +125817,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -127068,6 +127872,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -131223,6 +132047,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -141649,6 +142493,26 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: ({
+                  "columns"?: Array<string>;
+                  "durability"?: string;
+                  "empty_policy"?: string;
+                  "end_mode"?: string;
+                  "lease_ttl_ms"?: number;
+                  "max_bytes"?: number;
+                  "max_delivery_attempts"?: number;
+                  "max_lease_lifetime_ms"?: number;
+                  "max_receipts"?: number;
+                  "max_result_bytes"?: number;
+                  "max_rows"?: number;
+                  "operation_timeout_ms"?: number;
+                  "output_pool_name"?: string;
+                  "profile"?: string;
+                  "retry_window_ms"?: number;
+                  "seed_policy"?: string;
+                  "seed_run_id"?: string;
+                  "wait_ms"?: number;
+                }) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -156403,6 +157267,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -162931,6 +163815,7 @@ export interface operations {
               "alias"?: string;
               "created_at"?: string;
               "id"?: string;
+              "live_options"?: (Record<string, unknown>) | null;
               "pool_id"?: string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -162968,6 +163853,7 @@ export interface operations {
                 "alias": string;
                 "created_at"?: string;
                 "id": string;
+                "live_options"?: (Record<string, unknown>) | null;
                 "pool_id": string;
                 "pool_name"?: string;
                 "scenario_id"?: string;
@@ -164834,6 +165720,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -165676,6 +166582,7 @@ export interface operations {
                   "access_mode": string;
                   "alias": string;
                   "id": string;
+                  "live_options"?: (Record<string, unknown>) | null;
                   "pool_id": string;
                   "selection_strategy": string;
                 }>;
@@ -165777,6 +166684,26 @@ export interface operations {
               "alias": string;
               "created_at"?: string;
               "id": string;
+              "live_options"?: ({
+                "columns"?: Array<string>;
+                "durability"?: string;
+                "empty_policy"?: string;
+                "end_mode"?: string;
+                "lease_ttl_ms"?: number;
+                "max_bytes"?: number;
+                "max_delivery_attempts"?: number;
+                "max_lease_lifetime_ms"?: number;
+                "max_receipts"?: number;
+                "max_result_bytes"?: number;
+                "max_rows"?: number;
+                "operation_timeout_ms"?: number;
+                "output_pool_name"?: string;
+                "profile"?: string;
+                "retry_window_ms"?: number;
+                "seed_policy"?: string;
+                "seed_run_id"?: string;
+                "wait_ms"?: number;
+              }) | null;
               "pool_id": string;
               "pool_name"?: string;
               "scenario_id"?: string;
@@ -166681,6 +167608,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -174643,6 +175590,26 @@ export interface operations {
             "alias"?: string;
             "created_at"?: string;
             "id"?: string;
+            "live_options"?: ({
+              "columns"?: Array<string>;
+              "durability"?: string;
+              "empty_policy"?: string;
+              "end_mode"?: string;
+              "lease_ttl_ms"?: number;
+              "max_bytes"?: number;
+              "max_delivery_attempts"?: number;
+              "max_lease_lifetime_ms"?: number;
+              "max_receipts"?: number;
+              "max_result_bytes"?: number;
+              "max_rows"?: number;
+              "operation_timeout_ms"?: number;
+              "output_pool_name"?: string;
+              "profile"?: string;
+              "retry_window_ms"?: number;
+              "seed_policy"?: string;
+              "seed_run_id"?: string;
+              "wait_ms"?: number;
+            }) | null;
             "pool_id"?: string;
             "pool_name"?: string;
             "scenario_id"?: string;
@@ -178233,6 +179200,18 @@ export interface paths {
   };
   "/api/v1/tests/{id}/interrupted-stop/resolve": {
     "post": operations["handleResolveInterruptedRun"];
+  };
+  "/api/v1/tests/{id}/live-tables": {
+    "get": operations["handleListLiveTables"];
+  };
+  "/api/v1/tests/{id}/live-tables/{tableID}/export": {
+    "get": operations["handleExportLiveTable"];
+  };
+  "/api/v1/tests/{id}/live-tables/{tableID}/finalize": {
+    "post": operations["handleFinalizeLiveTable"];
+  };
+  "/api/v1/tests/{id}/live-tables/{tableID}/rows": {
+    "get": operations["handleLiveTableRows"];
   };
   "/api/v1/tests/{id}/manifest": {
     "get": operations["handleGetTestManifest"];

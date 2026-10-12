@@ -83,6 +83,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 54, Name: "dashboard-definition-revisions", Fingerprint: "a4489a4353666e183fdb02597b00bdb9d5eae844766f9b2a87f1807d04ad7233"},
 	{Version: 55, Name: "rca-analysis-origin", Fingerprint: "794d179a7c421744813b6404fd11d62e37c359d1297816affe8373f5364fefeb"},
 	{Version: 56, Name: "reverse-generator-target-ownership", Fingerprint: "32550b77652a06cbc16494068759f548a88c8b718acafc0f65a2afbd68669a21"},
+	{Version: 57, Name: "run-scoped-live-data-tables", Fingerprint: "fa414da8e781052f93d25b2bbb6487cf02b4acfbb389818a3acaf98044fa1c9b"},
 }
 
 type SchemaMigrationRecord struct {
@@ -157,6 +158,7 @@ func schemaConvergenceFingerprint() string {
 		"object-activity-legacy-backfill",
 		"durable-script-content-revision-immediate-tracking",
 		"durable-scenario-content-revision-immediate-tracking",
+		"live-table-optional-seed-binding",
 	} {
 		write("phase", phase, "")
 	}

@@ -1432,6 +1432,8 @@ func validateExtractorDFEIssues(label string, index int, ext Extractor, httpFami
 
 func validateEngineActionIssues(protocol string, path string, index int, action Action) []string {
 	switch action.Type {
+	case "live_table":
+		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateLiveTableAction(index, action))
 	case "source_verification":
 		if protocol != "http" {
 			return []string{fmt.Sprintf("%s: positional source verification requires the HTTP protocol", path)}

@@ -695,6 +695,11 @@ sourceFenced:
 	// material part (or all) of the duration sampled at evacuation entry. Refresh
 	// the active-time budget immediately before commit so a replacement never
 	// receives a stale full remainder and extends load past the fleet deadline.
+	if err := tr.openLiveTableChannels(remoteLifecycleCtx, testID, executionGeneration, runSupervisionToken, nextByGroup, replacementClients); err != nil {
+		rollbackErr := rollback()
+		closeDialedClients()
+		return impacts, errors.Join(err, rollbackErr)
+	}
 	tr.mu.RLock()
 	commitCurrent := tr.tests[testID] == test && distributedControlCommitCurrentLocked(tr, test, status, controlGeneration)
 	refreshedRemaining, _, _ := distributedEvacuationTiming(test, time.Now())
@@ -1283,11 +1288,14 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				correlation := tr.runCorrelationAssignment(testID)
 				messagingCarrier := tr.testUsesMessagingTraceCarrier(testID)
 				jointProjection := runJointProjection(managedTest)
-				if len(correlation.Origins) > 0 || messagingCarrier || jointProjection != nil {
+				if len(correlation.Origins) > 0 || messagingCarrier || jointProjection != nil || len(tr.liveBindings(testID)) > 0 {
 					// One probe answers every feature the replacement must support.
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
 					cancel()
+					if len(tr.liveBindings(testID)) > 0 && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureLiveTablesV1) {
+						return fail(fmt.Errorf("generator %q lacks live_tables_v1 for evacuation", shard.Target))
+					}
 					if len(correlation.Origins) > 0 && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
 						return fail(fmt.Errorf("generator %q lacks run_correlation_v1 for evacuation", shard.Target))
 					}
@@ -1341,6 +1349,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				touchedTargets[shard.Target] = struct{}{}
 				assignment, assignErr := client.AssignWork(ctx, generatorrpc.Assignment{
 					ArchiveSourceTarget:        archiveSourceTarget,
+					LiveTableBindingsJSON:      tr.liveBindingJSON(testID),
 					TestID:                     testID,
 					ExecutionGeneration:        executionGeneration,
 					ScenarioID:                 scenarioID,

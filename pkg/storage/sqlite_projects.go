@@ -1670,6 +1670,9 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM scenario_comparison_policies WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM import_assets WHERE project_id = ?`, []any{id}},
 		// Children that can reference tests must be removed before tests.
+		{`DELETE FROM live_table_journal WHERE table_id IN (SELECT id FROM live_tables WHERE project_id=?)`, []any{id}},
+		{`DELETE FROM live_table_finalizations WHERE project_id=?`, []any{id}},
+		{`DELETE FROM live_tables WHERE project_id=?`, []any{id}},
 		{`UPDATE capacity_reservations SET bound_test_id = NULL, bound_test_status = NULL, updated_at = ? WHERE bound_test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{time.Now().UTC(), id}},
 		{`DELETE FROM github_check_intents WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM powerbi_publishes WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},

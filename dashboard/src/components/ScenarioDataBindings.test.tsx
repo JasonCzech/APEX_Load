@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StoredScript, ScenarioDataPoolBinding } from '../types'
 import ScenarioDataBindings from './ScenarioDataBindings'
 
-const { api } = vi.hoisted(() => ({ api: { getScript: vi.fn() } }))
+const { api } = vi.hoisted(() => ({ api: { getScript: vi.fn(), getDataPool: vi.fn() } }))
 vi.mock('../hooks/useApi', () => ({ useApi: () => api }))
 
 const stored: StoredScript = {
@@ -26,12 +26,21 @@ describe('ScenarioDataBindings script-level data', () => {
   let root: Root
   beforeEach(() => {
     api.getScript.mockReset()
+    api.getDataPool.mockReset()
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container)
   })
   afterEach(async () => { await act(async () => root.unmount()); container.remove() })
   async function render(scripts: StoredScript[], bindings: ScenarioDataPoolBinding[] = []) {
     await act(async () => root.render(<ScenarioDataBindings scripts={scripts} bindings={bindings} pools={[]} onChange={() => {}} canManage={false} />))
   }
+  it.each(['read_only', 'live'] as const)('describes empty %s seeds without changing snapshot guidance', async access_mode => {
+    api.getDataPool.mockResolvedValue({ rows: [], total: 0 })
+    await render([], [{ pool_id: 'pool', alias: 'work', access_mode, selection_strategy: access_mode === 'live' ? 'manual' : 'sequential' }])
+    const preview = [...container.querySelectorAll('summary')].find(element => element.textContent === 'Preview rows and import CSV')!.parentElement as HTMLDetailsElement
+    await act(async () => { preview.open = true; preview.dispatchEvent(new Event('toggle')) })
+    expect(preview.textContent).toContain(access_mode === 'live' ? 'producers can add runtime rows' : 'Add rows before configuring a run')
+    expect(preview.textContent).not.toContain(access_mode === 'live' ? 'Add rows before configuring a run' : 'producers can add runtime rows')
+  })
   it('shows source previews, parameter mappings, runtime defaults and configured settings without fetching full scripts again', async () => {
     await render([stored])
     const panel = container.querySelector('.scenario-script-data')!

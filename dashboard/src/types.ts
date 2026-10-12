@@ -685,6 +685,7 @@ export interface LoadComparisonRequestOptions {
 }
 
 export interface RunArchiveProvenance {
+  live_tables?: import('./types/dataPools').RunArchiveLiveTableSummary[]
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryBudgetPolicy
   elk_capture?: { connection_id: string; connection_name?: string }
   dynatrace_capture?: { connection_id: string; connection_name?: string }

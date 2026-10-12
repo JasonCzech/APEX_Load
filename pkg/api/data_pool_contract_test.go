@@ -131,7 +131,7 @@ func TestHandleCreateTestRejectsUnsupportedDataPoolAccessMode(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
-	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "only \\\"read_only\\\" is currently supported") {
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "use \\\"read_only\\\" or \\\"live\\\"") {
 		t.Fatalf("status = %d body=%s, want 400 read-only contract error", resp.Code, resp.Body.String())
 	}
 }
@@ -156,7 +156,7 @@ func TestBuildSharedDataSourcesRejectsLegacyWritableModeBeforeReadingRows(t *tes
 	_, err := runner.buildSharedDataSourcesLocked([]storage.ScenarioDataPoolBinding{{
 		PoolID: "pool-contract", Alias: "customers", AccessMode: "read_write", SelectionStrategy: "sequential",
 	}})
-	if err == nil || !strings.Contains(err.Error(), "invalid executable data pool bindings") || !strings.Contains(err.Error(), "only \"read_only\"") {
+	if err == nil || !strings.Contains(err.Error(), "invalid executable data pool bindings") || !strings.Contains(err.Error(), "use \"read_only\" or \"live\"") {
 		t.Fatalf("buildSharedDataSourcesLocked error = %v, want explicit read-only execution error", err)
 	}
 	if spy.rowReads != 0 {
@@ -170,7 +170,7 @@ func TestScenarioDataPoolNormalizationRejectsWritableModes(t *testing.T) {
 			_, err := normalizeScenarioDataPoolBindings("scenario-contract", []storage.ScenarioDataPoolBinding{{
 				PoolID: "pool-contract", Alias: "customers", AccessMode: mode, SelectionStrategy: "sequential",
 			}})
-			if err == nil || !strings.Contains(err.Error(), "only \"read_only\" is currently supported") {
+			if err == nil || !strings.Contains(err.Error(), "use \"read_only\" or \"live\"") {
 				t.Fatalf("normalizeScenarioDataPoolBindings(%q) error = %v", mode, err)
 			}
 		})
@@ -316,7 +316,7 @@ func TestExecutionPlanAuthoringRejectsWritableModeButLegacyMaterializationCanoni
 		}},
 	}
 	status, message := server.validateExecutionPlan(plan)
-	if status != http.StatusBadRequest || !strings.Contains(message, "only \"read_only\" is currently supported") {
+	if status != http.StatusBadRequest || !strings.Contains(message, "use \"read_only\" or \"live\"") {
 		t.Fatalf("validateExecutionPlan status=%d message=%q, want strict read-only rejection", status, message)
 	}
 

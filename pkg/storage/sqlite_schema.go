@@ -18,7 +18,7 @@ import (
 // dialect-rewrite guard test can drive the real schema through rewriteSQL — see
 // TestPostgresSchemaBooleanColumnsRewriteToBoolean.
 func schemaCreateTableStatements() []string {
-	return []string{
+	return append([]string{
 		schemaMigrationLedgerDDL,
 		`CREATE TABLE IF NOT EXISTS prometheus_connections (
  id TEXT PRIMARY KEY,
@@ -455,7 +455,7 @@ func schemaCreateTableStatements() []string {
 		`CREATE TABLE IF NOT EXISTS scenario_data_pool_bindings (
 			id TEXT PRIMARY KEY,
 			scenario_id TEXT NOT NULL,
-			pool_id TEXT NOT NULL,
+			pool_id TEXT,
 			alias TEXT NOT NULL,
 			access_mode TEXT NOT NULL,
 			selection_strategy TEXT NOT NULL,
@@ -1899,7 +1899,7 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			PRIMARY KEY (test_id, source_identity, source_generation)
 		)`,
-	}
+	}, liveTableSchemaStatements()...)
 }
 
 // schemaColumnMigrations returns the additive ALTER TABLE ... ADD COLUMN statements
@@ -1908,6 +1908,7 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "scenario_data_pool_bindings.live_options_json", query: `ALTER TABLE scenario_data_pool_bindings ADD COLUMN live_options_json TEXT`},
 		{name: "scripts.content_revision", query: `ALTER TABLE scripts ADD COLUMN content_revision TEXT`},
 		{name: "scenarios.content_revision", query: `ALTER TABLE scenarios ADD COLUMN content_revision TEXT`},
 		{name: "scenarios.materialization_key", query: `ALTER TABLE scenarios ADD COLUMN materialization_key TEXT`},
@@ -2366,6 +2367,9 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
+		return err
+	}
+	if err := s.ensureLiveTableOptionalSeedBindings(); err != nil {
 		return err
 	}
 	if err := s.validateScriptRevisionInitialization(); err != nil {

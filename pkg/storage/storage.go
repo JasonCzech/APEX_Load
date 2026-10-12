@@ -1088,15 +1088,16 @@ type SharedDataPoolRow struct {
 }
 
 type ScenarioDataPoolBinding struct {
-	ID                string    `json:"id"`
-	ScenarioID        string    `json:"scenario_id,omitempty"`
-	PoolID            string    `json:"pool_id"`
-	PoolName          string    `json:"pool_name,omitempty"`
-	Alias             string    `json:"alias"`
-	AccessMode        string    `json:"access_mode"`
-	SelectionStrategy string    `json:"selection_strategy"`
-	CreatedAt         time.Time `json:"created_at,omitempty"`
-	UpdatedAt         time.Time `json:"updated_at,omitempty"`
+	ID                string            `json:"id"`
+	ScenarioID        string            `json:"scenario_id,omitempty"`
+	PoolID            string            `json:"pool_id"`
+	PoolName          string            `json:"pool_name,omitempty"`
+	Alias             string            `json:"alias"`
+	AccessMode        string            `json:"access_mode"`
+	SelectionStrategy string            `json:"selection_strategy"`
+	LiveOptions       *LiveTableOptions `json:"live_options,omitempty"`
+	CreatedAt         time.Time         `json:"created_at,omitempty"`
+	UpdatedAt         time.Time         `json:"updated_at,omitempty"`
 }
 
 type Project struct {

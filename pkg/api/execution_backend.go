@@ -103,6 +103,16 @@ type pausableExecutionBackend interface {
 type localExecutionBackend struct{}
 
 func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	tr.mu.RLock()
+	executionCtx := test.executionCtx
+	tr.mu.RUnlock()
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
+	if err := tr.prepareLiveTables(executionCtx, test); err != nil {
+		tr.failTestBeforeRunAndLog(test, "initialize live tables: "+err.Error())
+		return
+	}
 	artifacts, err := newRunArtifacts(tr, test, tr.saveRunArchiveRecord)
 	if err != nil {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("initialize archive writer: %v", err))
@@ -366,6 +376,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		provenance.GeneratorInventory = generatorInventoryForProvenance(inventoryBackend, generatorInventoryRefreshTimeout)
 	}
 	provenance.BusinessKeys = tr.runArchiveBusinessKeys(provenance.ProjectID, snapshot.Groups, groupSpecs)
+	provenance.LiveTables = tr.liveTableArchiveSummaries(snapshot.ID)
 	return provenance
 }
 
@@ -911,6 +922,9 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	}
 
 	if test != nil {
+		if a.runner != nil {
+			a.runner.finishLiveTables(test, finalStatus)
+		}
 		if refresher, ok := a.recorder.(interface{ RefreshProvenance(RunArchiveProvenance) }); ok {
 			refresher.RefreshProvenance(buildRunArchiveProvenance(a.runner, test))
 		}

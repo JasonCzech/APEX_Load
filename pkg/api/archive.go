@@ -237,7 +237,8 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
-	TelemetryPolicy *TelemetryBudgetPolicy `json:"telemetry_policy,omitempty"`
+	LiveTables      []RunArchiveLiveTableSummary `json:"live_tables,omitempty"`
+	TelemetryPolicy *TelemetryBudgetPolicy       `json:"telemetry_policy,omitempty"`
 	// PolicyPins are the project policy revisions in force at Start: null on
 	// runs admitted before policies existed, an empty list when no default
 	// policy was configured. The field is always present so the two differ.

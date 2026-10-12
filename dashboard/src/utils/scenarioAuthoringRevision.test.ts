@@ -86,6 +86,24 @@ describe('shared authoring reapply and diff', () => {
 })
 
 describe('adoptableAfterBindingsSave', () => {
+  it('requires reconciliation for live-options-only changes while preserving monitor-only adoption', () => {
+    const binding = { pool_id: '', alias: 'work', access_mode: 'live' as const, selection_strategy: 'manual' as const, live_options: { seed_policy: 'empty' as const, columns: ['id'], end_mode: 'discard' as const } }
+    const previous = scenarioAuthoringFixture({ data_pools: [binding] }, 'scenario-1', 'project-1', 'a')
+    const monitorsOnly = scenarioAuthoringFixture({ data_pools: [binding] }, 'scenario-1', 'project-1', 'b')
+    monitorsOnly.projection.monitor_selection = { sources: [{ source_id: 'prom-1', required: true }] }
+    expect(adoptableAfterBindingsSave(previous, monitorsOnly)).toBe(monitorsOnly)
+
+    const changed = scenarioAuthoringFixture({ data_pools: [{ ...binding, live_options: { ...binding.live_options, end_mode: 'save_as_new', output_pool_name: 'Retained output' } }] }, 'scenario-1', 'project-1', 'c')
+    changed.projection.monitor_selection = monitorsOnly.projection.monitor_selection
+    expect(adoptableAfterBindingsSave(previous, changed)).toBeNull()
+    expect(authoringChangedPaths(previous.projection.scenario, changed.projection.scenario, 'Scenario')).toEqual([
+      'data_pools[0].live_options.end_mode', 'data_pools[0].live_options.output_pool_name',
+    ])
+    // Neither mutable form inputs nor later server reads can alter the old authority.
+    binding.live_options.columns.push('later_edit')
+    expect(previous.projection.scenario.data_pools[0].live_options).toMatchObject({ columns: ['id'], end_mode: 'discard' })
+  })
+
   it('adopts the next baseline only when the binding save was the only change', () => {
     const previous = scenarioAuthoringFixture({ name: 'Checkout' }, 'scenario-1', 'project-1', 'a')
     const bindingsOnly = { ...scenarioAuthoringFixture({ name: 'Checkout' }, 'scenario-1', 'project-1', 'b') }

@@ -1248,6 +1248,15 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		PostBaseline: plan.validated.postBaseline,
 		StartPaused:  plan.startPaused,
 	}
+	bindings, err := decodeLiveTableBindings(request.GetLiveTableBindingsJson())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if len(bindings) > 0 {
+		groupConfig.Groups[0].LiveTableBindings = bindings
+		groupConfig.Groups[0].LiveTableClient = newLiveTableProxy(bindings)
+		groupConfig.Groups[0].LiveTableClientID = request.GetTestId() + "/" + request.GetGroupName()
+	}
 	mge, err := engine.NewMultiGroup(groupConfig)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "build execution engine: %v", err)

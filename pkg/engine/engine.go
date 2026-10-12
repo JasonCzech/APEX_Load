@@ -134,6 +134,11 @@ type RunResult struct {
 //
 // The returned engine is not yet running; call Run() to start it.
 func New(cfg Config) (*Engine, error) {
+	if aliases, err := dsl.ScriptLiveTableAliases(cfg.Script); err != nil {
+		return nil, err
+	} else if len(aliases) > 0 {
+		return nil, fmt.Errorf("live_table requires an admitted multi-group run or explicitly seeded isolated replay")
+	}
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")
 	}

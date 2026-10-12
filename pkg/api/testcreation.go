@@ -1384,12 +1384,17 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if !quotaOK && status != "DRAFT" {
 		return nil, fmt.Errorf("project quota evidence changed or is unavailable; retry test creation")
 	}
+	if hasLiveDataPools(req.DataPools) {
+		if err := tr.validateLiveTablePolicy(projectID); err != nil {
+			return nil, err
+		}
+	}
 	revisionDataPoolsChanged := revisionSource != nil && !sameRevisionDataPoolBindings(req.DataPools, revisionSource.DataPools)
 	var sharedDataSources []dsl.DataSource
 	if revisionSource != nil && !revisionDataPoolsChanged {
 		var snapshotAvailable bool
 		sharedDataSources, snapshotAvailable = revisionSharedDataSourceSnapshot(revisionSource)
-		if len(req.DataPools) > 0 && !snapshotAvailable && !allRevisionGroupsHaveRuntimeSnapshots(revisionSource, groups) {
+		if hasSnapshotDataPools(req.DataPools) && !snapshotAvailable && !allRevisionGroupsHaveRuntimeSnapshots(revisionSource, groups) {
 			return nil, fmt.Errorf("revision source test lacks an immutable shared data snapshot for newly added groups")
 		}
 	} else {
@@ -3126,6 +3131,9 @@ func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDa
 	}
 	sources := make([]dsl.DataSource, 0, len(bindings))
 	for _, binding := range bindings {
+		if binding.AccessMode == "live" {
+			continue
+		}
 		alias := strings.TrimSpace(binding.Alias)
 		if alias == "" {
 			return nil, fmt.Errorf("data pool binding alias is required")
@@ -3186,6 +3194,9 @@ func validateDataPoolProjects(poolStore dataPoolPersistence, projectID string, b
 	expectedProjectID := normalizeProjectID(projectID)
 	for _, binding := range bindings {
 		poolID := strings.TrimSpace(binding.PoolID)
+		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
+			continue
+		}
 		if poolID == "" {
 			return fmt.Errorf("data pool id is required")
 		}
@@ -3219,6 +3230,9 @@ func validateDataPoolsNotArchived(poolStore dataPoolPersistence, bindings []stor
 		return fmt.Errorf("data pool storage is not configured")
 	}
 	for _, binding := range bindings {
+		if liveTableBindingHasNoPool(binding) || liveTableBindingUsesFrozenSeed(binding) {
+			continue
+		}
 		pool, err := poolStore.GetDataPool(strings.TrimSpace(binding.PoolID))
 		if err != nil || pool == nil {
 			// Existence and ownership are the project validator's concern.

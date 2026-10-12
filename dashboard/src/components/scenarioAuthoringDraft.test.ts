@@ -122,3 +122,10 @@ it('upgrades legacy first-binding overlays and preserves canonical-only arrays',
  saveScenarioAuthoringDraft(current)
  expect(readScenarioAuthoringDraft('project-a')!.form.data_pools).toEqual(canonical)
 })
+
+it('round trips explicit live-table draft settings without reducing them to a read-only snapshot', () => {
+ const value = draft()
+ value.form.data_pools = [{ pool_id: '', alias: 'work', access_mode: 'live', selection_strategy: 'manual', live_options: { profile: 'native_queue', seed_policy: 'empty', columns: ['id'], durability: 'memory', end_mode: 'discard' } }]
+ saveScenarioAuthoringDraft(value)
+ expect(readScenarioAuthoringDraft('project-a')?.form.data_pools).toEqual(value.form.data_pools)
+})

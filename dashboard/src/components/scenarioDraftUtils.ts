@@ -244,7 +244,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       : { stop_on_sla_breach: false, stop_on_max_errors: false, sla_breach_window: '30s' },
     runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
     ...(initialScenario?.trafficProfile ? { trafficProfile: structuredClone(initialScenario.trafficProfile) } : {}),
-    ...(initialScenario?.dataPools ? { dataPools: initialScenario.dataPools.map(binding => ({ ...binding })) } : {}),
+    ...(initialScenario?.dataPools ? { dataPools: initialScenario.dataPools.map(binding => structuredClone(binding)) } : {}),
     groups: initialScenario?.groups.length
       ? initialScenario.groups.map(cloneScenarioGroup)
       : [buildDefaultScenarioGroup(scripts)],
@@ -252,7 +252,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       ? {
         ...initialScenario.revisionContext,
         ...(initialScenario.revisionContext.monitorBindings !== undefined ? { monitorBindings: initialScenario.revisionContext.monitorBindings.map(binding => ({ ...binding })) } : {}),
-        dataPools: initialScenario.revisionContext.dataPools.map(binding => ({ ...binding })),
+        dataPools: initialScenario.revisionContext.dataPools.map(binding => structuredClone(binding)),
       }
       : undefined,
   }
@@ -328,10 +328,9 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       scenarioId: test.scenario_id,
       projectId: test.project_id,
       folderId: test.folder_id,
-      // Historical queued runs may retain access-mode labels whose write/consume
-      // semantics never existed. Revisions preserve the immutable row snapshot,
-      // but submit the only executable contract supported today.
-      dataPools: (test.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const })),
+      // Legacy write/consume labels retain their read-only snapshot behavior.
+      // Explicit live bindings keep their seed policy for a fresh isolated run.
+      dataPools: (test.data_pools || []).map(binding => ({ ...binding, access_mode: binding.access_mode === 'live' ? 'live' as const : 'read_only' as const, ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}) })),
     },
   }
 }

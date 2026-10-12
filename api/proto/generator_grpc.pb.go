@@ -30,6 +30,7 @@ const (
 	GeneratorControl_SetPaused_FullMethodName             = "/apexload.v1.GeneratorControl/SetPaused"
 	GeneratorControl_StopTest_FullMethodName              = "/apexload.v1.GeneratorControl/StopTest"
 	GeneratorControl_StreamMetrics_FullMethodName         = "/apexload.v1.GeneratorControl/StreamMetrics"
+	GeneratorControl_LiveTableChannel_FullMethodName      = "/apexload.v1.GeneratorControl/LiveTableChannel"
 	GeneratorControl_Heartbeat_FullMethodName             = "/apexload.v1.GeneratorControl/Heartbeat"
 	GeneratorControl_DistributeScript_FullMethodName      = "/apexload.v1.GeneratorControl/DistributeScript"
 	GeneratorControl_GetArchiveArtifact_FullMethodName    = "/apexload.v1.GeneratorControl/GetArchiveArtifact"
@@ -74,6 +75,9 @@ type GeneratorControlClient interface {
 	// StreamMetrics is a bidirectional stream: controller sends control signals
 	// and the generator streams metrics batches back.
 	StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlSignal, MetricsBatch], error)
+	// Authoritative live-table operations. The controller opens the stream;
+	// generator requests flow on the response side, separately from telemetry.
+	LiveTableChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LiveTableReply, LiveTableRequest], error)
 	// Heartbeat is a bidirectional keepalive stream.
 	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error)
 	// DistributeScript sends a compiled script to a generator for caching.
@@ -219,9 +223,22 @@ func (c *generatorControlClient) StreamMetrics(ctx context.Context, opts ...grpc
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GeneratorControl_StreamMetricsClient = grpc.BidiStreamingClient[ControlSignal, MetricsBatch]
 
+func (c *generatorControlClient) LiveTableChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LiveTableReply, LiveTableRequest], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[1], GeneratorControl_LiveTableChannel_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[LiveTableReply, LiveTableRequest]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GeneratorControl_LiveTableChannelClient = grpc.BidiStreamingClient[LiveTableReply, LiveTableRequest]
+
 func (c *generatorControlClient) Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[1], GeneratorControl_Heartbeat_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[2], GeneratorControl_Heartbeat_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +271,7 @@ func (c *generatorControlClient) GetArchiveArtifact(ctx context.Context, in *Arc
 
 func (c *generatorControlClient) StreamArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ArchiveArtifactChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[2], GeneratorControl_StreamArchiveArtifact_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[3], GeneratorControl_StreamArchiveArtifact_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -327,6 +344,9 @@ type GeneratorControlServer interface {
 	// StreamMetrics is a bidirectional stream: controller sends control signals
 	// and the generator streams metrics batches back.
 	StreamMetrics(grpc.BidiStreamingServer[ControlSignal, MetricsBatch]) error
+	// Authoritative live-table operations. The controller opens the stream;
+	// generator requests flow on the response side, separately from telemetry.
+	LiveTableChannel(grpc.BidiStreamingServer[LiveTableReply, LiveTableRequest]) error
 	// Heartbeat is a bidirectional keepalive stream.
 	Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error
 	// DistributeScript sends a compiled script to a generator for caching.
@@ -391,6 +411,9 @@ func (UnimplementedGeneratorControlServer) StopTest(context.Context, *StopReques
 }
 func (UnimplementedGeneratorControlServer) StreamMetrics(grpc.BidiStreamingServer[ControlSignal, MetricsBatch]) error {
 	return status.Error(codes.Unimplemented, "method StreamMetrics not implemented")
+}
+func (UnimplementedGeneratorControlServer) LiveTableChannel(grpc.BidiStreamingServer[LiveTableReply, LiveTableRequest]) error {
+	return status.Error(codes.Unimplemented, "method LiveTableChannel not implemented")
 }
 func (UnimplementedGeneratorControlServer) Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error {
 	return status.Error(codes.Unimplemented, "method Heartbeat not implemented")
@@ -618,6 +641,13 @@ func _GeneratorControl_StreamMetrics_Handler(srv interface{}, stream grpc.Server
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GeneratorControl_StreamMetricsServer = grpc.BidiStreamingServer[ControlSignal, MetricsBatch]
 
+func _GeneratorControl_LiveTableChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GeneratorControlServer).LiveTableChannel(&grpc.GenericServerStream[LiveTableReply, LiveTableRequest]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GeneratorControl_LiveTableChannelServer = grpc.BidiStreamingServer[LiveTableReply, LiveTableRequest]
+
 func _GeneratorControl_Heartbeat_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(GeneratorControlServer).Heartbeat(&grpc.GenericServerStream[HeartbeatPing, HeartbeatPong]{ServerStream: stream})
 }
@@ -776,6 +806,12 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamMetrics",
 			Handler:       _GeneratorControl_StreamMetrics_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "LiveTableChannel",
+			Handler:       _GeneratorControl_LiveTableChannel_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

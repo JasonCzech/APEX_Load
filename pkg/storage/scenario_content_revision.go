@@ -153,7 +153,7 @@ func readScenarioAuthoringSnapshotTx(tx *storeTx, id string) (*ScenarioAuthoring
 	return &ScenarioAuthoringSnapshot{Scenario: scenario, Scripts: scripts, DataPools: pools, LibraryAssignment: placement, MonitorBindings: monitors, ProjectID: project, ContentRevision: revision}, nil
 }
 func readScenarioAuthoringPoolsTx(tx *storeTx, id, project string) ([]ScenarioDataPoolBinding, error) {
-	rows, err := tx.Query(`SELECT b.id,b.scenario_id,b.pool_id,b.alias,b.access_mode,b.selection_strategy,b.created_at,b.updated_at,p.id,COALESCE(p.project_id,'') FROM scenario_data_pool_bindings b LEFT JOIN shared_data_pools p ON p.id=b.pool_id WHERE b.scenario_id=? ORDER BY b.alias,b.id`, id)
+	rows, err := tx.Query(`SELECT b.id,b.scenario_id,COALESCE(b.pool_id,''),b.alias,b.access_mode,b.selection_strategy,b.created_at,b.updated_at,p.id,COALESCE(p.project_id,''),COALESCE(b.live_options_json,'null') FROM scenario_data_pool_bindings b LEFT JOIN shared_data_pools p ON p.id=b.pool_id WHERE b.scenario_id=? ORDER BY b.alias,b.id`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -163,10 +163,14 @@ func readScenarioAuthoringPoolsTx(tx *storeTx, id, project string) ([]ScenarioDa
 		var b ScenarioDataPoolBinding
 		var poolID sql.NullString
 		var owner string
-		if err := rows.Scan(&b.ID, &b.ScenarioID, &b.PoolID, &b.Alias, &b.AccessMode, &b.SelectionStrategy, &b.CreatedAt, &b.UpdatedAt, &poolID, &owner); err != nil {
+		var liveOptions string
+		if err := rows.Scan(&b.ID, &b.ScenarioID, &b.PoolID, &b.Alias, &b.AccessMode, &b.SelectionStrategy, &b.CreatedAt, &b.UpdatedAt, &poolID, &owner, &liveOptions); err != nil {
 			return nil, err
 		}
-		if !poolID.Valid || normalizeProjectID(owner) != project {
+		if err := json.Unmarshal([]byte(liveOptions), &b.LiveOptions); err != nil {
+			return nil, ErrScenarioAuthoringUnavailable
+		}
+		if (!poolID.Valid || normalizeProjectID(owner) != project) && !liveBindingHasNoSeedPool(b) {
 			return nil, ErrScenarioAuthoringUnavailable
 		}
 		out = append(out, b)

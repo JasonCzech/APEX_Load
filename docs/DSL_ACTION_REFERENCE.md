@@ -151,6 +151,32 @@ Waits until a background conversation or a WebSocket message callback sets a var
 | `params.value` | string |  | Value to wait for; without it any non-empty value ends the wait. |
 | `params.timeout_ms` | int |  | Maximum wait in milliseconds; defaults to 10000. The step fails when it passes. |
 
+### `live_table`
+
+Performs an atomic operation on an explicitly bound run-scoped live table. Existing variables remain snapshots until read again.
+
+Execution posture: `supported` — Requires an admitted live-table binding. Unmanaged runs and replay fail closed without an explicit isolated seed. Leases permit redelivery; they do not make external work exactly once.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.alias` | string | yes | Static alias of a trusted run binding; never a remote URL or table credential. |
+| `params.operation` | enum | yes | One of: `read`, `next`, `push`, `pop`, `lease`, `renew`, `ack`, `release`, `update`, `increment`, `clear`, `rotate`, `create_column`, `read_column`. |
+| `params.result_prefix` | string |  | Static var namespace prefix. Row fields appear under <prefix>.values.<column>; metadata includes status, revision, record_id and record_version. Bounded ranges use JSON rows/cells/columns. Missing results clear prior outputs. For lease, also identifies the private lease reference. |
+| `params.record_id` | string |  | Stable native record ID; templates allowed. |
+| `params.position` | int |  | One-based position for operations supporting positional access. |
+| `params.columns` | array |  | Distinct static column identifiers. Required for column operations. |
+| `params.values` | object |  | Column-to-string values. Missing keys remain absent; empty strings remain present. Managed secrets are prohibited. |
+| `params.expected` | object |  | Expected column values for supported conditional operations. |
+| `params.expected_version` | string |  | Required native update version as a positive decimal string or template. |
+| `params.delta` | int |  | Signed 64-bit increment; overflow and nonnumeric cells fail. |
+| `params.lease_ref` | string |  | Private lease reference created by an earlier lease action's result_prefix. Tokens are never exposed as variables. |
+| `params.lease_ms` | int |  | Lease/renew duration, at most 300000 ms; zero uses the admitted binding duration. |
+| `params.wait_ms` | int |  | Bounded empty-table wait for read/next/pop/lease, at most 60000 ms. |
+| `params.limit` | int |  | Maximum range rows or column cells returned, at most 1000. |
+| `params.cursor` | string |  | Named shared sequential cursor for next; omitted uses the table-wide cursor. |
+| `params.on_empty` | enum |  | Empty/missing result policy; defaults to error. Outputs are cleared in either case. One of: `error`, `skip`. |
+| `params.on_condition` | enum |  | Failed comparison policy; defaults to error. One of: `error`, `skip`. |
+
 ### `rendezvous`
 
 Synchronization barrier: VUsers wait until the rendezvous point is reached.

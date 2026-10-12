@@ -140,7 +140,7 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
       }, ...retained.slice(1)] : retained.slice(1)
     }
     for (const name of ['data_pool_id','data_pool_alias','data_pool_access_mode','data_pool_selection_strategy']) delete f[name]
-    if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && ['sequential', 'random', 'unique'].includes(String(binding.selection_strategy))))) return null
+    if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && (binding.access_mode === 'live' ? ['manual', 'next', 'pop', 'lease'] : ['sequential', 'random', 'unique']).includes(String(binding.selection_strategy))))) return null
     if (['runtime_settings', 'goal_config', 'traffic_profile', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
     assertDraftHasNoInlineCredentials(f)
     // A recorded baseline that does not look like one is dropped: the draft

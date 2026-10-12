@@ -85,3 +85,13 @@ describe('seededScenarioRuntime', () => {
     expect(seeded).toEqual({ run_logic: { iterations: 1 }, log_level: 'info', error_handling: { continue_on_error: true } })
   })
 })
+
+it('preserves explicit live binding options through edit and clone without aliasing source columns', () => {
+ const scenario = { id: 'scenario', created_at: '', updated_at: '', script_count: 0, name: 'Live', duration: '1m', scripts: [], data_pools: [{ id: 'binding', pool_id: 'pool', alias: 'work', access_mode: 'live', selection_strategy: 'lease', live_options: { profile: 'native_queue', columns: ['id'], end_mode: 'discard' } }] } as Parameters<typeof scenarioFormStateFromStoredScenario>[0]
+ for (const clone of [false, true]) {
+  const form = scenarioFormStateFromStoredScenario(scenario, 'script', clone)
+  expect(form.data_pools![0]).toMatchObject({ access_mode: 'live', selection_strategy: 'lease', live_options: { profile: 'native_queue', columns: ['id'] } })
+  form.data_pools![0].live_options!.columns!.push('changed')
+  expect(scenario.data_pools![0].live_options!.columns).toEqual(['id'])
+ }
+})

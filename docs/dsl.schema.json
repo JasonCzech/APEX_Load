@@ -5103,6 +5103,133 @@
             "properties": {
               "type": {
                 "enum": [
+                  "live_table"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Performs an atomic operation on an explicitly bound run-scoped live table. Existing variables remain snapshots until read again. Requires an admitted live-table binding. Unmanaged runs and replay fail closed without an explicit isolated seed. Leases permit redelivery; they do not make external work exactly once.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "alias": {
+                    "description": "Static alias of a trusted run binding; never a remote URL or table credential.",
+                    "type": "string"
+                  },
+                  "columns": {
+                    "description": "Distinct static column identifiers. Required for column operations.",
+                    "type": "array"
+                  },
+                  "cursor": {
+                    "description": "Named shared sequential cursor for next; omitted uses the table-wide cursor.",
+                    "type": "string"
+                  },
+                  "delta": {
+                    "description": "Signed 64-bit increment; overflow and nonnumeric cells fail.",
+                    "type": "integer"
+                  },
+                  "expected": {
+                    "description": "Expected column values for supported conditional operations.",
+                    "type": "object"
+                  },
+                  "expected_version": {
+                    "description": "Required native update version as a positive decimal string or template.",
+                    "type": "string"
+                  },
+                  "lease_ms": {
+                    "description": "Lease/renew duration, at most 300000 ms; zero uses the admitted binding duration.",
+                    "maximum": 300000,
+                    "type": "integer"
+                  },
+                  "lease_ref": {
+                    "description": "Private lease reference created by an earlier lease action's result_prefix. Tokens are never exposed as variables.",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Maximum range rows or column cells returned, at most 1000.",
+                    "maximum": 1000,
+                    "type": "integer"
+                  },
+                  "on_condition": {
+                    "description": "Failed comparison policy; defaults to error.",
+                    "enum": [
+                      "error",
+                      "skip"
+                    ],
+                    "type": "string"
+                  },
+                  "on_empty": {
+                    "description": "Empty/missing result policy; defaults to error. Outputs are cleared in either case.",
+                    "enum": [
+                      "error",
+                      "skip"
+                    ],
+                    "type": "string"
+                  },
+                  "operation": {
+                    "enum": [
+                      "read",
+                      "next",
+                      "push",
+                      "pop",
+                      "lease",
+                      "renew",
+                      "ack",
+                      "release",
+                      "update",
+                      "increment",
+                      "clear",
+                      "rotate",
+                      "create_column",
+                      "read_column"
+                    ],
+                    "type": "string"
+                  },
+                  "position": {
+                    "description": "One-based position for operations supporting positional access.",
+                    "maximum": 1000000,
+                    "type": "integer"
+                  },
+                  "record_id": {
+                    "description": "Stable native record ID; templates allowed.",
+                    "type": "string"
+                  },
+                  "result_prefix": {
+                    "description": "Static var namespace prefix. Row fields appear under \u003cprefix\u003e.values.\u003ccolumn\u003e; metadata includes status, revision, record_id and record_version. Bounded ranges use JSON rows/cells/columns. Missing results clear prior outputs. For lease, also identifies the private lease reference.",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "Column-to-string values. Missing keys remain absent; empty strings remain present. Managed secrets are prohibited.",
+                    "type": "object"
+                  },
+                  "wait_ms": {
+                    "description": "Bounded empty-table wait for read/next/pop/lease, at most 60000 ms.",
+                    "maximum": 60000,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "alias",
+                  "operation"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ],
+            "x-execution-posture": "supported"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "network_health"
                 ]
               }
@@ -6897,6 +7024,7 @@
             "kafka_seek",
             "ldap_bind",
             "ldap_search",
+            "live_table",
             "loadrunner_database",
             "loadrunner_external",
             "loadrunner_json",

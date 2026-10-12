@@ -5636,6 +5636,9 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 		if index < len(resourcePeaks) {
 			groups[index].RuntimeResourcePeakVUsers = resourcePeaks[index].VUsers
 		}
+		groups[index].LiveTableBindings = tr.liveBindings(test.ID)
+		groups[index].LiveTableClient = tr.liveClient(test.ID, "local/"+groups[index].Name)
+		groups[index].LiveTableClientID = test.ID + "/" + groups[index].Name
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		groups[index].RunID = test.ID
 		groups[index].RunCorrelationOrigins = append([]string(nil), correlation.Origins...)
@@ -5962,6 +5965,7 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) error
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	compactTerminalManagedTestLocked(test)
 	tr.mu.Unlock()
+	tr.finishLiveTables(test, "FAILED")
 	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, "FAILED")
 	if releaseErr != nil && test.TimeslotID != nil {
 		tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
@@ -6005,6 +6009,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalS
 }
 
 func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord, promotePending bool) error {
+	if test != nil {
+		tr.finishLiveTables(test, finalStatus)
+	}
 	tr.mu.Lock()
 	if test == nil || tr.tests[test.ID] != test {
 		tr.mu.Unlock()

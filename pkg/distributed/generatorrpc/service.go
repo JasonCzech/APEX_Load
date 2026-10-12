@@ -1446,7 +1446,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4)
+		compatibleFeatures = append(compatibleFeatures, FeatureLiveTablesV1, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4)
 		javaHosts := s.javaHostCapabilities()
 		if javaHosts != nil {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)

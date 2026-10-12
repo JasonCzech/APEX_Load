@@ -880,6 +880,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <tr><td>Load generation</td><td>APEX Load{{if gt .GeneratorCount 0}} · {{.GeneratorCount}} load {{if eq .GeneratorCount 1}}generator{{else}}generators{{end}}{{end}}{{if .Report.ChangeAttribution.GeneratorVersions}} · {{join .Report.ChangeAttribution.GeneratorVersions}}{{end}}</td></tr>
 <tr><td>Scripts</td><td>{{reportScripts .Report}}</td></tr>
 </tbody></table>
+{{template "live_table_summary" .}}
 {{end}}
 
 {{define "raw_exports"}}
@@ -982,6 +983,23 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   <tr><th>Duration</th><td>{{if .Report.Manifest.Provenance.Duration}}{{.Report.Manifest.Provenance.Duration}}{{else}}n/a{{end}}</td><th>Start delay</th><td>{{if .Report.Manifest.Provenance.StartDelay}}{{.Report.Manifest.Provenance.StartDelay}}{{else}}none{{end}}</td></tr>
   <tr><th>Report schema</th><td class="mono">{{.Report.SchemaVersion}}</td><th>Manifest schema</th><td class="mono">{{.Report.Manifest.SchemaVersion}}</td></tr>
 </tbody></table>
+{{template "live_table_summary" .}}
+{{end}}
+
+{{define "live_table_summary"}}
+{{with .Report.Manifest}}{{if .Provenance.LiveTables}}
+<h3>Live data tables</h3>
+<p class="section-copy">Live table operations are separate from target metrics and reset after controller adoption.</p>
+<p class="section-copy">Operation latency includes controller waits and commits; excludes transport.</p>
+{{range .Provenance.LiveTables}}
+<h4>{{.Alias}}</h4>
+<p>{{.Profile}} · {{.Durability}} · {{.EndMode}} · {{.State}} · revision {{.Revision}} · {{.DataBytes}} data bytes</p>
+<table><thead><tr><th>Seeded</th><th>Pushed</th><th>Available</th><th>Leased</th><th>Acknowledged</th><th>Popped</th><th>Quarantined</th><th>Discarded</th><th>Delivery attempts</th></tr></thead>
+<tbody><tr><td>{{.Counts.Seeded}}</td><td>{{.Counts.Pushed}}</td><td>{{.Counts.Available}}</td><td>{{.Counts.Leased}}</td><td>{{.Counts.Acknowledged}}</td><td>{{.Counts.Popped}}</td><td>{{.Counts.Quarantined}}</td><td>{{.Counts.Discarded}}</td><td>{{.Counts.DeliveryAttempts}}</td></tr></tbody></table>
+<table><thead><tr><th>Operations</th><th>Errors</th><th>Unknown outcomes</th><th>Total operation latency (ns)</th><th>Max operation latency (ns)</th></tr></thead>
+<tbody><tr><td>{{.OpCount}}</td><td>{{.OpErrors}}</td><td>{{.OpUnknown}}</td><td>{{.OpLatencyTotalNS}}</td><td>{{.OpLatencyMaxNS}}</td></tr></tbody></table>
+{{with .Finalization}}<p>Output: {{.Mode}} · {{.State}}{{if .OutputPoolID}} · pool <span class="mono">{{.OutputPoolID}}</span>{{end}}{{if .Reason}} · {{.Reason}}{{end}}</p>{{end}}
+{{end}}{{end}}{{end}}
 {{end}}
 
 {{define "evidence_tiers"}}

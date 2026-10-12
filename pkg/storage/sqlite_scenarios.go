@@ -702,6 +702,9 @@ func validateScenarioDataPoolProjectsTx(tx *storeTx, scenarioID string, bindings
 	for _, binding := range bindings {
 		poolID := strings.TrimSpace(binding.PoolID)
 		if poolID == "" {
+			if liveBindingHasNoSeedPool(binding) {
+				continue
+			}
 			return errors.New("data pool id is required")
 		}
 		var poolProjectID string
@@ -733,7 +736,7 @@ func saveScenarioDataPoolBindingsTx(tx *storeTx, scenarioID string, bindings []S
 		if binding.ID == "" {
 			return errors.New("scenario data pool binding id is required")
 		}
-		if binding.PoolID == "" {
+		if binding.PoolID == "" && !liveBindingHasNoSeedPool(binding) {
 			return errors.New("data pool id is required")
 		}
 		if strings.TrimSpace(binding.Alias) == "" {
@@ -749,8 +752,12 @@ func saveScenarioDataPoolBindingsTx(tx *storeTx, scenarioID string, bindings []S
 			binding.CreatedAt = now
 		}
 		binding.UpdatedAt = now
-		if _, err := tx.Exec(`INSERT INTO scenario_data_pool_bindings (id, scenario_id, pool_id, alias, access_mode, selection_strategy, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, binding.ID, scenarioID, binding.PoolID, binding.Alias, binding.AccessMode, binding.SelectionStrategy, binding.CreatedAt, binding.UpdatedAt); err != nil {
+		liveOptions, err := json.Marshal(binding.LiveOptions)
+		if err != nil {
+			return fmt.Errorf("encode live table options: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO scenario_data_pool_bindings (id, scenario_id, pool_id, alias, access_mode, selection_strategy, created_at, updated_at, live_options_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, binding.ID, scenarioID, nullableLiveBindingPoolID(binding), binding.Alias, binding.AccessMode, binding.SelectionStrategy, binding.CreatedAt, binding.UpdatedAt, string(liveOptions)); err != nil {
 			return err
 		}
 	}
@@ -758,7 +765,7 @@ func saveScenarioDataPoolBindingsTx(tx *storeTx, scenarioID string, bindings []S
 }
 
 func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error) {
-	rows, err := s.db.Query(`SELECT b.id, b.scenario_id, b.pool_id, COALESCE(p.name, ''), b.alias, b.access_mode, b.selection_strategy, b.created_at, b.updated_at
+	rows, err := s.db.Query(`SELECT b.id, b.scenario_id, COALESCE(b.pool_id,''), COALESCE(p.name, ''), b.alias, b.access_mode, b.selection_strategy, b.created_at, b.updated_at, COALESCE(b.live_options_json,'null')
 		FROM scenario_data_pool_bindings b
 		LEFT JOIN shared_data_pools p ON p.id = b.pool_id
 		WHERE b.scenario_id = ?
@@ -770,8 +777,12 @@ func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]Scenari
 	var out []ScenarioDataPoolBinding
 	for rows.Next() {
 		var binding ScenarioDataPoolBinding
-		if err := rows.Scan(&binding.ID, &binding.ScenarioID, &binding.PoolID, &binding.PoolName, &binding.Alias, &binding.AccessMode, &binding.SelectionStrategy, &binding.CreatedAt, &binding.UpdatedAt); err != nil {
+		var liveOptions string
+		if err := rows.Scan(&binding.ID, &binding.ScenarioID, &binding.PoolID, &binding.PoolName, &binding.Alias, &binding.AccessMode, &binding.SelectionStrategy, &binding.CreatedAt, &binding.UpdatedAt, &liveOptions); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal([]byte(liveOptions), &binding.LiveOptions); err != nil {
+			return nil, fmt.Errorf("decode live table options: %w", err)
 		}
 		out = append(out, binding)
 	}

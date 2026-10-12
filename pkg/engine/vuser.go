@@ -13,11 +13,17 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/livetable"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type VUser struct {
-	replayRuntime *replayRuntimeState
+	LiveTableClient   livetable.Client
+	LiveTableClientID string
+	LiveTableBindings []LiveTableBinding
+	liveTables        *liveTableRuntime
+	liveTableLane     *liveTableLane
+	replayRuntime     *replayRuntimeState
 
 	webSocketCallbackSteps []dsl.Action
 	inWebSocketCallback    bool
@@ -279,6 +285,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		vu.recordDataRowError(err)
 		return
 	}
+	defer vu.closeLiveTables()
 	// The soft Run context controls whether another iteration may start. The
 	// hard context owns an action already in flight, while the boundary context
 	// stops pause gates, waits, and subsequent actions on graceful stop.
@@ -286,6 +293,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	if vu.HardStopCtx != nil {
 		iterCtx = vu.HardStopCtx
 	}
+	vu.startLiveTableRenewal(iterCtx)
 	entitledBoundaryCtx := iterCtx
 	if vu.ActionBoundaryCtx != nil {
 		entitledBoundaryCtx = vu.ActionBoundaryCtx
@@ -595,6 +603,26 @@ func (vu *VUser) Run(ctx context.Context) {
 					goto teardown
 				}
 			}
+		}
+		if err := vu.beginLiveTableIteration(iterationBoundaryCtx); err != nil {
+			releasePreIterationReservations()
+			if errors.Is(err, errLiveTableSkipIteration) {
+				if settleErr := vu.settleLiveTableLeases(iterCtx, false, false); settleErr != nil {
+					vu.recordDataRowError(settleErr)
+					goto teardown
+				}
+				// Bound polling even when the script has no pacing or duration.
+				select {
+				case <-iterationBoundaryCtx.Done():
+					goto teardown
+				case <-time.After(100 * time.Millisecond):
+				}
+				iteration++
+				continue
+			}
+			vu.recordDataRowError(err)
+			genuineExit = iterationBoundaryCtx.Err() == nil
+			goto teardown
 		}
 		if controller, ok := vu.Proto.(protocol.IterationController); ok {
 			if err := controller.BeginIteration(iterationBoundaryCtx); err != nil {
@@ -1221,6 +1249,12 @@ func (vu *VUser) Run(ctx context.Context) {
 		// the end of the iteration.
 		vu.stopAllAsyncConversations(iterCtx, "iteration end")
 
+		if err := vu.settleLiveTableLeases(iterCtx, iterSuccess && iterCtx.Err() == nil && iterationBoundaryCtx.Err() == nil, false); err != nil {
+			vu.recordDataRowError(err)
+			recordIterationTransaction(false)
+			releaseReservedActionTransaction()
+			goto teardown
+		}
 		// Record iteration-level transaction
 		recordIterationTransaction(iterSuccess)
 		releaseReservedActionTransaction()
@@ -1289,10 +1323,15 @@ func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Co
 		}
 		vu.restoreDataBindings(cleanupBindings)
 	}
+	vu.startLiveTableRenewal(actionCtx)
+	defer vu.closeLiveTables()
 	return vu.runLifecycleActionsWithContexts(actionCtx, boundaryCtx, actions, phase, ignoreErrors, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
 }
 
 func (vu *VUser) prepareRuntimeState() error {
+	if err := vu.prepareLiveTables(); err != nil {
+		return err
+	}
 	vu.ensureImportedCredentialInspection()
 	vu.bindRuntimeTextRedactor()
 	if vu.Variables == nil {

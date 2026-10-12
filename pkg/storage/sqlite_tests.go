@@ -1800,6 +1800,15 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM live_table_journal WHERE table_id IN (SELECT id FROM live_tables WHERE test_id=?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM live_table_finalizations WHERE table_id IN (SELECT id FROM live_tables WHERE test_id=?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM live_tables WHERE test_id=?`, id); err != nil {
+		return err
+	}
 	if err := deleteRCAForTestTx(tx, id); err != nil {
 		return err
 	}

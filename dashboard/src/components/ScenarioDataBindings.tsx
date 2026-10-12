@@ -4,8 +4,9 @@ import type { ScenarioDataPoolBinding, SharedDataPool, SharedDataPoolRow, Stored
 import type { DataPoolImportResult } from '../hooks/api/useScriptApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
-import { dataBindingErrors, scenarioDataRequirements } from './scenarioDataBindingModel'
+import { dataBindingErrors, scenarioDataRequirements, DEFAULT_LIVE_TABLE_OPTIONS } from './scenarioDataBindingModel'
 import ScenarioScriptData from './ScenarioScriptData'
+import LiveTableBindingOptions from './LiveTableBindingOptions'
 
 function PoolPreview({ binding, required, canManage }: { binding: ScenarioDataPoolBinding; required: string[]; canManage: boolean }) {
   const api = useApi()
@@ -45,7 +46,7 @@ function PoolPreview({ binding, required, canManage }: { binding: ScenarioDataPo
   return <details onToggle={event => setOpen(event.currentTarget.open)}><summary>Preview rows and import CSV</summary>
     {open && <>
       <p>{total === null ? 'Row count not verified' : `${total} rows in shared pool`}. Showing at most 5 rows; preview values may contain sensitive test data.</p>
-      {total === 0 && <p role="status">This pool is empty. Add rows before configuring a run.</p>}
+      {total === 0 && <p role="status">{binding.access_mode === 'live' ? 'This pool is empty. The live table starts empty if no rows are added before launch; producers can add runtime rows.' : 'This pool is empty. Add rows before configuring a run.'}</p>}
       {required.length > 0 && <p>Required columns: {required.join(', ')}. {rows.some(row => required.some(column => !(column in row.data))) ? 'Some preview rows are missing required columns.' : 'Validate the full pool before execution; the preview is only a sample.'}</p>}
       {!!rows.length && <div className="data-table"><table aria-label={`Rows for ${binding.alias}`}><thead><tr>{columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}>{columns.map(column => <td key={column}>{row.data[column] ?? 'Missing'}</td>)}</tr>)}</tbody></table></div>}
       <fieldset disabled={busy || !canManage}><legend>Append rows from CSV</legend>{!canManage && <p>Importing rows requires data-pool management permission.</p>}<p>Use a header row with column names. Preview the import before adding rows to the shared pool.</p>
@@ -62,9 +63,9 @@ function PoolPreview({ binding, required, canManage }: { binding: ScenarioDataPo
     </>}
   </details>
 }
-export default function ScenarioDataBindings({ bindings, pools, scripts, onChange, canManage }: {
+export default function ScenarioDataBindings({ bindings, pools, scripts, onChange, canManage, canManageLiveOutput = false }: {
   bindings: ScenarioDataPoolBinding[]; pools: SharedDataPool[]; scripts: StoredScript[];
-  onChange: (bindings: ScenarioDataPoolBinding[]) => void; canManage: boolean
+  onChange: (bindings: ScenarioDataPoolBinding[]) => void; canManage: boolean; canManageLiveOutput?: boolean
 }) {
   const api = useApi()
   const scriptScope = JSON.stringify(scripts.map(script => [script.id, script.version]))
@@ -96,13 +97,15 @@ export default function ScenarioDataBindings({ bindings, pools, scripts, onChang
     {dataBindingErrors(bindings).map(error => <p key={error} role="alert" className="settings-error-inline">{error}</p>)}
     {bindings.length === 0 && <label className="scenario-field"><span>Data Pool</span><select value="" onChange={event => { if (event.target.value) onChange([{ pool_id: event.target.value, alias: pools.find(pool => pool.id === event.target.value)?.name.toLowerCase().replace(/\W+/g, '_') || 'data', access_mode: 'read_only', selection_strategy: 'sequential' }]) }}><option value="">No data pool</option>{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>}
     {bindings.map((binding, index) => <fieldset key={index}><legend>Data binding {index + 1}</legend><div className="settings-grid">
-      <label><span>Data Pool</span><select value={binding.pool_id} onChange={event => event.target.value ? update(index, { pool_id: event.target.value }) : onChange(bindings.filter((_, i) => i !== index))}><option value="">Select a pool</option>{!pools.some(pool => pool.id === binding.pool_id) && binding.pool_id && <option value={binding.pool_id}>Unavailable pool — choose a replacement</option>}{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
+      <label><span>Data Pool</span><select disabled={binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')} value={binding.pool_id} onChange={event => event.target.value ? update(index, { pool_id: event.target.value }) : onChange(bindings.filter((_, i) => i !== index))}><option value="">Select a pool</option>{!pools.some(pool => pool.id === binding.pool_id) && binding.pool_id && <option value={binding.pool_id}>Unavailable pool — choose a replacement</option>}{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
       <label><span>Pool Alias</span><input value={binding.alias} onChange={event => update(index, { alias: event.target.value })} placeholder="customers" /></label>
-      <label><span>Access Mode</span><select value="read_only" disabled><option value="read_only">Read-only run snapshot</option></select></label>
-      <label><span>Selection Strategy</span><select value={binding.selection_strategy} onChange={event => update(index, { selection_strategy: event.target.value as ScenarioDataPoolBinding['selection_strategy'] })}><option value="sequential">Sequential rows</option><option value="random">Random rows</option><option value="unique">Unique rows</option></select></label>
-      </div><p>{binding.selection_strategy === 'unique' ? 'Unique selection assigns a stable row per VUser, reused across its iterations. The runtime wraps when rows are insufficient; scenario validation blocks known unique-row shortages. Validate the pool against peak VUsers before running.' : 'Sequential and random selection can reuse rows. Use unique selection when identities must not be reused.'} Rows are snapshotted when the run is created.</p>
+      <label><span>Access mode</span><select value={binding.access_mode === 'live' ? 'live' : 'read_only'} onChange={event => update(index, event.target.value === 'live'
+        ? { access_mode: 'live', selection_strategy: 'manual', live_options: { ...DEFAULT_LIVE_TABLE_OPTIONS, columns: Object.keys(pools.find(pool => pool.id === binding.pool_id)?.schema || {}) } }
+        : { access_mode: 'read_only', selection_strategy: 'sequential', live_options: undefined })}><option value="read_only">Read-only run snapshot</option><option value="live">Shared live table</option></select></label>
+      {binding.access_mode !== 'live' && <label><span>Selection Strategy</span><select value={binding.selection_strategy} onChange={event => update(index, { selection_strategy: event.target.value as ScenarioDataPoolBinding['selection_strategy'] })}><option value="sequential">Sequential rows</option><option value="random">Random rows</option><option value="unique">Unique rows</option></select></label>}
+      </div>{binding.access_mode === 'live' ? <LiveTableBindingOptions binding={binding} canManage={canManageLiveOutput} onChange={patch => update(index, patch)} /> : <p>{binding.selection_strategy === 'unique' ? 'Unique selection assigns a stable row per VUser, reused across its iterations. The runtime wraps when rows are insufficient; scenario validation blocks known unique-row shortages. Validate the pool against peak VUsers before running.' : 'Sequential and random selection can reuse rows. Use unique selection when identities must not be reused.'} Rows are snapshotted when the run is created.</p>}
       <button type="button" className="btn btn-ghost" onClick={() => onChange(bindings.filter((_, i) => i !== index))}>Remove binding {index + 1}</button>
-      {binding.pool_id && <PoolPreview canManage={canManage} key={binding.pool_id} binding={binding} required={[...(requirements.get(binding.alias) || [])]} />}
+      {binding.pool_id && !(binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')) && <PoolPreview canManage={canManage} key={binding.pool_id} binding={binding} required={[...(requirements.get(binding.alias) || [])]} />}
     </fieldset>)}
     <button type="button" className="btn btn-secondary" onClick={() => onChange([...bindings, { pool_id: '', alias: '', access_mode: 'read_only', selection_strategy: 'sequential' }])}>Add data pool binding</button>
     {!bindings.some(binding => binding.pool_id) && <ScenarioScriptData scripts={scripts} details={currentDetails?.scripts || []} loading={!currentDetails} unavailable={currentDetails?.unavailable || 0} onRetry={() => { setScriptDetails(null); setRetry(value => value + 1) }} />}

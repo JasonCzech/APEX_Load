@@ -83,7 +83,7 @@ export function scenarioDraftFromForm(form: ScenarioFormState): ScenarioDraft {
     runtimeSettings: runtimeSettingsFromForm(form),
     groups: form.groups.map(scenarioDraftGroupFromForm),
     ...(form.traffic_profile ? { trafficProfile: form.traffic_profile } : {}),
-    dataPools: (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const })),
+    dataPools: (form.data_pools || []).map(binding => ({ ...binding, access_mode: binding.access_mode === 'live' ? 'live' as const : 'read_only' as const, ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}) })),
   }
 }
 

@@ -45,6 +45,7 @@ type domainFeaturePolicyResponse struct {
 }
 
 var domainFeatureCategories = []domainFeatureCategory{
+	{ID: "data", Name: "Shared data", Description: "Shared data execution modes."},
 	{ID: "script_builder", Name: "Script Builder Workflows", Description: "Ways users can start or source a script."},
 	{ID: "blank_editors", Name: "Blank Editors", Description: "Protocols available when starting from a blank script."},
 	{ID: "script_import", Name: "Imported Collections & Scripts", Description: "Sources accepted by the Script Builder import workflow."},
@@ -52,6 +53,7 @@ var domainFeatureCategories = []domainFeatureCategory{
 }
 
 var domainFeatureCatalog = []domainFeatureDefinition{
+	{ID: "data.live_tables", Name: "Live tables", Category: "data"},
 	{ID: "script_builder.existing_scripts", Name: "Model Existing Scripts", Category: "script_builder"},
 	{ID: "script_builder.starter_templates", Name: "Starter Templates", Category: "script_builder"},
 	{ID: "script_builder.reusable_blocks", Name: "Reusable Blocks", Category: "script_builder"},

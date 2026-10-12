@@ -17,6 +17,10 @@ type apiRouteAuthRule struct {
 // domain apiRouteCatalog. Migrated domains contribute their access requirements
 // directly from the canonical route specifications below.
 var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables", viewerProjectAccess(resolveTestProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/rows", viewerProjectAccess(resolveTestProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/live-tables/{tableID}/export", viewerProjectAccess(resolveTestProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/tests/{id}/live-tables/{tableID}/finalize", editorProjectAccess(resolveTestProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/auth/diagnostics", systemAdminAccess()),
 	routeAuth(http.MethodGet, "/api/v1/auth/service-accounts", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodPost, "/api/v1/auth/service-accounts", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),

@@ -7007,6 +7007,46 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/live-tables",
+      "operationId": "handleListLiveTables",
+      "summary": "List Live Tables",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/live-tables/{tableID}/export",
+      "operationId": "handleExportLiveTable",
+      "summary": "Export Live Table",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/live-tables/{tableID}/finalize",
+      "operationId": "handleFinalizeLiveTable",
+      "summary": "Finalize Live Table",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/live-tables/{tableID}/rows",
+      "operationId": "handleLiveTableRows",
+      "summary": "Live Table Rows",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/manifest",
       "operationId": "handleGetTestManifest",
       "summary": "Get Test Manifest",

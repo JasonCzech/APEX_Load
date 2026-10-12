@@ -20,6 +20,8 @@ import (
 )
 
 type ReplayOptions struct {
+	// LiveTableSeeds are isolated ephemeral seeds; replay never accepts a live run client.
+	LiveTableSeeds  []LiveTableSandboxSeed
 	GroupName       string
 	ReplaySessionID string
 	ScriptRevision  string
@@ -316,6 +318,21 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, err
 	}
 
+	aliases, err := dsl.ScriptLiveTableAliases(script)
+	if err != nil {
+		return nil, err
+	}
+	if len(aliases) > 0 && len(opts.LiveTableSeeds) == 0 {
+		return nil, fmt.Errorf("live_table replay requires explicit isolated sandbox seeds")
+	}
+	liveClient, liveBindings, liveClientID, err := NewLiveTableSandbox(opts.LiveTableSeeds)
+	if err != nil {
+		return nil, fmt.Errorf("initialize isolated replay tables: %w", err)
+	}
+	if err := validateLiveTableBindings(script, liveClient, liveClientID, liveBindings); err != nil {
+		return nil, err
+	}
+
 	groupName := opts.GroupName
 	if groupName == "" {
 		groupName = "replay"
@@ -464,6 +481,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Metrics:                      NewMetricsCollector(16),
 		Variables:                    make(map[string]string),
 		DataProvider:                 dataProvider,
+		LiveTableClient:              liveClient,
+		LiveTableClientID:            liveClientID,
+		LiveTableBindings:            liveBindings,
 		SecretResolver:               secretResolver,
 		RedactionConfig:              redactionConfig,
 		importedCredentialInspection: importedCredentials,
@@ -487,6 +507,8 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err := vu.prepareRuntimeState(); err != nil {
 		return nil, fmt.Errorf("prepare replay data: %w", err)
 	}
+	defer vu.closeLiveTables()
+	vu.startLiveTableRenewal(ctx)
 	for key, value := range opts.Variables {
 		vu.Variables[key] = value
 	}

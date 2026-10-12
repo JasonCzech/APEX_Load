@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/livetable"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -45,6 +46,11 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 		}
 		action := dsl.Action{Name: "step", Type: spec.Type}
 		switch spec.Type {
+		case "live_table":
+			vu = liveTestVU(liveTableClientFunc(func(context.Context, string, livetable.Request) (livetable.Result, error) {
+				return livetable.Result{Status: livetable.StatusOK}, nil
+			}))
+			action.Params = map[string]any{"alias": "work", "operation": "push", "values": map[string]string{"id": "example"}}
 		case "source_verification":
 			vu.Proto = &httpprotocol.HTTP{}
 			action.Params = map[string]any{"operation": "register", "id": "check", "text": "error", "scope": "all", "fail_if_found": true}

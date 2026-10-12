@@ -134,6 +134,10 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 			fingerprintWriteString(h, dimension)
 		}
 	}
+	if body := assignment.GetLiveTableBindingsJson(); len(body) > 0 {
+		fingerprintWriteString(h, FeatureLiveTablesV1)
+		fingerprintWriteBytes(h, body)
+	}
 	fingerprintWriteBool(h, assignment.GetRequireTestExecutionLease())
 	fingerprintWriteBytes(h, assignment.GetRunSupervisionToken())
 	return fingerprintDigest(h)

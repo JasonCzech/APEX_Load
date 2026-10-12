@@ -253,6 +253,12 @@ type TestRunner struct {
 	startAdmissionRevisionStore startAdmissionRevisionPersistence
 	scenarioStore               scenarioPersistence
 	dataPoolStore               dataPoolPersistence
+	liveTablesMu                sync.Mutex
+	liveTablesRecoveryReserved  int64
+	liveTablesRecoveryByProject map[string]int64
+	liveTablesInspectMu         sync.Mutex
+	liveTablesResponseMu        sync.Mutex
+	liveTables                  map[string]*runLiveTables
 	projectStore                projectPersistence
 	releaseStore                releasePersistence
 	historyStore                historyPersistence
