@@ -210,12 +210,34 @@ test('live run counts keep values private until preview and clear them after dis
   data_pools: [{ alias: 'work', access_mode: 'live', selection_strategy: 'manual', live_options: { seed_policy: 'empty', columns: ['id', 'email'], durability: 'memory', end_mode: 'discard' } }],
  } }))); trackRun(id)
  await json(await request.post(`/api/v1/tests/${id}/start`))
+ const notifications: Record<string, unknown>[] = []
+ page.on('websocket', socket => {
+  if (new URL(socket.url()).pathname !== `/api/v1/tests/${id}/stream`) return
+  socket.on('framereceived', frame => {
+   try { const message = JSON.parse(String(frame.payload)); if (message.type === 'live_tables_changed') notifications.push(message) } catch { /* Other transport frames are not table hints. */ }
+  })
+ })
+ await page.addInitScript(() => {
+  const sockets: WebSocket[] = []
+  Object.defineProperty(window, '__apexLiveTableTestSockets', { value: sockets })
+  const BrowserWebSocket = window.WebSocket
+  window.WebSocket = class extends BrowserWebSocket {
+   constructor(url: string | URL, protocols?: string | string[]) { super(url, protocols); sockets.push(this) }
+  }
+ })
  await page.goto(`/#/test/${id}?tab=overview&${scopeQuery(workspace)}`)
  // Local-auth login loads the project list before this API-seeded workspace exists.
  await page.reload()
  const panel = page.getByRole('region', { name: 'Live data tables', exact: true })
  await expect(panel.getByRole('heading', { name: 'work', exact: true })).toBeVisible()
  await expect(panel).toContainText('Revision 1', { timeout: 30_000 })
+ await expect(panel).toContainText('Live updates connected.')
+ await expect(panel.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/)
+ await expect.poll(() => notifications.length).toBeGreaterThan(0)
+ for (const message of notifications) {
+  expect(Object.keys(message).sort()).toEqual(['event_index', 'test_id', 'timestamp', 'type'])
+  expect(message.test_id).toBe(id)
+ }
  await expect(panel).not.toContainText('preview-only@example.test')
  await expect(panel.getByRole('table')).toHaveCount(0)
  await panel.getByRole('button', { name: 'Preview up to 100 rows', exact: true }).click()
@@ -231,6 +253,19 @@ test('live run counts keep values private until preview and clear them after dis
  const exportPath = testInfo.outputPath('live-table-export.json')
  await exported.saveAs(exportPath)
  expect(JSON.parse(await readFile(exportPath, 'utf8'))).toMatchObject({ format: 'apexload-live-table-v1', revision: 1, columns: ['id', 'email'], rows: [{ values: { id: 'runtime-row', email: 'preview-only@example.test' } }] })
+ const closed = await page.evaluate(runId => {
+  const sockets = (window as Window & { __apexLiveTableTestSockets?: WebSocket[] }).__apexLiveTableTestSockets || []
+  let count = 0
+  for (const socket of sockets) {
+   if (socket.readyState === WebSocket.OPEN && new URL(socket.url).pathname === `/api/v1/tests/${runId}/stream`) { socket.close(); count++ }
+  }
+  return count
+ }, id)
+ expect(closed).toBeGreaterThan(0)
+ await expect(panel).toContainText('Reconnecting live updates.')
+ await expect(panel).not.toContainText('preview-only@example.test')
+ await expect(panel).toContainText('Live updates connected.', { timeout: 15_000 })
+ await expect(panel.getByRole('table')).toHaveCount(0)
  await page.evaluate(() => window.dispatchEvent(new Event('offline')))
  await expect(panel).not.toContainText('preview-only@example.test')
  await expect(panel).toContainText('Offline.')
@@ -247,6 +282,7 @@ test('live run counts keep values private until preview and clear them after dis
  await page.goto(`/#/report/${id}?section=execution&${scopeQuery(workspace)}`)
  const retained = page.getByRole('region', { name: 'Live data tables', exact: true })
  await expect(retained.getByRole('heading', { name: 'work', exact: true })).toBeVisible()
- await expect(retained).toContainText('closed')
+ await expect(retained).toContainText('Closed')
+ await expect(retained).toContainText('Finalization: complete.')
  await expect(retained).not.toContainText('preview-only@example.test')
 })

@@ -39,3 +39,17 @@ it('explains retained output reconciliation after recovery without exposing a ra
   expect(container.textContent).not.toContain('reconciliation_required')
  } finally { await act(async () => root.unmount()) }
 })
+
+it('shows retained waits and recovery gaps separately from target completion', async () => {
+ const container = document.createElement('div'); const root = createRoot(container)
+ const table = { table_id: 't', alias: 'work', profile: 'native_queue', counts: { redeliveries: 3 }, observations: { version: 1, captured_at: '2026-10-12T12:00:00Z', wait_count: 7, wait_total_ns: 23000000, empty_outcomes: 2, throttled: 4, unknown_outcomes: 1, unknown_pop_attempts: 1, recovery_gaps: 1, incomplete: true, dropped_events: 3, events: [{ kind: 'recovery_observation_gap', count: 1, first: '2026-10-12T12:00:00Z', last: '2026-10-12T12:00:01Z' }] } } as RunArchiveLiveTableSummary
+ try {
+  await act(async () => root.render(<LiveTableReportSummary tables={[table]} />))
+  expect(container.textContent).toContain('7 waits, 23.00 ms total')
+  expect(container.textContent).toContain('Lease redeliveries: 3')
+  expect(container.textContent).toContain('Observation coverage is incomplete')
+  expect(container.textContent).toContain('do not establish whether the target processed')
+  expect(container.textContent).toContain('3 older event groups omitted')
+  expect(container.querySelector('[aria-label="Shared-data event history"]')?.textContent).toContain('recovery observation gap')
+ } finally { await act(async () => root.unmount()) }
+})

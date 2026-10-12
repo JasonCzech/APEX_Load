@@ -4,14 +4,68 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import LiveTablesPanel, { type LiveTableSummary } from './LiveTablesPanel'
 const { request, apiFetch, downloadBlob } = vi.hoisted(() => ({ request: vi.fn(), apiFetch: vi.fn(), downloadBlob: vi.fn() }))
+const socket = vi.hoisted(() => ({ state: 'connected', options: {} as { onOpen?: () => void; onMessage?: (message: { type: string; test_id?: string; event_index?: number }) => void } }))
+vi.mock('../hooks/useWebSocket', () => ({ useWebSocket: (options: typeof socket.options) => { socket.options = options; return { connectionState: socket.state } } }))
 vi.mock('../hooks/apiClient', () => ({ request, apiFetch }))
 vi.mock('../utils/fileUtils', () => ({ downloadBlob }))
 let container: HTMLDivElement; let root: Root
 const table: LiveTableSummary = { id: 't', alias: 'customers', profile: 'native_queue', durability: 'memory', state: 'running', revision: 1, counts: { available: 2, leased: 1 } }
-beforeEach(() => { vi.useFakeTimers(); request.mockReset(); apiFetch.mockReset(); downloadBlob.mockReset(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container) })
+beforeEach(() => { vi.useFakeTimers(); socket.state = 'connected'; request.mockReset(); apiFetch.mockReset(); downloadBlob.mockReset(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container) })
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers() })
 async function click(text: string) { await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === text)!.click()) }
 async function render(testId = 'run') { await act(async () => root.render(<LiveTablesPanel testId={testId} />)) }
+it('refreshes the scoped authoritative view on notifications, sequence gaps and reconnect', async () => {
+  request.mockResolvedValue({ tables: [table], updated_at: '2026-10-12T12:00:00Z' }); await render()
+  expect(container.querySelector('time')?.dateTime).toBe('2026-10-12T12:00:00Z')
+  await act(async () => socket.options.onMessage?.({ type: 'live_tables_changed', test_id: 'other', event_index: 1 }))
+  expect(request).toHaveBeenCalledTimes(1)
+  await act(async () => socket.options.onMessage?.({ type: 'live_tables_changed', test_id: 'run', event_index: 1 }))
+  await act(async () => socket.options.onMessage?.({ type: 'live_tables_changed', test_id: 'run', event_index: 4 }))
+  expect(request).toHaveBeenCalledTimes(3)
+  await act(async () => socket.options.onMessage?.({ type: 'live_tables_changed', test_id: 'run', event_index: 4 }))
+  expect(request).toHaveBeenCalledTimes(3)
+  await act(async () => socket.options.onOpen?.())
+  expect(request).toHaveBeenCalledTimes(4)
+  expect(container.querySelector('table')).toBeNull()
+})
+it('finishes slow reads during continuous notifications and coalesces their follow-up', async () => {
+  const responses: ((value: unknown) => void)[] = []
+  request.mockImplementation(() => new Promise(resolve => { responses.push(resolve) }))
+  await render()
+  for (let index = 1; index <= 5; index++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+      socket.options.onMessage?.({ type: 'live_tables_changed', test_id: 'run', event_index: index })
+    })
+  }
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(request.mock.calls[0][1].signal.aborted).toBe(false)
+  await act(async () => responses[0]({ tables: [table], updated_at: '2026-10-12T12:00:00Z' }))
+  expect(container.textContent).toContain('Revision 1')
+  expect(request).toHaveBeenCalledTimes(2)
+  await act(async () => socket.options.onMessage?.({ type: 'live_tables_changed', test_id: 'run', event_index: 6 }))
+  expect(request.mock.calls[1][1].signal.aborted).toBe(false)
+  await act(async () => responses[1]({ tables: [{ ...table, revision: 2 }] }))
+  expect(container.textContent).toContain('Revision 2')
+  expect(request).toHaveBeenCalledTimes(3)
+  await act(async () => responses[2]({ tables: [{ ...table, revision: 3 }] }))
+  expect(container.textContent).toContain('Revision 3')
+  expect(request).toHaveBeenCalledTimes(3)
+})
+it('clears previews across socket interruptions and distinguishes recovering and closed states', async () => {
+  request.mockResolvedValue({ tables: [table] }); await render()
+  request.mockResolvedValueOnce({ revision: 1, columns: ['a'], rows: [{ version: 1, values: { a: 'private preview' } }] })
+  await click('Preview up to 100 rows')
+  expect(container.textContent).toContain('private preview')
+  socket.state = 'disconnected'; await render()
+  expect(container.textContent).not.toContain('private preview')
+  expect(container.textContent).toContain('Reconnecting live updates')
+  request.mockResolvedValue({ tables: [{ ...table, state: 'recovering' }] }); await click('Refresh tables')
+  expect(container.textContent).toContain('Recovering table state')
+  expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Preview up to 100 rows')).toBe(false)
+  request.mockResolvedValue({ tables: [{ ...table, state: 'closed' }] }); await click('Refresh tables')
+  expect(container.textContent).toContain('Closed')
+})
 it('polls counts without disclosing rows, explicitly previews, distinguishes absent and empty, and clears values on a new revision', async () => {
   request.mockResolvedValue({ tables: [table] }); await render()
   expect(request).toHaveBeenCalledTimes(1); expect(container.querySelector('table')).toBeNull()

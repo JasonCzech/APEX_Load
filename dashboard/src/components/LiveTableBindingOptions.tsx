@@ -16,7 +16,7 @@ export default function LiveTableBindingOptions({ binding, canManage, onChange }
       <label><span>Table behavior</span><select value={options.profile} onChange={event => onChange({
         ...(event.target.value === 'vts_columns' && binding.selection_strategy === 'lease' ? { selection_strategy: 'manual' } : {}),
         live_options: { ...options, profile: event.target.value as LiveTableOptions['profile'], ...(event.target.value === 'vts_columns' && options.end_mode === 'write_back' ? { end_mode: 'discard' } : {}) },
-      })}><option value="native_queue">Native work queue</option><option value="vts_columns">VTS columns</option></select></label>
+      })}><option value="native_queue">Native work queue</option><option value="vts_columns">Shared columns</option></select></label>
       <label><span>Starting data</span><select value={options.seed_policy} onChange={event => update({ seed_policy: event.target.value as LiveTableOptions['seed_policy'], seed_run_id: undefined, ...(event.target.value === 'empty' && options.end_mode === 'write_back' ? { end_mode: 'discard' } : {}) })}><option value="current_at_start">Current pool when the run starts</option><option value="empty">Empty table for producers</option><option value="original_seed">Original seed from a prior run</option></select></label>
       {options.seed_policy === 'original_seed' && <label><span>Source run ID</span><input value={options.seed_run_id || ''} maxLength={128} onChange={event => update({ seed_run_id: event.target.value.trim() })} /></label>}
       <label><span>Columns</span><input value={(options.columns || []).join(',')} placeholder="customer_id,email" onChange={event => update({ columns: event.target.value.split(',').map(column => column.trim()) })} onBlur={() => update({ columns: (options.columns || []).filter(Boolean) })} /></label>
@@ -28,7 +28,7 @@ export default function LiveTableBindingOptions({ binding, canManage, onChange }
     </div>
     {options.seed_policy === 'original_seed' && <p>Use the same alias as the prior run. Its retained encrypted seed is copied into a fresh table; final mutated rows are not reused. Start validation checks project access and seed availability.</p>}
     {options.seed_policy === 'empty' && <p>Declare the columns above. Producers can add rows after the run starts.</p>}
-    {!native && <p>VTS columns use positional cells and preserve absent versus empty values. Native work-item leases are unavailable.</p>}
+    {!native && <p>Shared columns use positional cells and preserve absent versus empty values. Native work-item leases are unavailable.</p>}
     {binding.selection_strategy === 'pop' && <p>Removing a row is permanent for this run. A load generator failure can leave its external processing outcome unknown.</p>}
     {binding.selection_strategy === 'lease' && <p>A work item is acknowledged after a successful iteration; failed iterations release it. Expired leases can be delivered again. Use a target-supported idempotency key for external side effects.</p>}
     {options.end_mode === 'write_back' && <p>Write-back is a separate finalization step. A changed, archived, or deleted source pool prevents replacement; the final output remains available for review.</p>}

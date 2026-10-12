@@ -2,6 +2,7 @@ import { LiveTableFinalizationOutcome, LiveTableOperationSummary } from './LiveT
 import type { LiveTableOperationStats } from '../types/dataPools'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch, request } from '../hooks/apiClient'
+import { useWebSocket } from '../hooks/useWebSocket'
 import type { DashboardAuthEffectiveAccess } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { downloadBlob } from '../utils/fileUtils'
@@ -106,42 +107,77 @@ function LiveTableFinalization({ testId, projectId, table, onSaved }: { testId: 
 export default function LiveTablesPanel({ testId, projectId }: { testId: string; projectId?: string }) {
   const [snapshot, setSnapshot] = useState<{ testId: string; tables: LiveTableSummary[]; updatedAt?: string } | null>(null)
   const [error, setError] = useState('')
-  const [refresh, setRefresh] = useState(0)
-  const retry = useCallback(() => setRefresh(value => value + 1), [])
+  const refreshRequest = useRef<(() => void) | null>(null)
+  const retry = useCallback(() => refreshRequest.current?.(), [])
+  const sequence = useRef<{ testId: string; value: number } | null>(null)
+  const { connectionState } = useWebSocket({
+    testId,
+    onOpen: () => { sequence.current = null; retry() },
+    onMessage: message => {
+      if (message.type !== 'live_tables_changed' || message.test_id !== testId) return
+      const previous = sequence.current
+      if (typeof message.event_index === 'number') {
+        // Every hint causes an authoritative fetch, including a sequence gap
+        // or reset after adoption. Never apply telemetry as table state.
+        if (previous?.testId === testId && message.event_index === previous.value) return
+        sequence.current = { testId, value: message.event_index }
+      }
+      retry()
+    },
+  })
   useEffect(() => {
-    const pending = new AbortController()
+    let pending: AbortController | null = null
     let timer: ReturnType<typeof setTimeout>
+    let disposed = false
+    let offline = false
+    let queued = false
     const load = async () => {
+      if (disposed || offline) return
+      // A busy run can emit hints faster than this request completes. Finish
+      // the authoritative read, then coalesce all missed hints into one read.
+      if (pending) { queued = true; return }
+      clearTimeout(timer)
+      const controller = new AbortController()
+      pending = controller
       try {
-        const result = await request<{ tables: LiveTableSummary[]; updated_at?: string }>(basePath(testId), { signal: pending.signal })
-        if (pending.signal.aborted) return
+        const result = await request<{ tables: LiveTableSummary[]; updated_at?: string }>(basePath(testId), { signal: controller.signal })
+        if (controller.signal.aborted) return
         setSnapshot({ testId, tables: result.tables || [], updatedAt: result.updated_at }); setError('')
       } catch {
-        if (pending.signal.aborted) return
+        if (controller.signal.aborted) return
         setSnapshot(null); setError('Live table status is unavailable. Previously displayed row values have been cleared.')
+      } finally {
+        pending = null
+        if (!disposed && !offline) {
+          if (queued) { queued = false; void load() }
+          else timer = setTimeout(() => void load(), 2000)
+        }
       }
-      if (!pending.signal.aborted) timer = setTimeout(() => void load(), 2000)
     }
-    const offline = () => { pending.abort(); clearTimeout(timer); setSnapshot(null); setError('Offline. Reconnect to refresh live table status.') }
+    const goOffline = () => { offline = true; queued = false; pending?.abort(); clearTimeout(timer); setSnapshot(null); setError('Offline. Reconnect to refresh live table status.') }
+    const goOnline = () => { offline = false; void load() }
     const visible = () => { if (document.visibilityState === 'visible') retry() }
-    window.addEventListener('offline', offline); window.addEventListener('online', retry); document.addEventListener('visibilitychange', visible)
+    const refresh = () => { void load() }
+    refreshRequest.current = refresh
+    window.addEventListener('offline', goOffline); window.addEventListener('online', goOnline); document.addEventListener('visibilitychange', visible)
     void load()
-    return () => { pending.abort(); clearTimeout(timer); window.removeEventListener('offline', offline); window.removeEventListener('online', retry); document.removeEventListener('visibilitychange', visible) }
-  }, [testId, refresh, retry])
+    return () => { disposed = true; pending?.abort(); clearTimeout(timer); if (refreshRequest.current === refresh) refreshRequest.current = null; window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); document.removeEventListener('visibilitychange', visible) }
+  }, [testId, retry])
   const current = snapshot?.testId === testId ? snapshot : null
   return <section className="live-tables-panel" aria-label="Live data tables">
     <div className="section-header"><h2>Live data tables</h2><button type="button" className="btn btn-secondary" onClick={retry}>Refresh tables</button></div>
-    <p>Counts refresh every 2 seconds. Runtime data is shared within this run.</p>
+    <p>Runtime data is shared within this run. Live notifications refresh counts, with a 2-second refresh to recover missed updates.</p>
+    <p role="status">{connectionState === 'connected' ? 'Live updates connected.' : connectionState === 'connecting' ? 'Connecting live updates. Counts may be stale until refreshed.' : 'Reconnecting live updates. Counts may be stale; previous row previews have been cleared.'}{current?.updatedAt && <> Last sampled: <time dateTime={current.updatedAt}>{new Date(current.updatedAt).toLocaleTimeString()}</time>.</>}</p>
     {error && <p role="alert">{error}</p>}
     {!current && !error && <LoadingState what="live tables" inline />}
     {current?.tables.length === 0 && <EmptyState compact title="No live tables yet." hint="Tables become available when the run starts." />}
     {current?.tables.map(table => <article key={table.id} aria-label={`Live table ${table.alias}`}>
-      <h3>{table.alias}</h3><p>{table.profile === 'vts_columns' ? 'VTS columns' : 'Native work queue'} · {table.durability === 'durable' ? 'Durable recovery' : 'Memory only'} · {table.state} · Revision {table.revision ?? 'Unknown'}</p>
+      <h3>{table.alias}</h3><p>{table.profile === 'vts_columns' ? 'Shared columns' : 'Native work queue'} · {table.durability === 'durable' ? 'Durable recovery' : 'Memory only'} · {table.state === 'recovering' ? 'Recovering table state' : table.state === 'closed' ? 'Closed' : table.state === 'unavailable' ? 'Unavailable on this controller' : table.counts?.available === 0 ? 'Empty — waiting for producers' : 'Active'} · Revision {table.revision ?? 'Unknown'}</p>
       <dl className="live-table-stats">{(['available', 'leased', 'acknowledged', 'popped', 'quarantined', 'discarded', 'delivery_attempts'] as const).map(key => <div key={key}><dt>{({ available: 'Available', leased: 'Leased', acknowledged: 'Acknowledged', popped: 'Removed', quarantined: 'Quarantined', discarded: 'Discarded', delivery_attempts: 'Delivery attempts' })[key]}</dt><dd>{table.counts?.[key] ?? 'Unknown'}</dd></div>)}</dl>
       {table.op_count !== undefined && <LiveTableOperationSummary stats={table} />}
       {table.finalization?.state && <p>Finalization: {table.finalization.state}.<LiveTableFinalizationOutcome finalization={table.finalization} /></p>}
       {(table.finalization?.state === 'conflict' || (table.state === 'closed' && table.finalization?.state === 'pending' && table.finalization.reason !== 'output_limits')) && <LiveTableFinalization key={`${testId}:${table.id}:finalization`} testId={testId} projectId={projectId} table={table} onSaved={retry} />}
-      {table.state !== 'unavailable' && <LiveTablePreview key={`${testId}:${table.id}:${table.revision}`} testId={testId} table={table} />}
+      {table.state !== 'unavailable' && table.state !== 'recovering' && <LiveTablePreview key={`${testId}:${table.id}:${table.revision}:${connectionState}`} testId={testId} table={table} />}
     </article>)}
   </section>
 }

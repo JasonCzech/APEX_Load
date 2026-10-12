@@ -55,6 +55,20 @@ export interface LiveTableOptions {
 }
 
 export interface LiveTableOperationStats {
+  observations?: {
+    version: number
+    captured_at?: string
+    wait_count: number
+    wait_total_ns: number
+    empty_outcomes: number
+    throttled: number
+    unknown_outcomes: number
+    unknown_pop_attempts: number
+    recovery_gaps: number
+    incomplete: boolean
+    dropped_events: number
+    events?: { kind: string; first: string; last: string; count: number }[]
+  }
   op_count?: number
   op_errors?: number
   op_unknown?: number
@@ -71,6 +85,6 @@ export interface RunArchiveLiveTableSummary extends LiveTableOperationStats {
   state: string
   revision: number
   data_bytes: number
-  counts: Partial<Record<'seeded' | 'pushed' | 'available' | 'leased' | 'acknowledged' | 'popped' | 'quarantined' | 'discarded' | 'delivery_attempts', number>>
+  counts: Partial<Record<'seeded' | 'pushed' | 'available' | 'leased' | 'acknowledged' | 'popped' | 'quarantined' | 'discarded' | 'delivery_attempts' | 'redeliveries', number>>
   finalization?: { state?: string; mode?: string; output_pool_id?: string; reason?: string }
 }

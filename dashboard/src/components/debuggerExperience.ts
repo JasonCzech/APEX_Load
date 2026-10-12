@@ -66,7 +66,7 @@ export function compareRuns(before: BrowserReplayReport, after: BrowserReplayRep
     return { key, before: a, after: b, fields }
   })
 }
-export type DebugProfile = { name: string; options: Omit<ReplayOptionsState, 'variablesText' | 'groupName'> }
+export type DebugProfile = { name: string; options: Omit<ReplayOptionsState, 'variablesText' | 'groupName' | 'liveTableSeedsText'> }
 export function safeProfile(name: string, options: ReplayOptionsState): DebugProfile {
   // Whitelist only execution controls. Never persist variables, URLs, group
   // names, captured evidence or copied credentials in named presets.

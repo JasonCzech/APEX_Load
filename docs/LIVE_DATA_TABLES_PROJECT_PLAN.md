@@ -1,0 +1,92 @@
+# Native shared-data extension implementation plan
+
+Status: design reviewed and implementation started on October 12, 2026 after the run-scoped native targeted and browser gates passed. This is the user-requested next tranche of the [revised live-table plan](LIVE_DATA_TABLES_REVISED_PLAN.md), not a change to existing snapshot data pools.
+
+The four deliverables are project-scoped tables, governed operator mutations, native Java/JavaScript adapters, and distributed rendezvous. They use native APEX contracts and require neither LoadRunner nor a VTS server. Existing snapshot bindings, run-scoped live tables, and local rendezvous remain the defaults.
+
+## Decisions and rationale
+
+| Decision | Why |
+| --- | --- |
+| Give project tables their own definitions, instances and attachments. | The current table ID, finalization and deletion paths belong to a run. Sharing an existing run-owned object would let one run erase another run's data. |
+| Require durable encrypted state for project tables. | Their lifetime exceeds one controller process or run; restarting must recover the committed instance rather than reseed from a changing pool. |
+| Keep one execution-leader owner and reuse existing full-term fences. | A second election mechanism would introduce conflicting ownership without providing a required product capability. |
+| Retire closed attachment identities after the retry window. | A persistent table cannot retain every VUser/client tombstone forever. Revoked attachments must be rejected before reaching the core when their client state is reclaimed. |
+| Use typed, audited operator commands with revision conditions. | The ordinary pool editor is not an authoritative live-table writer; unrestricted writes would violate leases, retry safety and concurrent-run expectations. |
+| Put both language adapters behind the owning VUser's trusted service interface. | Guest code should select admitted aliases, not receive controller credentials, table IDs or raw lease tokens. |
+| Execute native JavaScript in a separate bounded host worker. | Target-page JavaScript is controlled by the application under test and must never receive table capabilities. The existing PAC evaluator is a containment precedent, not a general scripting API. |
+| Aggregate rendezvous arrivals per generator and watch rounds separately. | A blocking request per VUser exhausts the current 64-call table channel and can deadlock a barrier before its participants arrive. |
+
+## Project definitions, instances and attachments
+
+Add a project-table definition with stable ID, project ID, name, configuration revision, profile, declared columns, bounded limits, lifecycle state, current instance ID, creator/update metadata and retention policy. Both native queues and independent shared columns retain their existing semantic contracts. Leases remain native-queue-only.
+
+An instance has a fresh immutable incarnation, its own encrypted checkpoint/journal and owner term. Creation reads an explicit seed pool snapshot once or accepts an empty declared schema. Store the seed digest and provenance. Recovery never reads the source pool again. A reset creates a new instance; it cannot silently mutate the meaning of an existing instance ID.
+
+Persist run attachments separately: attachment ID/incarnation, project/table/instance, run, group/alias, admitted operations, principal, and active/detached state. Bindings add explicit project scope and a project table reference. Omitted scope retains run scope. Project bindings reject run seed and end policies; completion detaches the run and settles only its acquisitions. It does not close, discard, reseed or write back the project table.
+
+A definition can be active, quiescing, quiesced or archived. Quiescing refuses new attachments while admitted runs finish. Reset/archive require quiescence, no active attachments or leases, an expected configuration/instance revision, an operator reason and project-administrator permission. Archived tables retain authorized inspection/export until their retention policy removes recovery material. Reset publishes the new instance durably before retiring the old one. Old instance IDs and attachment capabilities remain invalid.
+
+Use the next free schema release on the implementation branch and test both SQLite and PostgreSQL. Keep existing live-table rows readable. Run deletion atomically revokes its attachments and retains bounded cleanup tombstones until their leases, receipts and client markers retire; it never removes a project definition or shared instance. Project deletion removes that project's definitions, attachments and encrypted recovery state. Do not represent project ownership through a synthetic managed test or a hidden ordinary data pool.
+
+## Authoritative runtime and bounded retirement
+
+Add a project-table manager owned by the controller execution leader. Load each active instance once; multiple attachments share the same core table, journal writer and memory reservation. Reuse the current project/controller budgets, charging the instance once and separately bounding attachment/identity metadata. Fail admission before starting work when the instance or aggregate capacity is unavailable.
+
+Attachment creation validates current project access, domain capability, instance/lifecycle revision and declared alias/operation requirements. A generator assignment receives only the capabilities for its admitted attachments. The gateway validates run, group, generator incarnation, assignment, current owner term and attachment state before forwarding an operation. Prefix server-controlled client/owner identities with the attachment incarnation, preserving exact retry IDs through controller adoption.
+
+Detachment revokes new requests immediately, settles that attachment's leases under the table actor, and records its retry-retention deadline. Keep exact outcomes through the advertised retry window, then journal bounded removal of that attachment's receipts, client markers and private cursors. Reclaimed identities cannot execute again because a revoked attachment is rejected outside the core; attachment IDs are never reused. Never remove the table's deliberately shared cursor when retiring one client scope.
+
+Checkpoint and unload idle instances without losing identity or receipts. Recovery uses the existing encrypted-input and elapsed-time bounds and full database lease term. A failed recovery leaves the instance unavailable and blocks its attached work; it does not manufacture a fresh instance. Acquiring a new owner must restore project instances before attaching or resuming generators. Current run-scoped durable-continuation requirements remain in force.
+
+## Operator API and UI
+
+Add an explicit project-table resource under the project API: list/create, definition/detail, attachments/usage, revision-bound inspection/export, bounded mutation, quiesce/resume, reset and archive. Generate OpenAPI, endpoint catalog and TypeScript contracts through repository tooling.
+
+Readers need current project membership, the shared-data view permission and explicit service-account `read` scope. Data mutations require the shared-data management permission and explicit `scripts:write` scope. Lifecycle reset/archive additionally require project-administrator permission. Check the domain live-table capability on configuration, attachment and use. Permission revocation takes effect on subsequent operator requests and new attachments.
+
+Accept allowlisted typed commands, not an arbitrary core request: append, conditional native-row update, selected-cell clear and numeric increment where the profile supports them. Each command carries an idempotency key, expected instance and applicable row/table revision. Keep identity, client sequence, lease token and owner credentials server-controlled. Routine edits must reject a leased native row atomically. Whole-table reset belongs to the separately governed lifecycle action.
+
+Canonicalize the command plus actor/instance identity. Commit the table transition, exact retry receipt and value-free audit outcome in one transaction. Retrying the same key returns the original outcome; a different body conflicts. A retry must consult the receipt before rejecting a now-stale expected revision. Every mutation requires an expected table revision. Publish a bounded receipt-retention window and explicit expired-request outcome, with actor/instance-scoped identities; do not promise conflict detection after indefinite key retention. If auditing cannot commit, no mutation is acknowledged or published. Audit operation type, affected identity/count, actor, revisions and result, never row values or lease tokens.
+
+Create a dedicated project live-table view alongside the existing shared-data destination. Avoid replacing or rewriting the existing data-pool grid. Show scope, profile, instance, lifecycle, revision, capacity, lease state and attached runs. Support explicit create/seed, append and conditional inline edit, with conflict refresh that preserves the operator's draft. Place quiesce/reset/archive behind clearly named actions and an explicit reason/confirmation for destructive lifecycle changes. Preview/export remain intentional, permission-checked and audited; notifications only invalidate views and never carry rows.
+
+The scenario binding editor adds a project-table selector only after the user opts into live/project scope. It displays the selected table's profile and shared lifetime and removes run-end/seed controls that do not apply. Existing static and run-scoped selections retain their current forms and behavior.
+
+## Native script service boundary and adapters
+
+Introduce a runtime-only service interface backed by the owning VUser's live-table runtime. The guest request contains an alias and typed semantic arguments. The trusted broker supplies table identity, client sequence, owner, retry identity, timeout and cancellation. Refactor the existing DSL action path to share a literal-value executor: guest strings must not be reinterpreted as DSL templates.
+
+Opaque Java/JavaScript code declares required aliases and allowed operations in authoring metadata. Join those declarations to ordinary live-table preflight and assignment capability checks; do not pretend source scanning can prove dynamic usage. Derive a separate trusted permission closure for lease renewal and cleanup: declaring a guest lease must admit broker renewal/release, and automatic iteration leases also need acknowledgment. Those internal controls do not expand the guest operation allowlist. Authorized cleanup must remain possible after invocation poisoning or detachment. Return native values with field presence preserved. Represent 64-bit revisions and integers as decimal strings at the JavaScript boundary. Bound source size, request/result bytes, pending calls and retained handles.
+
+Lease handles are opaque SDK values bound to VUser, lane and acquisition. Keep the actual token in the trusted broker. Calls are allowed only during an active invocation, but a legitimate handle may survive methods/actions within its iteration. The existing renewal loop runs independently; unsettled manual leases release at iteration completion. Unknown outcomes or lost leases poison the runtime and stop dependent work. A caught guest exception must not allow later target work to bypass this state.
+
+For Java, add native classes under `apexload.data`, separate from LR compatibility classes. Keep bridge/SDK classes parent-loaded. Extend the governed runner transport with a negotiated native-services callback capability. Authenticate frame direction, session, generation/slot, invocation and callback sequence; reject stale, cross-slot, oversized and background-thread calls. Negotiate support independently for local persistent JavaVuser execution, the HTTP sidecar, pooled slots and the dedicated broker/facade. All supported paths need an explicit callback route through the trusted generator bridge; never accept a guest-provided callback URL. Unsupported runner versions fail preflight before executing a script that declares native services. An uncertain operation must trigger the existing session/host containment path when stopping the guest requires more than an exception.
+
+For JavaScript, add an explicit host-side native scripting action/worker and frozen `apex.data` service facade. It is separate from `browser_evaluate_js` and translated importer subsets. Supply no ambient filesystem, environment, process, controller credentials or unrestricted networking APIs. Keep JavaScript source literal and pass resolved inputs as structured JSON; bypass ordinary action source interpolation so data cannot become executable code. Run the interpreter in a separate process with bounded source/output, wall time, memory and worker concurrency; terminate on timeout or cancellation. The existing PAC non-Linux memory-limit no-op is not an acceptable general scripting guard. Negotiate native-JavaScript support only when an actual OS containment/memory backend is available, with an explicit preflight refusal elsewhere; test the supported execution target using real workers. Scripts compose target protocol actions through the surrounding native DSL. Publish these worker limits rather than implying the HTTP engine's VUser scale applies to interpreter processes.
+
+Provide native authoring examples/templates for producer, consumer, conditional update and lease/acknowledgment workflows in both languages. Exercise real JVM programs and the real JavaScript worker, not only mocked adapter calls.
+
+## Distributed rendezvous
+
+Keep existing rendezvous process-local unless explicitly configured for distributed group scope. The first supported distributed contract is within one run/group; it is not a cross-project or cross-run barrier. Define barrier identity from the admitted run/group and stable action ID plus a monotonically increasing round.
+
+Freeze each round's participant contract from admitted assignment membership and the action's count/percentage target. Count distinct logical VUsers, not messages or retries. A repeated arrival is idempotent; a late arrival for a released or timed-out round gets that round's recorded outcome. Do not silently lower the target after generator loss. Require a bounded timeout and explicit timeout behavior. Reject workload/admission combinations whose changing participant membership cannot satisfy the published contract rather than silently interpreting an adaptive group as a fixed barrier.
+
+Use a dedicated coordinator and transport path. Each generator batches its local arrivals and maintains at most one bounded watch per active barrier round, waking local waiters when the authoritative outcome arrives. Bound batches, membership, simultaneous rounds and retained round outcomes. Keep cancellation, supervision, stop and release traffic independent from waiting table operations. Support direct and reverse generator connections and negotiate the capability before committing work.
+
+When continuation is enabled, persist round/release/timeout decisions under the execution term before acknowledgment. Preserve participant identities and outcomes through reconnect/adoption; reject stale owners and replayed assignment credentials. A release permits participants to proceed; it does not promise simultaneous arrival at an external target across a network.
+
+## Delivery slices and gates
+
+| Slice | Implementation and focused gate |
+| --- | --- |
+| A — Independent scope | Definition/instance/attachment persistence, migration and deletion boundaries. Existing snapshot/run-table tests stay green; cross-project access and old-instance rejection are covered. |
+| B — Project runtime | Shared loading/admission, attach/detach, durable recovery and safe identity retirement. Two concurrent runs observe shared changes; finishing/deleting one leaves the other working; one reservation per instance. |
+| C — Operator controls | Typed API, transactional audit/receipt, permissions and dedicated UI. Test stale CAS, leased-row conflict, same-key replay, altered-key body, audit outage, revoked grants, and both browser auth profiles. |
+| D — Script services | Shared literal-value broker and declared capabilities. Test forged alias/identity, template-like literal strings, secret checks, unknown retry outcomes, lease lifecycle, cancellation and bounded queues. |
+| E — Language adapters | Actual Java callbacks and isolated JavaScript worker, authoring examples and capability errors. Test real programs, Unicode/empty/absent/int64 boundaries, concurrency, background/stale calls, process containment and version skew. |
+| F — Distributed rendezvous | Coordinator, bounded aggregation, direct/reverse transport, durable outcomes and explicit DSL scope. Test two real generators, repeated rounds, duplicate/reordered/late arrival, timeout, member loss, reconnect/adoption and saturation without starving supervision. |
+| G — Cross-cutting qualification | Review all slices until no actionable issues; targeted fixes, generated/docs/browser gates, then the full Go and dashboard suites after all slices are committed and reviews are clean. |
+
+Review and repair before each slice commit. During implementation keep API tests limited to the changed behavior and its callers. Do not start a full API suite while slices or cross-cutting fixes remain. Serialize substantial Go/controller builds, use the existing private caches, and reuse the disposable PostgreSQL service with separately owned test schemas. Clean private caches and disposable database/container/volume only after every dependent build, test and follow-up repair is complete; preserve shared dependencies and other agents' resources.

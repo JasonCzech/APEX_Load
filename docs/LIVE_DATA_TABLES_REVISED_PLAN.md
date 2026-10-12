@@ -1,6 +1,10 @@
 # APEX Load live data tables revised implementation plan
 
-Status: Design reviewed October 12, 2026; implemented as explicit opt-in live tables. This document preserves the design rationale. The [runtime guide](LIVE_DATA_TABLES_RUNTIME.md) records the delivered limits, configuration, and validation; the [VTS compatibility matrix](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) records intentionally blocked imports and semantic differences.
+Status: Run-scoped native implementation and targeted qualification completed on October 12, 2026, including debugger isolation, live-status reconnects, durable PostgreSQL adoption, and retained run evidence. Both browser authentication profiles pass the affected workflows. The separately authorized extension below is now in progress; full-suite qualification follows its completion and clean cross-cutting review. The [runtime guide](LIVE_DATA_TABLES_RUNTIME.md) records the delivered contract and limits.
+
+Scope clarified by the user on October 12, 2026: this feature serves newly authored native APEX scripts and is independent of LoadRunner VTS. A VTS adapter, vendor parity, and vendor-server tests are not required. The earlier VTS discussion below is design background and an import safety boundary, not a delivery gate. The native work queue and independent shared-column model have their own explicit contracts; existing shared data pools remain unchanged by default.
+
+The user subsequently authorized the next tranche after these native gates: project-scoped tables, governed operator mutations, native Java/JavaScript adapters and distributed rendezvous. The [extension implementation plan](LIVE_DATA_TABLES_PROJECT_PLAN.md) specifies ownership, lifecycle, authorization, adapter isolation, transport, failure semantics and delivery gates before that implementation starts.
 
 This plan revises [Live Data Tables (VTS parity) — Implementation Spec](https://claude.ai/code/artifact/3b04ebf6-e0cc-4c91-88b0-dce845c45ad6). Keep its central architecture: one authoritative table service on the execution leader, a shared engine interface, and a dedicated operation stream over the existing generator transport. Run-scoped sharing is a useful first release; existing read-only data snapshots should remain the default.
 
@@ -107,7 +111,7 @@ Report `pop` as destructive consumption. After generator loss, the controller ma
 
 Seed once during start preparation, immediately before the coordinated start barrier. Read the pool's active rows, field schema, row revision, and relevant metadata from one consistent snapshot. Record seed digest, source identity, revision, and time. For durable runs, commit initialized table state and its continuity identity before any generator receives `CommitWork`. Retrying initialization must return that same table rather than duplicate the seed.
 
-The fresh-run default is the current pool at start, as proposed. A repeat or revision should default to its retained original seed, with an explicit choice to use current pool data. Each gets a new table, cursor state, and lease population. If the original seed is no longer retained, report that and require explicit reseeding rather than silently changing the workload.
+The fresh-run default is the current pool at start, as proposed. The existing revision workflow is for queued, never-started runs, so it preserves their selected current-at-start or explicit original-seed intent. The repository has no completed-run repeat/copy workflow. An explicitly authored original-seed binding must retain its source lineage; a future completed-run copy flow should default to that retained seed with an explicit current-pool choice. Each new run gets a new table, cursor state, and lease population. If the original seed is no longer retained, report that and require explicit reseeding rather than silently changing the workload.
 
 Define end modes as `discard` by default, `save_as_new`, or `write_back`. Finalize only after the run stops issuing new operations, outstanding effects are resolved within a bound, and lease disposition is settled. On failed or aborted runs, default to retaining authorized evidence without applying write-back; writing partial results requires a separately selected policy.
 
@@ -165,22 +169,18 @@ Replay, debugger, shakeout, and unmanaged `apexctl` execution use isolated in-pr
 
 Record table-operation latency separately from target protocol and transaction metrics. A user-defined transaction spanning a table wait still measures its real elapsed time; report the wait as a component. Preserve failover gaps, throttling, queue starvation, unknown pop outcomes, and lease redelivery in run validity/RCA evidence. Controller interference with unrelated runs must be measured rather than assumed absent.
 
-## VTS compatibility and delivery phases
+## Native delivery phases and import boundary
 
-Maintain a function-by-function matrix against the [official VTS function reference](https://admhelp.microfocus.com/vugen/en/26.1-26.3/help/function_reference/Content/FuncRef/VTS/etc/lrFr_lrvtc_Alphabetical.htm). Each entry records language, parameters, return codes, parameter outputs, side effects, verified edge cases, and import status. The reference lists 28 single-connection functions, but that count is not evidence of full compatibility.
-
-Test ragged columns, absent/empty cells, range behavior, clear/pop/rotate interactions, numeric conversion, and the three [send-row modes](https://admhelp.microfocus.com/vugen/en/26.1-26.3/help/function_reference/Content/FuncRef/VTS/lrFr_lrvtc_send_row1.htm). Documented behavior can be implemented immediately; ambiguous behavior needs captured results from the target VTS version before receiving a verified-parity label.
-
-Connection and index calls may be adapted only when their observable behavior is preserved. Repeated connects, dynamic endpoints, multiple handles, disconnect state, and checked return codes cannot be dropped as arbitrary no-ops. Unsupported control flow or unresolved bindings remain explicit import blockers/review items. Do not contact imported endpoints merely because they appear in a script.
+Native queue and shared-column contracts are tested directly. Vendor adapters and parity certification are outside the user-approved scope. The separate [import compatibility matrix](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) remains a safety boundary: an unsupported imported call must be blocked rather than silently reinterpreted, and imported endpoints must never be contacted automatically. New native scripts require no VTS dependency.
 
 | Phase | Deliverable | Exit gate |
 | --- | --- | --- |
-| 0 | Semantic profiles, operation/receipt state machines, timing budgets, resource prototype, VTS matrix. | Resolve guarantee contradictions and demonstrate bounded cost before building the full UI. |
+| 0 | Semantic profiles, operation/receipt state machines, timing budgets, resource prototype and native profile contract. | Resolve guarantee contradictions and demonstrate bounded cost before building the full UI. |
 | 1 | Native local queue, explicit live bindings, isolated replay, cancellation, leases, and required unit/property tests. | Local producer/consumer run reconciles; read-only behavior and dirty drafts remain intact. |
 | 2 | Direct/reverse distributed transport, admission/capability checks, scoped metrics and usable dashboard. | Concurrent groups on multiple generators, reconnect, overload, partial startup, and generator-loss tests pass. |
 | 3 | Durable journal/checkpoint/receipt recovery, full-term fencing, HA adoption integration. | PostgreSQL crash, partition, compaction, split-brain, and aggregate recovery-budget gates pass. Continuation remains disabled until then. |
-| 4 | Idempotent finalization, protected artifacts, write-back, proven VTS mappings, report renderers, documentation. | Authorization/conflict/finalization faults and claimed parity cases pass; measured capacity and browser gates pass. |
-| Later | Project-scoped tables, governed operator mutations, Java/JavaScript adapters, distributed rendezvous. | Separate contracts and acceptance evidence for each capability. |
+| 4 | Idempotent finalization, protected artifacts, write-back, native profile acceptance, report renderers, documentation. | Authorization/conflict/finalization faults and native semantic cases pass; measured capacity and browser gates pass. |
+| Next tranche (authorized) | Project-scoped tables, governed operator mutations, native Java/JavaScript adapters, distributed rendezvous. | Follow the [extension implementation plan](LIVE_DATA_TABLES_PROJECT_PLAN.md) after native completion gates pass. |
 
 Implement the local in-memory service behind a capability flag so early phases can be exercised without advertising HA or VTS completeness. Design durable receipts and finalization identities in Phase 0 even where their implementation lands later. Run small performance probes in every phase; a late benchmark cannot cheaply repair the wrong data structure or recovery design.
 

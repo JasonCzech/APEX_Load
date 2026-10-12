@@ -1,3 +1,4 @@
+import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
@@ -1463,6 +1464,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const editorOwnsSavedEcho = Boolean(ownSavedEditorEchoRef.current && scriptId === ownSavedEditorEchoRef.current.id
     && (projectId === undefined || projectId === ownSavedEditorEchoRef.current.projectId)
     && initialScriptDocumentKey === ownSavedEditorEchoRef.current.documentKey)
+  const sandboxSeedScope = JSON.stringify([projectId || '', scriptId || initialScriptDocumentKey || ''])
+  const sandboxSeedScopeRef = useRef(sandboxSeedScope)
+  useEffect(() => {
+    if (sandboxSeedScopeRef.current === sandboxSeedScope) return
+    sandboxSeedScopeRef.current = sandboxSeedScope
+    // A saved draft is still the same editor session. Navigating to a different
+    // script or project must never reuse its explicit input data accidentally.
+    if (!editorOwnsSavedEcho) setReplayOptions(previous => previous.liveTableSeedsText ? { ...previous, liveTableSeedsText: '' } : previous)
+  }, [editorOwnsSavedEcho, sandboxSeedScope, setReplayOptions])
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
   const editorResourceScopeVersionRef = useRef(0)
   if (
@@ -3209,6 +3219,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
       setReplayDocumentFingerprint(replayDraft.fingerprint)
       const variables = parseReplayVariablesText(replayOptions.variablesText)
+      const liveTableSeeds = parseLiveTableSandboxSeeds(replayOptions.liveTableSeedsText)
       const replaySessionId = createReplaySessionId()
       requestedReplaySessionId = replaySessionId
       debugMutationSequenceRef.current += 1
@@ -3233,6 +3244,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       })
       const payload = {
         ...baseReplayPayload,
+        live_table_seeds: liveTableSeeds.length ? liveTableSeeds : undefined,
         runtime_profile: { capture_mode: replayOptions.capture || 'diagnostic' },
         browser: currentScript.protocol === 'browser'
           ? { ...(baseReplayPayload.browser || {}), capture_screenshots: replayOptions.capture === 'script' ? baseReplayPayload.browser?.capture_screenshots : replayOptions.capture === 'errors' ? 'on_error' : 'per_action' }
@@ -3244,7 +3256,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         log_level: replayOptions.logLevel,
       }
       currentRunRef.current = {
-        id: replaySessionId, options: structuredClone({ ...replayOptions, startPaused }), breakpoints: structuredClone(payload.breakpoints),
+        id: replaySessionId, options: structuredClone({ ...replayOptions, startPaused, liveTableSeedsText: undefined }), breakpoints: structuredClone(payload.breakpoints),
         target: currentScript.config.base_url || 'Action-specific targets', draft: scriptEditorDirty, dataSourceCount: currentScript.data_sources?.length || 0,
         failurePolicy: currentScript.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error',
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),

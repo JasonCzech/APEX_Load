@@ -26,6 +26,7 @@ kept for planning or audit context only.
 | [Live data tables](LIVE_DATA_TABLES_RUNTIME.md) | Current | Explicit per-run live bindings, action semantics, recovery limits, and protected output |
 | [VTS compatibility](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) | Current | Supported authoring primitives and blocked vendor imports without unproven parity |
 | [Live table design](LIVE_DATA_TABLES_REVISED_PLAN.md) | Design | Rationale, compatibility contract, and staged rollout criteria |
+| [Native shared-data extension](LIVE_DATA_TABLES_PROJECT_PLAN.md) | Design | Project ownership, governed mutations, native adapters and distributed rendezvous |
 | [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Current | Project object history, disclosure-safe activity and archive workflows |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |

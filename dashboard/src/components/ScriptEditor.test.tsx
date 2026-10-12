@@ -5425,6 +5425,22 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Authoring workspace"]')).toBeNull()
   })
 
+  it.each(['script', 'project'])('clears isolated sandbox inputs when switching %s scope', async scope => {
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => findOpenDebuggerButton(container)!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls="debug-session-options"]')!.click())
+    const seedText = JSON.stringify([{ alias: 'work', columns: ['id'], rows: [{ values: { id: 'private-seed' } }] }])
+    const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Sandbox seeds (JSON)"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, seedText)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Sandbox seeds (JSON)"]')?.value).toBe(seedText)
+    await act(async () => root.render(<ScriptEditor scriptId={scope === 'script' ? 'script-2' : 'script-1'} initialScript={initialScript} projectId={scope === 'project' ? 'project-2' : 'project-1'} />))
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Sandbox seeds (JSON)"]')?.value).toBe('')
+  })
+
   it('starts paused and enables stepping when step-through mode is selected', async () => {
     const pausedSession = debugSessionResponse({
       group: 'Checkout Flow-debug',
