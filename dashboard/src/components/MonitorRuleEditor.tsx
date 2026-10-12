@@ -7,6 +7,7 @@ import { monitorMetricCatalog, nativeMonitorProvider } from './monitorProviderMo
 import { useDynatraceConnectionsApi } from '../hooks/api/useDynatraceConnectionsApi'
 import type { DynatraceOperation } from '../types/dynatrace'
 import { monitorSeriesIdentity } from './monitorTimelineModel'
+import { useMonitoringEnabled } from './useMonitoringCapabilities'
 
 function RuleDimensions({ label, value, onChange, onError }: { label: string; value?: Record<string, string>; onChange: (dimensions: Record<string, string>) => void; onError: (error: string) => void }) {
   const serialized = JSON.stringify(value || {})
@@ -48,12 +49,14 @@ export default function MonitorRuleEditor({ projectId, value, onChange, onValida
   const [previewError, setPreviewError] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
   const previewVersion = useRef(0)
+  // A project without run monitoring has no sources to list (the controller answers 409).
+  const monitoringEnabled = useMonitoringEnabled(projectId)
   useEffect(() => {
     const controller = new AbortController()
     setSources([])
-    if (projectId) void request<MonitorSource[]>(`/projects/${encodeURIComponent(projectId)}/monitor-sources`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) setSources(result.filter(source => nativeMonitorProvider(source.pack) && source.enabled)) }).catch(() => {})
+    if (projectId && monitoringEnabled) void request<MonitorSource[]>(`/projects/${encodeURIComponent(projectId)}/monitor-sources`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) setSources(result.filter(source => nativeMonitorProvider(source.pack) && source.enabled)) }).catch(() => {})
     return () => controller.abort()
-  }, [projectId])
+  }, [monitoringEnabled, projectId])
   useEffect(() => { previewVersion.current += 1; setPreview(undefined); setPreviewError(''); setPreviewLoading(false); return () => { previewVersion.current += 1 } }, [projectId])
   useEffect(() => {
     if (!projectId || !preview || !['pending', 'queued', 'running'].includes(preview.operation.status)) return

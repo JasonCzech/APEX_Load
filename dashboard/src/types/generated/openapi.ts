@@ -1343,6 +1343,7 @@ export interface operations {
               "migration_readiness"?: (Record<string, unknown>) | null;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -1351,11 +1352,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -7668,6 +7671,7 @@ export interface operations {
               "migration_readiness"?: (Record<string, unknown>) | null;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -7676,11 +7680,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -15186,6 +15192,7 @@ export interface operations {
             "findings": Record<string, Array<Record<string, unknown>>>;
             "preflight": ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -15194,11 +15201,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -36667,6 +36676,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -36715,7 +36727,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -37138,8 +37153,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -37276,6 +37297,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -37324,7 +37348,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -44671,8 +44698,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -44830,6 +44863,9 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -44878,7 +44914,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -45809,8 +45848,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -46364,6 +46409,9 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -46412,7 +46460,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -59666,6 +59717,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -60093,6 +60145,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -60101,11 +60154,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -60241,6 +60296,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -62735,8 +62791,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -62894,6 +62956,9 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -62942,7 +63007,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -63869,8 +63937,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -64424,6 +64498,9 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -64472,7 +64549,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -67198,6 +67278,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -67246,7 +67329,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -67669,8 +67755,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -67807,6 +67899,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -67855,7 +67950,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -79964,6 +80062,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -80422,6 +80521,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -80430,11 +80530,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -80571,6 +80673,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -80666,6 +80769,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -81124,6 +81228,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -81132,11 +81237,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -81273,6 +81380,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -83128,8 +83236,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -83287,6 +83401,9 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -83335,7 +83452,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -84266,8 +84386,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -84821,6 +84947,9 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -84869,7 +84998,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -101264,6 +101396,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -101691,6 +101824,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -101699,11 +101833,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -101839,6 +101975,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -102015,6 +102152,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -102473,6 +102611,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -102481,11 +102620,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -102622,6 +102763,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -102722,6 +102864,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -103180,6 +103323,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -103188,11 +103332,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -103329,6 +103475,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -104693,8 +104840,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -104852,6 +105005,9 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -104900,7 +105056,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -105831,8 +105990,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -106386,6 +106551,9 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -106434,7 +106602,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -115441,6 +115612,7 @@ export interface operations {
             "findings": Record<string, Array<Record<string, unknown>>>;
             "preflight": ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -115449,11 +115621,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -120876,6 +121050,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -120924,7 +121101,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -121347,8 +121527,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -121485,6 +121671,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -121533,7 +121722,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -122933,6 +123125,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -122981,7 +123176,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -123404,8 +123602,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -123542,6 +123746,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -123590,7 +123797,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -124990,6 +125200,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -125038,7 +125251,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -125461,8 +125677,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -125599,6 +125821,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -125647,7 +125872,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -127047,6 +127275,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -127095,7 +127326,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -127518,8 +127752,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -127656,6 +127896,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -127704,7 +127947,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -129104,6 +129350,9 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -129152,7 +129401,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
@@ -129575,8 +129827,14 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "request_errors"?: number;
+                  "request_rate"?: number;
+                  "requests"?: number;
                   "run_error_pct"?: (number) | null;
                   "run_errors"?: (number) | null;
+                  "run_request_error_pct"?: (number) | null;
+                  "run_request_errors"?: (number) | null;
+                  "run_requests"?: (number) | null;
                   "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
@@ -129713,6 +129971,9 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_periods_delta"?: number;
@@ -129761,7 +130022,10 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "run_error_pct"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
                 "run_total_errors"?: (number) | null;
+                "run_total_requests"?: (number) | null;
                 "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -133538,8 +133802,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -133697,6 +133967,9 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -133745,7 +134018,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -134676,8 +134952,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -135231,6 +135513,9 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -135279,7 +135564,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -136523,6 +136811,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -136950,6 +137239,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -136958,11 +137248,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -137098,6 +137390,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -137274,6 +137567,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -137732,6 +138026,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -137740,11 +138035,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -137881,6 +138178,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -137981,6 +138279,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -138439,6 +138738,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -138447,11 +138747,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -138588,6 +138890,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -143959,6 +144262,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "live_table_seeds"?: Array<{
@@ -143981,6 +144285,7 @@ export interface operations {
             "replacement"?: string;
           }>;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "script": ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -144701,6 +145006,7 @@ export interface operations {
           "application/json": {
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -144709,11 +145015,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -144723,6 +145031,7 @@ export interface operations {
             "script_id": string;
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -145150,6 +145459,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -145158,11 +145468,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -145298,6 +145610,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -145431,6 +145744,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "live_table_seeds"?: Array<{
@@ -145453,6 +145767,7 @@ export interface operations {
             "replacement"?: string;
           }>;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -146173,6 +146488,7 @@ export interface operations {
           "application/json": {
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -146181,11 +146497,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -146195,6 +146513,7 @@ export interface operations {
             "script_id": string;
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -146622,6 +146941,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -146630,11 +146950,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -146770,6 +147092,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -146967,6 +147290,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "live_table_seeds"?: Array<{
@@ -146990,6 +147314,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -147723,6 +148048,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -147731,11 +148057,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -147764,6 +148092,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -148222,6 +148551,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -148230,11 +148560,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -148371,6 +148703,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -148538,6 +148871,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "live_table_seeds"?: Array<{
@@ -148561,6 +148895,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -149294,6 +149629,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -149302,11 +149638,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -149335,6 +149673,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -149793,6 +150132,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -149801,11 +150141,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -149942,6 +150284,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -150110,6 +150453,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "live_table_seeds"?: Array<{
@@ -150133,6 +150477,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -150866,6 +151211,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -150874,11 +151220,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -150907,6 +151255,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -151365,6 +151714,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -151373,11 +151723,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -151514,6 +151866,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -151681,6 +152034,7 @@ export interface operations {
               "width"?: number;
             };
           }) | null;
+          "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "live_table_seeds"?: Array<{
@@ -151704,6 +152058,7 @@ export interface operations {
           }>;
           "replay_profile"?: string;
           "replay_session_id"?: string;
+          "run_id"?: string;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -152437,6 +152792,7 @@ export interface operations {
             "debug_session_id": string;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -152445,11 +152801,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -152478,6 +152836,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -152936,6 +153295,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -152944,11 +153304,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -153085,6 +153447,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -153310,6 +153673,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -153768,6 +154132,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -153776,11 +154141,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -153917,6 +154284,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -154026,6 +154394,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -154484,6 +154853,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -154492,11 +154862,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -154633,6 +155005,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -154752,6 +155125,7 @@ export interface operations {
           "application/json": {
             "session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -155179,6 +155553,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -155187,11 +155562,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -155327,6 +155704,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -155498,6 +155876,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -155956,6 +156335,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -155964,11 +156344,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -156105,6 +156487,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -156200,6 +156583,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -156658,6 +157042,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -156666,11 +157051,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -156807,6 +157194,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -158862,8 +159250,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -159021,6 +159415,9 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -159069,7 +159466,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -160000,8 +160400,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "request_errors"?: number;
+                "request_rate"?: number;
+                "requests"?: number;
                 "run_error_pct"?: (number) | null;
                 "run_errors"?: (number) | null;
+                "run_request_error_pct"?: (number) | null;
+                "run_request_errors"?: (number) | null;
+                "run_requests"?: (number) | null;
                 "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
@@ -160555,6 +160961,9 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "request_errors"?: number;
+              "request_rate"?: number;
+              "requests"?: number;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_periods_delta"?: number;
@@ -160603,7 +161012,10 @@ export interface operations {
                 "thread_count"?: number;
               }) | null;
               "run_error_pct"?: (number) | null;
+              "run_request_error_pct"?: (number) | null;
+              "run_request_errors"?: (number) | null;
               "run_total_errors"?: (number) | null;
+              "run_total_requests"?: (number) | null;
               "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -170862,6 +171274,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -171320,6 +171733,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -171328,11 +171742,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -171469,6 +171885,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -171578,6 +171995,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -172036,6 +172454,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -172044,11 +172463,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -172185,6 +172606,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -172294,6 +172716,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -172752,6 +173175,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -172760,11 +173184,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -172901,6 +173327,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -173010,6 +173437,7 @@ export interface operations {
                 "result": boolean;
                 "right"?: string;
               }>;
+              "continue_on_error": boolean;
               "current_action"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -173468,6 +173896,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -173476,11 +173905,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -173617,6 +174048,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
@@ -176243,6 +176675,7 @@ export interface operations {
             "migration_readiness"?: (Record<string, unknown>) | null;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -176251,11 +176684,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -177496,6 +177931,7 @@ export interface operations {
             "migration_readiness"?: (Record<string, unknown>) | null;
             "preflight"?: ({
               "action_count": number;
+              "blocking_variables"?: Array<string>;
               "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
@@ -177504,11 +177940,13 @@ export interface operations {
                 "status": string;
               }>;
               "data_source_count": number;
+              "data_source_issues"?: Array<string>;
               "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
               "parameter_count": number;
+              "placeholder_variables"?: Array<string>;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
               "valid": boolean;
@@ -177588,6 +178026,7 @@ export interface operations {
           "application/json": {
             "replay_session": ({
               "completed_at"?: (string) | null;
+              "continue_on_error": boolean;
               "current_event"?: ({
                 "action_index": number;
                 "action_name": string;
@@ -178015,6 +178454,7 @@ export interface operations {
               "mode"?: string;
               "preflight"?: ({
                 "action_count": number;
+                "blocking_variables"?: Array<string>;
                 "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
@@ -178023,11 +178463,13 @@ export interface operations {
                   "status": string;
                 }>;
                 "data_source_count": number;
+                "data_source_issues"?: Array<string>;
                 "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
                 "parameter_count": number;
+                "placeholder_variables"?: Array<string>;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
                 "valid": boolean;
@@ -178163,6 +178605,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "run_id"?: string;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;

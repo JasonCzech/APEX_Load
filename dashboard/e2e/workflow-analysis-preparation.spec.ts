@@ -170,7 +170,7 @@ test('Parquet upload, mapping, query and deletion remain in project scope', asyn
   await query.getByRole('button', { name: 'Show series', exact: true }).click()
   await expect(area.getByRole('img', { name: 'latency over UTC time; 2 buckets' })).toBeVisible()
   await page.setViewportSize({ width: 760, height: 1000 })
-  await expect(area.getByRole('heading', { name: 'Parquet analysis', exact: true })).toBeVisible()
+  await expect(area.getByRole('heading', { name: 'Datasets and imports', exact: true })).toBeVisible()
   await captureIdentityFilters(identityFilters, test.info().outputPath('parquet-query.png'))
   const chart = area.getByRole('img', { name: 'latency over UTC time; 2 buckets' })
   await expect.poll(async () => chart.evaluate(element => {

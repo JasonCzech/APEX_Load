@@ -11,8 +11,8 @@ import CommandCenterPrototype, {
   stabilizeErrorRowOrder,
   type ErrorPattern,
 } from './CommandCenterPrototype'
-import { buildLoadModelProfile, plannedGroupLoadAt } from './commandCenterLoadModel'
-import { buildScenarioRunRows, type CommandGroup } from './commandCenterScenarioRows'
+import { buildRunLoadPlan, loadPlanPhaseAt, observedVUsersSince, plannedVUsersAt, runLoadStatus } from './commandCenterLoadModel'
+import { buildTransactionRunRows, type CommandGroup } from './commandCenterScenarioRows'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
@@ -194,8 +194,10 @@ describe('CommandCenterPrototype', () => {
       role: 'load' as const,
       stages: [{ type: 'ramp_down', duration: '1m', target_vusers: 20 }],
     } as TestSummary['groups'][number]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '1m', groups: [testGroup] }, [group])
 
-    expect(buildLoadModelProfile([testGroup], [group], 60).map(point => point.planned)).toEqual([100, 20])
+    expect(plannedVUsersAt(plan, 0)).toBe(100)
+    expect(plannedVUsersAt(plan, 59)).toBeLessThan(100)
   })
 
   it('treats authored hold stage casing consistently', () => {
@@ -209,8 +211,59 @@ describe('CommandCenterPrototype', () => {
         { type: 'HOLD', duration: '1m', target_vusers: 60 },
       ],
     } as TestSummary['groups'][number]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '2m', groups: [testGroup] }, [commandGroup('Checkout', 100)])
 
-    expect(plannedGroupLoadAt(testGroup, 100, 90, 120)).toBe(60)
+    expect(plannedVUsersAt(plan, 90)).toBe(60)
+    expect(loadPlanPhaseAt(plan, 90, true)).toBe('Staged load')
+  })
+
+  it('plans a ramped run as the engine steps it, at the live target', () => {
+    // 3 groups of 5 over a 2 m ramp: one VUser per group every 24 s, the first at once.
+    const groups = ['Browse', 'Cart', 'Checkout'].map(name => ({ name, script_id: name, vusers: 5, ramp_up: '2m', role: 'load' as const }))
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '5m', groups } as TestSummary, groups.map(group => commandGroup(group.name, 5)))
+    expect([0, 24, 48, 72, 96].map(second => plannedVUsersAt(plan, second))).toEqual([3, 6, 9, 12, 15])
+    expect(plannedVUsersAt(plan, 23)).toBe(3)
+    expect(loadPlanPhaseAt(plan, 30, false)).toBe('Ramp-up')
+    expect(loadPlanPhaseAt(plan, 200, false)).toBe('Steady state')
+    expect(loadPlanPhaseAt(plan, 300, false)).toBe('Load complete')
+    // An operator's live target replaces the configured count.
+    const raised = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '5m', groups } as TestSummary, groups.map(group => commandGroup(group.name, group.name === 'Browse' ? 10 : 5)))
+    expect(plannedVUsersAt(raised, 200)).toBe(20)
+  })
+
+  it('states where a run stands against its plan', () => {
+    const groups = [{ name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s', ramp_down: '20s', role: 'load' as const }]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), duration: '2m', groups } as TestSummary, [commandGroup('Browse', 4)])
+    // The plan runs 2 m and ramps down for 20 s more: remaining counts the ramp-down.
+    expect(runLoadStatus(plan, 60, { state: 'running', openEnded: false, staged: false })).toMatchObject({ plannedNow: 4, phase: 'Steady state', elapsedLabel: '1m of 2m20s elapsed', progressPct: 60 / 140 * 100 })
+    // One of the four stops every 5 s after the deadline.
+    expect(runLoadStatus(plan, 124, { state: 'running', openEnded: false, staged: false })).toMatchObject({ plannedNow: 4, phase: 'Ramp-down' })
+    expect(runLoadStatus(plan, 125, { state: 'running', openEnded: false, staged: false }).plannedNow).toBe(3)
+    expect(runLoadStatus(plan, 0, { state: 'not_started', openEnded: false, staged: false }).phase).toBe('Not started')
+    expect(runLoadStatus(plan, 30, { state: 'paused', openEnded: false, staged: false }).phase).toBe('Paused')
+    // A run stopped early is past its plan, whatever the plan had left.
+    expect(runLoadStatus(plan, 57, { state: 'ended', openEnded: false, staged: false })).toMatchObject({ phase: 'Run ended', progressPct: 100, elapsedLabel: '57s of 2m20s elapsed' })
+  })
+
+  it('plans a run to its iterations up to now, holding its level with no ramp-down', () => {
+    const groups = [{ name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s', ramp_down: '20s', role: 'load' as const }]
+    const plan = buildRunLoadPlan({ ...buildLiveVuserTest(), termination_mode: 'iterations', duration: '', groups } as TestSummary, [commandGroup('Browse', 4)], 240)
+    expect(plan.totalSeconds).toBe(240)
+    expect(plan.points[plan.points.length - 1]).toMatchObject({ second: 240, total: 4 })
+    expect(runLoadStatus(plan, 240, { state: 'running', openEnded: true, staged: false })).toMatchObject({ plannedNow: 4, progressPct: 0, phase: 'Running iterations', elapsedLabel: '4m elapsed' })
+    // The start delay comes out of the horizon, so the plan ends where the run is.
+    const delayed = buildRunLoadPlan({ ...buildLiveVuserTest(), termination_mode: 'iterations', duration: '', start_delay: '1m', groups } as TestSummary, [commandGroup('Browse', 4)], 240)
+    expect(delayed.totalSeconds).toBe(240)
+    expect(plannedVUsersAt(delayed, 59)).toBe(0)
+    expect(plannedVUsersAt(delayed, 60)).toBe(1)
+    expect(runLoadStatus(plan, 10, { state: 'running', openEnded: true, staged: false }).phase).toBe('Ramp-up')
+  })
+
+  it('places observed VUsers on seconds from the run start', () => {
+    const start = Date.parse('2026-06-08T13:05:00Z')
+    const history = [-1000, 0, 2500].map(offset => ({ time: '', timestampMs: start + offset, vusers: 3 }) as MetricsHistoryPoint).concat([{ time: '', vusers: 9 } as MetricsHistoryPoint])
+    expect(observedVUsersSince(history, start)).toEqual([{ second: 0, vusers: 3 }, { second: 2.5, vusers: 3 }])
+    expect(observedVUsersSince(history, Number.NaN)).toEqual([])
   })
 
   it('keeps unfiltered graph data when selected group fields are absent', () => {
@@ -422,6 +475,70 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
+  it('leaves paused time out of the run clock, as the engine makes it up', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const run = buildLiveVuserTest()
+    // Five minutes after the start, one of them spent paused.
+    vi.setSystemTime(Date.parse(run.started_at!) + 5 * 60_000)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={{ ...run, cumulative_pause_ns: 60e9 }} history={[]} />) })
+    const clock = Array.from(container.querySelectorAll('.command-metric-pill')).find(pill => pill.querySelector('span')?.textContent === 'Elapsed · remaining')
+    expect(clock?.querySelector('strong')?.textContent).toBe('4m 00s · 6m 00s')
+    // The load model says where the run is in its plan on the same clock.
+    expect(container.querySelector('[aria-label="Load model profile"]')?.textContent).toContain('4m of 10m elapsed')
+  })
+
+  it('says in the Pause dialog that the run makes up its paused time', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={[]} />) })
+    await click(buttonNamed('Pause'))
+    const dialog = container.querySelector('.confirm-run-action-modal')!
+    const detail = dialog.querySelector('.confirm-run-action-detail')!
+    expect(detail.textContent).toBe('Paused time does not count against the 10m duration: the run makes it up after you resume, so it ends that much later.')
+    expect(dialog.getAttribute('aria-describedby')?.split(' ')).toContain(detail.id)
+  })
+
+  it('shrinks the run shelf to one row of status and controls once the page scrolls past it', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    const scroller = document.createElement('main')
+    scroller.className = 'main-content'
+    container.appendChild(scroller)
+    const pageRoot = createRoot(scroller)
+    await act(async () => { pageRoot.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={[]} />) })
+    const shelf = scroller.querySelector<HTMLElement>('.command-control-shelf')!
+    const previous = shelf.previousElementSibling as HTMLElement
+    // The shelf checks where it is once a frame while the page scrolls.
+    const scrollPage = () => act(async () => {
+      scroller.dispatchEvent(new Event('scroll'))
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    })
+    // jsdom has no layout (or gap): the shelf sits right under the element before it, then holds while that scrolls away.
+    vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100 } as DOMRect)
+    vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect)
+    await scrollPage()
+    expect(shelf.classList.contains('compact')).toBe(false)
+    expect(shelf.textContent).toContain('Run notes')
+
+    vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: -400, bottom: -300 } as DOMRect)
+    vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 60 } as DOMRect)
+    await scrollPage()
+    expect(shelf.classList.contains('compact')).toBe(true)
+    // The essentials, each named: load, throughput in the page's unit, time and errors.
+    expect(Array.from(shelf.querySelectorAll('[role="group"][aria-label="Run summary"] strong')).map(label => label.textContent)).toEqual(['Load', expect.stringMatching(/^(Requests\/s|TPS)$/), 'Time', 'Errors'])
+    // Every control stays within reach; only the summary pills fold into one line.
+    expect(Array.from(shelf.querySelectorAll('button')).map(button => button.textContent)).toEqual(expect.arrayContaining(['Pause', 'Stop', 'Abort', 'Run notes']))
+    expect(shelf.querySelectorAll('[aria-label="Run summary"]')).toHaveLength(1)
+
+    vi.spyOn(previous, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100 } as DOMRect)
+    vi.spyOn(shelf, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect)
+    await scrollPage()
+    expect(shelf.classList.contains('compact')).toBe(false)
+    expect(shelf.style.marginBottom).toBe('')
+    await act(async () => pageRoot.unmount())
+  })
+
   it('reverts a rejected VUser target and says it was not applied', async () => {
     const run = buildLiveVuserTest()
     vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
@@ -435,6 +552,7 @@ describe('CommandCenterPrototype', () => {
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '99999')
     const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-primary'))!
     await click(apply)
+    await confirmRunAction('Apply change')
     await flush()
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
     expect(container.textContent).toContain('Not applied: Live Checkout keeps its current VUser target')
@@ -458,7 +576,7 @@ describe('CommandCenterPrototype', () => {
     const selector = container.querySelector<HTMLSelectElement>('select[aria-label="Current run"]')!
     expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
     await click(buttonNamed('Pause'))
-    await confirmRunAction('Pause Test')
+    await confirmRunAction('Pause run')
     expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
     await act(async () => { resolvePause?.(jsonResponse({})); await Promise.resolve() })
     await flush()
@@ -466,7 +584,7 @@ describe('CommandCenterPrototype', () => {
     expect(selector.selectedOptions[0].textContent).toContain('PAUSED')
     expect(Array.from(selector.options).find(option => option.value === other.id)?.textContent).toContain('RUNNING')
     await click(buttonNamed('Resume'))
-    await confirmRunAction('Resume Test')
+    await confirmRunAction('Resume run')
     await flush()
     expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
     expect(buttonNamed('Pause')).toBeDefined()
@@ -481,7 +599,7 @@ describe('CommandCenterPrototype', () => {
     await act(async () => { root.render(<CommandCenterPrototype testId={runA.id} initialTest={runA} />) })
     await flush()
     await click(buttonNamed('Pause'))
-    await confirmRunAction('Pause Test')
+    await confirmRunAction('Pause run')
     await act(async () => { root.render(<CommandCenterPrototype testId={runB.id} initialTest={runB} />) })
     await flush()
     await act(async () => { resolvePause?.(jsonResponse({})); await Promise.resolve() })
@@ -542,11 +660,11 @@ describe('CommandCenterPrototype', () => {
     await act(async () => { root.render(<CommandCenterPrototype projectId="project-1" onSelectRun={vi.fn()} onOpenResults={onResults}
       overviewActions={{ onNewTest, newTestDisabledReason: 'Viewer cannot create runs', onSelectRelease, releases: [] }} />) })
     await flush()
-    expect(buttonNamed('New Test').disabled).toBe(true)
+    expect(buttonNamed('New run').disabled).toBe(true)
     expect(buttonNamed('Open Results').disabled).toBe(true)
     expect(container.textContent).toContain('No releases are available')
     expect(container.textContent).not.toContain('Open analysis')
-    await click(buttonNamed('New Test'))
+    await click(buttonNamed('New run'))
     expect(onNewTest).not.toHaveBeenCalled()
     await click(buttonNamed('Open Results'))
     expect(onResults).not.toHaveBeenCalled()
@@ -648,7 +766,7 @@ describe('CommandCenterPrototype', () => {
     })
     await flush()
 
-    await click(buttonNamed('Test notes'))
+    await click(buttonNamed('Run notes'))
     await flush()
 
     expect(container.querySelector('.test-notes-dialog')).not.toBeNull()
@@ -1062,11 +1180,11 @@ describe('CommandCenterPrototype', () => {
     expect(opsLoadModelPanel).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('.command-runtime-graphs')).toBeNull()
-    expect(opsPrimaryColumn?.textContent).toContain('Run metrics')
+    expect(opsPrimaryColumn?.textContent).toContain('Groups')
     expect(opsPrimaryColumn?.textContent).toContain('Error Details')
     expect(opsPrimaryColumn?.textContent).toContain('Infrastructure')
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
-    expect(opsLoadModelPanel?.textContent).toContain('Load Model')
+    expect(opsLoadModelPanel?.textContent).toContain('Load model')
     expect(opsLoadModelPanel?.textContent).toContain('elapsed')
     const progressPct = Number(opsLoadModelPanel?.getAttribute('data-progress-pct'))
     expect(Number.isNaN(progressPct)).toBe(false)
@@ -1232,7 +1350,7 @@ describe('CommandCenterPrototype', () => {
     await renderPrototype()
 
     await click(buttonNamed('Pause'))
-    await confirmRunAction('Pause Test')
+    await confirmRunAction('Pause run')
 
     expect(container.textContent).toContain('PAUSED')
     expect(container.textContent).toContain('Run paused at the next action boundary.')
@@ -1281,7 +1399,7 @@ describe('CommandCenterPrototype', () => {
     expect(shelfButton('Abort')?.disabled).toBe(false)
 
     await click(buttonNamed('Stop'))
-    await confirmRunAction('Stop Test')
+    await confirmRunAction('Stop run')
 
     expect(container.textContent).toContain('STOPPING')
     // Stop is no longer offered once the graceful stop is underway (canStop excludes STOPPING),
@@ -1292,7 +1410,7 @@ describe('CommandCenterPrototype', () => {
     expect(abortDuringStopping?.disabled).toBe(false)
 
     await click(abortDuringStopping as HTMLButtonElement)
-    await confirmRunAction('Abort Test')
+    await confirmRunAction('Abort run')
 
     expect(container.textContent).toContain('ABORTED')
     // Once fully terminal, Abort is no longer offered.
@@ -1308,7 +1426,7 @@ describe('CommandCenterPrototype', () => {
     const runActions = container.querySelector('.command-run-actions') as HTMLElement
     const abort = Array.from(runActions.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Abort') as HTMLButtonElement
     await click(abort)
-    await confirmRunAction('Abort Test')
+    await confirmRunAction('Abort run')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
@@ -1343,7 +1461,7 @@ describe('CommandCenterPrototype', () => {
     expect(shelfButton('Resume')).toBeDefined()
 
     await click(shelfButton('Stop') as HTMLButtonElement)
-    await confirmRunAction('Stop Test')
+    await confirmRunAction('Stop run')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/stop'),
@@ -1358,7 +1476,7 @@ describe('CommandCenterPrototype', () => {
     expect(abort?.disabled).toBe(false)
 
     await click(abort as HTMLButtonElement)
-    await confirmRunAction('Abort Test')
+    await confirmRunAction('Abort run')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
@@ -1432,6 +1550,10 @@ describe('CommandCenterPrototype', () => {
 
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '60')
     await click(buttonNamed('Apply'))
+    // A running test's load changes only once confirmed, with what it does.
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('/vusers'))).toBe(false)
+    expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 50 → 60 VUsers')
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
@@ -1460,6 +1582,7 @@ describe('CommandCenterPrototype', () => {
     expect(targetInput.max).toBe('1000000')
     await changeNumberInput(targetInput, '1000000')
     await click(buttonNamed('Apply'))
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
@@ -1539,6 +1662,8 @@ describe('CommandCenterPrototype', () => {
     await click(buttonNamed('Gradual'))
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '60')
     await click(buttonNamed('Apply'))
+    expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 50 → 60 VUsers over 2m')
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
@@ -1563,6 +1688,8 @@ describe('CommandCenterPrototype', () => {
     await changeTextInput(inputByLabel('Group load ramp duration'), 'soon')
 
     const applyButton = buttonNamed('Apply')
+    // Each group's Apply is named by its group, starting with what it shows.
+    expect(applyButton.getAttribute('aria-label')).toMatch(/^Apply .+ target$/)
     expect(applyButton.disabled).toBe(true)
     await click(applyButton)
 
@@ -1606,9 +1733,13 @@ describe('CommandCenterPrototype', () => {
     const tableWorkspace = container.querySelector('[aria-label="Command center run tables"]')
     expect(tableWorkspace).not.toBeNull()
     expect(container.querySelector('.command-layout-ops .command-runtime-graphs')).toBeNull()
-    expect(tableWorkspace?.textContent).toContain('Run metrics')
-    expect(tableWorkspace?.textContent).toContain('POST /orders')
+    expect(tableWorkspace?.textContent).toContain('Checkout API')
     expect(tableWorkspace?.textContent).toContain('Target TPS')
+    // Transactions have their own table.
+    expect(tableWorkspace?.textContent).not.toContain('POST /orders')
+    await click(tabNamed('Transactions'))
+    expect(tableWorkspace?.textContent).toContain('POST /orders')
+    expect(tableWorkspace?.textContent).not.toContain('Checkout API')
 
     await click(tabNamed('Error Details'))
 
@@ -1722,7 +1853,6 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('keeps transaction rows when live metrics temporarily omit transactions', () => {
-    const groups = [commandGroup('Live Checkout', 50)]
     const transaction: TxMetrics = {
       name: 'POST /orders',
       count: 23,
@@ -1736,7 +1866,7 @@ describe('CommandCenterPrototype', () => {
     }
     const snapshot = { 'POST /orders': transaction }
 
-    const rowsWhenPresent = buildScenarioRunRows(groups, {
+    const rowsWhenPresent = buildTransactionRunRows({
       timestamp: '2026-06-08T13:10:00Z',
       active_vusers: 42,
       tps: 75.4,
@@ -1750,7 +1880,7 @@ describe('CommandCenterPrototype', () => {
       p99_ms: 410,
       transactions: snapshot,
     })
-    const rowsWhenMissing = buildScenarioRunRows(groups, {
+    const rowsWhenMissing = buildTransactionRunRows({
       timestamp: '2026-06-08T13:10:01Z',
       active_vusers: 42,
       tps: 75.4,
@@ -1950,7 +2080,10 @@ describe('CommandCenterPrototype', () => {
 
     expect(container.textContent).toContain('Live Checkout Ramp')
     expect(container.textContent).toContain('Live Checkout')
-    expect(container.textContent).toContain('HTTP 500 checkout spike')
+    // A failure is titled by its example; the signature only groups it.
+    const drillDown = container.querySelector('[aria-label="Error drill-down"]')!
+    expect(drillDown.querySelector('.command-error-item span')?.textContent).toBe('inventory reservation returned status 500')
+    expect(drillDown.textContent).toContain('Grouped asHTTP 500 checkout spike')
     // One per-signature rate definition, named as such (not a windowed "Error rate").
     expect(container.textContent).toContain('Share of errors')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
@@ -1977,12 +2110,57 @@ describe('CommandCenterPrototype', () => {
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('42 / 50 VU')
     const errorRateMetric = summaryMetrics
-      .find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
+      .find(metric => metric.querySelector('span')?.textContent === 'Transaction error rate (run to date)')
     expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
-    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent?.startsWith('Highest Error Rate'))).toBe(false)
+    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent?.startsWith('Highest'))).toBe(false)
     const tpsMetric = summaryMetrics.find(metric => metric.querySelector('span')?.textContent?.startsWith('TPS'))
     expect(tpsMetric?.querySelector('strong')?.textContent).toBe('75.4')
     expect(container.querySelector('.command-hero-strip')).toBeNull()
+  })
+
+  // A script without transactions: each iteration's second request fails,
+  // so every iteration's implicit transaction fails while half the requests
+  // pass. Live figures count requests, as the report and the target do.
+  it('counts requests for a group whose script has no transactions', async () => {
+    const liveTest = buildLiveVuserTest()
+    liveTest.groups = [liveTest.groups[0], { ...liveTest.groups[0], name: 'Inventory', script_name: 'Inventory Script', vusers: 4 }]
+    const checkout = liveTest.live_metrics!.groups!['Live Checkout']
+    liveTest.live_metrics = {
+      ...liveTest.live_metrics!,
+      tps: 20, total_transactions: 20, total_errors: 3, run_total_transactions: 400, run_total_errors: 387,
+      requests: 50, request_errors: 15, request_rate: 50, run_total_requests: 2_800, run_request_errors: 863,
+      groups: {
+        'Live Checkout': { ...checkout, transactions: 20, errors: 0, tps: 20, run_transactions: 400, run_errors: 0, requests: 20, request_rate: 20, run_requests: 1_071, run_request_errors: 0 },
+        Inventory: { ...checkout, name: 'Inventory', vusers: 4, transactions: 0, errors: 3, tps: 0, run_transactions: 0, run_errors: 387, requests: 30, request_errors: 15, request_rate: 30, run_requests: 1_729, run_request_errors: 863 },
+      },
+    }
+    await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} history={[]} />))
+
+    const pill = (label: string) => Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+      .find(metric => metric.querySelector('span')?.textContent === label)?.querySelector('strong')?.textContent
+    expect(pill('Requests/s (last sample)')).toBe('50.0')
+    expect(pill('Request error rate (run to date)')).toBe('30.82%')
+    expect(pill('Highest request error rate (run to date)')).toBe('49.91% · Inventory')
+    expect(container.textContent).not.toContain('Transaction error rate')
+
+    const groupLoad = container.querySelector('[aria-label="Group load and health"]')!
+    const headers = Array.from(groupLoad.querySelectorAll('[role="columnheader"]')).map(header => header.textContent)
+    expect(headers).toEqual(['Group', 'Current VUsers', 'Target', 'Requests/s (last sample)', 'ART', 'Error rate (requests, run to date)'])
+    const inventory = Array.from(groupLoad.querySelectorAll('[role="row"]')).find(row => row.textContent?.includes('Inventory'))!
+    const cells = inventory.querySelectorAll('[role="cell"]')
+    expect(cells[3].textContent).toBe('30.0')
+    expect(cells[5].textContent).toBe('49.91%')
+
+    const groupsTable = container.querySelector('[role="tabpanel"][aria-label="Groups"]')!
+    expect(Array.from(groupsTable.querySelectorAll('th:not([hidden])')).map(header => header.textContent?.replace(/[▲▼·]$/, ''))).toEqual([
+      'Group', 'Current VUsers', 'Target VUsers', 'Requests/s (last sample)', 'Request error rate (run to date)', 'P95',
+    ])
+    expect(groupsTable.textContent).toContain('attempts, failures and error rates are run to date')
+    // Only the name column is fixed; the rest can be chosen one by one.
+    const pickers = Array.from(groupsTable.querySelectorAll<HTMLInputElement>('.command-column-picker input'))
+    expect(pickers.slice(0, 2).map(input => [input.parentElement?.textContent, input.disabled])).toEqual([['Group', true], ['Protocol', false]])
+    await click(pickers[1])
+    expect(groupsTable.querySelector<HTMLTableCellElement>('th[aria-label="Protocol sort"]')?.hidden).toBe(false)
   })
 
   it('shows the highest cumulative group error rate only for multi-group runs', async () => {
@@ -2027,8 +2205,8 @@ describe('CommandCenterPrototype', () => {
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('67 / 75 VU')
-    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
-    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (run to date)')
+    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Transaction error rate (run to date)')
+    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest transaction error rate (run to date)')
     expect(overall?.querySelector('strong')?.textContent).toBe('10.00%')
     expect(highest?.querySelector('strong')?.textContent).toBe('20.00% · Search')
   })
@@ -2048,7 +2226,7 @@ describe('CommandCenterPrototype', () => {
     }
     await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} />))
     // Runs recorded before run counters existed fall back to the window and say so.
-    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (last sample)')!
+    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest transaction error rate (last sample)')!
     expect(highest.querySelector('strong')?.textContent).toBe(expected)
     expect(highest.classList.contains('danger')).toBe(danger)
     if (!errors) expect(highest.textContent).not.toMatch(/Live Checkout|Search/)
@@ -2061,7 +2239,7 @@ describe('CommandCenterPrototype', () => {
     const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'P99')!
     await click(p99)
     expect(container.querySelector<HTMLTableCellElement>('th[aria-label="P99 sort"]')?.hidden).toBe(false)
-    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(8)
+    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(7)
     await click(preset)
     await changeTextInput(inputByLabel('Filter command center table rows'), 'Checkout')
     await click(buttonNamed('Graph Wall'))
@@ -2073,7 +2251,7 @@ describe('CommandCenterPrototype', () => {
     await changeTextInput(inputByLabel('Filter command center table rows'), 'not-an-error')
     expect(container.textContent).toContain('No matching errors')
     expect(container.querySelector('.command-evidence-panel')).toBeNull()
-    await click(tabNamed('Run metrics'))
+    await click(tabNamed('Groups'))
     expect(inputByLabel('Filter command center table rows').value).toBe('Checkout')
   })
 
@@ -2154,6 +2332,12 @@ describe('CommandCenterPrototype', () => {
     await click(tabNamed('Error Details'))
     await flush()
     expect(container.textContent).toContain('RUN A EVIDENCE')
+    // The row is titled by its example, with the signature that groups it beneath.
+    const errorTable = container.querySelector('table[aria-label="Error patterns"]')!
+    expect(errorTable.querySelector('thead th')?.textContent).toContain('Error')
+    expect(errorTable.querySelector('tbody td strong')?.textContent).toBe('shared failure')
+    expect(errorTable.querySelector('tbody td .command-table-subtext')?.textContent).toBe('Grouped as HTTP 500 shared signature')
+    expect(container.querySelector('[aria-label="Live error evidence"] .command-evidence-header strong')?.textContent).toBe('shared failure')
 
     await act(async () => {
       root.render(<CommandCenterPrototype testId="run-b" initialTest={withEvidencePattern('run-b', 'Run B')} history={[]} />)
@@ -2283,12 +2467,12 @@ describe('CommandCenterPrototype', () => {
 
     const controlShelf = container.querySelector('[aria-label="Command center run controls"]')
     expect(controlShelf?.textContent).toContain('RESERVED')
-    expect(controlShelf?.textContent).toContain('Start Test')
+    expect(controlShelf?.textContent).toContain('Start run')
     expect(controlShelf?.textContent).not.toContain('Pause')
     expect(controlShelf?.textContent).not.toContain('Stop')
 
-    await click(buttonNamed('Start Test'))
-    await confirmRunAction('Start Test')
+    await click(buttonNamed('Start run'))
+    await confirmRunAction('Start run')
     await act(async () => {
       await Promise.resolve()
     })
@@ -2567,6 +2751,10 @@ describe('CommandCenterPrototype', () => {
     })
 
     expect(container.textContent).toContain('Target TPS')
+    // A goal run's throughput stays TPS, the unit of its targets, and its gap
+    // is measured on the same window as the rate beside it.
+    const goalRow = container.querySelector('.command-group-row.goal-target')!
+    expect(goalRow.querySelector('[data-label="TPS (last sample)"]')?.textContent).toBe('75.4target 90.0 TPS / gap 16.22%')
     expect(container.textContent).toContain('suggested 56 VU')
     expect(container.textContent).toContain('guardrail 10-200 VU')
     expect(container.querySelector('[aria-label="Group load transition controls"]')).toBeNull()
@@ -2584,8 +2772,12 @@ describe('CommandCenterPrototype', () => {
     await changeNumberInput(targetInput, '120')
     expect(container.textContent).toContain('Live Checkout target staged at 120.0 TPS.')
     expect(targetSlider.max).toBe('240')
+    // Until it is applied the gap is still measured against, and named with, 90.
+    expect(goalRow.querySelector('.command-tps-stack small')?.textContent).toBe('target 90.0 TPS / gap 16.22%')
 
     await click(buttonNamed('Apply'))
+    expect(container.querySelector('.confirm-run-action-detail')?.textContent).toBe('Live Checkout 90 → 120 TPS')
+    await confirmRunAction('Apply change')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-goal-1/goal-targets'),
@@ -2913,10 +3105,11 @@ describe('CommandCenterPrototype', () => {
       targetVusers,
       targetMode: 'vusers',
       tps: 0,
+      rate: 0,
       art: 0,
       errorPct: 0,
       p99: 0,
-      transactions: 0,
+      attempts: 0,
       errors: 0,
       color: 'var(--chart-1)',
     }

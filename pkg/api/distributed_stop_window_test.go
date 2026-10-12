@@ -220,7 +220,7 @@ func TestStoreDistributedWindowOutcomes(t *testing.T) {
 	tally := func() int64 {
 		runner.mu.RLock()
 		defer runner.mu.RUnlock()
-		return run.runTotals.tx
+		return run.runTotals.total.tx
 	}
 
 	fence := capture()

@@ -15,6 +15,7 @@ import { isTestWorkspaceTab, type TestWorkspaceTabID } from '../appRouting'
 import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { runActiveSeconds } from './runReport/executionPresentation'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -37,6 +38,7 @@ import type { ReportProfileId } from './reportTypeOptions'
 import ReportComposer from './ReportComposer'
 import TestNotesDialog from './TestNotesDialog'
 import ConfirmRunActionModal from './ConfirmRunActionModal'
+import { pauseDurationNote } from './runActionConfirmation'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -128,14 +130,12 @@ export function buildProjectDashboardWorkspace(definitions: DashboardDefinition[
   return { cards, profiles, panelByCardId }
 }
 
+// Remaining on the run's own clock: paused time is left out, since the engine makes it up.
 function computeRunRemainingSeconds(test: TestSummary) {
   const durationSeconds = parseDurationToSeconds(test.duration)
-  const startedAt = test.started_at || test.start_time
-  if (durationSeconds <= 0 || !startedAt) return 0
-  const startedAtMs = Date.parse(startedAt)
-  if (!Number.isFinite(startedAtMs)) return 0
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
-  return Math.max(durationSeconds - elapsedSeconds, 0)
+  const activeSeconds = runActiveSeconds(test)
+  if (durationSeconds <= 0 || activeSeconds === undefined) return 0
+  return Math.max(durationSeconds - Math.floor(activeSeconds), 0)
 }
 
 interface Props {
@@ -356,9 +356,9 @@ export default function TestExecution({
   // the live-controls panel, so the two surfaces cannot drift apart. onStart is
   // wrapped only for the plain Start button; the capacity/shakeout override
   // flows are already an explicit confirmation of their own.
-  const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
+  const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
   const onConfirmStart = confirmRunAction('start', onStart)
-  const onConfirmPause = confirmRunAction('pause', onPause)
+  const onConfirmPause = confirmRunAction('pause', onPause, pauseDurationNote(test))
   const onConfirmResume = confirmRunAction('resume', onResume)
   const onConfirmStop = confirmRunAction('stop', onStop)
   const onConfirmAbort = confirmRunAction('abort', onAbort)
@@ -452,7 +452,7 @@ export default function TestExecution({
       },
       {
         id: 'test-notes',
-        label: 'Test notes',
+        label: 'Run notes',
         compactLabel: 'Notes',
         tone: 'secondary',
         onClick: () => setShowTestNotes(true),
@@ -645,6 +645,7 @@ export default function TestExecution({
           archiveReport={archiveReport}
           summary={summary}
           metrics={metrics}
+          scenarioMode={test.scenario_mode}
         />
       ),
     },
@@ -1062,6 +1063,7 @@ export default function TestExecution({
           action={pendingAction}
           runName={test?.name}
           runRef={test?.ref_key}
+          detail={pendingDetail}
           onConfirm={onConfirmRunAction}
           onCancel={onCancelRunAction}
         />

@@ -823,7 +823,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             runtimeContent={<JMeterScenarioRuntimeEditor scenario={result.scenario_draft} onApply={applyScenarioRuntimeRule} disabled={operationBusy || Boolean(savedResult) || Boolean(result.batch)} />}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
             reviewGeneration={reviewScope}
-            subtitle={savedResult ? 'Saved to the Script Library. Open a saved script above or import more files.' : reviewMode === 'validation'
+            subtitle={savedResult ? 'Saved to the script library. Open a saved script above or import more files.' : reviewMode === 'validation'
               ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
               : 'This preview came from the converter and is ready for final review before saving.'}
             script={primaryScript || buildFallbackPrimaryScript(result.summary?.file_name || file?.name || 'Imported JMeter Plan')}
@@ -850,7 +850,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             onReviewBusyChange={setCredentialActionInProgress}
             saveDisabled={Boolean(savedResult)}
             saveDisabledReason={savedResult ? 'These scripts are already saved. Open them above or import more files.' : undefined}
-            saveLabel={savedResult ? 'Saved to Script Library' : `Save ${result.scripts.length} draft${result.scripts.length === 1 ? '' : 's'}`}
+            saveLabel={savedResult ? 'Saved to script library' : `Save ${result.scripts.length} draft${result.scripts.length === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
             onEdit={onEdit && primaryScript && result.scripts.length === 1 && !savedResult ? handleEditConverted : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}

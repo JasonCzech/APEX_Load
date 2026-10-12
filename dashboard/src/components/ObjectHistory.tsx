@@ -33,9 +33,12 @@ export function ActivityTable({ events }: { events: ObjectActivityEvent[] }) {
   })}</tbody></table>{!events.length && <p>No retained activity found. Historical attribution may be unknown.</p>}</div>
 }
 
-/** compact: dense tables show only the History disclosure; who created and changed the object is inside it. */
-export default function ObjectHistory({ projectId, resourceType, resourceId, activity, revision = 0, compact = false }: { projectId?: string; resourceType: ActivityResourceType; resourceId: string; activity?: ObjectActivitySummary; revision?: number; compact?: boolean }) {
-  const [open, setOpen] = useState(false)
+/**
+ * compact: dense tables show only the History disclosure; who created and changed the object is inside it.
+ * expanded: the history shows at once, with no disclosure, as in a dialog opened to show it.
+ */
+export default function ObjectHistory({ projectId, resourceType, resourceId, activity, revision = 0, compact = false, expanded = false }: { projectId?: string; resourceType: ActivityResourceType; resourceId: string; activity?: ObjectActivitySummary; revision?: number; compact?: boolean; expanded?: boolean }) {
+  const [open, setOpen] = useState(expanded)
   const [page, setPage] = useState(0)
   const [data, setData] = useState<ObjectActivityResponse | null>(null)
   const [error, setError] = useState('')
@@ -51,5 +54,6 @@ export default function ObjectHistory({ projectId, resourceType, resourceId, act
     void request<ObjectActivityResponse>(`/projects/${encodeURIComponent(projectId)}/activity?${query}`).then(value => { if (!cancelled) setData(value) }).catch(error => { if (!cancelled) setError(getErrorMessage(error, 'Unable to load history')) })
     return () => { cancelled = true }
   }, [open, projectId, resourceType, resourceId, page, revision, refresh])
-  return <section className={`object-history${compact ? ' compact' : ''}`} aria-label="Object history">{!compact && <ActivityAttribution activity={data?.activity || activity} />}<details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>History</summary>{compact && <ActivityAttribution activity={data?.activity || activity} />}{!projectId ? <p>Select a project to view history.</p> : error ? <Notice tone="error" title="History could not be loaded" details={error} action={<button className="btn btn-secondary" type="button" onClick={() => setRefresh(value => value + 1)}>Retry history</button>} /> : !data ? (open ? <p role="status">Loading history…</p> : null) : <><ActivityTable events={data.events} /><ActivityPager label="history" page={page} pageSize={25} shown={data.events.length} hasMore={data.has_more} onPage={setPage} /><button className="btn btn-secondary" type="button" onClick={() => setRefresh(value => value + 1)}>Refresh history</button></>}</details></section>
+  const body = !projectId ? <p>Select a project to view history.</p> : error ? <Notice tone="error" title="History could not be loaded" details={error} action={<button className="btn btn-secondary" type="button" onClick={() => setRefresh(value => value + 1)}>Retry history</button>} /> : !data ? (open ? <p role="status">Loading history…</p> : null) : <><ActivityTable events={data.events} /><ActivityPager label="history" page={page} pageSize={25} shown={data.events.length} hasMore={data.has_more} onPage={setPage} /><button className="btn btn-secondary" type="button" onClick={() => setRefresh(value => value + 1)}>Refresh history</button></>
+  return <section className={`object-history${compact ? ' compact' : ''}`} aria-label="Object history">{!compact && <ActivityAttribution activity={data?.activity || activity} />}{expanded ? body : <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>History</summary>{compact && <ActivityAttribution activity={data?.activity || activity} />}{body}</details>}</section>
 }

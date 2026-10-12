@@ -1,4 +1,4 @@
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, idOf, json, login, expectEditorSaved } from './support/workflow'
 import type { Page, TestInfo } from '@playwright/test'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
@@ -90,13 +90,14 @@ test('Author creates, reverses, validates, edits source and saves without losing
   const outline = page.getByRole('navigation', { name: 'Script outline' })
   await outline.getByRole('button', { name: /Poll order.*Loop/ }).click()
   const editor = page.locator('.author-main-action')
-  await expect(editor.getByRole('button', { name: 'Control flow', exact: true })).toBeVisible()
+  await expect(editor.getByRole('tab', { name: 'Control flow', exact: true })).toBeVisible()
   await expect(editor.getByLabel('Target (URL or path)', { exact: true })).toHaveCount(0)
   await editor.getByRole('button', { name: '+ Add Action', exact: true }).click()
   let insertion = page.getByRole('dialog', { name: 'Insert action or block' })
-  await expect(insertion.getByLabel('Action name', { exact: true })).toBeFocused()
+  // What to add comes first.
+  await expect(insertion.getByLabel('Find action type', { exact: true })).toBeFocused()
   await insertion.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+  await expectEditorSaved(page)
   await editor.getByRole('button', { name: '+ Add Action', exact: true }).click()
   insertion = page.getByRole('dialog', { name: 'Insert action or block' })
   await insertion.getByLabel('Placement', { exact: true }).selectOption('inside')
@@ -142,7 +143,7 @@ test('Author creates, reverses, validates, edits source and saves without losing
   await expect(page.getByRole('dialog', { name: 'Changes since last save' })).toContainText('Create order revised')
   await page.getByRole('dialog', { name: 'Changes since last save' }).getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Save script', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+  await expectEditorSaved(page)
   await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Create order revised')
   await page.setViewportSize({ width: 900, height: 850 })
   await expect(editor.getByLabel('Name', { exact: true })).toBeVisible()

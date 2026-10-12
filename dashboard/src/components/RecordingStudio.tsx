@@ -2398,7 +2398,7 @@ export default function RecordingStudio({
     ? "Saving…"
     : convertedDeferredSecretCount > 0
       ? `Save with ${convertedDeferredSecretCount} ${convertedDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
-      : "Save to Script Library";
+      : "Save to script library";
   const converting = convertTask.pending;
   const salesforceResult = salesforceTask.value;
   const salesforceScript =
@@ -2430,7 +2430,7 @@ export default function RecordingStudio({
     ? "Saving…"
     : salesforceDeferredSecretCount > 0
       ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
-      : "Save to Script Library";
+      : "Save to script library";
   const reviewingSalesforce = salesforceTask.pending;
   const browserUnavailableReason = browserAvailability?.reason?.trim() || "";
   const browserUnavailableCode = browserAvailability?.code?.trim() || "";

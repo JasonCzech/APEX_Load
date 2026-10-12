@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,6 +106,11 @@ func TestReplayStartHandlersRejectIncompletePreflight(t *testing.T) {
 				!strings.Contains(strings.Join(payload.Preflight.Warnings, "\n"), test.wantWarningText) {
 				t.Fatalf("preflight warnings = %#v, want %q", payload.Preflight.Warnings, test.wantWarningText)
 			}
+			// The data-source warning refuses replay, so it is also listed as a blocking issue.
+			if test.wantWarningText != "" &&
+				!strings.Contains(strings.Join(payload.Preflight.DataSourceIssues, "\n"), test.wantWarningText) {
+				t.Fatalf("data source issues = %#v, want %q", payload.Preflight.DataSourceIssues, test.wantWarningText)
+			}
 		})
 	}
 }
@@ -149,10 +155,16 @@ func TestReplayPreflightSendsHTTPRequestPlaceholders(t *testing.T) {
 				if !preflight.Valid || status != "warn" || !warned {
 					t.Fatalf("valid=%v status=%q warnings=%v, want a placeholder warning", preflight.Valid, status, preflight.Warnings)
 				}
+				if !slices.Equal(preflight.PlaceholderVariables, []string{"store_ref"}) || len(preflight.BlockingVariables) != 0 {
+					t.Fatalf("placeholder=%v blocking=%v, want store_ref listed as a placeholder only", preflight.PlaceholderVariables, preflight.BlockingVariables)
+				}
 				return
 			}
 			if preflight.Valid || status != "fail" || warned {
 				t.Fatalf("valid=%v status=%q warnings=%v, want %s to block", preflight.Valid, status, preflight.Warnings, test.wantBlocking)
+			}
+			if !slices.Equal(preflight.BlockingVariables, []string{test.wantBlocking}) || len(preflight.PlaceholderVariables) != 0 {
+				t.Fatalf("blocking=%v placeholder=%v, want %s listed as blocking only", preflight.BlockingVariables, preflight.PlaceholderVariables, test.wantBlocking)
 			}
 		})
 	}

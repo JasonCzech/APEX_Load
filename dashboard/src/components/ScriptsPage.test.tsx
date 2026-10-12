@@ -76,6 +76,14 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => projectState,
 }))
 
+vi.mock('./ObjectRepositoryPanel', () => ({
+  default: ({ projectId, canManage, scripts }: { projectId?: string; canManage?: boolean; scripts?: Array<{ id: string }> }) => <div data-testid="object-repositories" data-scripts={scripts ? scripts.map(script => script.id).join(',') : 'server search'}>{`Object repositories for ${projectId}${canManage ? ', editable' : ', read only'}`}</div>,
+}))
+
+vi.mock('./CorrelationRulesetPanel', () => ({
+  default: ({ projectId, canManage }: { projectId?: string; canManage?: boolean }) => <div data-testid="correlation-rulesets">{`Correlation rulesets for ${projectId}${canManage ? ', editable' : ', read only'}`}</div>,
+}))
+
 vi.mock('./ScriptEditor', () => ({
   default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
     <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
@@ -761,7 +769,7 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
 
-    expect(container.textContent).toContain('Script Library')
+    expect(container.textContent).toContain('Script library')
     expect(container.textContent).toContain('Existing Script')
     expect(healthLabels(container)).toContain('Needs review, score 72')
     expect(healthLabels(container)).toContain('View 1 warning detail')
@@ -788,7 +796,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('warnings · warning · 1')
     expect(container.textContent).toContain('Validation warnings need review before promotion.')
 
-    await clickButton('Script Builder')
+    await clickButton('Script builder')
 
     expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Start New Script')
@@ -854,10 +862,10 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(container.textContent).toContain('Script Library')
-    expect(container.textContent).not.toContain('Script Library (')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Script library')
+    expect(container.textContent).not.toContain('Script library (')
     expect(container.textContent).not.toContain('Start New Script')
     expect(container.textContent).toContain('Script assets')
     expect(container.textContent).toContain('Run release')
@@ -868,13 +876,13 @@ describe('ScriptsPage', () => {
     visible.querySelectorAll('[hidden]').forEach(element => element.remove())
     expect(visible.textContent).not.toContain('Select a Remote Workspace first.')
 
-    await clickButton('Script Builder')
+    await clickButton('Script builder')
 
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).toContain('Start New Script')
-    expect(container.textContent).not.toContain('Script Library (')
+    expect(container.textContent).not.toContain('Script library (')
     await clickButton('Use existing')
     const builderHeaders = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
     expect(builderHeaders.some(header => header.includes('Source'))).toBe(false)
@@ -886,17 +894,17 @@ describe('ScriptsPage', () => {
     expect(builderHeaders.some(header => header.includes('Last run'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Actions'))).toBe(true)
 
-    await clickButton('Script Library')
+    await clickButton('Script library')
 
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(container.textContent).toContain('Script Library')
-    expect(container.textContent).not.toContain('Script Library (')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Script library')
+    expect(container.textContent).not.toContain('Script library (')
     expect(container.textContent).not.toContain('Start New Script')
   })
 
-  it('renders only one script library/builder toggle when the title bar provider is present', async () => {
+  it('renders only one script page toggle when the title bar provider is present', async () => {
     await act(async () => {
       root.render(
         <TopbarContributionProvider>
@@ -909,10 +917,10 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons).toHaveLength(2)
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.map(button => button.textContent)).toEqual(['Script library', 'Script builder', 'Shared assets'])
+    expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('true')
 
-    const builderButton = toggleButtons.find(button => button.textContent?.includes('Script Builder'))
+    const builderButton = toggleButtons.find(button => button.textContent?.includes('Script builder'))
     expect(builderButton).toBeDefined()
     await act(async () => {
       builderButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -921,11 +929,103 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons).toHaveLength(2)
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons).toHaveLength(3)
+    expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).toContain('Start New Script')
     expect(container.querySelectorAll('[data-testid="topbar-contribution"] .script-page-toggle')).toHaveLength(1)
+  })
+
+  it('keeps object repositories and correlation rulesets on their own Shared assets tab', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptsPage />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushPromises()
+    expect(container.querySelector('[data-testid="object-repositories"]')).toBeNull()
+    expect(container.textContent).not.toContain('Advanced:')
+
+    const assetsButton = Array.from(container.querySelectorAll('.script-page-toggle button')).find(button => button.textContent === 'Shared assets')
+    expect(assetsButton).toBeDefined()
+    await act(async () => { assetsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+
+    expect(assetsButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('[data-testid="object-repositories"]')?.textContent).toBe('Object repositories for project-1, editable')
+    expect(container.querySelector('[data-testid="correlation-rulesets"]')?.textContent).toBe('Correlation rulesets for project-1, editable')
+    expect(container.querySelector('.script-library-table, .library-toolbar')).toBeNull()
+    // The pickers search the active scripts the page already listed.
+    expect(container.querySelector('[data-testid="object-repositories"]')?.getAttribute('data-scripts')).toBe('script-1')
+  })
+
+  it('lets the Shared assets pickers ask the server while the library lists archived scripts', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptsPage />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushPromises()
+    apiMock.listScripts.mockResolvedValueOnce({ scripts: [{ id: 'archived-1', name: 'Old flow', protocol: 'http', version: '1', created_at: '', archived_at: '2026-09-01T00:00:00Z' }], count: 1 })
+    const archiveState = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Script archive state'))?.querySelector('select')
+    expect(archiveState).toBeTruthy()
+    await act(async () => {
+      archiveState!.value = 'archived'
+      archiveState!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1', undefined, { archiveState: 'archived' })
+
+    const assetsButton = Array.from(container.querySelectorAll('.script-page-toggle button')).find(button => button.textContent === 'Shared assets')
+    await act(async () => { assetsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+    expect(container.querySelector('[data-testid="object-repositories"]')?.getAttribute('data-scripts')).toBe('server search')
+  })
+
+  it('opens Shared assets read only for a role that cannot manage scripts', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'scripts_and_imports',
+        name: 'Scripts, Imports, and Replay',
+        description: '',
+        operations: [{ id: 'manage_scripts', label: 'Manage scripts', allowed: false }],
+      }],
+    })
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptsPage initialMode="assets" />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushPromises()
+
+    // A viewer has no Builder tab and is not bounced back to the library.
+    expect(Array.from(container.querySelectorAll('.script-page-toggle button')).map(button => button.textContent)).toEqual(['Script library', 'Shared assets'])
+    expect(container.querySelector('[data-testid="object-repositories"]')?.textContent).toBe('Object repositories for project-1, read only')
+    expect(container.textContent).not.toContain('can view scripts but not create or edit them')
+
+    // The same access does bounce a manage-only view, so the access had loaded.
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptsPage key="builder" initialMode="create-options" />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('can view scripts but not create or edit them')
   })
 
   it('consolidates source import choices under one create workflow', async () => {
@@ -1108,7 +1208,7 @@ describe('ScriptsPage', () => {
 
     await clickButton('Existing Script')
     expect(apiMock.cloneScriptDraft).toHaveBeenCalledTimes(1)
-    await clickButton('Script Library')
+    await clickButton('Script library')
     expect(container.textContent).not.toContain('Copy an Existing Script')
 
     await act(async () => {
@@ -1128,7 +1228,7 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
     expect(container.textContent).not.toContain('Late Existing Script (Copy)')
-    expect(container.textContent).toContain('Script Library')
+    expect(container.textContent).toContain('Script library')
   })
 
   it('optionally migrates recoverable source credentials while always applying safe references', async () => {
@@ -1275,7 +1375,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['LOGIN_TOKEN'])
 
-    await clickButton('Script Library')
+    await clickButton('Script library')
     await act(async () => {
       resolveStatus?.({ project_id: 'project-1', secrets: [] })
       await Promise.resolve()
@@ -1541,7 +1641,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Script Library')
+    await clickButton('Script library')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
     expect(searchInput).toBeTruthy()
@@ -1745,7 +1845,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Script Library')
+    await clickButton('Script library')
 
     expect(container.textContent).toContain('Blocked')
     expect(container.textContent).toContain('Runtime Warning')
@@ -2165,7 +2265,7 @@ describe('ScriptsPage', () => {
       expectBackOnTheReview()
       expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
       await clickButton('mock-enterprise-archive-close')
-      await clickButton('Script Library')
+      await clickButton('Script library')
       await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"][aria-modal="true"]')?.textContent).toContain('Secret Bindings'), { timeout: 5000 })
     })
 
@@ -2182,7 +2282,7 @@ describe('ScriptsPage', () => {
       apiMock.getScriptAuthoring.mockImplementation(async (id: string, projectId?: string) => authoringFixture(
         { name: id === 'saved-script-2' ? 'Second Converted Draft' : 'Converted Enterprise Script Archive Draft' }, id, projectId))
       await clickButton('mock-enterprise-archive-close')
-      await clickButton('Script Library')
+      await clickButton('Script library')
       const dialogTitle = () => document.body.querySelector('[role="dialog"][aria-modal="true"] h3')?.textContent ?? ''
       await vi.waitFor(() => expect(dialogTitle()).toBe('Secret Bindings · Converted Enterprise Script Archive Draft'), { timeout: 5000 })
       const close = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-modal="true"] button')).find(button => button.textContent === 'Close')
@@ -2272,7 +2372,7 @@ describe('ScriptsPage', () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Script Builder'))
+    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Script builder'))
     expect(createButtonAgain).toBeTruthy()
     if (!createButtonAgain) {
       return
@@ -2451,7 +2551,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Script Library')
+    await clickButton('Script library')
 
     expect(apiMock.listAuthoringSessions).toHaveBeenCalledWith('project-1')
     expect(container.textContent).toContain('Authoring Sessions')
@@ -2619,7 +2719,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Script Library')
+    await clickButton('Script library')
 
     expect(container.textContent).toContain('Generated checkout review')
     expect(container.textContent).toContain('approval blocked')
@@ -2683,7 +2783,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Script Library')
+    await clickButton('Script library')
 
     expect(container.textContent).toContain('Guided Correlation Repair')
     expect(container.textContent).toContain('2 actions available')

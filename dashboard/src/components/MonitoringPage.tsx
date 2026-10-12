@@ -109,7 +109,7 @@ function formatReadinessStatus(status?: string): string {
     case 'degraded':
       return 'Degraded'
     case 'not_ready':
-      return 'Not Ready'
+      return 'Not ready'
     default:
       return status || 'checking'
   }
@@ -190,7 +190,7 @@ function infrastructureReadinessStatusLabel(state: InfrastructureReadinessState)
   switch (state) {
     case 'ready': return 'Ready'
     case 'degraded': return 'Degraded'
-    case 'not_ready': return 'Not Ready'
+    case 'not_ready': return 'Not ready'
     case 'not_configured': return 'Not applicable'
     case 'not_reported': return 'Not Reported'
     case 'checking': return 'Checking'
@@ -705,7 +705,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     : readinessFetchState === 'error' && !systemReadiness
       ? 'Unavailable'
       : reportedReadinessSeverity === 'danger'
-        ? 'Not Ready'
+        ? 'Not ready'
         : reportedReadinessSeverity === 'warning'
           ? 'Degraded'
           : readinessFetchState === 'stale'
@@ -1149,7 +1149,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const capacitySummary = useMemo(() => fleetCapacitySummary(fleetCapacity, health), [fleetCapacity, health])
   const cards = useMemo<MonitorCard[]>(() => [
     { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} showEnableHint={canManageSystem} /> },
-    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} showEnableHint={canManageSystem} /> },
+    // A line icon like the other Overview cards' (a dataset over a chart), not
+    // a text abbreviation.
+    { id: 'parquet-analysis', title: 'Analysis workspace', icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="8" ry="3" />
+        <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+        <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+      </svg>
+    ), content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} showEnableHint={canManageSystem} /> },
     {
       id: 'system-health',
       title: 'Control Plane',
@@ -2579,7 +2587,7 @@ function RunCalendarPanel({
         {selectedEvent && (
           <aside id="calendar-run-details" className={`run-calendar-detail-panel ${detailCollapsed ? 'collapsed' : ''}`} aria-label="Run details">
             {detailCollapsed ? (
-              <PanelToggle expanded={false} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(false)} />
+              <PanelToggle className="ux-panel-rail" side="end" expanded={false} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(false)} />
             ) : (
               <div className="run-calendar-detail" role="region" aria-label="Run details">
                 <div className="run-calendar-detail-header">
@@ -2588,7 +2596,7 @@ function RunCalendarPanel({
                     <h3>{selectedEvent.title}</h3>
                   </div>
                   <div className="run-calendar-detail-icon-actions">
-                    <PanelToggle expanded={true} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(true)} />
+                    <PanelToggle side="end" expanded={true} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(true)} />
                     <button type="button" className="btn-icon" aria-label="Close run details" onClick={onCloseDetails}>
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <path d="M4 4l8 8" />

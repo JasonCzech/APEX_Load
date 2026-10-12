@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, login, mutation, json, idOf } from './support/workflow'
+import { test, expect, login, mutation, json, idOf, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 // Capture the actual viewport, not the full height of a clipped nested pane.
@@ -269,7 +269,7 @@ test('native correlation review preserves exact original source navigation throu
   await expect(reopened).not.toContainText('Historical annotation')
   const authorPanes = page.getByRole('group', { name: 'Author panes', exact: true })
   if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Script Name', exact: true }).fill('Reviewed native correlation draft')
+  await page.getByRole('textbox', { name: 'Script name', exact: true }).fill('Reviewed native correlation draft')
   const edited = mutation(page, 'PUT', `/api/v1/scripts/${stored.id}`)
   await page.getByRole('button', { name: 'Save script', exact: true }).click()
   const editedResponse = await edited
@@ -329,7 +329,7 @@ test('correlation diagnosis retains missing-consumer evidence and independent HT
       await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
       await options.getByRole('button', { name: 'Done', exact: true }).click()
       await page.locator('.topbar-debug-action-run').click()
-      await expect(page.getByLabel('Script evidence states')).toContainText(failAssertion ? 'Debugged: failed' : 'Debugged: passed')
+      await expectDebugOutcome(page, failAssertion ? 'failed' : 'passed')
       await page.getByText('Compare with a recording (optional)', { exact: true }).click()
       const panel = page.locator('.correlation-diagnose')
       await expect(panel.getByRole('button', { name: 'Diagnose from recording (HAR)…', exact: true })).toBeEnabled()

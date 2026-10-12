@@ -3,9 +3,16 @@ import type { StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
 import { targetOrigin } from './newTestPresentation'
 
-type ScriptReview = { id: string; name: string; target: string; assertions: string }
-export default function NewTestReadiness({ scenario, projectId, compact = false }: {
-  scenario: Pick<StoredScenario, 'id' | 'updated_at' | 'scripts' | 'data_pools'>; projectId: string; compact?: boolean
+// assertionCount is undefined when the script's assertions were not verified.
+type ScriptReview = { id: string; name: string; target: string; assertions: string; assertionCount?: number }
+
+/**
+ * The readiness review of a scenario's scripts, response-time acceptance,
+ * data and monitoring. The scenario builder shows it in full; New Test shows
+ * it once more as a one-line summary that opens to the same review.
+ */
+export default function NewTestReadiness({ scenario, projectId, compact = false, summary = false }: {
+  scenario: Pick<StoredScenario, 'id' | 'updated_at' | 'scripts' | 'data_pools'>; projectId: string; compact?: boolean; summary?: boolean
 }) {
   const api = useApi()
   const [review, setReview] = useState<{ scope: string; scripts: ScriptReview[] } | null>(null)
@@ -46,6 +53,7 @@ export default function NewTestReadiness({ scenario, projectId, compact = false 
           scripts.push({ id: group.script_id, name: group.script_name || group.name || group.script_id,
             target: targets.size ? [...targets].join(', ') : 'Target not exposed by this script — review configuration',
             assertions: stack.length ? 'Assertion inventory incomplete — review script' : assertions ? `${assertions} script assertions configured` : 'No script assertions configured',
+            assertionCount: stack.length ? undefined : assertions,
           })
         } catch {
           scripts.push({ id: group.script_id, name: group.script_name || group.name || group.script_id,
@@ -59,18 +67,41 @@ export default function NewTestReadiness({ scenario, projectId, compact = false 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, scope])
   const scripts = review?.scope === scope ? review.scripts : null
-  return <section className="new-test-step new-test-readiness" aria-label="Run readiness review">
-    <div className="new-test-step-header"><div><h3>Run readiness review</h3><p>Review targets and acceptance before execution. Unknown information is not a readiness pass.</p></div>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRefresh(value => value + 1)}>Refresh review</button>
-    </div>
+  const refreshButton = <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRefresh(value => value + 1)}>Refresh review</button>
+  const body = (
     <div className="new-test-readiness-body">
       {!scripts ? <p role="status">Checking script targets and assertions…</p> : scripts.length === 0 ? <p role="status">Assign scripts before reviewing targets and assertions.</p> : <ul>{scripts.map(script => <li key={script.id}><strong>{script.name}</strong><p>{script.target}</p><p>{script.assertions}</p></li>)}</ul>}
       <h4>Response-time acceptance</h4>
       <ul>{scenario.scripts.map(group => <li key={`${group.order}:${group.script_id}`}>{group.name || group.script_name || group.script_id || `Group ${group.order + 1}`}: {group.transaction_response_time_sla_ms && group.transaction_response_time_sla_ms > 0 ? `transaction response-time SLA ${group.transaction_response_time_sla_ms} ms` : 'No group response-time SLA configured'}</li>)}</ul>
       <h4>Data requirements</h4>
-      <p>{scenario.data_pools?.length ? scenario.data_pools.map(pool => pool.alias || pool.pool_name || pool.pool_id).join(', ') + ' — verify bindings and sufficient rows in the scenario editor.' : 'No scenario data pools configured. Script-local data requirements must be reviewed in Scripts.'}</p>
+      <p>{scenario.data_pools?.length ? scenario.data_pools.map(pool => pool.alias || pool.pool_name || pool.pool_id).join(', ') + ' — verify bindings and sufficient rows in the scenario builder.' : 'No scenario data pools configured. Script-local data requirements must be reviewed in Scripts.'}</p>
       <h4>Monitoring</h4><p>Target monitoring coverage is not verified by launch preflight. Check connections, collectors and metric coverage in Monitoring.</p>
       {!compact && <div className="inline-create-row"><a className="btn btn-secondary" href="#/tests?view=library">Review scenarios</a><a className="btn btn-secondary" href="#/scripts">Review scripts</a><a className="btn btn-secondary" href="#/monitoring">Review monitoring</a></div>}
     </div>
+  )
+  if (summary) {
+    const groups = scenario.scripts.length
+    const slaGroups = scenario.scripts.filter(group => (group.transaction_response_time_sla_ms ?? 0) > 0).length
+    const pools = scenario.data_pools?.length ?? 0
+    const withoutAssertions = scripts?.filter(script => script.assertionCount === 0).length ?? 0
+    const unverified = scripts?.filter(script => script.assertionCount === undefined).length ?? 0
+    const line = !scripts ? 'Checking script targets and assertions…' : [
+      `${scripts.length} script${scripts.length === 1 ? '' : 's'}`,
+      withoutAssertions ? `${withoutAssertions} without assertions` : '',
+      unverified ? `${unverified} not verified` : '',
+      slaGroups ? `${slaGroups} of ${groups} group${groups === 1 ? '' : 's'} with a response-time SLA` : 'no response-time SLA',
+      pools ? `${pools} data pool${pools === 1 ? '' : 's'}` : 'no data pools',
+    ].filter(Boolean).join(' · ')
+    return <details className="new-test-step new-test-readiness new-test-readiness-summary" aria-label="Run readiness review">
+      <summary><span>Run readiness</span><small>{line}</small></summary>
+      <div className="new-test-readiness-summary-actions"><p>Review targets and acceptance before execution. Unknown information is not a readiness pass.</p>{refreshButton}</div>
+      {body}
+    </details>
+  }
+  return <section className="new-test-step new-test-readiness" aria-label="Run readiness review">
+    <div className="new-test-step-header"><div><h3>Run readiness review</h3><p>Review targets and acceptance before execution. Unknown information is not a readiness pass.</p></div>
+      {refreshButton}
+    </div>
+    {body}
   </section>
 }

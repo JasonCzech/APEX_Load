@@ -828,6 +828,10 @@ export interface TestSummary {
   baseline_pinned_at?: string
   started_at?: string
   ended_at?: string
+  /** While the run is paused: when this pause began. */
+  paused_at?: string
+  /** Time spent in earlier pauses, which the run makes up (nanoseconds). */
+  cumulative_pause_ns?: number
   created_by_subject?: string
   created_by_display_name?: string
   started_by_subject?: string
@@ -2286,6 +2290,24 @@ export interface LiveMetrics {
   run_total_errors?: number
   /** Failed ÷ all attempts since the run started (absent on older runs). */
   run_error_pct?: number
+  /**
+   * Requests attempted in the last sample window, failed ones included: every
+   * result that is not a business transaction (the report's request
+   * population). Omitted when zero, absent from older controllers, and absent
+   * (with the run_* request counters) for a run whose request counts are
+   * incomplete, which is then read in transactions.
+   */
+  requests?: number
+  /** Failed requests in the last sample window. */
+  request_errors?: number
+  /** Requests per second in the last sample window. */
+  request_rate?: number
+  /** Requests attempted since the run started (absent on older runs, or when the run's request counts are incomplete). */
+  run_total_requests?: number
+  /** Failed requests since the run started (absent with run_total_requests). */
+  run_request_errors?: number
+  /** Failed ÷ attempted requests since the run started (absent with run_total_requests). */
+  run_request_error_pct?: number
   p50_ms: number
   p90_ms: number
   p95_ms: number
@@ -2677,6 +2699,13 @@ export interface GroupLiveMetrics {
   run_transactions?: number
   run_errors?: number
   run_error_pct?: number
+  /** The group's request counters, as on LiveMetrics. */
+  requests?: number
+  request_errors?: number
+  request_rate?: number
+  run_requests?: number
+  run_request_errors?: number
+  run_request_error_pct?: number
   tps: number
   target_tps?: number
   throughput_gap_pct?: number
@@ -2801,6 +2830,8 @@ export interface MetricsHistoryPoint {
   relativeMs?: number
   vusers: number
   tps: number
+  /** Requests per second in the window (zero when it sent none). */
+  requestRate?: number
   targetTps?: number
   avgMs: number
   errorPct: number

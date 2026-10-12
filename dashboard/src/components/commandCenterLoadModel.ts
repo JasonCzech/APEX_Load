@@ -1,97 +1,115 @@
-import type { TestGroup } from '../types'
-import { parseDurationToSeconds } from '../utils/timeUtils'
+import type { MetricsHistoryPoint, TestSummary } from '../types'
 import type { CommandGroup } from './commandCenterScenarioRows'
+import type { RunLoadProfilePreview } from './newTestRunModel'
+import { buildQueuedScenarioPreview, type QueuedScenarioPreview } from './testExecutionScenarioModel'
+import { plannedVUsersAt } from './loadPlanSteps'
+import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 
-export interface LoadModelPoint {
-  pct: number
-  planned: number
-  phase: string
+export { plannedVUsersAt }
+
+/**
+ * A run's load plan as the engine runs it: the projection the scenario
+ * builder and New Test draw, with each ramped group at the VUser target it
+ * has now (an operator's live change, or a goal run's sizing, replaces the
+ * configured count). Staged groups keep their authored stages. A run to its
+ * iterations is planned through horizonSeconds (see buildQueuedScenarioPreview).
+ */
+export function buildRunLoadPlan(test: TestSummary, groups: CommandGroup[], horizonSeconds?: number): QueuedScenarioPreview {
+  return buildQueuedScenarioPreview({
+    ...test,
+    groups: (test.groups || []).map(group => {
+      if (group.stages?.length) return group
+      const live = groups.find(candidate => candidate.name === group.name)
+      const target = live?.targetMode === 'vusers' ? live.target : live?.suggestedVusers
+      return target !== undefined && Number.isFinite(target) ? { ...group, vusers: Math.max(0, Math.round(target)) } : group
+    }),
+  }, horizonSeconds)
 }
 
-function authoredGroupStageDuration(group: TestGroup) {
-  return (group.stages || []).reduce(
-    (total, stage) => total + Math.max(0, parseDurationToSeconds(stage.duration)),
-    0,
-  )
+/**
+ * Where a run's plan is at an elapsed second, in the words an operator uses.
+ * An open-ended plan (a run to its iterations) has no deadline to pass.
+ */
+export function loadPlanPhaseAt(plan: RunLoadProfilePreview, second: number, staged: boolean, openEnded = false): string {
+  if (plan.points.length === 0) return 'No load plan'
+  const deadline = openEnded ? Number.POSITIVE_INFINITY : plan.preBaselineSeconds + plan.steadySeconds
+  if (second < plan.preBaselineSeconds) return 'Before load'
+  const planned = plannedVUsersAt(plan, second)
+  if (second >= deadline) return planned > 0 ? 'Ramp-down' : 'Load complete'
+  if (staged) return 'Staged load'
+  const steadyPeak = plan.points.reduce((peak, point) => point.second >= plan.preBaselineSeconds && point.second < deadline ? Math.max(peak, point.total || 0) : peak, 0)
+  return planned < steadyPeak ? 'Ramp-up' : openEnded ? 'Running iterations' : 'Steady state'
 }
 
-export function plannedGroupLoadAt(group: TestGroup, target: number, elapsedSeconds: number, modelDurationSeconds: number) {
-  const stages = group.stages || []
-  if (stages.length > 0) {
-    let cursor = 0
-    // Runtime compilation seeds a stage-driven group at zero for a ramp-up, at
-    // the hold target for a hold, and at the authored peak for a ramp-down.
-    // Starting every profile at zero makes a first ramp-down appear to ramp up.
-    const firstType = stages[0]?.type?.trim().toLowerCase()
-    const stagePeak = stages.reduce(
-      (maximum, stage) => Math.max(maximum, Math.max(0, stage.target_vusers || 0)),
-      Math.max(0, target),
-    )
-    let previous = firstType === 'ramp_down'
-      ? stagePeak
-      : firstType === 'hold'
-        ? Math.max(0, stages[0]?.target_vusers || 0)
-        : 0
-    for (const stage of stages) {
-      const duration = Math.max(0, parseDurationToSeconds(stage.duration))
-      const next = Math.max(0, stage.target_vusers ?? previous)
-      const stageType = stage.type?.trim().toLowerCase()
-      if (elapsedSeconds <= cursor + duration) {
-        if (duration === 0 || stageType === 'hold') return next
-        const ratio = Math.max(0, Math.min(1, (elapsedSeconds - cursor) / duration))
-        return previous + (next - previous) * ratio
-      }
-      cursor += duration
-      previous = next
-    }
-    return previous
-  }
-
-  const rampUp = Math.max(0, parseDurationToSeconds(group.ramp_up || '0s'))
-  const rampDown = Math.max(0, parseDurationToSeconds(group.ramp_down || '0s'))
-  if (rampUp > 0 && elapsedSeconds < rampUp) return target * elapsedSeconds / rampUp
-  const rampDownStart = Math.max(rampUp, modelDurationSeconds - rampDown)
-  if (rampDown > 0 && elapsedSeconds > rampDownStart) {
-    return target * Math.max(0, modelDurationSeconds - elapsedSeconds) / rampDown
-  }
-  return target
-}
-
-export function buildLoadModelProfile(testGroups: TestGroup[], groups: CommandGroup[], totalDurationSeconds: number): LoadModelPoint[] {
-  const stagedDuration = testGroups.reduce(
-    (maximum, group) => Math.max(maximum, authoredGroupStageDuration(group)),
-    0,
-  )
-  const modelDuration = Math.max(1, stagedDuration, totalDurationSeconds)
-  const boundaries = new Set<number>([0, modelDuration])
-  testGroups.forEach(group => {
-    let cursor = 0
-    if ((group.stages || []).length > 0) {
-      group.stages?.forEach(stage => {
-        cursor += Math.max(0, parseDurationToSeconds(stage.duration))
-        boundaries.add(Math.min(modelDuration, cursor))
-      })
-      return
-    }
-    const rampUp = Math.max(0, parseDurationToSeconds(group.ramp_up || '0s'))
-    const rampDown = Math.max(0, parseDurationToSeconds(group.ramp_down || '0s'))
-    boundaries.add(Math.min(modelDuration, rampUp))
-    boundaries.add(Math.max(0, modelDuration - rampDown))
+/** A run's VUser samples on elapsed seconds from its start; samples from before it are dropped. */
+export function observedVUsersSince(history: MetricsHistoryPoint[], startedMs: number): Array<{ second: number; vusers: number }> {
+  if (!Number.isFinite(startedMs)) return []
+  return history.flatMap(point => {
+    const second = point.timestampMs === undefined ? Number.NaN : (point.timestampMs - startedMs) / 1000
+    return Number.isFinite(second) && second >= 0 ? [{ second, vusers: point.vusers }] : []
   })
-  return [...boundaries]
-    .sort((left, right) => left - right)
-    .map(elapsed => {
-      const planned = testGroups.reduce((sum, group) => {
-        const commandGroup = groups.find(candidate => candidate.name === group.name)
-        const target = commandGroup?.targetMode === 'vusers'
-          ? commandGroup.target
-          : commandGroup?.suggestedVusers ?? group.vusers
-        return sum + plannedGroupLoadAt(group, Math.max(0, target || 0), elapsed, modelDuration)
-      }, 0)
-      return {
-        pct: elapsed / modelDuration * 100,
-        planned: Math.round(planned),
-        phase: elapsed === 0 ? 'Start' : elapsed >= modelDuration ? 'End' : 'Authored profile',
-      }
-    })
+}
+
+/**
+ * Where a run stands against its plan at an elapsed second: the planned VUsers
+ * then, its progress through the plan, the phase, and the elapsed label. A run
+ * that has ended is past its plan, whatever the plan had left.
+ */
+export function runLoadStatus(plan: RunLoadProfilePreview, elapsedSeconds: number, options: { state: 'not_started' | 'paused' | 'running' | 'ended'; openEnded: boolean; staged: boolean }) {
+  const { state, openEnded, staged } = options
+  const at = openEnded ? Math.min(elapsedSeconds, Math.max(0, plan.totalSeconds - 1e-6)) : elapsedSeconds
+  const elapsed = formatTrafficProfileAxisTime(elapsedSeconds)
+  return {
+    plannedNow: plannedVUsersAt(plan, at),
+    progressPct: state === 'ended' ? 100 : !openEnded && plan.totalSeconds > 0 ? Math.max(0, Math.min(100, elapsedSeconds / plan.totalSeconds * 100)) : 0,
+    phase: state === 'ended' ? 'Run ended' : state === 'paused' ? 'Paused' : state === 'not_started' ? 'Not started' : loadPlanPhaseAt(plan, at, staged, openEnded),
+    // "1m of 5m elapsed", or just "4m elapsed" for a run to its iterations.
+    elapsedLabel: openEnded ? `${elapsed} elapsed` : `${elapsed} of ${formatTrafficProfileAxisTime(plan.totalSeconds)} elapsed`,
+  }
+}
+
+/**
+ * What a live load change does, said in its confirmation: the group's applied
+ * target to the new one, and, with more than one group, the run's total
+ * ("Store_Browse 2 → 4 VUsers · run total 6 → 8 VUsers"). A goal run's
+ * targets are TPS; a gradual VUser change names its ramp.
+ */
+export function loadChangeImpact(groups: CommandGroup[], groupName: string, target: number, rampDuration = ''): string {
+  const group = groups.find(item => item.name === groupName)
+  const mode = group?.targetMode ?? 'vusers'
+  const applied = (item: CommandGroup) => mode === 'tps' ? item.committedTargetTps ?? 0 : item.targetVusers
+  const amount = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: mode === 'tps' ? 1 : 0 })
+  const unit = mode === 'tps' ? 'TPS' : 'VUsers'
+  const from = group ? applied(group) : 0
+  const change = `${groupName} ${amount(from)} → ${amount(target)} ${unit}${rampDuration ? ` over ${rampDuration}` : ''}`
+  if (groups.length < 2) return change
+  const totalFrom = groups.reduce((sum, item) => sum + applied(item), 0)
+  return `${change} · ${mode === 'tps' ? 'run goal' : 'run total'} ${amount(totalFrom)} → ${amount(totalFrom - from + target)} ${unit}`
+}
+
+/**
+ * A run's plan on the wall clock after its pauses. The engine makes paused
+ * time up, so the plan from where the run is on its own clock (activeSeconds)
+ * goes on pausedSeconds later, holding its level through the pause: every
+ * step and phase boundary from there on moves. Where earlier pauses fell is
+ * not recorded, so they are drawn as one, just before now; the samples show
+ * what the run actually did before that.
+ */
+export function planAfterPauses<Plan extends RunLoadProfilePreview>(plan: Plan, activeSeconds: number, pausedSeconds: number): Plan {
+  if (!(pausedSeconds > 0)) return plan
+  // A run whose clock has passed its plan's end (a stop that ran over) still
+  // paused within the plan: its end moves.
+  const from = Math.min(activeSeconds, plan.totalSeconds)
+  const later = (second: number) => second >= from ? second + pausedSeconds : second
+  const steadyStart = later(plan.preBaselineSeconds)
+  const steadyEnd = later(plan.preBaselineSeconds + plan.steadySeconds)
+  const totalSeconds = later(plan.totalSeconds)
+  return {
+    ...plan,
+    points: plan.points.map(point => ({ ...point, second: later(point.second) })),
+    totalSeconds,
+    preBaselineSeconds: steadyStart,
+    steadySeconds: steadyEnd - steadyStart,
+    postBaselineSeconds: totalSeconds - later(plan.totalSeconds - plan.postBaselineSeconds),
+  }
 }

@@ -12,7 +12,7 @@ for (const theme of themes) for (const width of [923, 1440]) {
     await page.goto(`/#/settings?setting=preferences&${scopeQuery(workspace)}`)
     await page.getByRole('combobox', { name: 'Dashboard Theme', exact: true }).selectOption(theme)
     // Each sidebar destination is titled with its sidebar name.
-    const routes = [['dashboard', 'Dashboard'], ['scripts', 'Scripts'], ['tests', 'Scenarios'], ['new-test', 'New Test'], ['results', 'Results'], ['repository', 'Repository'], ['monitoring', 'Monitoring'], ['docs', 'Help & documentation'], ['access', 'Access'], ['settings', 'Settings'], ['command-center', 'Command Center']]
+    const routes = [['dashboard', 'Dashboard'], ['scripts', 'Scripts'], ['tests', 'Scenarios'], ['new-test', 'New run'], ['results', 'Results'], ['repository', 'Repository'], ['monitoring', 'Monitoring'], ['docs', 'Help & documentation'], ['access', 'Access'], ['settings', 'Settings'], ['command-center', 'Command Center']]
     for (const [route, titleText] of routes) {
       await page.goto(`/#/${route}?${scopeQuery(workspace)}`)
       await expect(page.locator('#app-page-title')).toHaveText(titleText)

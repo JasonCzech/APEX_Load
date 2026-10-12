@@ -136,7 +136,7 @@ export default function CreateTestGroupsEditor({
           <div className="group-number">{idx + 1}</div>
           <div className="group-fields">
             <label>
-              <span>Group Name</span>
+              <span>Group name</span>
               <input
                 type="text"
                 value={group.name}

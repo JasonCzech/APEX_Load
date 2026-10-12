@@ -216,6 +216,7 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		RedactionRules:  req.RedactionRules,
 		SecretResolver:  secretResolver,
 		IgnoreThinkTime: ignoreThinkTime,
+		RunID:           debugRunIdentity("", replaySessionID),
 		// Classic replays offer no HAR: one the script's own capture policy
 		// recorded is retired rather than left in the HAR directory.
 		DiscardHAR: retireReplayHARArtifacts,

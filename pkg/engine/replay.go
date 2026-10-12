@@ -46,7 +46,13 @@ type ReplayOptions struct {
 	DiscardHAR func([]protocol.BrowserHARArtifact)
 	// Seed, when set, makes random data selection and {{fn.random}}/{{fake.*}}
 	// reproducible across replays. Nil uses defaultReplaySeed.
-	Seed            *int64
+	Seed *int64
+	// RunID is the value {{run.id}} resolves to. Empty leaves it unresolved,
+	// and an action that uses it fails closed, as in a direct run.
+	RunID string
+	// ContinueOnError decides what follows a failed action the debugger does
+	// not pause on. Nil uses the script's own setting.
+	ContinueOnError *bool
 	OnProgress      func(ReplayProgressEvent)
 	DebugController ReplayDebugController
 }
@@ -531,6 +537,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1},
 		ID:                           0,
 		Group:                        groupName,
+		RunID:                        opts.RunID,
 		Proto:                        proto,
 		Script:                       script,
 		Metrics:                      NewMetricsCollector(16),
@@ -573,6 +580,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 
 	onProgress := vu.guardedReplayProgress(report, opts.OnProgress)
 	continueOnError := script.Config.ErrorHandling.ContinueOnErrorEnabled()
+	if opts.ContinueOnError != nil {
+		continueOnError = *opts.ContinueOnError
+	}
 	globalThinkCfg := protocol.ThinkTimeConfig{
 		Type:       script.Config.ThinkTime.Type,
 		MinPercent: script.Config.ThinkTime.MinPercent,

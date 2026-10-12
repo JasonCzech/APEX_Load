@@ -1,4 +1,4 @@
-import { expect, test as base, type Page, type APIRequestContext, type APIResponse, type Response } from '@playwright/test'
+import { expect, test as base, type Page, type Locator, type APIRequestContext, type APIResponse, type Response } from '@playwright/test'
 import { createServer } from 'node:http'
 import { type AddressInfo } from 'node:net'
 import { type Workspace } from './workspace'
@@ -146,6 +146,18 @@ export async function json(response: APIResponse | Response): Promise<Record<str
 export function idOf(payload: Record<string, unknown>, key?: string): string {
   return responseID(payload, 'resource', key)
 }
+/** The script editor's save state, as its status row shows it. */
+export async function expectEditorSaved(page: Page) {
+  await expect(page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: /^Saved/ })).toBeVisible()
+}
+
+/** The last debug run's outcome: Debug's session bar owns it, Author's status row repeats it. */
+export async function expectDebugOutcome(page: Page, outcome: 'passed' | 'failed') {
+  const badge = page.locator('.debug-session-bar .replay-live-badge').filter({ hasText: outcome === 'passed' ? /^Passed$/ : /^Failed$/ })
+  const chip = page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: outcome === 'passed' ? /^Debugged/ : /^Debug failed/ })
+  await expect(badge.or(chip).first()).toBeVisible()
+}
+
 export function mutation(page: Page, method: string, path: string) {
   return page.waitForResponse(r => r.request().method() === method && new URL(r.url()).pathname === path)
 }
@@ -182,7 +194,7 @@ export async function seedScenario(request: APIRequestContext, workspace: Worksp
 export async function importOpenAPI(page: Page, name: string, target: string) {
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
   // Navigate through the actual creation entry rather than seeding the script.
-  await page.getByRole('button', { name: 'Script Builder', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Script builder', exact: true }).first().click()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
@@ -202,27 +214,27 @@ export async function importOpenAPI(page: Page, name: string, target: string) {
   return scriptId
 }
 export async function buildScenarioUI(page: Page, scriptName: string, name: string) {
-  await page.getByRole('button', { name: 'New Test', exact: true }).first().click()
-  await page.getByRole('button', { name: 'Open Scenario Builder' }).click()
+  await page.getByRole('button', { name: 'New run', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Open scenario builder' }).click()
   const steps = page.locator('[aria-label="Scenario builder steps"]')
   await page.getByPlaceholder('Scenario name').fill(name)
-  await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
+  await page.getByRole('button', { name: 'Add script to Group 1' }).click()
   await page.getByRole('row').filter({ hasText: scriptName }).getByRole('button', { name: 'Use for Group 1' }).click()
   await steps.getByRole('button', { name: /^Model/ }).click()
   await page.getByRole('button', { name: /^Fixed VUsers/ }).click()
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
-  await steps.getByRole('button', { name: /^Run Settings/ }).click()
-  const scenarioTabs = page.getByRole('tablist', { name: 'Scenario settings sections' })
-  await scenarioTabs.getByRole('tab', { name: 'Run Phases' }).click()
+  await steps.getByRole('button', { name: /^Run settings/ }).click()
+  const scenarioTabs = page.getByRole('tablist', { name: 'Run settings sections' })
+  await scenarioTabs.getByRole('tab', { name: 'Run phases' }).click()
   await page.getByLabel('Ramp-up', { exact: true }).fill('1')
   await page.getByLabel('Ramp-up Unit').selectOption('s')
   await page.getByLabel('Sustained load', { exact: true }).fill('1')
   await page.getByLabel('Sustained load Unit').selectOption('m')
-  await scenarioTabs.getByRole('tab', { name: 'Target Load' }).click()
+  await scenarioTabs.getByRole('tab', { name: 'Target load' }).click()
   await page.getByLabel('Peak VUsers', { exact: true }).fill('1')
   await steps.getByRole('button', { name: /^Data/ }).click()
   await page.getByRole('button', { name: 'Next', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Review And Validate' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review and validate' })).toBeVisible()
   const saved = mutation(page, 'POST', '/api/v1/scenarios')
   await page.getByRole('button', { name: 'Save and configure run' }).click()
   const payload = await json(await saved)
@@ -276,3 +288,15 @@ export const test = base.extend<WorkflowFixtures>({
   }, { auto: true, timeout: 30_000 }],
 })
 export { expect } from '@playwright/test'
+
+/** Opens a library's filters, which fold behind its Filters toggle, if they are closed. */
+export async function showLibraryFilters(page: Page) {
+  const toggle = page.locator('.ux-library-filters-toggle')
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+}
+
+/** Opens a scenario for editing from its library row, where Edit sits in the More menu. */
+export async function editScenarioFromRow(row: Locator, name: string) {
+  await row.getByRole('button', { name: /^More actions for/ }).click()
+  await row.getByRole('button', { name: `Edit ${name}`, exact: true }).click()
+}

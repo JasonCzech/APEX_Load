@@ -11,6 +11,15 @@ type ScriptWithPhases = ScriptDefinition & {
 }
 
 const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env|data|param|secret)\.([a-zA-Z0-9_.-]+)/g
+
+/** The variables text uses as template values (`{{var.x}}`, `{{data.x}}` and the like; not secrets). */
+export function templateVariableNames(text: string): Set<string> {
+  const names = new Set<string>()
+  for (const match of text.matchAll(REPLAY_TEMPLATE_REF_PATTERN)) {
+    if (match[1] !== 'secret') names.add(match[2])
+  }
+  return names
+}
 const REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH = 32
 const REPLAY_REVIEW_GATE_MAX_CONTROL_DEPTH = 64
 const DEDICATED_PROJECT_SECRET_FIELDS = new Set([
@@ -553,6 +562,9 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     parameter_count: script.parameters?.length || 0,
     browser_required: browserRequired,
     missing_variables: missingVariableList,
+    blocking_variables: blockingVariableList,
+    placeholder_variables: placeholderVariableList,
+    data_source_issues: dataWarnings,
     required_secrets: requiredSecretList,
     missing_secrets: requiredSecretList,
     runtime_prerequisites: prerequisites,

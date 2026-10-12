@@ -2,21 +2,22 @@ import LiveTableSandboxEditor from './LiveTableSandboxEditor'
 import { liveTableSandboxError } from './liveTableSandboxModel'
 import TooltipButton from './ux/TooltipButton'
 import ResourceSnapshotList from './ResourceSnapshotList'
-import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
+import { executionLabel, eventLocation, type DebugRunRecord, responseBodyMessage } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
 import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { httpReplayVersionEvidence } from './httpActionVersionModel'
 import { httpResponseContentEvidence } from './httpResponseContentEvidenceModel'
-import { debugOverrideCount, sessionVariablesError, handleOutlineKeys } from './scriptSidebarModel'
+import { debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError, handleOutlineKeys, toggleFocusedRowBreakpoint } from './scriptSidebarModel'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
-import { currentRuntimeParameter, type RuntimeInspectionMode } from './debugRuntimeState'
+import { currentRuntimeLookup, currentRuntimeParameter, type RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugParameterInspector } from './DebugParameterInspector'
+import { debugNextAction, debugNextRequestParts, previewTemplate, type PreviewSegment } from './debugNextRequest'
 import { ParameterDefinitionGuide } from './ParameterDefinitionGuide'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import type * as React from 'react'
-import { memo, useMemo, useState, useEffect } from 'react'
+import { memo, useMemo, useRef, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
@@ -26,6 +27,7 @@ import type {
   ScriptDebugLogEntry,
   ScriptDebugLogLevel,
   ScriptDebugSession,
+  ScriptDebugAction,
   ScriptDebugBreakpoint,
   ReplayRuntimeSnapshot,
 } from '../types/replay'
@@ -129,6 +131,10 @@ interface ReplayVariableTimelineEntry {
 }
 
 export interface ScriptReplayDebuggerViewProps {
+  /** The debugger's run controls (Step, Continue, Stop…), drawn first in the session bar. */
+  sessionControls?: ReactNode
+  /** Session toggles that stay put through a run (Break on failure), drawn beside Debug options. */
+  sessionToggles?: ReactNode
   runHistory: DebugRunRecord[]
   runRecord: Omit<DebugRunRecord, 'report'> | null
   seedVariables: Record<string, string>
@@ -176,7 +182,6 @@ export interface ScriptReplayDebuggerViewProps {
   replayReport: BrowserReplayReport | null
   replayEditableActionsKey: string | null
   currentEditableActionsKey: string | null
-  replayStatusLabel: 'Stopping' | 'Paused' | 'Running' | 'Success' | 'Failed' | 'Stopped'
   replayVariableDiffs: Array<Record<string, { previous?: string; next: string }>>
   replayVariableInspector: Record<string, string> | null
   currentRuntimeSnapshot: ReplayRuntimeSnapshot | null
@@ -219,6 +224,8 @@ function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fa
 }
 
 export function ScriptReplayDebuggerView({
+  sessionControls,
+  sessionToggles,
   runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onExportSession, onUpdateBreakpoints, onRunTo,
   actionProblemRows,
   activeReplaySessionId,
@@ -259,7 +266,6 @@ export function ScriptReplayDebuggerView({
   replayReport,
   replayEditableActionsKey,
   currentEditableActionsKey,
-  replayStatusLabel,
   replayVariableDiffs,
   replayVariableInspector,
   runtimeVariablesUnavailable = false,
@@ -377,7 +383,10 @@ export function ScriptReplayDebuggerView({
 
   useEffect(() => { if (debuggerSettingsOpen) debuggerSettingsRef.current?.querySelector<HTMLInputElement>('input')?.focus() }, [debuggerSettingsOpen, debuggerSettingsRef])
   const variablesError = sessionVariablesError(replayOptions.variablesText)
-  const optionsError = variablesError || liveTableSandboxError(replayOptions.liveTableSeedsText)
+  const runIdError = debugRunIdError(replayOptions.runId)
+  const optionsError = variablesError || runIdError || liveTableSandboxError(replayOptions.liveTableSeedsText)
+  // What a test run of this script does after a failure, for the default choice.
+  const testRunContinues = debugContinuesAfterFailure({ afterFailure: 'test-run' }, script)
   const [narrowPane, setNarrowPane] = useState<'outline' | 'editor' | 'inspector'>('editor')
   const [dockCollapsed, setDockCollapsed] = useState(true)
   const [rawLogs, setRawLogs] = useState(false)
@@ -385,7 +394,15 @@ export function ScriptReplayDebuggerView({
   const disabledBreakpointKeys = new Set(debugBreakpoints.filter(bp => bp.disabled).map(bp => bp.step_path?.length ? debugStepPathKey(bp.phase, bp.action_index, bp.step_path) : debugBreakpointKey(bp.phase, bp.action_index, bp.request_index)))
   const runtimeFailures = debugEvents.map((event, index) => ({ event, index })).filter(({ event }) => !event.success)
   const statusText = executionLabel(replaying, browserReplaySession, replayReport)
+  // Shown beside Debug options, except while a run is live and the step controls need the room; the button's tooltip always carries it.
+  const debugOptionsSummary = `1 virtual user · ${replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · ${replayOptions.logLevel} logging${replayOptions.startPaused ? ' · Start paused' : ''} · ${debugContinuesAfterFailure(replayOptions, script) ? 'Continues' : 'Stops'} after a failure`
   const jumpToEvent = (index: number) => { setExpandedReplayEvent(index); setDebuggerTab('request'); setDebugDetailCollapsed(false); setNarrowPane('editor') }
+  // Following execution keeps the action about to run in view in the action list.
+  const debuggerRailRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!followExecution || (!currentDebugActionKey && !currentDebugStepKey)) return
+    debuggerRailRef.current?.querySelector<HTMLElement>('[aria-current="step"]')?.scrollIntoView?.({ block: 'nearest' })
+  }, [currentDebugActionKey, currentDebugStepKey, followExecution])
   const goCurrent = () => { const failureIndex = isReplayPaused && browserReplaySession?.current_event?.success === false ? debugEvents.findIndex(e => e.event_id != null && e.event_id === browserReplaySession.current_event?.event_id) : -1; setExpandedReplayEvent(failureIndex >= 0 ? failureIndex : null); onFollowExecution(true); setDebugRailFilter(''); setDebugRailFailuresOnly(false); setDebuggerTab('request'); setNarrowPane('editor'); setDebugDetailCollapsed(false) }
   const selectedItem = useMemo(() => buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences).find(item => item.key === selectedActionKey), [debugActionRows, effectiveExpandedDebugSequences, selectedActionKey])
   const selectedRow = controller.selectedDebugRow || selectedItem?.row
@@ -396,9 +413,26 @@ export function ScriptReplayDebuggerView({
             role="region"
             aria-label="Script Debugger"
           >
-            <div className="debug-options-toolbar">
-              <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
-              <span>1 virtual user · {replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · {replayOptions.logLevel} logging{replayOptions.startPaused ? ' · Start paused' : ''}</span>
+            {/* One session bar: the run's status, its step controls and its options.
+                The selection tools and disclosures share the row below it. */}
+            <div className={`debug-options-toolbar debug-session-bar${replaying ? ' is-running' : ''}`}>
+              {sessionControls}
+              {(replaying || replayReport) ? (
+                <div className={`debugger-live-strip ${debuggerStatusState}`}>
+                  <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Passed' : 'Failed'}</span>
+                  {/* The badge carries the outcome; the text adds where the run is,
+                      or what it recorded once it is over, never the same word. */}
+                  <div className="debugger-live-strip-text">
+                    <strong role="status" aria-live="polite">{replaying ? statusText : `${replayReport?.events.length || 0} recorded executions · ${replayReport?.events.filter(event => !event.success).length || 0} failures`}</strong>
+                    {isReplayPaused && runtimeFailures.length > 0 && <span>{browserReplaySession?.continue_on_error === false ? 'Continue ends this iteration: this session stops after a failure.' : 'Continue runs the next action, as a test run would.'}</span>}
+                  </div>
+                  {replaying && <small>{replayReport?.events.length || 0} recorded executions · {replayReport?.events.filter(event => !event.success).length || 0} failures</small>}
+                  <span className="debugger-live-strip-time">{formatReplayTime(replayLatestActivity?.timestamp || replayReport?.completed_at || replayReport?.started_at)}</span>
+                </div>
+              ) : <span className="debug-session-idle">No debug run yet</span>}
+              <span className="debug-session-summary">{debugOptionsSummary}</span>
+              <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" title={debugOptionsSummary} onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
+              {sessionToggles}
               <TooltipButton type="button" className="btn btn-sm btn-secondary" disabled={!replayReport} title="Download Debug JSON" onClick={() => void onExportSession()}>Export session</TooltipButton>
               {optionsError && <span role="alert">{optionsError}</span>}
             </div>
@@ -449,13 +483,25 @@ export function ScriptReplayDebuggerView({
                     />
                     <span>Step through (start paused)</span>
                   </label>
-                  <label className="checkbox-label replay-checkbox" title="Pause the debugger automatically whenever an action fails, so you can inspect it before continuing.">
+                  <label className="checkbox-label replay-checkbox" title="Pause at a failed action so you can inspect it; Continue then does what After a failure says.">
                     <input
                       type="checkbox"
                       checked={replayOptions.breakOnFailure}
                       onChange={e => void setBreakOnFailure(e.target.checked)}
                     />
                     <span>Break on failure</span>
+                  </label>
+                  <label>
+                    <span>After a failure</span>
+                    <select aria-label="After a failure" value={replayOptions.afterFailure} onChange={e => setReplayOptions(prev => ({ ...prev, afterFailure: e.target.value as typeof prev.afterFailure }))}>
+                      <option value="test-run">As a test run: {testRunContinues ? 'continue to the next action' : 'stop this iteration'}</option>
+                      <option value="continue">Continue to the next action</option>
+                      <option value="stop">Stop this iteration</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Run identity <code>{'{{run.id}}'}</code></span>
+                    <input aria-label="Run identity" aria-invalid={Boolean(runIdError)} value={replayOptions.runId} placeholder="debug-<session id>" onChange={e => setReplayOptions(prev => ({ ...prev, runId: e.target.value }))} />
                   </label>
                   <div className="full-width replay-variables-field">
                     <span>Session Variables JSON</span>
@@ -471,23 +517,20 @@ export function ScriptReplayDebuggerView({
             <div className="debugger-body">
               {isBrowserScript && selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} runtimeParameter={runtimeInspectionMode === 'current' ? currentRuntimeParameter(currentRuntimeSnapshot, selectedOutlineParameterName) : undefined} currentMode={runtimeInspectionMode === 'current'} onEdit={onEditParameterDefinition} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} />}
               {isBrowserScript && <details className="debugger-evidence-hint"><summary>About debug evidence</summary><p>Recording verification checks a conversion draft. Debugging here checks the current saved or edited script; changes require a new debug run.</p></details>}
+              <div className="debug-session-row">
+              <div className="debug-session-tools debug-selection-status">
+                <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
+                <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
+                <button type="button" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
+                <TooltipButton type="button" title="Runs prerequisites; during a paused run, stops at the next matching execution" disabled={!selectedRow || (replaying && !isReplayPaused)} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
+              </div>
               <div className="debug-session-disclosures">
-              <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Base URL (relative targets)</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameter Data; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
+              <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Base URL (relative targets)</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (debugContinuesAfterFailure(replayOptions, script) ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameters; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
               {isBrowserScript && <details className="debug-effective-settings"><summary>Variable watches</summary><DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} finalValuesRecorded={Object.keys(replayReport?.final_variables || {}).length > 0} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} /></details>}
               <DebugRunHistory key={scriptId || projectId || 'draft'} runs={runHistory} current={replayReport} currentRecord={runRecord} />
               <DebugBreakpointControls breakpoints={debugBreakpoints} disabled={breakpointsPending} onChange={next => { setBreakpointsPending(true); void onUpdateBreakpoints(next).finally(() => setBreakpointsPending(false)) }} />
               </div>
-              {(replaying || replayReport) && (
-                <div className={`debugger-live-strip ${debuggerStatusState}`}>
-                  <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Passed' : 'Failed'}</span>
-                  <div className="debugger-live-strip-text">
-                    <strong role="status" aria-live="polite">{statusText}</strong>
-                    {isReplayPaused && runtimeFailures.length > 0 && <span>Continue follows the run’s error policy; stop-on-error ends this iteration after failure.</span>}
-                  </div>
-                  <small>{replayReport?.events.length || 0} recorded executions · {replayReport?.events.filter(event => !event.success).length || 0} failures</small>
-                  <span className="debugger-live-strip-time">{formatReplayTime(replayLatestActivity?.timestamp || replayReport?.completed_at || replayReport?.started_at)}</span>
-                </div>
-              )}
+              </div>
               {!replayReport?.stopped && !replayFailingEvent && replayReport?.error && <p className="replay-report-error">{replayReport.error}</p>}
               {replayFailingEvent && !isBrowserScript && selectedReplayEvent?.success !== false && (
                 <div className="replay-failure-pin debugger-failure-pin">
@@ -517,12 +560,6 @@ export function ScriptReplayDebuggerView({
                 </div>
               )}
 
-              <div className="debug-session-tools debug-selection-status">
-                <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
-                <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
-                <button type="button" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
-                <TooltipButton type="button" title="Runs prerequisites; during a paused run, stops at the next matching execution" disabled={!selectedRow || (replaying && !isReplayPaused)} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
-              </div>
               <div className="script-pane-switch" role="group" aria-label="Debug panes">{(isBrowserScript ? ['outline', 'editor'] as const : ['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowPane === pane} onClick={() => { setNarrowPane(pane); if (pane === 'inspector') setDebugDetailCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Inspector'}</button>)}</div>
               <div data-narrow-pane={narrowPane}
                 className={`debugger-shell ${debugDetailCollapsed || isBrowserScript || debugDetailHost ? 'debugger-detail-collapsed' : ''} ${isBrowserScript ? 'browser-evidence-workspace' : ''} ${dockCollapsed ? 'debug-dock-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
@@ -532,7 +569,7 @@ export function ScriptReplayDebuggerView({
                   '--bottom-h': `${debuggerBottomHeight}px`,
                 } as React.CSSProperties}
               >
-                <aside className="debugger-rail" aria-label="Actions">
+                <aside className="debugger-rail" aria-label="Actions" ref={debuggerRailRef}>
                   <section className="debugger-rail-section">
                     <div className="debugger-rail-header">
                       <div className="debugger-rail-header-top">
@@ -571,7 +608,7 @@ export function ScriptReplayDebuggerView({
                           role="region"
                           aria-label="Debugger actions"
                           tabIndex={0}
-                          onKeyDownCapture={handleOutlineKeys}
+                          onKeyDownCapture={event => { if (!toggleFocusedRowBreakpoint(event)) handleOutlineKeys(event) }}
                         >
                           {(() => {
                             const renderRows = buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences)
@@ -633,6 +670,7 @@ export function ScriptReplayDebuggerView({
                                     {isTopLevel ? (
                                       <TooltipButton
                                         type="button"
+                                        aria-keyshortcuts="F9"
                                         className={`debugger-gutter ${gutterState}`}
                                         title={wholeActive ? `Remove breakpoint (whole ${typeLabel === 'SEQ' ? 'sequence' : 'block'})` : childBpCount > 0 ? `${childBpCount} sub-step breakpoint${childBpCount === 1 ? '' : 's'} — click to break before this block` : 'Break before this block'}
                                         aria-label={`${wholeActive ? 'Remove' : 'Add'} breakpoint on ${action.name || `action ${actionIndex + 1}`}`}
@@ -697,6 +735,7 @@ export function ScriptReplayDebuggerView({
                                     <div key={stepKey} className={`debugger-action-row child ${groupStatus} ${isCurrentGroup ? 'current' : ''}`} style={indentStyle(item.depth)}>
                                       <TooltipButton
                                         type="button"
+                                        aria-keyshortcuts="F9"
                                         className={`debugger-gutter ${stepBpActive ? 'active' : ''}`}
                                         title={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint (fires every iteration)'}
                                         aria-label={`${stepBpActive ? 'Remove' : 'Add'} sub-step breakpoint on ${item.name}`}
@@ -781,6 +820,7 @@ export function ScriptReplayDebuggerView({
                                   >
                                     <TooltipButton
                                       type="button"
+                                      aria-keyshortcuts="F9"
                                       className={`debugger-gutter ${bpActive ? 'active' : ''}`}
                                       data-disabled={disabledBreakpointKeys.has(bpKey)}
                                       title={bpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
@@ -833,6 +873,7 @@ export function ScriptReplayDebuggerView({
                                 >
                                   <TooltipButton
                                     type="button"
+                                    aria-keyshortcuts="F9"
                                     className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
                                     data-disabled={disabledBreakpointKeys.has(rowKey)}
                                     title={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
@@ -945,7 +986,7 @@ export function ScriptReplayDebuggerView({
                     aria-valuenow={debuggerVarsWidth}
                   />
                   <div className="debugger-center-tabs">
-                    <TabList className="debugger-center-tablist" role="tablist" onKeyDown={handleTabKey}>
+                    <TabList className="debugger-center-tablist ux-underline-tabs" role="tablist" aria-label="Action evidence views" onKeyDown={handleTabKey}>
                       <button type="button" role="tab" aria-selected={debuggerTab === 'request'} className={debuggerTab === 'request' ? 'active' : ''} onClick={() => setDebuggerTab('request')} tabIndex={(debuggerTab === 'request') ? 0 : -1}>Request / Response</button>
                       {isBrowserScript && (
                         <button type="button" role="tab" aria-selected={debuggerTab === 'browser'} className={debuggerTab === 'browser' ? 'active' : ''} onClick={() => setDebuggerTab('browser')} tabIndex={(debuggerTab === 'browser') ? 0 : -1}>Browser Evidence</button>
@@ -1010,7 +1051,7 @@ export function ScriptReplayDebuggerView({
                       /></details>
                     )}
                     {!replayReport ? (
-                      <div className="debugger-empty">No debugger session yet. Review Debug options, then run one iteration. <button type="button" onClick={() => { setNarrowPane('outline'); setDebugActionListCollapsed(false) }}>Open outline to set breakpoints</button></div>
+                      <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, or F9), review Debug options, then run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
                       (() => {
                         const event = selectedReplayEvent
@@ -1063,10 +1104,13 @@ export function ScriptReplayDebuggerView({
                                 </div>
                                       {!isBrowserScript && <section aria-label="Response evidence">
                                   <strong>Actual response: {event.status_code || 'No protocol status'}</strong>
-                                  <p>Response body: {(event.snapshot?.response_body_state || event.response_body_state)?.replace(/_/g, ' ') || 'Unknown capture state'}</p>
                                   {event.error_message && <p role="alert">{event.error_message}</p>}
-                                  {event.snapshot?.response_body ? <button type="button" onClick={() => document.getElementById('debug-captured-response')?.scrollIntoView({ block: 'nearest' })}>View captured response below</button> : <p>{(event.snapshot?.response_body_state || event.response_body_state) === 'empty' ? 'The target returned an empty response body.' : (event.snapshot?.response_body_state || event.response_body_state) === 'redacted' ? 'Response body removed by the credential-redaction policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'expired' ? 'Response body expired under the retention policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'not_captured' ? 'Response body was not captured. Open Debug options and choose diagnostic capture before rerunning.' : event.response_body_state === 'not_retained' ? 'Response body was removed by the evidence-retention limit.' : 'Response body unavailable; the capture state is unknown. This does not establish that the response was empty.'}</p>}
-                                  {!event.snapshot?.response_body && <button type="button" onClick={() => setDebuggerSettingsOpen(true)}>Review evidence capture settings</button>}
+                                  {event.snapshot?.response_body
+                                    ? <p>Body captured. <button type="button" className="link-button" onClick={() => document.getElementById('debug-captured-response')?.scrollIntoView({ block: 'nearest' })}>View captured response below</button></p>
+                                    : (() => {
+                                      const body = responseBodyMessage(event.snapshot?.response_body_state || event.response_body_state)
+                                      return <p>{body.text}{body.capturable && <> <button type="button" className="link-button" onClick={() => setDebuggerSettingsOpen(true)}>Open Debug options</button></>}</p>
+                                    })()}
                                   {/* Provenance answers "how do we know", after the answer itself: closed by default, headline kept in the summary. */}
                                   {!runtimeVariablesUnavailable && (() => {
                                     const bodyState = event.snapshot?.response_body_state || event.response_body_state
@@ -1369,6 +1413,7 @@ export function ScriptReplayDebuggerView({
                               <strong>{ca.parent_action_name ? `${ca.parent_action_name} › ${ca.action_name || 'sub-request'}` : (ca.action_name || 'Next action')}</strong>
                               <span className="replay-event-target">{ca.method || ca.action_type} {ca.target || ca.selector}</span>
                             </div>
+                            {isReplayPaused && <DebugNextRequest script={script} action={ca} values={runtimeVariablesUnavailable ? null : currentRuntimeLookup(currentRuntimeSnapshot)} runId={browserReplaySession?.run_id} />}
                             {isReplayPaused && <p className="debugger-current-hint">Press Step (F10) to execute this action, or Continue (F5) to run to the next breakpoint.</p>}
                           </div>
                         )
@@ -1397,7 +1442,7 @@ export function ScriptReplayDebuggerView({
                   />
                   <div className="debugger-bottom-tabs">
                     <button type="button" aria-label={dockCollapsed ? "Expand logs and problems" : "Collapse logs and problems"} onClick={() => setDockCollapsed(value => !value)}>{dockCollapsed ? "Expand" : "Collapse"}</button>
-                    <TabList role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list" onKeyDown={handleTabKey}>
+                    <TabList role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list ux-underline-tabs" onKeyDown={handleTabKey}>
                     <TooltipButton type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output" tabIndex={(debuggerBottomTab === 'console') ? 0 : -1}>Engine logs</TooltipButton>
                     <TooltipButton type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order" tabIndex={(debuggerBottomTab === 'timeline') ? 0 : -1}>Timeline</TooltipButton>
                     <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }} tabIndex={(debuggerBottomTab === 'problems') ? 0 : -1}>Problems{problemCount + runtimeFailures.length > 0 ? ` ${problemCount + runtimeFailures.length}` : ''}</button>
@@ -1528,15 +1573,52 @@ export function ScriptReplayDebuggerView({
               </div>
 
               <div className="debugger-statusbar">
-                <span className={`debugger-statusbar-item ${replayStatusLabel === 'Failed' ? 'text-danger' : replayStatusLabel === 'Running' ? '' : 'text-success'}`}>{replayReport ? replayStatusLabel : 'Idle'}</span>
                 <span className="debugger-statusbar-item">Group: {replayReport?.group || replayOptions.groupName || 'replay'}</span>
                 <span className="debugger-statusbar-item">Protocol: {replayReport?.protocol || script.protocol}</span>
-                <span className="debugger-statusbar-item">{replayReport ? `${replayReport.events.length} recorded executions` : `${debugActionRows.length} actions planned`}</span>
+                {/* After a run its counts are in the session bar. */}
+                {!replayReport && <span className="debugger-statusbar-item">{debugActionRows.length} actions planned</span>}
                 {replayReport?.completed_at && <span className="debugger-statusbar-item">Completed {formatReplayTime(replayReport.completed_at)}</span>}
                 {debugBreakpoints.length > 0 && <span className="debugger-statusbar-item">{debugBreakpoints.length} breakpoint{debugBreakpoints.length === 1 ? '' : 's'}</span>}
               </div>
             </div>
           </div>
+  )
+}
+
+const PREVIEW_BODY_LIMIT = 4000
+const PREVIEW_TITLES: Record<PreviewSegment['kind'], string | undefined> = {
+  text: undefined,
+  value: 'This session\u2019s current value',
+  unresolved: 'No value yet; it is sent as written unless an earlier step provides it',
+  secret: 'Project secret; resolved when the step runs and never shown',
+  generated: 'Generated when the step runs',
+}
+
+/** A template with the session's current values filled in, each kind marked. */
+function PreviewText({ segments }: { segments: PreviewSegment[] }) {
+  return <>{segments.map((segment, index) => segment.kind === 'text'
+    ? <span key={index}>{segment.text}</span>
+    : <span key={index} className={`debug-preview-${segment.kind}`} title={PREVIEW_TITLES[segment.kind]}>{segment.text}</span>)}</>
+}
+
+/**
+ * The request a paused session runs next, as VuGen's next-step view shows it:
+ * the action's target, headers and body with the values this session holds
+ * now. Values an earlier step has yet to provide stay as written.
+ */
+function DebugNextRequest({ script, action, values, runId }: { script: ScriptDefinition; action: ScriptDebugAction; values: Readonly<Record<string, string>> | null; runId?: string }) {
+  const definition = debugNextAction(script, action)
+  if (!definition) return null
+  const { target, headers, body } = debugNextRequestParts(definition)
+  if (!target && !headers.length && !body) return null
+  const shownBody = body && body.length > PREVIEW_BODY_LIMIT ? `${body.slice(0, PREVIEW_BODY_LIMIT)}…` : body
+  return (
+    <section className="debugger-next-request" aria-label="Next request">
+      <h4>Next request <small>{values ? 'with this session\u2019s current values' : 'this session\u2019s values are not available, so references show as written'}</small></h4>
+      {target && <p className="debugger-next-request-line"><code>{definition.method || action.method || action.action_type}</code> <PreviewText segments={previewTemplate(target, values, runId)} /></p>}
+      {headers.length > 0 && <dl className="debugger-next-request-headers">{headers.map(([name, value], index) => <div key={`${name}-${index}`}><dt>{name}</dt><dd><PreviewText segments={previewTemplate(value, values, runId)} /></dd></div>)}</dl>}
+      {shownBody && <pre className="debugger-next-request-body"><PreviewText segments={previewTemplate(shownBody, values, runId)} /></pre>}
+    </section>
   )
 }
 

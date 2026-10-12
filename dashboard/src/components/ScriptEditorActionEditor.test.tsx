@@ -241,11 +241,13 @@ describe('ActionEditor transaction field', () => {
     expect(badge.getAttribute('style')).toBeNull()
   })
 
-  it('preserves method colors for request badges', () => {
+  it('colours request badges with the method colour as text, never as a fill under white text', () => {
     renderEditor({ name: 'Login', type: 'POST', target: '/login' } as ScriptActionDefinition)
     const badge = container.querySelector<HTMLElement>('.action-badge')!
     expect(badge.classList.contains('action-badge-review')).toBe(false)
-    expect(badge.style.background).toBe('rgb(0, 0, 0)')
+    expect(badge.style.color).toBe('rgb(0, 0, 0)')
+    // A text token used as a fill failed contrast in the dark themes.
+    expect(badge.style.background).toBe('')
   })
 
   it('shows the imported call for a transaction marker instead of request fields', () => {

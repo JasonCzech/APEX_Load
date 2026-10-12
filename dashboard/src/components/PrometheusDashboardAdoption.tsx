@@ -28,13 +28,13 @@ export default function PrometheusDashboardAdoption({ dashboard, projectId }: { 
   }, [open, api, projectId])
   useEffect(() => { setOpen(false); setQueries([]); setDraft(undefined); setReviewed(false); setNotice(''); setError(''); setConnectionID('') }, [projectId, dashboard.id])
   return <div>
-    <button type="button" disabled={busy} onClick={() => { setNotice(''); setError(''); setOpen(true) }}>Create Prometheus monitor source</button>
+    <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { setNotice(''); setError(''); setOpen(true) }}>Create Prometheus monitor source</button>
     {notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
     {open && <fieldset disabled={busy} aria-label="Adopt dashboard for test monitoring"><legend>Review target-system monitor source</legend>
       <p>Choose an approved project connection. The server resolves committed variable bindings and time macros into an editable draft. This creates a disabled source after review. No performance criteria are created automatically.</p>
       <label>Adopted source name<input value={name} onChange={event => setName(event.target.value)} /></label>
       <label>Adoption Prometheus connection<select value={connectionID} onChange={event => { setConnectionID(event.target.value); setDraft(undefined); setQueries([]); setReviewed(false) }}><option value="">Select a verified connection</option>{connections.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <button type="button" disabled={!connectionID} onClick={async () => {
+      <button type="button" className="btn btn-secondary btn-sm" disabled={!connectionID} onClick={async () => {
         setBusy(true); setError(''); setReviewed(false)
         try { const value = await api.adoptPrometheusDashboard(projectId, connectionID, dashboard.id); setDraft(value); setQueries(value.selection.queries) }
         catch (err) { setError(String(err)) } finally { setBusy(false) }
@@ -49,7 +49,7 @@ export default function PrometheusDashboardAdoption({ dashboard, projectId }: { 
         <PrometheusQueryFields queries={queries} onChange={next => { setQueries(next); setReviewed(false) }} />
         <label><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} />I reviewed the target scope, units, semantics and datasource mapping</label>
       </div>}
-      <button type="button" disabled={!name.trim() || !connectionID || !draft || draft.connection_id !== connectionID || !reviewed || !queries.length || queries.some(query => !prometheusQueryValid(query))} onClick={async () => {
+      <button type="button" className="btn btn-primary btn-sm" disabled={!name.trim() || !connectionID || !draft || draft.connection_id !== connectionID || !reviewed || !queries.length || queries.some(query => !prometheusQueryValid(query))} onClick={async () => {
         const connection = connections.find(item => item.id === connectionID)
         if (!connection || !draft) return
         setBusy(true); setError('')
@@ -58,7 +58,7 @@ export default function PrometheusDashboardAdoption({ dashboard, projectId }: { 
           setOpen(false); setNotice('Disabled monitor source created. Review and enable it in Monitoring → Telemetry, then attach it explicitly to a test or scenario.')
         } catch (err) { setError(String(err)) } finally { setBusy(false) }
       }}>Save adopted source</button>
-      <button type="button" onClick={() => setOpen(false)}>Cancel source adoption</button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>Cancel source adoption</button>
     </fieldset>}
   </div>
 }

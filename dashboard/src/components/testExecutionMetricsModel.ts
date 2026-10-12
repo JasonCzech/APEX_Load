@@ -10,6 +10,8 @@ import {
 
 export interface ExecutionChartSummary {
   avgTps: number
+  /** Requests per second over the same points, when they carry a request rate. */
+  avgRequestRate?: number
   avgLatency: number
   avgError: number
   maxVusers: number
@@ -42,6 +44,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     timestampMs: Date.parse(metric.timestamp),
     vusers: metric.active_vusers,
     tps: rounded(metric.tps),
+    requestRate: rounded(metric.request_rate),
     targetTps: metric.target_tps,
     avgMs: rounded(metric.avg_response_ms),
     errorPct: rounded(metric.error_pct || 0, 100),
@@ -106,6 +109,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
   if (metric.groups) {
     Object.entries(metric.groups).forEach(([name, groupMetric]) => {
       point[`${name}_tps`] = rounded(groupMetric.tps)
+      point[`${name}_requestRate`] = rounded(groupMetric.request_rate)
       point[`${name}_avgMs`] = rounded(groupMetric.avg_response_ms)
       point[`${name}_vusers`] = groupMetric.vusers
       point[`${name}_transactions`] = groupMetric.transactions
@@ -157,10 +161,31 @@ export function mapExecutionHistory(history: LiveMetrics[] | undefined): Metrics
 
 // Trailing window for the Ops View top-line TPS/ART averages.
 export const HERO_METRIC_AVERAGE_WINDOW_MS = 10_000
+/** The trailing average window, e.g. "10 s". */
+export const RECENT_AVERAGE_WINDOW = `${HERO_METRIC_AVERAGE_WINDOW_MS / 1000} s`
+/** Names the trailing average in labels, e.g. "TPS (10 s avg)". */
+export const RECENT_AVERAGE_LABEL = `${RECENT_AVERAGE_WINDOW} avg`
 
 export interface RecentMetricAverages {
   tps?: number
   art?: number
+  /** Requests per second, over the same samples as tps. */
+  requestRate?: number
+  /** Each named group's TPS and requests per second, over the same samples; a group no sample carries is left out. */
+  groups?: Record<string, { tps: number; requestRate: number }>
+  /** Each named transaction's TPS, over the same samples; a transaction no sample carries is left out. */
+  transactions?: Record<string, number>
+}
+
+/** The groups and transactions to average beside the run. */
+export interface RecentMetricAverageNames {
+  groups?: readonly string[]
+  transactions?: readonly string[]
+}
+
+function seriesValue(point: MetricsHistoryPoint, key: string): number | undefined {
+  const value = point[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 // recentMetricAverages computes trailing-window (default 10s) averages of TPS and
@@ -175,9 +200,17 @@ export interface RecentMetricAverages {
 // it falls back to a plain mean when the window had no throughput. Gap-spacer and
 // value-less rows are ignored. Returns undefined fields when the window has no
 // usable samples so callers can fall back to the instantaneous value.
+//
+// Requests per second and each named group's and transaction's rate are
+// averaged over the same samples as TPS, so every rate on a page covers one
+// window and the groups' rates add up to the run's. A sample without a group
+// or transaction counts as zero for it: the sample had none of its traffic.
+// One that no sample in the window carries (history recorded without group
+// detail) is left out, so callers fall back to the latest value instead of 0.
 export function recentMetricAverages(
   history: ReadonlyArray<MetricsHistoryPoint>,
   windowMs: number = HERO_METRIC_AVERAGE_WINDOW_MS,
+  names: RecentMetricAverageNames = {},
 ): RecentMetricAverages {
   let anchorTs: number | undefined
   for (let index = history.length - 1; index >= 0; index -= 1) {
@@ -192,15 +225,34 @@ export function recentMetricAverages(
 
   let tpsSum = 0
   let tpsCount = 0
+  let requestRateSum = 0
   let artWeightedSum = 0
   let artWeight = 0
   let artSimpleSum = 0
   let artSimpleCount = 0
+  const groupNames = names.groups ?? []
+  const transactionNames = names.transactions ?? []
+  const groupSums = groupNames.map(() => ({ tps: 0, requestRate: 0, seen: false }))
+  const transactionKeys = transactionNames.map(name => transactionChartSeriesKey(name, 'tps'))
+  const transactionSums = transactionNames.map(() => ({ tps: 0, seen: false }))
   for (const point of history) {
     if (typeof point.timestampMs !== 'number' || point.timestampMs < cutoff) continue
     if (typeof point.tps === 'number') {
       tpsSum += point.tps
       tpsCount += 1
+      requestRateSum += point.requestRate ?? 0
+      groupNames.forEach((name, index) => {
+        const tps = seriesValue(point, `${name}_tps`)
+        const requestRate = seriesValue(point, `${name}_requestRate`)
+        groupSums[index].tps += tps ?? 0
+        groupSums[index].requestRate += requestRate ?? 0
+        groupSums[index].seen ||= tps !== undefined || requestRate !== undefined
+      })
+      transactionKeys.forEach((key, index) => {
+        const tps = seriesValue(point, key)
+        transactionSums[index].tps += tps ?? 0
+        transactionSums[index].seen ||= tps !== undefined
+      })
     }
     if (typeof point.avgMs === 'number') {
       artSimpleSum += point.avgMs
@@ -213,7 +265,16 @@ export function recentMetricAverages(
   }
 
   const result: RecentMetricAverages = {}
-  if (tpsCount > 0) result.tps = tpsSum / tpsCount
+  if (tpsCount > 0) {
+    result.tps = tpsSum / tpsCount
+    result.requestRate = requestRateSum / tpsCount
+    if (groupNames.length > 0) {
+      result.groups = Object.fromEntries(groupNames.flatMap((name, index) => groupSums[index].seen ? [[name, { tps: groupSums[index].tps / tpsCount, requestRate: groupSums[index].requestRate / tpsCount }]] : []))
+    }
+    if (transactionNames.length > 0) {
+      result.transactions = Object.fromEntries(transactionNames.flatMap((name, index) => transactionSums[index].seen ? [[name, transactionSums[index].tps / tpsCount]] : []))
+    }
+  }
   if (artWeight > 0) result.art = artWeightedSum / artWeight
   else if (artSimpleCount > 0) result.art = artSimpleSum / artSimpleCount
   return result
@@ -715,8 +776,10 @@ export function summarizeExecutionChartData(filteredData: MetricsHistoryPoint[])
     vusers: Math.max(acc.vusers, point.vusers),
   }), { tps: 0, avgMs: 0, errorPct: 0, vusers: 0 })
 
+  const requestRates = realPoints.flatMap(point => Number.isFinite(point.requestRate) ? [point.requestRate as number] : [])
   return {
     avgTps: sum.tps / realPoints.length,
+    ...(requestRates.length > 0 ? { avgRequestRate: requestRates.reduce((total, rate) => total + rate, 0) / requestRates.length } : {}),
     avgLatency: sum.avgMs / realPoints.length,
     avgError: sum.errorPct / realPoints.length,
     maxVusers: sum.vusers,

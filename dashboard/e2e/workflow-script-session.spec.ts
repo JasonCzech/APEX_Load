@@ -25,7 +25,7 @@ test('a validation that returns after an edit is ignored and the next one binds 
   expect(stored.metadata?.import?.source ?? stored.script?.metadata?.import?.source).toBe('openapi')
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  const scriptName = page.locator('.side-panel-script-name input')
+  const scriptName = page.getByRole('textbox', { name: 'Script name', exact: true })
   await expect(scriptName).toHaveValue(name)
   const states = page.getByLabel('Script evidence states')
   const recheck = async () => {

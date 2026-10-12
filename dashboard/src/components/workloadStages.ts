@@ -1,3 +1,4 @@
+import { STEP_EPSILON } from './loadPlanSteps'
 import type { LoadStageDraft } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 
@@ -67,20 +68,45 @@ export function stageBoundarySeconds(stages: LoadStageDraft[], emptyDurationSeco
   return stages.map(stage => (cursor += stageSeconds(stage, emptyDurationSeconds)))
 }
 
+/**
+ * The controller ramps a stage's VUsers in at most this many equal steps,
+ * each one interval after the last, the first one interval in
+ * (pkg/api maxVUserRampSteps, runVUserScaleRamp).
+ */
+export const ENGINE_STAGE_RAMP_STEPS = 100
+
+function stageTarget(stage: LoadStageDraft, valueKey: 'target_vusers' | 'target_tps', previous: number, options: StageLevelOptions): number {
+  const raw = stage[valueKey]
+  return raw === undefined || raw === null
+    ? (options.missingTarget === 'previous' ? previous : 0)
+    : Math.max(0, Number(raw) || 0)
+}
+
+// A VUser ramp stage as the controller runs it: whole VUsers in at most
+// ENGINE_STAGE_RAMP_STEPS steps, truncated toward the start level as Go's
+// integer division truncates.
+function stageRampSteps(from: number, to: number) {
+  const delta = Math.round(to) - Math.round(from)
+  return { delta, steps: Math.min(Math.abs(delta), ENGINE_STAGE_RAMP_STEPS) }
+}
+
 /** The level a stage schedule reaches elapsedSeconds after the group's activation. */
 export function stageLevelAt(stages: LoadStageDraft[], elapsedSeconds: number, valueKey: 'target_vusers' | 'target_tps', options: StageLevelOptions): number {
   let cursor = 0
   let previous = options.initialLevel
   for (const stage of stages) {
     const duration = stageSeconds(stage, options.emptyDurationSeconds)
-    const raw = stage[valueKey]
-    const target = raw === undefined || raw === null
-      ? (options.missingTarget === 'previous' ? previous : 0)
-      : Math.max(0, Number(raw) || 0)
+    const target = stageTarget(stage, valueKey, previous, options)
     const end = cursor + duration
     if (elapsedSeconds < end) {
       const type = stageType(stage)
       if (type === 'ramp_up' || type === 'ramp_down') {
+        if (valueKey === 'target_vusers') {
+          const { delta, steps } = stageRampSteps(previous, target)
+          if (steps === 0 || duration <= 0) return target
+          const taken = Math.min(steps, Math.floor((elapsedSeconds - cursor) / (duration / steps) + STEP_EPSILON))
+          return Math.round(previous) + Math.trunc(delta * Math.max(0, taken) / steps)
+        }
         const progress = duration > 0 ? Math.max(0, Math.min(1, (elapsedSeconds - cursor) / duration)) : 1
         return previous + ((target - previous) * progress)
       }
@@ -90,4 +116,23 @@ export function stageLevelAt(stages: LoadStageDraft[], elapsedSeconds: number, v
     previous = target
   }
   return previous
+}
+
+/** Every second, from the group's activation, at which a VUser ramp stage takes a step. */
+export function stageRampStepSeconds(stages: LoadStageDraft[], options: StageLevelOptions): number[] {
+  let cursor = 0
+  let previous = options.initialLevel
+  const out: number[] = []
+  for (const stage of stages) {
+    const duration = stageSeconds(stage, options.emptyDurationSeconds)
+    const target = stageTarget(stage, 'target_vusers', previous, options)
+    const type = stageType(stage)
+    if ((type === 'ramp_up' || type === 'ramp_down') && duration > 0) {
+      const { steps } = stageRampSteps(previous, target)
+      for (let step = 1; step <= steps; step += 1) out.push(cursor + step * (duration / steps))
+    }
+    cursor += duration
+    previous = target
+  }
+  return out
 }

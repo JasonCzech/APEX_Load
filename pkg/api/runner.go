@@ -952,9 +952,26 @@ type LiveMetrics struct {
 	// rate is not dominated by whichever second was sampled last. They are
 	// pointers so samples recorded before run counters existed stay absent
 	// (not a misleading zero) while new samples always carry them.
-	RunTotalTx                 *int64                                `json:"run_total_transactions,omitempty"`
-	RunTotalErrors             *int64                                `json:"run_total_errors,omitempty"`
-	RunErrorPct                *float64                              `json:"run_error_pct,omitempty"`
+	RunTotalTx     *int64   `json:"run_total_transactions,omitempty"`
+	RunTotalErrors *int64   `json:"run_total_errors,omitempty"`
+	RunErrorPct    *float64 `json:"run_error_pct,omitempty"`
+	// Requests counts every attempted request in the sample window, failed
+	// ones included: every result that is not a business transaction, which
+	// is the report's request population. RequestRate is Requests per
+	// second. A script without transactions still sends requests, so these,
+	// not TPS and the transaction counters, are the run's live throughput
+	// and error rate whenever it has sent any. The RunRequest* fields are
+	// the same counters from the start of the run, absent like the other
+	// run counters on samples recorded before they existed. A run whose
+	// request counts are incomplete (a generator in its fleet does not count
+	// them, or a controller took it over from history without them) carries
+	// none, run-to-date or window, so it is read in transactions.
+	Requests                   int64                                 `json:"requests,omitempty"`
+	RequestErrors              int64                                 `json:"request_errors,omitempty"`
+	RequestRate                float64                               `json:"request_rate,omitempty"`
+	RunTotalRequests           *int64                                `json:"run_total_requests,omitempty"`
+	RunRequestErrors           *int64                                `json:"run_request_errors,omitempty"`
+	RunRequestErrorPct         *float64                              `json:"run_request_error_pct,omitempty"`
 	P50Ms                      float64                               `json:"p50_ms"`
 	P90Ms                      float64                               `json:"p90_ms"`
 	P95Ms                      float64                               `json:"p95_ms"`
@@ -1433,13 +1450,20 @@ type LiveDependencyEdge struct {
 }
 
 type GroupLiveMetrics struct {
-	Name                   string   `json:"name"`
-	VUsers                 int      `json:"vusers"`
-	Transactions           int64    `json:"transactions"`
-	Errors                 int64    `json:"errors"`
-	RunTransactions        *int64   `json:"run_transactions,omitempty"`
-	RunErrors              *int64   `json:"run_errors,omitempty"`
-	RunErrorPct            *float64 `json:"run_error_pct,omitempty"`
+	Name            string   `json:"name"`
+	VUsers          int      `json:"vusers"`
+	Transactions    int64    `json:"transactions"`
+	Errors          int64    `json:"errors"`
+	RunTransactions *int64   `json:"run_transactions,omitempty"`
+	RunErrors       *int64   `json:"run_errors,omitempty"`
+	RunErrorPct     *float64 `json:"run_error_pct,omitempty"`
+	// Request counters as on LiveMetrics, for the group's own requests.
+	Requests               int64    `json:"requests,omitempty"`
+	RequestErrors          int64    `json:"request_errors,omitempty"`
+	RequestRate            float64  `json:"request_rate,omitempty"`
+	RunRequests            *int64   `json:"run_requests,omitempty"`
+	RunRequestErrors       *int64   `json:"run_request_errors,omitempty"`
+	RunRequestErrorPct     *float64 `json:"run_request_error_pct,omitempty"`
 	TPS                    float64  `json:"tps"`
 	TargetTPS              float64  `json:"target_tps,omitempty"`
 	ThroughputGapPct       float64  `json:"throughput_gap_pct,omitempty"`

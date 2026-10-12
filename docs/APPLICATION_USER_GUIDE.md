@@ -56,7 +56,7 @@ ready-to-load script. In outline:
    scripts, scenarios, and results are all filtered by it.
 2. Create or import a script, add at least one assertion, then **Validate Script(s)**
    and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
-3. Build a one-group scenario, launch it from **New Test**, and watch it in
+3. Build a one-group scenario, launch it from **New run**, and watch it in
    **Command Center**.
 4. When the run reaches `COMPLETE`, read the report from **Results** and pin it as the
    release baseline.
@@ -74,7 +74,7 @@ your main map:
 | Sidebar item | What it is for |
 | --- | --- |
 | **Dashboard** | Live overview of tests and recent activity. |
-| **New Test** | Launch a run from a scenario, and manage run schedules. |
+| **New run** | Launch a run from a scenario, and manage run schedules. |
 | **Command Center** | Active-run overview and live run controls. |
 | **Results** | Browse completed runs and their reports. |
 | **Scripts** | Author, import, and manage test scripts. |
@@ -98,7 +98,7 @@ Navigation shortcuts are two-key sequences: press `g`, release, then the second 
 | --- | --- |
 | `g` `d` | Dashboard |
 | `g` `c` | Command Center |
-| `g` `n` | New Test |
+| `g` `n` | New run |
 | `g` `t` | Scenarios |
 | `g` `s` | Scripts |
 | `g` `p` | Repository |
@@ -155,7 +155,10 @@ open an existing one in the **Script Editor**, clone one, or import from an exte
 format.
 
 In **Author**, select a step in the outline to edit its properties in the main
-**Action editor**. **Overview & bulk** exposes multi-step selection and reusable
+**Action editor**. The editor opens on the first problem, or on the first action when
+there is none. Rename the script in place in the top bar. **Source**, **Runtime
+Settings**, **Parameters**, and, for imports, **Source Mapping** are always available
+as tabs above the editor. **Overview & bulk** exposes multi-step selection and reusable
 block tools. **Add Action** stages a new action or block: choose its phase and
 place it before, after, inside a supported block, or at the end of the phase.
 Canceling insertion leaves the script unchanged.
@@ -166,8 +169,9 @@ Cmd/Ctrl+Shift+Z; code editors retain their own text history. **Review changes**
 compares the current script with its last saved version. Saving retains the
 selected action.
 
-**Author Problems** collects current draft issues and links action errors to their
-fields, including nested steps. Validation and debug evidence are tracked
+**Author Problems** collects current draft issues, including what blocks or weakens
+replay (review gates, missing values, project secrets), lists blockers first, and links
+each one to the action or field it concerns, including nested steps. Validation and debug evidence are tracked
 separately from saved state; an earlier debug result does not validate later edits.
 
 The request body editor supports JSON, XML, and plain text, with syntax checks,
@@ -508,9 +512,10 @@ Once you have a recording:
 - **Replay** the captured flow with self-healing selectors that tolerate small UI
   changes.
 - **Correlation** finds the dynamic values (tokens, session IDs, view state) that must
-  be captured from one response and replayed in the next request. The **Correlation
-  Diagnose** and **ruleset** panels let you review what was detected, see the evidence,
-  and tune the rules.
+  be captured from one response and replayed in the next request. **Correlation
+  Diagnose** lets you review what was detected and see the evidence. To reuse the
+  rules, open **Shared assets** on the **Scripts** page, discover a ruleset from the
+  recorded script, then preview and apply it to other scripts.
 - **Parameterization review** suggests which recorded literals should become data-pool
   or template values, so the script drives varied data instead of one fixed path.
 
@@ -568,22 +573,47 @@ functions convert, which are no-ops, and which are preserved for review.
 A script says what one user does; a **scenario** says how many users do it, for how
 long, and under what conditions. Build scenarios from the **Scenarios** page.
 
+The scenario builder has five steps. **Start** takes the scenario's name and its script
+groups, one row per group (an empty draft can instead copy a saved scenario).
+**Model & shape** picks the load model: choosing Fixed VUsers or Stepped Ramp selects
+its recommended variant, another variant can be picked instead, and **Next** moves on.
+Goal-Driven asks for its targets in a sizing dialog, and Traffic Profile for its
+demand source. **Run settings** has one row of tabs for target load, ramp pattern, run
+phases, advanced settings, the browser and script runtime, and generator assignment;
+then come **Data** and **Review**. Every step it has been through is marked done,
+and **Save draft** is on every step. The builder warns, without stopping you, when
+another scenario already has the name you type.
+
+The scenario library has one row of controls: search, **Source**, and **Filters**,
+which hold the archive state and the application and release filters (it shows how
+many are set). Each row's action is **New run**; **More** holds **View runs** (or
+click the row), **Edit**, which opens the scenario at Start, **Edit run settings** and
+**Edit data**, which open it at those steps, and the rest. The **Workload** column
+names each scenario's load model, and a name two scenarios share is marked
+**Duplicate name** with each one's reference beside it.
+
 A scenario brings together:
 
 - **Groups** — each group runs one script with its own VUser count, ramp-up, ramp-down,
   and optional iteration cap. Use multiple groups to model a realistic mix, for example
   80% browse and 20% checkout. A group's `role` distinguishes a normal **load** group
-  from an **observer** group (shown as **Observer Canary**) — a browser experience
+  from an **observer** group (shown as **Observer canary**) — a browser experience
   canary that measures what a real user sees while the load groups generate the pressure.
 - **Load model** — total VUsers, ramp pattern, and duration. Multi-stage groups let you
   express step loads (ramp to 100, hold, ramp to 300, hold) rather than a single slope.
+  The load chart draws the plan as the engine runs it, one VUser at a time: a ramp-up
+  starts the first VUser at once and the rest evenly through the ramp, a ramp stage
+  adds its VUsers in equal steps with the first one interval in, and at the end of the
+  duration each group stops its VUsers evenly through its ramp-down. The scenario
+  builder, New run, Command Center and the run's results draw the same chart on
+  elapsed time; during and after a run, the observed VUsers are drawn over it.
 - **Runtime settings** — per-group options such as think time, pacing, network
   simulation, and IP spoofing (a pool of source IPs so the run presents many client
   addresses).
 - **Placement** — which generators, regions, or load zones run each group, including
   weighted distribution across zones.
 - **Application and release** — the scenario is assigned to the workspace's application
-  and release; change it with **Change application/releases…** in the Scenario Library.
+  and release; change it with **Change application/releases…** in the scenario library.
 - **Shakeout** and **Resource baseline windows** — whether the run first proves the
   scripts with a canary, and whether it captures an idle resource baseline before load
   starts.
@@ -601,13 +631,23 @@ longer validates, a duration shorter than the ramp.
 
 ## Launching A Test
 
-Once you have a scenario, launch a run from the **New Test** page (or directly from a
+Once you have a scenario, launch a run from the **New run** page (or directly from a
 scenario).
 
-1. Confirm your scope, then choose the scenario.
-2. Confirm the target application and release — this is what the release trend keys off.
+1. Confirm your scope, then choose the scenario. Once you choose one (or arrive from
+   the scenario builder or the library with one), the list folds away and the
+   scenario's card shows its script groups, where **Edit settings** changes a group for
+   this run only. **Change scenario** opens the list again; the card's **More** menu
+   holds its history and Archive.
+2. Confirm the target application and release — this is what the release trend keys
+   off. A run in your workspace's application starts at your workspace's release,
+   unless the scenario is assigned to other releases of that application; then you
+   choose, with the assigned ones marked.
 3. Apply any run-time overrides (base URL, environment values, data-pool selections).
-4. Choose to start now or schedule a start time.
+   Monitor bindings, criteria, Elastic and Dynatrace capture and trace context are
+   under **Monitoring for this run**, folded unless one needs attention.
+4. Choose to start now or schedule a start time. If something blocks the launch, each
+   reason you can fix on the page links to its field.
 5. Start.
 
 Three things can happen between "start" and "running":
@@ -655,10 +695,11 @@ Open the **Command Center** to see active runs in your selected project, applica
 and release. With no release selected, the overview includes all releases in that
 scope. Search by name or reference, filter by status, and sort by attention, newest,
 or name. Each row shows run status, waiting reasons, load, throughput, cumulative
-error percentage, timing, and metric freshness. Remaining time is an estimate because
-the summary does not include cumulative pause time.
+error percentage, timing, and metric freshness. Elapsed and remaining time leave out
+time spent paused, which a run makes up after it resumes; remaining time is an
+estimate, and a paused run shows Paused instead.
 
-When there are no active runs, choose **New Test** or **Browse scenarios**. New Test
+When there are no active runs, choose **New run** or **Browse scenarios**. New run
 requires permission to manage tests. Select a release before opening Results; if
 none exists, open the Repository to configure the workspace. A failed refresh shows
 an error and Retry instead of claiming the scope is empty; previously loaded runs
@@ -675,7 +716,7 @@ From the Command Center you can also control the run while it is in flight:
 | Control | Available when | Effect |
 | --- | --- | --- |
 | **Start** | `QUEUED` or `RESERVED` | Begins execution now |
-| **Pause** | `RUNNING` | Holds every VUser between actions |
+| **Pause** | `RUNNING` | Holds every VUser between actions. Paused time does not count against a run's duration: the run makes it up after it resumes, so it ends that much later |
 | **Resume** | `PAUSED` | Releases the hold |
 | **Stop** | `RUNNING`, `INITIALIZING`, or `PAUSED` | Graceful: finishes the action in flight, skips later actions and think time, runs teardown. The run stays `STOPPING` until generator teardown and archive finalization complete |
 | **Abort** | Any non-terminal state | Force-cancels active work immediately |
@@ -684,17 +725,43 @@ From the Command Center you can also control the run while it is in flight:
 Pause and Stop become unavailable once a run enters `STOPPING` — from there only Abort
 remains.
 
+Each of these asks for confirmation first, and so does a group's **Apply** in the
+group load panel: its dialog names the change and what it does to the run (for
+example "Store_Browse 2 → 4 VUsers · run total 6 → 8 VUsers"). A run that has not
+started takes target edits without asking. Once the page scrolls past the run
+controls, they fold into one row (the run, its load, throughput, time and errors,
+and the controls) that stays at the top.
+
 Watch throughput, response-time percentiles (p50/p95/p99), and error rate together.
+Live throughput and error rates count requests once the run has sent any, as the
+run report does, wherever a running run is shown (the Dashboard, the Command Center
+overview and the run's own pages): a script without transactions still sends
+requests, and the transaction that wraps each of its iterations fails whenever any
+request in it does. A run that sends no requests is counted in transactions, and a
+goal-oriented run's throughput stays in TPS, the unit of its targets. Every label
+names what it counts and its window: on a run's Command Center page rates are
+averaged over the last 10 s (the overview and the Dashboard show the last sample),
+error rates and counts are run to date, and the **Transactions** table lists each
+transaction's own TPS and the last sample's counts. When request counts would
+cover only part of a run — a generator that predates them is in the fleet, or
+another controller took the run over from stored history — they are left out
+rather than shown as run to date, and the page counts that run in
+transactions.
 When errors climb, drill into the live error evidence to see representative failures
 rather than guessing — a 500 from your application and a connection reset from an
 exhausted generator look identical in an error-rate chart and call for opposite
-responses.
+responses. Each failure is titled by a real example ("expected status 200, got
+503"); the signature that groups the similar ones is shown beneath it.
+
+When a run ends, Command Center hands over to the run report's **Summary**. The
+**Execution** tab keeps the plan, groups and events; the run's telemetry budget
+receipt is under its **Configuration and infrastructure evidence** disclosure.
 
 ## Scheduling Recurring Runs
 
 To run a scenario on a cadence — a nightly regression, a weekly soak — use scheduling.
 
-1. Go to **New Test** and switch to the **Schedules** view.
+1. Go to **New run** and switch to the **Schedules** view.
 2. Pick a stored scenario.
 3. Define when it should run with the visual **cron builder**: a five-field editor over
    a standard cron expression, so you do not have to remember cron syntax.
@@ -895,10 +962,17 @@ rules and its limits are described in
 ## Repository And Shared Assets
 
 The **Repository** page is where you manage the structural hierarchy — applications,
-releases, projects, and the shared **object repository** that scripts and scenarios
-bind to (for example, reusable selectors or shared definitions). Keeping shared assets
-here means scripts reference one source of truth instead of duplicating values, so a
-changed selector is fixed once rather than in fourteen scripts.
+releases and projects — and the project's shared test data.
+
+What scripts share lives on the **Shared assets** tab of the **Scripts** page, where
+you pick scripts by name:
+
+- **Object repositories** hold named page elements that browser scripts reference.
+  Seed one from a script's recorded elements, and optionally point that script's
+  actions at it. A changed selector is then fixed once rather than in fourteen scripts.
+- **Correlation rulesets** hold the dynamic-value rules learned from one recording.
+  Preview a ruleset against another script before applying it; applying saves a new
+  script version.
 
 ## Settings Reference
 

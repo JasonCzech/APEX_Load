@@ -24,6 +24,12 @@ vi.mock('../hooks/api/useObjectRepositoryApi', () => ({
   useObjectRepositoryApi: () => apiMock,
 }))
 
+const scriptApiMock = { listScripts: vi.fn() }
+vi.mock('../hooks/api/useScriptApi', () => ({
+  useScriptApi: () => scriptApiMock,
+}))
+const projectScripts = ['script-7', 'script-9', 'script-b', 'script-draft'].map(id => ({ id, name: `Checkout ${id}`, protocol: 'web' }))
+
 let container: HTMLElement
 let root: Root
 
@@ -31,6 +37,7 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  scriptApiMock.listScripts.mockResolvedValue({ scripts: projectScripts, count: projectScripts.length })
 })
 afterEach(() => {
   act(() => root.unmount())
@@ -50,13 +57,40 @@ function findButton(text: string): HTMLButtonElement | undefined {
   return Array.from(container.querySelectorAll('button')).find(b => b.textContent?.trim() === text) as HTMLButtonElement | undefined
 }
 
-function setInput(placeholder: string, value: string) {
-  const input = Array.from(container.querySelectorAll('input')).find(i => i.getAttribute('placeholder') === placeholder) as HTMLInputElement
+function field(label: string): HTMLInputElement | undefined {
+  const wrapper = Array.from(container.querySelectorAll('label.pp-field')).find(element => element.querySelector('span')?.textContent === label)
+  return wrapper?.querySelector('input') ?? undefined
+}
+
+function setField(label: string, value: string) {
+  const input = field(label)
+  expect(input).toBeTruthy()
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
   act(() => {
-    setter.call(input, value)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    setter.call(input!, value)
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
   })
+}
+
+function scriptSelect(label = 'Script'): HTMLSelectElement | undefined {
+  const picker = Array.from(container.querySelectorAll('.script-picker')).find(element => element.querySelector('span')?.textContent === label)
+  return picker?.querySelector('select') ?? undefined
+}
+
+// The picker lists the project's scripts once its (debounced) search settles.
+async function pickScript(id: string, label = 'Script') {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  await flush()
+  const select = scriptSelect(label)
+  expect(select).toBeTruthy()
+  act(() => {
+    select!.value = id
+    select!.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function openNewRepository() {
+  await act(async () => { findButton('New repository')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 }
 
 describe('ObjectRepositoryPanel', () => {
@@ -70,11 +104,17 @@ describe('ObjectRepositoryPanel', () => {
     expect(container.textContent).toContain('Checkout')
     expect(container.textContent).toContain('1 object')
 
-    setInput('Seed from script id…', 'script-7')
-    await act(async () => { findButton('Import from script')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    // No id to type: the form opens on demand and lists the project's scripts.
+    expect(container.querySelector('.pp-create')).toBeNull()
+    await openNewRepository()
+    await pickScript('script-7')
+    expect(scriptApiMock.listScripts).toHaveBeenCalledWith('proj-a', undefined, { search: '', limit: 50 })
+    expect(scriptSelect()?.selectedOptions[0]?.textContent).toBe('Checkout script-7 · web')
+    await act(async () => { findButton('Create repository')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
     expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith({ project_id: 'proj-a', script_id: 'script-7' })
+    expect(container.querySelector('.pp-create')).toBeNull()
   })
 
   it('creates an empty repository', async () => {
@@ -85,9 +125,12 @@ describe('ObjectRepositoryPanel', () => {
     await flush()
     expect(container.textContent).toContain('No object repositories yet.')
 
-    await act(async () => { findButton('New repository')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    setInput('Repository name', 'Login objects')
-    await act(async () => { findButton('Create')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await openNewRepository()
+    const empty = Array.from(container.querySelectorAll<HTMLInputElement>('.pp-choice input[type=radio]'))[1]
+    await act(async () => { empty.click() })
+    expect(findButton('Create repository')?.disabled).toBe(true)
+    setField('Name', 'Login objects')
+    await act(async () => { findButton('Create repository')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
     expect(apiMock.createObjectRepository).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'proj-a', name: 'Login objects' }))
@@ -142,10 +185,11 @@ describe('ObjectRepositoryPanel', () => {
     await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
     await flush()
 
-    setInput('Seed from script id…', 'script-9')
-    const checkbox = container.querySelector('.pp-check input[type=checkbox]') as HTMLInputElement
+    await openNewRepository()
+    await pickScript('script-9')
+    const checkbox = container.querySelector('.pp-create .pp-check input[type=checkbox]') as HTMLInputElement
     await act(async () => { checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await act(async () => { findButton('Import from script')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { findButton('Create repository')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
     expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith(expect.objectContaining({ script_id: 'script-9', bind_script: true }))
@@ -170,20 +214,22 @@ describe('ObjectRepositoryPanel', () => {
     expect(container.textContent).not.toContain('Stale Project A Repository')
   })
 
-  it('clears create and import drafts when the project changes', async () => {
+  it('clears the new-repository draft when the project changes', async () => {
     apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
     await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
     await flush()
-    await act(async () => findButton('New repository')?.click())
-    setInput('Repository name', 'Project A draft')
-    setInput('Seed from script id…', 'project-a-script')
+    await openNewRepository()
+    await pickScript('script-7')
+    setField('Name (optional)', 'Project A draft')
 
     await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-b" canManage />) })
     await flush()
-    expect(container.querySelector('input[placeholder="Repository name"]')).toBeNull()
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Seed from script id…"]')?.value).toBe('')
-    await act(async () => findButton('New repository')?.click())
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Repository name"]')?.value).toBe('')
+    expect(container.querySelector('.pp-create')).toBeNull()
+    await openNewRepository()
+    expect(field('Name (optional)')?.value).toBe('')
+    expect(scriptSelect()?.value).toBe('')
+    await pickScript('script-9')
+    expect(scriptApiMock.listScripts).toHaveBeenLastCalledWith('proj-b', undefined, { search: '', limit: 50 })
   })
 
   it('keeps the last good repository list when a same-project refresh fails', async () => {
@@ -213,17 +259,18 @@ describe('ObjectRepositoryPanel', () => {
     expect(container.textContent).toContain('Repository 100')
   })
 
-  it('locks rapid imports and rejects a response owned by another project', async () => {
+  it('locks rapid creates and rejects a response owned by another project', async () => {
     let resolveImport!: (value: ObjectRepository) => void
     apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
     apiMock.createObjectRepositoryFromScript.mockReturnValue(new Promise(resolve => { resolveImport = resolve }))
     await act(async () => root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />))
     await flush()
-    setInput('Seed from script id…', 'script-b')
-    const importButton = findButton('Import from script')!
+    await openNewRepository()
+    await pickScript('script-b')
+    const createButton = findButton('Create repository')!
     act(() => {
-      importButton.click()
-      importButton.click()
+      createButton.click()
+      createButton.click()
     })
     expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledTimes(1)
 
@@ -235,10 +282,10 @@ describe('ObjectRepositoryPanel', () => {
 
     expect(container.textContent).toContain('different project')
     expect(container.textContent).not.toContain('Project B objects')
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Seed from script id…"]')?.value).toBe('script-b')
+    expect(scriptSelect()?.value).toBe('script-b')
   })
 
-  it('registers create and import edits with the global navigation guard', async () => {
+  it('registers the new-repository draft with the global navigation guard', async () => {
     let registration: { guard: NavigationGuard; dirty: boolean } | undefined
     apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
     await act(async () => {
@@ -252,11 +299,106 @@ describe('ObjectRepositoryPanel', () => {
       )
     })
     await flush()
-    setInput('Seed from script id…', 'script-draft')
-    await flush()
+    await openNewRepository()
+    expect(registration?.dirty).toBe(false)
+    await pickScript('script-draft')
     expect(registration?.dirty).toBe(true)
 
     act(() => registration?.guard.discard())
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Seed from script id…"]')?.value).toBe('')
+    expect(container.querySelector('.pp-create')).toBeNull()
+    await openNewRepository()
+    expect(scriptSelect()?.value).toBe('')
+  })
+
+  it('will not save a seeded draft from the navigation guard until a script is chosen', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <ObjectRepositoryPanel projectId="proj-a" canManage />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flush()
+    await openNewRepository()
+    setField('Name (optional)', 'Named first')
+    expect(registration?.dirty).toBe(true)
+
+    let saved: boolean | undefined
+    await act(async () => { saved = await registration?.guard.save() })
+    expect(saved).toBe(false)
+    expect(apiMock.createObjectRepositoryFromScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Choose the script to seed the repository from')
+  })
+
+  it('counts only the chosen source\'s fields as a draft, and keeps the script when switching back', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <ObjectRepositoryPanel projectId="proj-a" canManage />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flush()
+    await openNewRepository()
+    await pickScript('script-7')
+    expect(registration?.dirty).toBe(true)
+
+    const [fromScript, empty] = Array.from(container.querySelectorAll<HTMLInputElement>('.pp-choice input[type=radio]'))
+    await act(async () => { empty.click() })
+    expect(registration?.dirty).toBe(false)
+
+    await act(async () => { fromScript.click() })
+    await flush()
+    expect(scriptSelect()?.value).toBe('script-7')
+    expect(registration?.dirty).toBe(true)
+  })
+
+  it('opens the form in place of its button and returns focus to it on Cancel', async () => {
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await flush()
+    await openNewRepository()
+    // No second way to hide the form, so a draft is never closed away unguarded.
+    expect(findButton('New repository')).toBeUndefined()
+    expect(document.activeElement).toBe(container.querySelector('.pp-choice input[type=radio]'))
+
+    await act(async () => { findButton('Cancel')!.click() })
+    expect(container.querySelector('.pp-create')).toBeNull()
+    expect(document.activeElement).toBe(findButton('New repository'))
+  })
+
+  it('returns focus to the opener once a create completes', async () => {
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    apiMock.createObjectRepositoryFromScript.mockResolvedValue(repo({ id: 'r7', name: 'Seeded' }))
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await flush()
+    await openNewRepository()
+    await pickScript('script-7')
+    const create = findButton('Create repository')!
+    create.focus()
+    await act(async () => { create.click() })
+    await flush()
+    expect(container.querySelector('.pp-create')).toBeNull()
+    expect(document.activeElement).toBe(findButton('New repository'))
+  })
+
+  it('searches the scripts the page already holds', async () => {
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage scripts={[{ id: 'held-1', name: 'Held browser flow', protocol: 'browser' }]} />) })
+    await flush()
+    await openNewRepository()
+    await pickScript('held-1')
+    expect(scriptApiMock.listScripts).not.toHaveBeenCalled()
+    expect(scriptSelect()?.selectedOptions[0]?.textContent).toBe('Held browser flow · browser')
   })
 })

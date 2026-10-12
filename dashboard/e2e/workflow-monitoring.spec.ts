@@ -1,4 +1,4 @@
-import { test, expect, json, login, seedScript, seedScenario, showAccountCard } from './support/workflow'
+import { test, expect, json, login, seedScript, seedScenario, showAccountCard, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import { abortLiveRun, startLiveRun } from './support/liveRun'
 
@@ -123,6 +123,8 @@ test('New Test preserves multiple Elastic bindings, exact-window criteria and dr
   await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/dynatrace-connections`, route => route.fulfill({ json: { connections: [{ id: 'ready-dynatrace', name: 'Ready Dynatrace', enabled: true, status: 'ready' }] } }))
   await page.goto(`/#/new-test?scenarioId=${scenario}&${scopeQuery(workspace)}`)
   await page.reload()
+  // Capture options sit under "Monitoring for this run", folded until opened.
+  await page.getByText('Monitoring for this run', { exact: true }).click()
   const bindings = page.getByRole('group', { name: 'Run monitor selection', exact: true })
   const mode = bindings.getByRole('combobox', { name: 'Monitor binding mode', exact: true })
   await expect(mode).toHaveValue('inherit')
@@ -160,8 +162,12 @@ test('New Test preserves multiple Elastic bindings, exact-window criteria and dr
   await expect(bindings.getByRole('checkbox', { name: 'OpenSearch logs (elastic)', exact: true })).toBeChecked()
   await page.getByRole('navigation').getByRole('button', { name: 'Dashboard', exact: true }).click()
   await page.getByRole('dialog', { name: /^Unsaved changes$/i }).getByRole('button', { name: 'Save changes', exact: true }).click()
-  await page.getByRole('navigation').getByRole('button', { name: 'New Test', exact: true }).click()
+  await page.getByRole('navigation').getByRole('button', { name: 'New run', exact: true }).click()
   await page.getByRole('button', { name: 'Restore saved draft', exact: true }).click()
+  // The folded section says what the restored draft captures, then opens to it.
+  const monitoringSummary = page.locator('details.new-test-monitoring > summary')
+  await expect(monitoringSummary).toContainText('2 monitor bindings · 1 monitor rule')
+  await monitoringSummary.click()
   await expect(mode).toHaveValue('custom')
   await expect(bindings.getByRole('checkbox', { name: 'Elastic metrics (elastic)', exact: true })).toBeChecked()
   await expect(bindings.getByRole('checkbox', { name: 'OpenSearch logs (elastic)', exact: true })).toBeChecked()
@@ -177,6 +183,8 @@ test('Scenario criteria retain invalid drafts across steps and require correctio
   const script = await seedScript(request, workspace)
   const scenario = await seedScenario(request, workspace, script, 'Criterion workflow')
   const original = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+  // Criteria list sources only for a project with run monitoring on.
+  await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { monitoring_enabled: true } }))
   await page.route(`**/api/v1/projects/${workspace.projectId}/monitor-sources`, route => route.fulfill({ json: [{ id: 'elastic-metrics', name: 'Elastic criteria', enabled: true, pack: 'elastic', elastic: { metrics: [{ name: 'interval_count', statistic: 'count', unit: 'count', bucket_seconds: 10 }] } }] }))
   const saved: Record<string, unknown>[] = []
   await page.route(`**/api/v1/scenarios/${scenario}`, route => {
@@ -187,7 +195,7 @@ test('Scenario criteria retain invalid drafts across steps and require correctio
   })
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Criterion workflow' }).getByRole('button', { name: /^Edit\b/ }).click()
+  await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Criterion workflow' }), 'Criterion workflow')
   const steps = page.getByLabel('Scenario builder steps', { exact: true })
   await steps.getByRole('button', { name: /^Data/ }).click()
   const rules = page.getByRole('group', { name: 'Monitoring performance criteria', exact: true })
@@ -284,6 +292,8 @@ test('Retired monitoring controls are hidden and inherited bindings can be remov
   await page.context().route(`**/api/v1/scenarios/${scenario}/monitor-bindings`, route => route.fulfill({ json: { sources: [{ source_id: 'retired-source', required: false }] } }))
   await page.goto(`/#/new-test?scenarioId=${scenario}&${scopeQuery(workspace)}`)
   await page.reload()
+  // Capture options sit under "Monitoring for this run", folded until opened.
+  await page.getByText('Monitoring for this run', { exact: true }).click()
   const bindings = page.getByRole('group', { name: 'Run monitor selection', exact: true })
   await expect(bindings.getByRole('combobox', { name: 'Monitor binding mode', exact: true })).toHaveValue('inherit')
   await expect(bindings).toContainText('Selected source retired-source retired or unavailable')

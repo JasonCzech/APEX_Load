@@ -223,45 +223,6 @@ export function ScriptImportReviewDialogs({
   )
 }
 
-export function ImportReviewOutlineSection({ controller }: { controller: ImportReviewController }) {
-  const count = controller.importedParameterFileMappings.length
-  if (count === 0) return null
-  return (
-    <section className="outline-section import-review-section">
-      <div className="actions-sidebar-header outline-section-header">
-        <button
-          type="button"
-          className="outline-section-toggle"
-          aria-expanded={!controller.importReviewCollapsed}
-          onClick={() => controller.setImportReviewCollapsed(collapsed => !collapsed)}
-        >
-          <span aria-hidden="true" className="outline-section-chevron">{controller.importReviewCollapsed ? '▸' : '▾'}</span>
-          <span>
-            <strong>Import Review</strong>
-            <small>{count} parameter file{count === 1 ? '' : 's'}</small>
-          </span>
-        </button>
-      </div>
-      {!controller.importReviewCollapsed && (
-        <div className="starter-blocks-panel parameter-mappings-launcher">
-          <div className="starter-blocks-header">
-            <strong>Parameter File Mappings</strong>
-            <span>{count}</span>
-          </div>
-          <p>Review how the source tool&apos;s parameter files mapped into APEX data sources. Most useful right after import.</p>
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary parameter-mappings-launcher-button"
-            onClick={() => controller.setShowImportedParameterMappingsDialog(true)}
-          >
-            Open Mapping List
-          </button>
-        </div>
-      )}
-    </section>
-  )
-}
-
 export function ImportedMetadataUtilityPanel({
   activeAction,
   controller,
@@ -489,10 +450,60 @@ export function ObjectDescriptorReviewDocument({
   )
 }
 
+// How an import's runtime settings fared: migration readiness and the parity
+// of each source setting. This belongs with the runtime settings, so Source
+// Mapping in the editor opens on the code map, as it does in the importer.
+export function ImportedRuntimeParityReview({ controller, onOpenRuntimeSettings }: {
+  controller: ImportReviewController
+  onOpenRuntimeSettings: (area?: string | null) => void
+}) {
+  const { importSummary } = controller
+  if (!importSummary.runtimeSettingReadiness && importSummary.runtimeSettingsParity.length === 0) return null
+  return (
+    <details className="imported-runtime-parity">
+      <summary>Imported runtime settings{importSummary.runtimeSettingReadiness ? ` · ${controller.runtimeSettingReadinessSummary}` : ''}</summary>
+      {importSummary.runtimeSettingReadiness && (
+        <div className="import-correlation-section">
+          <h4>Migration Readiness</h4>
+          <p>{controller.runtimeSettingReadinessSummary}</p>
+          {importSummary.runtimeSettingReadiness.blocking_settings.length > 0 && (
+            <div className="import-correlation-list">
+              {importSummary.runtimeSettingReadiness.blocking_settings.map(entry => (
+                <div key={`readiness-${entry.id}`} className="import-correlation-card">
+                  <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                  <span>{entry.concept}</span>
+                  <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                  {getImportedRuntimeSectionId(entry.area) && <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}><button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenRuntimeSettings(entry.area)}>{`Open ${entry.area} Settings`}</button></div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {importSummary.runtimeSettingsParity.length > 0 && (
+        <div className="import-correlation-section">
+          <h4>Runtime Settings Parity</h4>
+          <p>These imported source runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
+          <div className="import-correlation-list">
+            {importSummary.runtimeSettingsParity.map(entry => (
+              <div key={entry.id} className="import-correlation-card">
+                <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                <span>{entry.concept}</span>
+                <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                {getImportedRuntimeSectionId(entry.area) && <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}><button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenRuntimeSettings(entry.area)}>{`Open ${entry.area} Settings`}</button></div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </details>
+  )
+}
+
 export function SourceMappingReviewDocument({
   controller,
   baselineScript, onChangeReview, draftDirty, onEditTarget,
-  onOpenRuntimeSettings,
   onSelectAction,
   script,
 }: {
@@ -501,7 +512,6 @@ export function SourceMappingReviewDocument({
   baselineScript?: ScriptDefinition | null
   onChangeReview?: (state: MappingReviewState) => void
   draftDirty?: boolean
-  onOpenRuntimeSettings: (area?: string | null) => void
   onSelectAction: (actionIndex: number) => void
   script: ScriptDefinition
 }) {
@@ -551,42 +561,6 @@ export function SourceMappingReviewDocument({
                 {trueClientPromotionReview.nextActions.map((action, index) => <div key={`trueclient-next-action-${index}`} className="import-correlation-card"><strong>Next Action</strong><span>{action}</span></div>)}
               </div>
             )}
-          </div>
-        )}
-
-        {importSummary.runtimeSettingReadiness && (
-          <div className="import-correlation-section">
-            <h4>Migration Readiness</h4>
-            <p>{controller.runtimeSettingReadinessSummary}</p>
-            {importSummary.runtimeSettingReadiness.blocking_settings.length > 0 && (
-              <div className="import-correlation-list">
-                {importSummary.runtimeSettingReadiness.blocking_settings.map(entry => (
-                  <div key={`readiness-${entry.id}`} className="import-correlation-card">
-                    <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
-                    <span>{entry.concept}</span>
-                    <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
-                    {getImportedRuntimeSectionId(entry.area) && <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}><button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenRuntimeSettings(entry.area)}>{`Open ${entry.area} Settings`}</button></div>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {importSummary.runtimeSettingsParity.length > 0 && (
-          <div className="import-correlation-section">
-            <h4>Runtime Settings Parity</h4>
-            <p>These imported source runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
-            <div className="import-correlation-list">
-              {importSummary.runtimeSettingsParity.map(entry => (
-                <div key={entry.id} className="import-correlation-card">
-                  <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
-                  <span>{entry.concept}</span>
-                  <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
-                  {getImportedRuntimeSectionId(entry.area) && <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}><button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenRuntimeSettings(entry.area)}>{`Open ${entry.area} Settings`}</button></div>}
-                </div>
-              ))}
-            </div>
           </div>
         )}
 

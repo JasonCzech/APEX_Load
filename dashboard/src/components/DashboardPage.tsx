@@ -1,6 +1,6 @@
 import { compareRunsChronologically } from '../utils/runChronology'
 import SeriesChartExport from "./SeriesChartExport"
-import { errorRateBasisLabel, liveRunCounts, liveRunErrorPercent } from '../utils/liveErrorRate'
+import { errorRateBasisLabel, errorRateLabel, groupRunCounts, liveCountsErrorPercent, livePopulation, liveRate, liveRunCounts, liveRunErrorPercent, liveThroughputPopulation, throughputLabel, type LivePopulation } from '../utils/liveErrorRate'
 import type { AnalysisReportContext } from './dashboardAnalysisModel'
 import TabList from './ux/TabList'
 import DashboardLandingSummary from './DashboardLandingSummary'
@@ -33,7 +33,7 @@ import { useSharedTestList } from '../hooks/useSharedTestList'
 import { DEFAULT_TEST_CATALOG_PAGE_SIZE, loadTestSummaryTail } from './testCatalogPagination'
 import './DashboardPage.css'
 import { aggregateDashboardTpsHistory } from './dashboardAggregateHistory'
-import { recentMetricAverages } from './testExecutionMetricsModel'
+import { RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
 import { formatFixed } from '../utils/numberFormat'
 import { metricHeader } from '../metricLabels'
 import { formatDateTime as formatSharedDateTime } from '../utils/dateTime'
@@ -77,10 +77,12 @@ export type DashboardSnapshotAudience = 'admin' | 'user'
 interface ActiveGroupMetricRow {
   name: string
   vusers: number
-  tps?: number
+  /** Requests/s or TPS, over the card's window. */
+  rate?: number
   avgResponseMs?: number
   errorPct?: number
-  passed?: number
+  /** Requests sent, or transactions passed, run to date where reported. */
+  count?: number
   failed?: number
   hasLiveMetrics: boolean
 }
@@ -125,7 +127,7 @@ interface ReleaseSnapshotPanelProps {
     completed: number
     aborted: number
     active: number
-    activeTps: number | undefined
+    activeThroughput: string | undefined
     avgError: number | undefined
   }
   latestReleaseRun: TestSummary | undefined
@@ -233,29 +235,29 @@ function finiteMetric(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-function groupErrorPct(metric?: GroupLiveMetrics): number | undefined {
-  if (!metric) return undefined
-  const passed = finiteMetric(metric.transactions) ?? 0
-  const failed = finiteMetric(metric.errors) ?? 0
-  const attempts = passed + failed
-  return attempts > 0 ? (failed / attempts) * 100 : 0
-}
-
-function buildActiveGroupMetricRows(test: TestSummary): ActiveGroupMetricRow[] {
+// The card counts as Command Center does: requests once the run has sent
+// any, else transactions, with a goal-oriented run's throughput in TPS, the
+// unit of its targets; rates over the card's window, error rates and counts
+// run to date.
+function buildActiveGroupMetricRows(test: TestSummary, population: LivePopulation, throughputPopulation: LivePopulation, recent: RecentMetricAverages): ActiveGroupMetricRow[] {
   const liveGroups = test.live_metrics?.groups ?? {}
   const configuredGroups = test.groups || []
   const configuredNames = new Set<string>()
 
-  const rowForGroup = (name: string, metric?: GroupLiveMetrics, configuredVusers = 0): ActiveGroupMetricRow => ({
-    name,
-    vusers: finiteMetric(metric?.vusers) ?? configuredVusers,
-    tps: finiteMetric(metric?.tps),
-    avgResponseMs: finiteMetric(metric?.avg_response_ms),
-    errorPct: groupErrorPct(metric),
-    passed: metric ? finiteMetric(metric.transactions) ?? 0 : undefined,
-    failed: metric ? finiteMetric(metric.errors) ?? 0 : undefined,
-    hasLiveMetrics: Boolean(metric),
-  })
+  const rowForGroup = (name: string, metric?: GroupLiveMetrics, configuredVusers = 0): ActiveGroupMetricRow => {
+    const counts = groupRunCounts(metric, population)
+    const averaged = metric ? recent.groups?.[name] : undefined
+    return {
+      name,
+      vusers: finiteMetric(metric?.vusers) ?? configuredVusers,
+      rate: finiteMetric((throughputPopulation === 'requests' ? averaged?.requestRate : averaged?.tps) ?? liveRate(metric, throughputPopulation)),
+      avgResponseMs: finiteMetric(metric?.avg_response_ms),
+      errorPct: counts && counts.attempts > 0 ? liveCountsErrorPercent(counts) : undefined,
+      count: counts ? counts.attempts - (population === 'requests' ? 0 : counts.errors) : undefined,
+      failed: counts?.errors,
+      hasLiveMetrics: Boolean(metric),
+    }
+  }
 
   const configuredRows = configuredGroups.map((group, index) => {
     const name = (group.name || group.script_name || group.script_id || `Group ${index + 1}`).trim()
@@ -360,6 +362,13 @@ function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendS
     invalidRuns: entries.filter(entry => entry.report.validity?.verdict === 'invalid').length,
     suspectRuns: entries.filter(entry => entry.report.validity?.verdict === 'suspect').length,
   }
+}
+
+/** Active runs' last-sample rates, summed per unit: "120.0 req/s · 8.0 TPS". */
+function formatActiveThroughput(rates: Array<{ population: LivePopulation; rate: number }>): string {
+  const sums = new Map<LivePopulation, number>()
+  for (const { population, rate } of rates) sums.set(population, (sums.get(population) ?? 0) + rate)
+  return (['requests', 'transactions'] as const).flatMap(population => sums.has(population) ? [`${formatOptionalNumber(sums.get(population), 1)} ${population === 'requests' ? 'req/s' : 'TPS'}`] : []).join(' · ')
 }
 
 function getHistoryMetric(point: MetricsHistoryPoint, metric: CardMetricKey) {
@@ -515,7 +524,7 @@ function ReleaseSnapshotPanel({
 
   return (
     <aside className={`dash-release-panel ${open ? 'is-open' : 'is-collapsed'}`} aria-label="Release snapshot panel">
-      <PanelToggle className="release-panel-rail" expanded={false} panelName="Release snapshot" controls={panelId} onToggle={onToggle} hidden={open} />
+      <PanelToggle side="end" className="release-panel-rail" expanded={false} panelName="Release snapshot" controls={panelId} onToggle={onToggle} hidden={open} />
 
       <section id={panelId} className="release-panel-card" hidden={!open}>
         <div className="release-panel-header">
@@ -524,7 +533,7 @@ function ReleaseSnapshotPanel({
             <h3>Release Snapshot</h3>
             <p>{releaseName}</p>
           </div>
-          <PanelToggle className="release-panel-toggle" expanded panelName="Release snapshot" controls={panelId} onToggle={onToggle} />
+          <PanelToggle side="end" className="release-panel-toggle" expanded panelName="Release snapshot" controls={panelId} onToggle={onToggle} />
         </div>
 
         <div className="dash-release-selector release-panel-selector" role="group" aria-label="Dashboard release selector">
@@ -550,7 +559,7 @@ function ReleaseSnapshotPanel({
             <SnapshotStat label="Failed runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
             <SnapshotStat label="Archives ready" value={archivesReady} onClick={onResults} />
             <SnapshotStat label="Archive records" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
-            <SnapshotStat label="Current TPS" value={dashboardStats.active ? formatOptionalNumber(dashboardStats.activeTps, 1) : 'Idle'} onClick={onPrimaryActiveRun} />
+            <SnapshotStat label="Current throughput" value={dashboardStats.active ? dashboardStats.activeThroughput ?? MISSING_VALUE : 'Idle'} onClick={onPrimaryActiveRun} />
             {/* A rate, not a status: with nothing running there is no value to show. */}
             <SnapshotStat label="Live error rate (active runs)" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : MISSING_VALUE} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
           </div>
@@ -580,7 +589,7 @@ function ReleaseSnapshotPanel({
               </div>
               <div className="release-panel-actions" aria-label="Release operations links">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onMonitoring}>Monitoring</button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New Test</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New run</button>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>Results</button>
               </div>
             </div>
@@ -1227,14 +1236,22 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     const failed = resolvedTests.filter(t => t.status === 'FAILED').length
     const aborted = resolvedTests.filter(t => t.status === 'ABORTED').length
     const activeVUsers = activeTests.reduce((sum, test) => sum + (test.live_metrics?.active_vusers ?? test.total_vusers ?? 0), 0)
-    const activeTps = activeTests.every(test => Number.isFinite(test.live_metrics?.tps)) ? activeTests.reduce((sum, test) => sum + test.live_metrics!.tps, 0) : undefined
+    // Each run's rate in its own unit (requests/s once it sends requests, TPS
+    // for goal runs and runs without requests), summed per unit; error rates
+    // are each run's own, run to date, as on its Command Center page.
+    const rates = activeTests.map(test => {
+      const population = liveThroughputPopulation(test, livePopulation(test.live_metrics))
+      return { population, rate: test.live_metrics ? liveRate(test.live_metrics, population) : undefined }
+    })
+    const activeThroughput = rates.length > 0 && rates.every(item => Number.isFinite(item.rate)) ? formatActiveThroughput(rates as Array<{ population: LivePopulation; rate: number }>) : undefined
     const avgLatency = activeLiveMetrics.length
       ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.avg_response_ms || 0), 0) / activeLiveMetrics.length
       : 0
-    const avgError = activeTests.length > 0 && activeTests.every(test => Number.isFinite(test.live_metrics?.error_pct))
-      ? activeTests.reduce((sum, test) => sum + test.live_metrics!.error_pct, 0) / activeTests.length
+    const errorRates = activeTests.map(test => liveRunErrorPercent(test.live_metrics))
+    const avgError = errorRates.length > 0 && errorRates.every(rate => Number.isFinite(rate))
+      ? (errorRates as number[]).reduce((sum, rate) => sum + rate, 0) / errorRates.length
       : undefined
-    return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeTps, avgLatency, avgError }
+    return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeThroughput, avgLatency, avgError }
   }, [resolvedTests, activeTests, activeLiveMetrics])
 
   const releaseStats = useMemo(() => {
@@ -1348,7 +1365,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
           onClick={() => setActiveDashboardTab(tab.id)} tabIndex={(activeDashboardTab === tab.id) ? 0 : -1}
         >
-          <span>{tab.id === 'active' && pendingTests.length > 0 ? 'Active & Queued' : tab.label}</span>
+          <span>{tab.id === 'active' && pendingTests.length > 0 ? 'Active & queued' : tab.label}</span>
           <strong>{dashboardTabCounts[tab.id]}</strong>
         </button>
       ))}
@@ -1601,13 +1618,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   </svg>
                 </span>
                 <span>No tests currently running</span>
-                <span className="dash-empty-hint">Start a scenario from the New Test page</span>
+                <span className="dash-empty-hint">Start a scenario from the New run page</span>
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
                   onClick={navigateToNewTest}
                 >
-                  Start New Test
+                  Start a new run
                 </button>
               </div>
             ) : (
@@ -1615,10 +1632,16 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 {activeTests.map(test => {
                   const history = metricsHistory[test.id] || []
                   const latest = test.live_metrics
+                  const population = livePopulation(latest)
+                  const throughputPopulation = liveThroughputPopulation(test, population)
                   // Same trailing 10-second window as the Command Center hero, so
                   // both read the same throughput; 1-second samples jump around.
-                  const recent = recentMetricAverages(history)
-                  const cardTps = recent.tps ?? latest?.tps
+                  // Groups the run reports without configuring them average too.
+                  const recent = recentMetricAverages(history, undefined, { groups: [...new Set([...(test.groups || []).map(group => group.name), ...Object.keys(latest?.groups ?? {})])] })
+                  const recentRate = throughputPopulation === 'requests' ? recent.requestRate : recent.tps
+                  const cardRate = recentRate ?? liveRate(latest, throughputPopulation)
+                  const rateWindow = recentRate !== undefined ? RECENT_AVERAGE_LABEL : 'last sample'
+                  const errorCounts = liveRunCounts(latest, population)
                   const cardArt = recent.art ?? latest?.avg_response_ms
                   const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
                   const metricOption = graphMetricOptions[0]
@@ -1626,7 +1649,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     ...point,
                     selectedMetric: getHistoryMetric(point, metricOption.key),
                   }))
-                  const groupRows = buildActiveGroupMetricRows(test)
+                  const groupRows = buildActiveGroupMetricRows(test, population, throughputPopulation, recent)
                   return (
                     <div
                       key={test.id}
@@ -1644,18 +1667,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <span className="dac-metric-label">VUsers</span>
                         </div>
                         <div className="dac-metric">
-                          <span className="dac-metric-value">{cardTps === undefined ? MISSING_VALUE : formatFixed(cardTps, 1)}</span>
-                          <span className="dac-metric-label">{recent.tps !== undefined ? 'TPS (10s avg)' : 'TPS'}</span>
+                          <span className="dac-metric-value">{cardRate === undefined ? MISSING_VALUE : formatFixed(cardRate, 1)}</span>
+                          <span className="dac-metric-label">{throughputLabel(throughputPopulation)} ({rateWindow})</span>
                         </div>
                         <div className="dac-metric">
                           <span className="dac-metric-value">{cardArt === undefined ? MISSING_VALUE : formatFixed(cardArt, 0)}</span>
-                          <span className="dac-metric-label">{recent.art !== undefined ? 'ART ms (10s avg)' : 'ART ms'}</span>
+                          <span className="dac-metric-label">{recent.art !== undefined ? `ART ms (${RECENT_AVERAGE_LABEL})` : 'ART ms'}</span>
                         </div>
                         <div className="dac-metric">
-                          <span className={`dac-metric-value ${(liveRunErrorPercent(latest) ?? 0) > 0 ? 'text-danger' : ''}`}>
-                            {formatFixed(liveRunErrorPercent(latest) ?? 0, 2)}%
+                          <span className={`dac-metric-value ${(liveRunErrorPercent(latest, population) ?? 0) > 0 ? 'text-danger' : ''}`}>
+                            {formatFixed(liveRunErrorPercent(latest, population) ?? 0, 2)}%
                           </span>
-                          <span className="dac-metric-label" title={liveRunCounts(latest)?.basis === 'window' ? 'Error rate of the last sample window' : 'Error rate since the run started'}>Errors ({errorRateBasisLabel(liveRunCounts(latest)?.basis)})</span>
+                          <span className="dac-metric-label" title={errorCounts?.basis === 'window' ? 'Error rate of the last sample window' : 'Error rate since the run started'}>{errorRateLabel(population)} ({errorRateBasisLabel(errorCounts?.basis)})</span>
                         </div>
                       </div>
                       {chartData.length > 1 && (
@@ -1684,14 +1707,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       {groupRows.length > 0 && (
                         <div className="dac-group-table-wrap">
                           <table className="dac-group-table" aria-label={`${test.name} group metrics`}>
+                            <caption>
+                              {throughputLabel(throughputPopulation)} {rateWindow === RECENT_AVERAGE_LABEL ? `averaged over the last ${RECENT_AVERAGE_WINDOW}` : 'from the last sample'}; {population === 'requests' ? 'request' : 'transaction'} error rates and counts {errorCounts?.basis === 'window' ? 'from the last sample' : 'run to date'}.
+                            </caption>
                             <thead>
                               <tr>
                                 <th>Group</th>
                                 <th className="num">VUsers</th>
-                                <th className="num">TPS</th>
+                                <th className="num">{throughputLabel(throughputPopulation)}</th>
                                 <th className="num">{metricHeader('art')}</th>
                                 <th className="num">{metricHeader('errorRate')}</th>
-                                <th className="num">Passed</th>
+                                <th className="num">{population === 'requests' ? 'Requests' : 'Passed'}</th>
                                 <th className="num">Failed</th>
                               </tr>
                             </thead>
@@ -1702,10 +1728,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                                     <span className="dac-group-name" title={row.name}>{row.name}</span>
                                   </td>
                                   <td className="num strong">{formatOptionalCount(row.vusers)}</td>
-                                  <td className="num">{formatOptionalNumber(row.tps, 1)}</td>
+                                  <td className="num">{formatOptionalNumber(row.rate, 1)}</td>
                                   <td className="num">{formatOptionalNumber(row.avgResponseMs, 0)}</td>
                                   <td className={`num ${(row.errorPct ?? 0) > 0 ? 'text-danger strong' : ''}`}>{formatOptionalPercent(row.errorPct)}</td>
-                                  <td className="num">{formatOptionalCount(row.passed)}</td>
+                                  <td className="num">{formatOptionalCount(row.count)}</td>
                                   <td className={`num ${(row.failed ?? 0) > 0 ? 'text-danger strong' : ''}`}>{formatOptionalCount(row.failed)}</td>
                                 </tr>
                               ))}
@@ -1759,7 +1785,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <div className="dash-empty compact">
                 <span>No completed tests yet</span>
                 <span className="dash-empty-hint">Start a test to build activity, performance, and release history.</span>
-                <button type="button" className="btn btn-primary btn-sm" onClick={navigateToNewTest}>Start New Test</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={navigateToNewTest}>Start a new run</button>
               </div>
             ) : (
               <div className="trend-table-wrap" ref={activityTableBounds.ref} style={activityTableBounds.style}>

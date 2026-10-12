@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, idOf, json, login, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 let target: Server
@@ -60,7 +60,15 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Get customer' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Running…', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Step', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('Response body: captured')
+  // Paused again, the debugger shows the request about to run, with the value
+  // the step just extracted filled in; the step that ran is one click away.
+  await expect(page.getByRole('status').filter({ hasText: 'Paused before: Check order' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
+  await page.getByRole('complementary', { name: 'Actions' }).locator('.debugger-action-row-main').filter({ hasText: 'Get customer' }).click()
+  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('Body captured')
+  // Inspecting a step stops following; follow again before continuing.
+  await page.getByLabel('Follow execution', { exact: true }).check()
+  await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
@@ -70,14 +78,14 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await expect(problems.getByRole('button', { name: /Check order/ })).toBeVisible()
   await expect(problems).not.toContainText('No problems detected')
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: failed')
+  await expectDebugOutcome(page, 'failed')
   await page.getByRole('button', { name: 'Edit this action', exact: true }).click()
   const expected = page.getByLabel('Assertion 1 expected number', { exact: true })
   await expect(expected).toBeFocused(); await expected.fill('200')
   await page.locator('.topbar-debug-action-run').click()
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page, 'passed')
   await expect(page.getByLabel('Script evidence states')).toContainText('unsaved changes')
   await page.getByText('Recent runs (1) · Compare evidence', { exact: true }).click()
   await expect(page.getByLabel('Historical execution')).toBeVisible()
@@ -123,21 +131,21 @@ test('run-to starts at the beginning and consumes its temporary breakpoint witho
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.getByRole('button', { name: 'Add breakpoint on Second', exact: true }).click()
-  await page.getByText('Breakpoint controls (1)', { exact: true }).click()
+  await page.getByText('Breakpoints (1)', { exact: true }).click()
   const hitCount = page.getByLabel('Break on hit', { exact: true })
   await hitCount.fill('12')
   await expect(hitCount).toHaveValue('12')
   await hitCount.press('Enter')
   await expect(hitCount).toHaveValue('12')
   await page.getByRole('button', { name: 'Disable all breakpoints', exact: true }).click()
-  await page.getByText('Breakpoint controls (1)', { exact: true }).click()
+  await page.getByText('Breakpoints (1)', { exact: true }).click()
   await page.getByRole('region', { name: 'Debugger actions' }).getByRole('button', { name: /Action 2.*Second/ }).click()
   await page.getByRole('button', { name: 'Run to selected action', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Second' })).toBeVisible()
   await expect(page.locator('.debugger-live-strip')).toContainText('1 recorded executions')
-  await expect(page.getByText('Breakpoint controls (1)', { exact: true })).toBeVisible()
+  await expect(page.getByText('Breakpoints (1)', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page, 'passed')
 })
 
 
@@ -190,7 +198,7 @@ test('failures-only debugger capture preserves fetched resource evidence', async
     expect(terminal.report.events[0].snapshot.resources).toHaveLength(1)
     expect(terminal.report.events[0].snapshot.resources[0]).toMatchObject({ request_url: `${targetURL}/capture-resource`, response_status: 200, response_body_state: 'captured' })
     await expect.poll(() => suppressedTerminalMessages).toBeGreaterThan(0)
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: failed')
+    await expectDebugOutcome(page, 'failed')
     const resources = page.getByRole('region', { name: 'Captured resources', exact: true })
     await expect(resources).toContainText('/capture-resource')
     await resources.locator('summary').click()

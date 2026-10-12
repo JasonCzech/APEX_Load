@@ -1,7 +1,8 @@
 import TabList from './ux/TabList'
+import PanelToggle from './ux/PanelToggle'
 import { handleTabKey } from './tabKeyboard'
 import { settingsHref } from './settingsNavigation'
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   CARD_WIDTH_SEQUENCE,
   normalizeProfile,
@@ -278,6 +279,7 @@ export default function DashboardWorkspace({
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => readStoredJSON<boolean>(cardLibraryStorageKey, false))
+  const cardLibraryPanelId = useId()
   const [activeTabOverride, setActiveTabOverride] = useState<string | null>(() => initialActiveTabId || null)
   const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
   const [customizing, setCustomizing] = useState(false)
@@ -869,28 +871,14 @@ export default function DashboardWorkspace({
           })}
         </div>
 
-        {allowCustomization && <aside className={`dashboard-workspace-card-library ${cardLibraryCollapsed ? 'collapsed' : ''}`} aria-label={`${ariaLabel} card library`}>
+        {allowCustomization && <aside id={cardLibraryPanelId} className={`dashboard-workspace-card-library ${cardLibraryCollapsed ? 'collapsed' : ''}`} aria-label={`${ariaLabel} card library`}>
           {cardLibraryCollapsed ? (
-            <button
-              type="button"
-              className="dashboard-workspace-library-restore"
-              aria-label="Show card library"
-              onClick={() => setCardLibraryCollapsed(false)}
-            >
-              Cards
-            </button>
+            <PanelToggle className="dashboard-workspace-library-restore" side="end" expanded={false} panelName="card library" collapsedLabel="Cards" controls={cardLibraryPanelId} onToggle={() => setCardLibraryCollapsed(false)} />
           ) : (
             <>
               <div className="dashboard-workspace-library-header">
                 <h3>Card Library</h3>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
-                  aria-label="Collapse card library"
-                  onClick={() => setCardLibraryCollapsed(true)}
-                >
-                  Collapse
-                </button>
+                <PanelToggle side="end" expanded panelName="card library" controls={cardLibraryPanelId} onToggle={() => setCardLibraryCollapsed(true)} />
               </div>
               <div className="dashboard-workspace-library-groups">
                 {cardLibraryGroups.map(group => (

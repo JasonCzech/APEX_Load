@@ -65,6 +65,7 @@ const successFixture = {
     log_level: 'debug',
     current_event_index: 0,
     break_on_failure: false,
+    continue_on_error: true,
   },
 } satisfies StepSuccessBody
 
@@ -132,6 +133,7 @@ describe('generated OpenAPI transport helpers', () => {
           log_level: 'debug',
           current_event_index: 0,
           break_on_failure: false,
+          continue_on_error: true,
         },
       },
     })

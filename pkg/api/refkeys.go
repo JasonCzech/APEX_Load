@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/refkey"
 )
 
@@ -425,6 +426,52 @@ func (tr *TestRunner) observeAndIndexRefKeyLocked(key string, id string) {
 		}
 		tr.runRefSeqAllocator.observe(day, parts.Seq)
 	}
+}
+
+// scriptRefKeyHeldElsewhereLocked reports whether another object already holds
+// key, as a copy of a stored script's definition would bring its original's.
+// A script key names its script by environment and sequence (the -vN suffix
+// is that script's revision), so a script holding the sequence at any
+// revision holds the key.
+func (tr *TestRunner) scriptRefKeyHeldElsewhereLocked(key string, id string) bool {
+	normalized := normalizeRefKeyCandidate(key)
+	if owner, held := tr.refKeyIndex[normalized]; held && owner != id {
+		return true
+	}
+	offered, ok := refkey.Parse(normalized)
+	if !ok || offered.Type != refkey.TypeScript {
+		return false
+	}
+	for scriptID, stored := range tr.scripts {
+		if scriptID == id || stored == nil {
+			continue
+		}
+		parts, ok := refkey.Parse(normalizeRefKeyCandidate(stored.RefKey))
+		if ok && parts.Type == refkey.TypeScript && parts.Env == offered.Env && parts.Seq == offered.Seq {
+			return true
+		}
+	}
+	return false
+}
+
+// prepareNewScriptRefKeyLocked gives a script being created its reference key:
+// one it brings is kept while no other script holds it, otherwise it gets the
+// next in sequence. Callers hold tr.mu.
+func (tr *TestRunner) prepareNewScriptRefKeyLocked(script *dsl.Script) error {
+	if strings.TrimSpace(script.RefKey) != "" && !tr.scriptRefKeyHeldElsewhereLocked(script.RefKey, script.ID) {
+		return nil
+	}
+	return tr.assignNextScriptRefKeyLocked(script)
+}
+
+// assignNextScriptRefKeyLocked gives a new script the next reference key.
+func (tr *TestRunner) assignNextScriptRefKeyLocked(script *dsl.Script) error {
+	sequence, err := tr.nextScriptSeqLocked()
+	if err != nil {
+		return fmt.Errorf("allocate script reference key: %w", err)
+	}
+	script.RefKey = refkey.Script(tr.envCode, sequence, 1)
+	return nil
 }
 
 func (tr *TestRunner) indexRefKeyLocked(key string, id string) {

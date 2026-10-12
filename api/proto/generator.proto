@@ -607,6 +607,10 @@ message MetricsBatch {
   // Run-to-date HTTP version mix of the generator's groups, cumulative like
   // transaction_response_time_sla. Older generators omit it.
   HTTPVersionMix http_version_mix = 36;
+  // request_counts_version is 1 when each GroupMetric's requests and
+  // request_errors are counted. An older generator sends 0: its zero request
+  // counts mean "not counted", not "no requests".
+  uint32 request_counts_version = 37;
 }
 
 message MetricsBatchTelemetry {
@@ -639,6 +643,11 @@ message GroupMetric {
   string name = 1;
   int32 active_vusers = 2;
   MetricAggregate metrics = 3;
+  // Requests the group attempted in the window: every result that is not a
+  // business transaction, failed ones included. request_errors is the
+  // failed ones. A generator that predates them reports zero.
+  int64 requests = 4;
+  int64 request_errors = 5;
 }
 
 // HTTPVersionMix counts HTTP actions by negotiated version (1.1, 2, 3,

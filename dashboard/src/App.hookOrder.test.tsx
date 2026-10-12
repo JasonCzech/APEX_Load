@@ -22,7 +22,7 @@ vi.mock('./components/BrowserRecorderControlPanel', () => ({
 //   "React has detected a change in the order of Hooks called by AppShell …
 //    64. useMemo changed to useCallback"
 // said to fire when navigating between top-level left-nav pages
-// (Dashboard -> Scenarios -> Execution Plans -> …).
+// (Dashboard -> Scenarios -> Execution plans -> …).
 //
 // This mounts the *real* AppShell tree (all real providers + real custom hooks)
 // and drives navigation by clicking the real Sidebar, exactly as a user would.
@@ -404,7 +404,7 @@ describe('AppShell hook-order stability across navigation', () => {
     expect(currentPage()).toBe('page-dashboard')
 
     // Reproduce the reported transition (Dashboard <-> Scenarios, the page that
-    // hosts the Execution Plans view) and loop it several times in both
+    // hosts the execution plans view) and loop it several times in both
     // directions. AppShell contributes an identical hook run for every page, so a
     // real divergence at hook #64 fires on any of these re-renders; the route is
     // kept to pages that render with empty backend data so the assertion targets
@@ -413,7 +413,7 @@ describe('AppShell hook-order stability across navigation', () => {
       ['Scenarios', 'page-tests'],
       ['Dashboard', 'page-dashboard'],
       ['Scenarios', 'page-tests'],
-      ['New Test', 'page-new-test'],
+      ['New run', 'page-new-test'],
       ['Dashboard', 'page-dashboard'],
     ]
 
@@ -736,7 +736,7 @@ describe('AppShell hook-order stability across navigation', () => {
     const alert = container.querySelector('[role="alert"]')
     expect(alert?.textContent).toContain('does not include project scope')
     const recovery = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Open Script Library')
+      .find(button => button.textContent?.trim() === 'Open script library')
     expect(recovery).toBeTruthy()
 
     await act(async () => recovery?.dispatchEvent(new MouseEvent('click', { bubbles: true })))

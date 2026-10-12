@@ -72,6 +72,8 @@ test('telemetry policy remains immutable in live, archive and manifest views aft
     await expect(archivePage.locator('.archive-metadata-summary')).toContainText('exact run loss totals, or a telemetry CI verdict')
     await archived.screenshot({ path: test.info().outputPath('telemetry-policy-archive.png') })
     await archivePage.getByRole('tab', { name: 'Execution', exact: true }).click()
+    // On Execution the receipt waits behind the configuration evidence disclosure.
+    await archivePage.getByText('Configuration and infrastructure evidence', { exact: true }).click()
     const manifest = archivePage.getByRole('region', { name: 'Telemetry budget policy', exact: true })
     await expect(manifest).toContainText(evidence.policy.hash)
     await expect(manifest).toContainText('17 ms')

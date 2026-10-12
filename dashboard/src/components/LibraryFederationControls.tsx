@@ -27,11 +27,13 @@ type LibraryFederationControlsProps = {
   searchControl?: ReactNode
   primaryAction?: ReactNode
   filterControls?: ReactNode
+  /** How many filters are set; given, the filters fold behind a Filters toggle. */
+  filterCount?: number
   onConfigureRemotes?: () => void
   summaryText?: string
 }
 
-export default function LibraryFederationControls({ kind, federation, projectName, filtersActive, onResetFilters, searchControl, primaryAction, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
+export default function LibraryFederationControls({ kind, federation, projectName, filtersActive, onResetFilters, searchControl, primaryAction, filterControls, filterCount, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
   const {
     remotes,
     selectedRemoteId,
@@ -83,7 +85,7 @@ export default function LibraryFederationControls({ kind, federation, projectNam
         </div>}
       </div>
 
-      <LibraryToolbar filtersActive={filtersActive} search={searchControl} filters={filterControls} actions={<>{primaryAction}{filtersActive && onResetFilters && <button className="btn btn-secondary" type="button" onClick={onResetFilters}>Reset filters</button>}<button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>Refresh</button></>}>
+      <LibraryToolbar filtersActive={filtersActive} filterCount={filterCount} search={searchControl} filters={filterControls} actions={<>{primaryAction}{filtersActive && onResetFilters && <button className="btn btn-secondary" type="button" onClick={onResetFilters}>Reset filters</button>}<button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>Refresh</button></>}>
         {sourceFilter === 'host' && !selectedRemoteId && <div><span>Not connected</span>{onConfigureRemotes && <button className="btn btn-secondary" type="button" onClick={onConfigureRemotes}>Connect remote workspace</button>}</div>}
         {sourceFilter === 'host' && <label className="project-redaction-rule-field">
           <span>Remote</span>

@@ -730,7 +730,7 @@ export function ImportedSourceRuntimeSection({
               <h4>Preserved run order</h4>
               <p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
               <dl><dt>Block Scheduling</dt><dd>{runLogic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{runLogic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
-              <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action List.</p>
+              <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action editor.</p>
             </section>
           )}
           {groupNames.length > 0 && <div className="imported-runtime-groups" role="group" aria-label="Imported runtime setting groups">

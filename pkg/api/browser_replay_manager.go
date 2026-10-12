@@ -43,6 +43,8 @@ type BrowserReplaySession struct {
 	CompletedAt       *time.Time                  `json:"completed_at,omitempty"`
 	CurrentEventIndex int                         `json:"current_event_index"`
 	CurrentEvent      *engine.ReplayActionEvent   `json:"current_event,omitempty"`
+	RunID             string                      `json:"run_id,omitempty"`
+	ContinueOnError   bool                        `json:"continue_on_error"`
 	Events            []engine.ReplayActionEvent  `json:"events,omitempty"`
 	DroppedEventCount int                         `json:"dropped_event_count,omitempty"`
 	FinalReport       *engine.ReplayReport        `json:"report,omitempty"`
@@ -290,6 +292,8 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		Preflight:         cloneReplayPreflight(req.Preflight),
 		StartedAt:         &now,
 		CurrentEventIndex: -1,
+		RunID:             debugRunIdentity(req.RunID, sessionID),
+		ContinueOnError:   debugContinueOnError(req.ContinueOnError, script),
 		cancel:            cancel,
 		lastActivityAt:    now,
 		stateChanged:      make(chan struct{}),
@@ -407,6 +411,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			return
 		}
 
+		continueOnError := session.ContinueOnError
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
 			LiveTableSeeds:  req.LiveTableSeeds,
 			ReplaySessionID: sessionID,
@@ -416,6 +421,8 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			RedactionRules:  req.RedactionRules,
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
+			RunID:           session.RunID,
+			ContinueOnError: &continueOnError,
 			RecordHAR:       req.RecordHAR != nil && *req.RecordHAR,
 			DiscardHAR:      m.discardReplayHAR,
 			OnProgress: func(event engine.ReplayProgressEvent) {
@@ -1266,6 +1273,8 @@ func (s *BrowserReplaySession) snapshotBaseLocked() *BrowserReplaySession {
 		CompletedAt:       cloneReplaySessionTime(s.CompletedAt),
 		CurrentEventIndex: s.CurrentEventIndex,
 		DroppedEventCount: s.DroppedEventCount,
+		RunID:             s.RunID,
+		ContinueOnError:   s.ContinueOnError,
 		Error:             s.Error,
 		harCopy:           s.harCopy,
 		workerSettled:     s.workerRecordedTerminal || s.workerHasFinishedLocked(),

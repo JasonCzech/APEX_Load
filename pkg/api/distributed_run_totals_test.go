@@ -231,6 +231,63 @@ func TestDistributedRunTotalsCountEachGroupOfAGenerator(t *testing.T) {
 	}
 }
 
+// Each generator rates its own window's requests, so a fleet whose
+// generators publish windows of different lengths sums their rates, as it
+// sums their TPS, and the run's requests are its groups'.
+func TestDistributedRequestRatesSumEachGeneratorsWindow(t *testing.T) {
+	run := &ManagedTest{ID: "request-rates", Groups: []TestGroup{{Name: "inventory"}, {Name: "browse"}}}
+	batches := map[string]generatorrpc.MetricsBatch{
+		"gen-a": {WindowMs: 1000, RequestCountsVersion: 1, Groups: []generatorrpc.GroupMetric{{Name: "inventory", Requests: 30, RequestErrors: 15}, {Name: "browse", Requests: 10}}},
+		"gen-b": {WindowMs: 2000, RequestCountsVersion: 1, Groups: []generatorrpc.GroupMetric{{Name: "inventory", Requests: 40, RequestErrors: 20}}},
+	}
+	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(run.ID, batches)
+	live := buildLiveMetricsFromDistributedBatch(run, aggregated, fleetTPS, groupTPS)
+	if live.Requests != 80 || live.RequestErrors != 35 || live.RequestRate != 60 {
+		t.Fatalf("run requests = %d / %d at %v/s, want 80 / 35 at 60/s", live.Requests, live.RequestErrors, live.RequestRate)
+	}
+	inventory := live.GroupMetrics["inventory"]
+	if inventory == nil || inventory.Requests != 70 || inventory.RequestErrors != 35 || inventory.RequestRate != 50 {
+		t.Fatalf("inventory = %+v, want 70 / 35 at 50/s", inventory)
+	}
+	if browse := live.GroupMetrics["browse"]; browse == nil || browse.Requests != 10 || browse.RequestRate != 10 {
+		t.Fatalf("browse = %+v, want 10 at 10/s", browse)
+	}
+
+	// With a generator that does not count requests in the fleet, the sample
+	// carries none rather than part of the fleet's.
+	batches["gen-c"] = generatorrpc.MetricsBatch{WindowMs: 1000, Groups: []generatorrpc.GroupMetric{{Name: "inventory", Metrics: &generatorrpc.MetricAggregate{Count: 9, Errors: 1}}}}
+	aggregated, fleetTPS, groupTPS = aggregateDistributedMetricsBatches(run.ID, batches)
+	live = buildLiveMetricsFromDistributedBatch(run, aggregated, fleetTPS, groupTPS)
+	if live.Requests != 0 || live.RequestRate != 0 || live.GroupMetrics["inventory"].Requests != 0 {
+		t.Fatalf("mixed fleet sample requests = %d at %v/s, inventory %d; want none", live.Requests, live.RequestRate, live.GroupMetrics["inventory"].Requests)
+	}
+}
+
+// A run's request totals count every accepted window of each group.
+func TestDistributedRunTotalsCountRequests(t *testing.T) {
+	runner, run, backend := distributedRunTotalsRun(t, "distributed-run-request-totals", []TestGroup{{Name: "buyers", VUsers: 1}}, "gen-a")
+	for sequence := int64(1); sequence <= 2; sequence++ {
+		batch := collected(distributedRunTotalsBatch(run.ID, sequence, 10, 10), uint64(sequence), 1_000*sequence)
+		batch.RequestCountsVersion = 1
+		batch.Groups[0].Requests, batch.Groups[0].RequestErrors = 20, 10
+		if !backend.storeRemoteMetricsBatchOnly(runner, run, "gen-a", batch) {
+			t.Fatalf("window %d was not accepted", sequence)
+		}
+	}
+	live, _, _, fresh, publication := backend.applyStoredRemoteMetricsBatch(runner, run, "gen-a")
+	if !fresh || !backend.publishDistributedMetricsRevision(context.Background(), runner, run, live, publication).published {
+		t.Fatal("the publication was not published")
+	}
+	runner.mu.RLock()
+	defer runner.mu.RUnlock()
+	if deref(run.LiveMetrics.RunTotalRequests) != 40 || deref(run.LiveMetrics.RunRequestErrors) != 20 || deref(run.LiveMetrics.RunRequestErrorPct) != 50 {
+		t.Fatalf("run requests = %v / %v / %v%%, want 40 / 20 / 50%%", deref(run.LiveMetrics.RunTotalRequests), deref(run.LiveMetrics.RunRequestErrors), deref(run.LiveMetrics.RunRequestErrorPct))
+	}
+	if group := run.LiveMetrics.GroupMetrics["buyers"]; group == nil || deref(group.RunRequests) != 40 || deref(group.RunRequestErrors) != 20 {
+		t.Fatalf("buyers run requests = %+v, want 40 / 20", group)
+	}
+}
+
 // A controller that takes a run over restores its history from storage, which
 // keeps each window but no run totals: the totals start from the sum of those
 // windows.
@@ -321,6 +378,30 @@ func TestDistributedWindowCountsMatchPublishedSamples(t *testing.T) {
 			Transactions:       []generatorrpc.TransactionMetric{tx("buyers", true), tx("buyers", true)},
 		},
 		"empty": {},
+		"requests beside transactions": {
+			RequestCountsVersion: 1,
+			FleetMetrics:         aggregate("fleet", 10, 10),
+			Groups: []generatorrpc.GroupMetric{
+				{Name: "inventory", Metrics: aggregate("inventory", 10, 10), Requests: 20, RequestErrors: 10},
+				{Name: "browse", Requests: 5},
+			},
+		},
+		"requests without a transaction": {
+			RequestCountsVersion: 1,
+			Groups:               []generatorrpc.GroupMetric{{Name: "inventory", Requests: 8, RequestErrors: 3}, {Name: " ", Requests: 4}},
+		},
+		"more request errors than requests": {
+			RequestCountsVersion: 1,
+			Groups:               []generatorrpc.GroupMetric{{Name: "inventory", Requests: 2, RequestErrors: 9}, {Name: "browse", Requests: -4, RequestErrors: 1}},
+		},
+		"repeated groups with requests": {
+			RequestCountsVersion: 1,
+			Groups:               []generatorrpc.GroupMetric{{Name: "buyers", Requests: 3, RequestErrors: 1}, {Name: "buyers", Requests: 4}},
+		},
+		"requests from a generator that does not count them": {
+			FleetMetrics: aggregate("fleet", 10, 1),
+			Groups:       []generatorrpc.GroupMetric{{Name: "buyers", Metrics: aggregate("buyers", 10, 1), Requests: 30, RequestErrors: 5}},
+		},
 	}
 	// The raw fallback taken for a dependency or SOAP target that has no
 	// aggregate of its own, beside transaction aggregates.
@@ -354,14 +435,20 @@ func TestDistributedWindowCountsMatchPublishedSamples(t *testing.T) {
 			if got.tx != live.TotalTx || got.errors != live.TotalErrors {
 				t.Errorf("%s, %d groups: window = %d / %d, sample = %d / %d", name, len(groups), got.tx, got.errors, live.TotalTx, live.TotalErrors)
 			}
+			if got.requests != live.Requests || got.requestErrors != live.RequestErrors {
+				t.Errorf("%s, %d groups: window requests = %d / %d, sample = %d / %d", name, len(groups), got.requests, got.requestErrors, live.Requests, live.RequestErrors)
+			}
+			if got.requestsUnknown != (batch.RequestCountsVersion != generatorrpc.CurrentRequestCountsVersion) {
+				t.Errorf("%s, %d groups: requests unknown = %v for version %d", name, len(groups), got.requestsUnknown, batch.RequestCountsVersion)
+			}
 			for groupName, group := range live.GroupMetrics {
-				if counts := got.groups[groupName]; counts.tx != group.Transactions || counts.errors != group.Errors {
-					t.Errorf("%s, %d groups: %s = %d / %d, sample = %d / %d", name, len(groups), groupName, counts.tx, counts.errors, group.Transactions, group.Errors)
+				if counts := got.groups[groupName]; counts.tx != group.Transactions || counts.errors != group.Errors || counts.requests != group.Requests || counts.requestErrors != group.RequestErrors {
+					t.Errorf("%s, %d groups: %s = %+v, sample = %d / %d, requests %d / %d", name, len(groups), groupName, counts, group.Transactions, group.Errors, group.Requests, group.RequestErrors)
 				}
 			}
 			for groupName, counts := range got.groups {
-				if _, ok := live.GroupMetrics[groupName]; !ok && (counts.tx != 0 || counts.errors != 0) {
-					t.Errorf("%s, %d groups: %s counted %d / %d, absent from the sample", name, len(groups), groupName, counts.tx, counts.errors)
+				if _, ok := live.GroupMetrics[groupName]; !ok && counts != (runTotalsCounts{}) {
+					t.Errorf("%s, %d groups: %s counted %+v, absent from the sample", name, len(groups), groupName, counts)
 				}
 			}
 		}

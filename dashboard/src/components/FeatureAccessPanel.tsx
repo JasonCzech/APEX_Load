@@ -148,7 +148,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
         <div className="settings-manager-summary">
           <div>
             <span className="setting-label">{destinationTitle('features')}</span>
-            <span className="setting-desc">Control Script Builder workflows, import sources, and named workload presets. Core workspace modules always remain available.</span>
+            <span className="setting-desc">Control the ways a domain's users can start or import a script, and its named workload presets. Core workspace modules always remain available.</span>
           </div>
           <strong>{enabledCount} / {totalCount}</strong>
         </div>

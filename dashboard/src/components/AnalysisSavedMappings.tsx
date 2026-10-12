@@ -24,7 +24,7 @@ export default function AnalysisSavedMappings({ projectId, mapping, canEdit, onL
     {error && <p role="alert">{error}</p>}
     <label>Apply mapping<select defaultValue="" onChange={e => { const item = items.find(x => x.id === e.target.value); if (item) onLoad(item) }}><option value="">Select a versioned mapping…</option>{items.map(item => <option key={item.id} value={item.id}>{item.name} · revision {item.revision}</option>)}</select></label>
     {canEdit && <><label>Mapping name<input value={name} onChange={e => setName(e.target.value)} maxLength={256} /></label>
-      <button type="button" disabled={!name.trim() || !mapping.measures.length || !!analysisMappingDisclosureError(mapping)} onClick={() => {
+      <button type="button" className="btn btn-secondary btn-sm" disabled={!name.trim() || !mapping.measures.length || !!analysisMappingDisclosureError(mapping)} onClick={() => {
         const identityError = analysisMappingDisclosureError(mapping)
         if (identityError) { setError(identityError); return }
         saving.current?.abort(); const controller = new AbortController(); saving.current = controller

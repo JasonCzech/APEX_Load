@@ -25,7 +25,7 @@ test('a starter template opens an independent draft that saves, reopens and leav
   await expect(page.getByRole('heading', { level: 1, name: 'Create Script' })).toBeVisible()
 
   const name = `Template_${Date.now()}`
-  const scriptName = page.locator('.side-panel-script-name input')
+  const scriptName = page.getByRole('textbox', { name: 'Script name', exact: true })
   await expect(scriptName).toHaveValue('HTTP API Smoke')
   await scriptName.fill(name)
   const created = mutation(page, 'POST', '/api/v1/scripts')

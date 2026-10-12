@@ -196,7 +196,7 @@ export default function TestNotesDialog({ testId, testName, onClose, initialDraf
       >
         <div className="modal-header test-notes-header">
           <div>
-            <h3 id={titleId}>Test notes</h3>
+            <h3 id={titleId}>Run notes</h3>
             <p id={descriptionId} className="page-subtitle">{testName || testId}</p>
           </div>
           <button ref={closeButtonRef} type="button" className="btn btn-secondary btn-sm" onClick={requestClose} disabled={saving}>Close</button>

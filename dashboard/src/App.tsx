@@ -1,4 +1,5 @@
 import TooltipButton from './components/ux/TooltipButton'
+import TopbarActionButton from './components/TopbarActionButton'
 import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
 import { scriptsRouteForAuthoringState, terminalRunReportView } from './appRouting';
@@ -81,7 +82,6 @@ import { useTestApi } from "./hooks/api/useTestApi";
 import { useSharedTestList } from "./hooks/useSharedTestList";
 import {
   useActiveTopbarContribution,
-  type TopbarAction,
   type TopbarMetaChip,
 } from "./hooks/TopbarContributionProvider";
 import { TopbarContributionProvider } from "./hooks/TopbarContributionRoot";
@@ -229,59 +229,6 @@ type PendingGuardedHistoryTraversal = {
   targetView: AppView;
 };
 
-function topbarActionClass(action: TopbarAction): string {
-  const tone = action.tone || "secondary";
-  const btnClass =
-    tone === "primary"
-      ? "btn-primary"
-      : tone === "success"
-        ? "btn-success"
-        : tone === "danger"
-          ? "btn-danger"
-          : tone === "ghost"
-            ? "btn-ghost"
-            : "btn-secondary";
-  return [
-    "btn",
-    "btn-sm",
-    "topbar-action-button",
-    btnClass,
-    action.className,
-    action.compactLabel ? "has-compact-label" : "",
-    action.pressed ? "topbar-action-pressed" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function renderTopbarAction(action: TopbarAction) {
-  if (action.hidden) return null;
-  return (
-    <TooltipButton
-      key={action.id}
-      type="button"
-      className={topbarActionClass(action)}
-      aria-label={action.ariaLabel}
-      aria-pressed={action.pressed}
-      title={action.title}
-      disabled={action.disabled}
-      onClick={action.onClick}
-    >
-      {action.icon && (
-        <span className="topbar-action-icon" aria-hidden="true">
-          {action.icon}
-        </span>
-      )}
-      <span className="topbar-action-label">{action.label}</span>
-      {action.compactLabel && (
-        <span className="topbar-action-compact-label">
-          {action.compactLabel}
-        </span>
-      )}
-    </TooltipButton>
-  );
-}
-
 function renderTopbarMetaChip(chip: TopbarMetaChip) {
   if (chip.hidden) return null;
   if (chip.onClick) {
@@ -391,6 +338,11 @@ function AppShell({
     pending: PendingGuardedHistoryTraversal;
   } | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
+  // The first stop on every page skips the navigation. A page can offer a
+  // nearer target, such as the script editor's workbench, by marking a
+  // visible element with data-skip-target and naming it in data-skip-label.
+  const [skipLinkLabel, setSkipLinkLabel] = useState("Skip to main content");
+  const skipTarget = () => Array.from(document.querySelectorAll<HTMLElement>("[data-skip-target]")).find(element => element.getClientRects().length > 0);
   const commandRunViewMemory = useRef(new Map<string, Map<string, unknown>>());
   const [settingsFocusRequest, setSettingsFocusRequest] = useState<{ destination: string; control: string } | null>(null);
   const clearSettingsFocusRequest = useCallback(() => setSettingsFocusRequest(null), []);
@@ -1305,17 +1257,28 @@ function AppShell({
   const routeProjectScopePending = Boolean(
     requestedRouteProjectID && activeProject?.id !== requestedRouteProjectID,
   );
-  const routeProjectMissing = Boolean(
+  const routeProjectUnlisted = Boolean(
     requestedRouteProjectID &&
       !projectsLoading &&
       !requestedRouteProject,
   );
-  const routeProjectDomainMissing = Boolean(
+  const routeProjectDomainUnlisted = Boolean(
     requestedRouteProject &&
       requestedRouteDomainID &&
       domainsLoaded &&
       !domains.some((domain) => domain.id === requestedRouteDomainID),
   );
+  // A link can name a project, or a domain, created after this app loaded its
+  // lists, so they are fetched again once (see the effect after
+  // refreshDomains) before the link's project is called missing.
+  const [routeScopeRecheck, setRouteScopeRecheck] = useState<{ projectId: string; done: boolean } | null>(null);
+  const routeScopeRechecked = Boolean(
+    requestedRouteProjectID &&
+      routeScopeRecheck?.projectId === requestedRouteProjectID &&
+      routeScopeRecheck.done,
+  );
+  const routeProjectMissing = routeProjectUnlisted && routeScopeRechecked;
+  const routeProjectDomainMissing = routeProjectDomainUnlisted && routeScopeRechecked;
   const routeProjectScopeMissing =
     routeProjectMissing || routeProjectDomainMissing;
   const routeWorkspaceHierarchyError = requestedRouteApplicationID && !requestedRouteProjectID
@@ -2906,6 +2869,26 @@ function AppShell({
     void refreshDomains().catch(() => undefined);
   }, [refreshDomains]);
 
+  // Fetch the project and domain lists again before a link's project is called
+  // missing. Once the route's project and its domain are listed (or there is
+  // no route project), a later unlisted link is checked afresh; a check in
+  // flight is never restarted, since the refetch itself flips the lists.
+  const routeScopeUnlisted = routeProjectUnlisted || routeProjectDomainUnlisted;
+  const routeScopeListed = Boolean(requestedRouteProject) && !routeProjectDomainUnlisted;
+  useEffect(() => {
+    if (routeScopeRecheck && !routeScopeRecheck.done) return;
+    if (!requestedRouteProjectID || routeScopeListed) {
+      if (routeScopeRecheck) setRouteScopeRecheck(null);
+      return;
+    }
+    if (!routeScopeUnlisted || routeScopeRecheck?.projectId === requestedRouteProjectID) return;
+    const projectId = requestedRouteProjectID;
+    setRouteScopeRecheck({ projectId, done: false });
+    void Promise.allSettled([refreshProjects(), refreshDomains()]).then(() =>
+      setRouteScopeRecheck((current) => current?.projectId === projectId ? { projectId, done: true } : current),
+    );
+  }, [refreshDomains, refreshProjects, requestedRouteProjectID, routeScopeListed, routeScopeRecheck, routeScopeUnlisted]);
+
   useEffect(() => {
     void refreshRepository().catch(() => undefined);
   }, [refreshRepository]);
@@ -3087,7 +3070,12 @@ function AppShell({
   // editor may refine its route (or an explicitly active scenario detour) title.
   const effectiveTopbarTitle = ((view.page === "scripts" && scriptsTopbarState?.editingId) || (view.page === "tests" && scenarioScriptWorkflow)) && activeTopbarContribution?.id === "script-editor"
     ? activeTopbarContribution?.title || topbarPageTitle
-    : view.page === "tests" && scenarioScriptWorkflow ? "Script Builder" : topbarPageTitle;
+    : view.page === "tests" && scenarioScriptWorkflow ? "Script builder" : topbarPageTitle;
+  // The open script editor (editing or creating) names its script in place.
+  const topbarTitleEditor = activeTopbarContribution?.id === "script-editor"
+    && ((view.page === "scripts" && (scriptsTopbarState?.subView === "edit" || scriptsTopbarState?.subView === "create")) || (view.page === "tests" && scenarioScriptWorkflow))
+    ? activeTopbarContribution.titleNode
+    : undefined;
   const taskHelpHash = view.page === "tests" && scenarioScriptWorkflow ? "#/docs?guide=user-guide&article=authoring" : contextualHelpHash(view, view.page === "scripts" ? scriptsTopbarState?.subView : undefined);
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
@@ -3174,6 +3162,17 @@ function AppShell({
       applicationValue={scopedApplicationContextValue}
     >
       <div className="app-layout">
+        <a
+          className="app-skip-link"
+          href="#app-main"
+          onFocus={() => setSkipLinkLabel(skipTarget()?.dataset.skipLabel || "Skip to main content")}
+          onClick={event => {
+            event.preventDefault();
+            (skipTarget() || mainContentRef.current)?.focus();
+          }}
+        >
+          {skipLinkLabel}
+        </a>
         <Sidebar
           active={activePage}
           onNavigate={handleNavigate}
@@ -3201,6 +3200,7 @@ function AppShell({
           onDevPreviewLogout={onDevPreviewLogout}
         />
         <main
+          id="app-main"
           ref={mainContentRef}
           className={mainContentClassName}
           tabIndex={-1}
@@ -3215,7 +3215,7 @@ function AppShell({
           >
             {effectiveTopbarTitle}
           </span>
-          <PageHeader title={effectiveTopbarTitle} contextual={Boolean(activeTopbarContribution)}>
+          <PageHeader title={effectiveTopbarTitle} titleEditor={topbarTitleEditor} contextual={Boolean(activeTopbarContribution)}>
 
             {topbarMeta.length > 0 && (
               <div className="topbar-meta-strip" aria-label="Current context">
@@ -3325,7 +3325,7 @@ function AppShell({
                   className="topbar-action-group secondary"
                   aria-label="Contextual secondary actions"
                 >
-                  {topbarSecondaryActions.map(renderTopbarAction)}
+                  {topbarSecondaryActions.map(action => <TopbarActionButton key={action.id} action={action} />)}
                 </div>
               )}
               {topbarPrimaryActions.length > 0 && (
@@ -3333,7 +3333,7 @@ function AppShell({
                   className="topbar-action-group primary"
                   aria-label="Contextual primary actions"
                 >
-                  {topbarPrimaryActions.map(renderTopbarAction)}
+                  {topbarPrimaryActions.map(action => <TopbarActionButton key={action.id} action={action} />)}
                 </div>
               )}
               {showDesktopStatus && (
@@ -3461,9 +3461,9 @@ function AppShell({
                         }
                       >
                         {recoverableRouteAsset.kind === "script"
-                          ? "Open Script Library"
+                          ? "Open script library"
                           : recoverableRouteAsset.kind === "scenario"
-                            ? "Open Scenario Library"
+                            ? "Open scenario library"
                             : "Open Results"}
                       </button>
                     </div>
@@ -3526,7 +3526,7 @@ function AppShell({
                   onOpenOverview={() => navigateToCommandCenter()}
                   overviewActions={{
                     onNewTest: () => handleNavigate("new-test"),
-                    newTestDisabledReason: !effectiveAccessLoaded ? "Checking permissions…" : effectiveAccessError ? "Permissions could not be verified. Open New Test from the sidebar to retry." : !isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false) ? "Your current role cannot create test runs." : undefined,
+                    newTestDisabledReason: !effectiveAccessLoaded ? "Checking permissions…" : effectiveAccessError ? "Permissions could not be verified. Open New run from the sidebar to retry." : !isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false) ? "Your current role cannot create test runs." : undefined,
                     onBrowseScenarios: () => handleNavigate("tests"),
                     releases,
                     onSelectRelease: handleSidebarReleaseChange,

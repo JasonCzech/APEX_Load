@@ -11,7 +11,8 @@ import {
 import { type PacingConfig, type ThinkTimeConfig } from '../types/scripts'
 import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
 import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
-import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt, stageScheduleSeconds } from './workloadStages'
+import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt, stageRampStepSeconds, stageScheduleSeconds } from './workloadStages'
+import { engineLevelAtDeadline, engineRampDownLevel, engineRampDownSeconds, engineRampUpLevel, engineRampUpSeconds } from './loadPlanSteps'
 
 export type ScenarioWizardStep = 'scripts' | 'source' | 'run' | 'data' | 'review'
 
@@ -745,7 +746,7 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
 			ramp_up: '',
 			stages: buildSteppedRampPlan({ durationSeconds: 60 * 60, startVusers: 0, endVusers: 60, incrementBy: 'step_count', stepCount: 6 }).stages,
     }],
-		guidance: 'Measure performance at equal-duration load levels. Configure the range, increment, scope, and protection settings on Run Settings.',
+		guidance: 'Measure performance at equal-duration load levels. Configure the range, increment, scope, and protection settings on Run settings.',
   },
   'spike-rendezvous': {
     duration: '8m',
@@ -915,19 +916,13 @@ function tpsSeriesKey(index: number) {
   return `group_${index}_tps`
 }
 
+// The engine's staircase (loadPlanSteps): VUsers start one at a time through
+// the ramp-up and stop one at a time through the ramp-down after the deadline.
 function simpleGroupValue(group: ScenarioModelGroupInput, elapsedSeconds: number, durationSeconds: number): number {
   const target = Math.max(0, Number(group.vusers) || 0)
-  const rampUpSeconds = Math.min(parseDurationSeconds(group.ramp_up, 0), durationSeconds)
-  const rampDownSeconds = parseDurationSeconds(group.ramp_down, 0)
-
-  if (rampUpSeconds > 0 && elapsedSeconds < rampUpSeconds) {
-    return target * (elapsedSeconds / rampUpSeconds)
-  }
-  if (elapsedSeconds < durationSeconds) return target
-  if (rampDownSeconds > 0 && elapsedSeconds < durationSeconds + rampDownSeconds) {
-    return Math.max(0, target * (1 - ((elapsedSeconds - durationSeconds) / rampDownSeconds)))
-  }
-  return 0
+  const rampUpSeconds = parseDurationSeconds(group.ramp_up, 0)
+  if (elapsedSeconds < durationSeconds) return engineRampUpLevel(target, rampUpSeconds, elapsedSeconds)
+  return engineRampDownLevel(engineLevelAtDeadline(target, rampUpSeconds, durationSeconds), parseDurationSeconds(group.ramp_down, 0), elapsedSeconds - durationSeconds)
 }
 
 // An editor's draft stages, drawn with the controller's stage semantics
@@ -952,16 +947,14 @@ function collectTimeline(steadySeconds: number, totalSeconds: number, groups: Sc
   }
   groups.forEach((group) => {
     const rampUpSeconds = parseDurationSeconds(group.ramp_up, 0)
-    if (rampUpSeconds > 0) {
-      values.add(Math.min(steadySeconds, rampUpSeconds))
-    }
-    const rampDownSeconds = parseDurationSeconds(group.ramp_down, 0)
-    if (rampDownSeconds > 0) {
-      values.add(steadySeconds + rampDownSeconds)
-    }
+    const vusers = Math.max(0, Number(group.vusers) || 0)
+    engineRampUpSeconds(vusers, rampUpSeconds).forEach(start => values.add(Math.min(steadySeconds, start)))
+    engineRampDownSeconds(engineLevelAtDeadline(vusers, rampUpSeconds, steadySeconds), parseDurationSeconds(group.ramp_down, 0))
+      .forEach(stop => values.add(steadySeconds + stop))
     if (group.stages?.length) {
       values.add(0)
-      stageBoundarySeconds(group.stages, DRAFT_STAGE_SECONDS).forEach(second => values.add(Math.min(steadySeconds, second)))
+      const stageOptions = { initialLevel: initialStageLevel(group.stages, vusers), emptyDurationSeconds: DRAFT_STAGE_SECONDS, missingTarget: 'previous' as const }
+      ;[...stageBoundarySeconds(group.stages, DRAFT_STAGE_SECONDS), ...stageRampStepSeconds(group.stages, stageOptions)].forEach(second => values.add(Math.min(steadySeconds, second)))
     }
   })
   trafficProfileTimelineSeconds(trafficProfile).forEach(second => values.add(Math.min(steadySeconds, second)))

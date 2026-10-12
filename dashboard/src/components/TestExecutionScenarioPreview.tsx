@@ -1,11 +1,7 @@
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, ReferenceArea,
-} from 'recharts'
+import LoadPlanChart from './LoadPlanChart'
 
 import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
-import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
 import { errorHandlingSectionIsPinned } from './newTestRunModel'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
@@ -343,7 +339,7 @@ export default function TestExecutionScenarioPreview({
                 <span className="scenario-preview-stat-value">{queuedScenarioPreview.totalVUsers} VUsers</span>
               </div>
               <div className="scenario-preview-stat">
-                <span className="scenario-preview-stat-label">Steady State</span>
+                <span className="scenario-preview-stat-label">Steady state</span>
                 <span className="scenario-preview-stat-value">{formatTimeCompact(queuedScenarioPreview.steadySeconds)}</span>
               </div>
               <div className="scenario-preview-stat">
@@ -355,7 +351,7 @@ export default function TestExecutionScenarioPreview({
                 <span className="scenario-preview-stat-value">{test.resource_baseline ? '5m pre/post' : 'Disabled'}</span>
               </div>
               <div className="scenario-preview-stat">
-                <span className="scenario-preview-stat-label">Start Delay</span>
+                <span className="scenario-preview-stat-label">Start delay</span>
                 <span className="scenario-preview-stat-value">{test.start_delay || 'Disabled'}</span>
               </div>
             </div>
@@ -432,85 +428,14 @@ export default function TestExecutionScenarioPreview({
           )}
 
           <div className="scenario-preview-chart">
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={queuedScenarioPreview.points} margin={{ top: 8, right: 12, left: 24, bottom: 14 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="second"
-                  type="number"
-                  domain={[0, 'dataMax']}
-                  stroke="var(--text-muted)"
-                  fontSize={11}
-                  height={42}
-                  tickLine={false}
-                  tickFormatter={(value) => formatTimeCompact(Number(value))}
-                  label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
-                />
-                <YAxis
-                  stroke="var(--text-muted)"
-                  fontSize={11}
-                  width={76}
-                  tickLine={false}
-                  allowDecimals={false}
-                  label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
-                />
-                <Tooltip
-                  itemSorter={preserveChartItemOrder}
-                  labelFormatter={(value) => formatTimeCompact(Number(value))}
-                  contentStyle={chartTooltipContentStyle}
-                  labelStyle={chartTooltipLabelStyle}
-                  formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total' : name ?? '']}
-                />
-                <Legend verticalAlign="top" height={32} itemSorter={preserveChartItemOrder} />
-                {test.groups.map((group, index) => (
-                  <Area
-                    key={group.name}
-                    type="monotone"
-                    dataKey={`group${index}`}
-                    name={group.name}
-                    stackId="scenario"
-                    stroke={groupColors[index % groupColors.length]}
-                    fill={groupColors[index % groupColors.length]}
-                    fillOpacity={0.34}
-                    isAnimationActive={false}
-                  />
-                ))}
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  name="Total"
-                  stroke="var(--text-primary)"
-                  strokeWidth={2}
-                  fill="transparent"
-                  isAnimationActive={false}
-                />
-                <ReferenceArea
-                  x1={queuedScenarioPreview.preBaselineSeconds}
-                  x2={queuedScenarioPreview.preBaselineSeconds + queuedScenarioPreview.steadySeconds}
-                  fill="var(--accent)"
-                  fillOpacity={0.05}
-                  strokeOpacity={0}
-                />
-                {queuedScenarioPreview.preBaselineSeconds > 0 && (
-                  <ReferenceArea
-                    x1={0}
-                    x2={queuedScenarioPreview.preBaselineSeconds}
-                    fill="var(--warning)"
-                    fillOpacity={0.05}
-                    strokeOpacity={0}
-                  />
-                )}
-                {queuedScenarioPreview.postBaselineSeconds > 0 && (
-                  <ReferenceArea
-                    x1={queuedScenarioPreview.totalSeconds - queuedScenarioPreview.postBaselineSeconds}
-                    x2={queuedScenarioPreview.totalSeconds}
-                    fill="var(--warning)"
-                    fillOpacity={0.05}
-                    strokeOpacity={0}
-                  />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
+            <LoadPlanChart
+              label="Queued scenario load"
+              points={queuedScenarioPreview.points}
+              totalSeconds={queuedScenarioPreview.totalSeconds}
+              groups={test.groups.map((group, index) => ({ key: `group${index}`, label: group.name, color: groupColors[index % groupColors.length] }))}
+              phases={queuedScenarioPreview}
+              height={260}
+            />
             <div className="scenario-preview-caption">
               Ramp-up and ramp-down are derived from each group's saved configuration. The blue span marks steady-state load, and the amber spans mark the zero-load start delay and optional resource baseline windows.
             </div>
@@ -522,7 +447,7 @@ export default function TestExecutionScenarioPreview({
               <span className="scenario-setting-value">{test.duration}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Start Delay</span>
+              <span className="scenario-setting-label">Start delay</span>
               <span className="scenario-setting-value">{test.start_delay || 'Disabled'}</span>
             </div>
             <div className="scenario-setting-card">

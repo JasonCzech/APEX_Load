@@ -229,6 +229,16 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('library-view')
   })
 
+  it('renders the shared assets view for every role, never an authoring surface', async () => {
+    for (const canManageScripts of [true, false]) {
+      await act(async () => {
+        root.render(renderShell({ authoringState: createState('assets'), canManageScripts, children: <div data-testid="library">library-view</div> }))
+      })
+      expect(container.querySelector('[data-testid="assets"]'), String(canManageScripts)).not.toBeNull()
+      expect(container.querySelector('[data-testid="library"]')).toBeNull()
+    }
+  })
+
   it('defaults an empty library to the start-new workflow', async () => {
     await act(async () => {
       root.render(renderShell({
@@ -342,7 +352,7 @@ describe('ScriptsAuthoringShell', () => {
     await clickButton('Oracle E-Business / Siebel Review')
     expect(actions.openImportSurface).toHaveBeenCalledWith('oracle_ebusiness_review', null)
 
-    await clickButton('Script Library')
+    await clickButton('Script library')
     expect(onOpenLibrary).toHaveBeenCalled()
   })
 
@@ -642,6 +652,7 @@ describe('ScriptsAuthoringShell', () => {
     onEditDraft = vi.fn(),
     onReturnToDraftSource = vi.fn(),
     onStartExistingScript = vi.fn(),
+    canManageScripts = true,
     children = <div />,
   }: {
     authoringState: AuthoringState
@@ -654,6 +665,7 @@ describe('ScriptsAuthoringShell', () => {
     onEditDraft?: (script: ScriptDefinition) => void
     onReturnToDraftSource?: () => void
     onStartExistingScript?: (script: StoredScript) => void
+    canManageScripts?: boolean
     children?: ReactNode
   }) {
     return (
@@ -666,10 +678,13 @@ describe('ScriptsAuthoringShell', () => {
         onSaved={onSaved}
         onOpenLibrary={onOpenLibrary}
         onOpenCreateOptions={onOpenCreateOptions}
+        onOpenAssets={vi.fn()}
+        assetsView={<div data-testid="assets">assets-view</div>}
         onImported={onImported}
         onEditDraft={onEditDraft}
         onReturnToDraftSource={onReturnToDraftSource}
         onStartExistingScript={onStartExistingScript}
+        canManageScripts={canManageScripts}
       >
         {children}
       </ScriptsAuthoringShell>

@@ -23,10 +23,9 @@ test('reviews and saves nested VuGen projects independently, retaining failed an
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
   await expect(page.getByRole('heading', { name: 'Runtime settings', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /^Review(,|$)/ }).click()
-  const setup = page.locator('.lr-completed-setup')
-  await setup.locator(':scope > summary').click()
+  // Once reviewed, saving lives in the review header only.
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.locator('.lr-import-actions-card').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
+  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
   const receipt = await json(await saved)
   expect(receipt.scripts).toHaveLength(1)
   await expect(page.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()

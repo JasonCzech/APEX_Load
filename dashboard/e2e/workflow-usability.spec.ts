@@ -52,29 +52,29 @@ test('an operator-stopped run without SLAs never produces a passing executive re
 test('missing-script detour preserves the scenario draft on cancellation',async({page,request})=>{
   const workspace=await createWorkspace(request)
   await page.goto(`/#/new-test?${scopeQuery(workspace)}`)
-  await page.getByRole('button',{name:'Open Scenario Builder'}).click()
+  await page.getByRole('button',{name:'Open scenario builder'}).click()
   await page.getByPlaceholder('Scenario name').fill('Retain my draft')
-  await page.getByRole('button',{name:'Choose script for Group 1'}).click()
-  await page.getByRole('dialog',{name:'Choose Script'}).getByRole('button',{name:'Import script',exact:true}).click()
+  await page.getByRole('button',{name:'Add script to Group 1'}).click()
+  await page.getByRole('dialog',{name:'Choose script'}).getByRole('button',{name:'Import script',exact:true}).click()
   await expect(page.getByRole('button',{name:/OpenAPI \/ Swagger/})).toBeVisible()
   await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=authoring/)
   await page.getByRole('button',{name:'Dashboard',exact:true}).click()
-  await expect(page.getByRole('dialog')).toContainText('Scenario Builder has unsaved changes')
+  await expect(page.getByRole('dialog')).toContainText('Scenario builder has unsaved changes')
   await page.getByRole('button',{name:'Keep editing',exact:true}).click()
   await page.getByRole('button',{name:'Back to scenario draft'}).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Retain my draft')
   await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=scenarios/)
-  await expect(page.getByRole('button',{name:'Choose script for Group 1'})).toBeVisible()
+  await expect(page.getByRole('button',{name:'Add script to Group 1'})).toBeVisible()
 })
 
 test('OpenAPI prerequisite import returns the saved script to the original group',async({page,request,target})=>{
   const workspace=await createWorkspace(request)
   await page.goto(`/#/new-test?${scopeQuery(workspace)}`)
-  await page.getByRole('button',{name:'Open Scenario Builder'}).click()
+  await page.getByRole('button',{name:'Open scenario builder'}).click()
   await page.getByPlaceholder('Scenario name').fill('Preserved import scenario')
-  await page.getByLabel('Group Name',{exact:true}).fill('Checkout group')
-  await page.getByRole('button',{name:'Choose script for Checkout group'}).click()
-  await page.getByRole('dialog',{name:'Choose Script'}).getByRole('button',{name:'Import script',exact:true}).click()
+  await page.getByLabel('Group name',{exact:true}).fill('Checkout group')
+  await page.getByRole('button',{name:'Add script to Checkout group'}).click()
+  await page.getByRole('dialog',{name:'Choose script'}).getByRole('button',{name:'Import script',exact:true}).click()
   await page.getByRole('button',{name:/OpenAPI \/ Swagger/}).click()
   const controls=page.getByRole('group',{name:'Script import controls'})
   await controls.locator('input[type=file]').setInputFiles({name:'orders.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({openapi:'3.0.3',info:{title:'Orders',version:'1'},servers:[{url:target.url}],paths:{'/orders':{get:{operationId:'orders',responses:{'200':{description:'OK'}}}}}}))})
@@ -86,13 +86,13 @@ test('OpenAPI prerequisite import returns the saved script to the original group
   await controls.getByRole('button',{name:'Save draft'}).click()
   await controls.getByRole('button',{name:'Open Prerequisite_orders in Visual Editor',exact:true}).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Preserved import scenario')
-  await expect(page.getByRole('button',{name:'Choose script for Checkout group'})).toContainText('Prerequisite_orders')
+  await expect(page.getByRole('button',{name:'Prerequisite_orders: change the script for Checkout group'})).toContainText('Prerequisite_orders')
 })
 
 test('data pool row failure retains the scenario and retries without creating a second pool',async({page,request})=>{
  const workspace=await createWorkspace(request)
  await page.goto(`/#/new-test?${scopeQuery(workspace)}`)
- await page.getByRole('button',{name:'Open Scenario Builder'}).click()
+ await page.getByRole('button',{name:'Open scenario builder'}).click()
  await page.getByPlaceholder('Scenario name').fill('Data recovery scenario')
  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button',{name:/^Data/}).click()
  await page.getByText('Create a data pool without leaving this draft',{exact:true}).click()
@@ -149,7 +149,7 @@ for (const status of [200,503]) {
    await expect(page.locator('.replay-code-block').filter({ has: page.locator('#debug-captured-response') })).toContainText('Service unavailable')
    await expect(page.getByText('Investigate target availability and the response evidence.',{exact:false})).toBeVisible()
    await expect(page.getByText('narrow the assertion',{exact:false})).toHaveCount(0)
-  } else await expect(evidence).toContainText('Response body: captured')
+  } else await expect(evidence).toContainText('Body captured')
  })
 }
 
@@ -175,6 +175,30 @@ test('first-use screens meet automated WCAG AA checks in dark and light themes',
  }
 })
 
+test('the script editor meets automated WCAG AA checks in Author and Debug, dark and light', async ({ page, request }) => {
+ // The action-type badge regressed to white on a light fill in dark themes once.
+ await page.addInitScript({ content: axe.source })
+ const workspace = await createWorkspace(request)
+ const scriptId = await seedScript(request, workspace, 'Axe_Editor')
+ for (const theme of ['dark', 'light']) {
+  await page.addInitScript(value => { try { localStorage.setItem('apexload.theme', value) } catch { /* private mode */ } }, theme)
+  for (const mode of ['Author', 'Debug']) {
+   await page.goto(`/#/scripts?mode=edit&scriptId=${scriptId}&${scopeQuery(workspace)}`)
+   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+   // The editor reopens in the last mode used, so pick each one explicitly.
+   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: mode, exact: true }).click()
+   await expect(page.getByRole('tab', { name: mode === 'Author' ? 'Action editor' : 'Action evidence', exact: true })).toBeVisible()
+   await page.addStyleTag({ content: '* {animation:none!important;transition:none!important}' })
+   const violations = await page.evaluate(async () => {
+    const scanner = (window as unknown as { axe: typeof import('axe-core') }).axe
+    const result = await scanner.run(document.querySelector('.script-editor') || document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] } })
+    return result.violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => ({ target: node.target, summary: node.failureSummary })) }))
+   })
+   expect(violations, `script editor ${mode} in ${theme}`).toEqual([])
+  }
+ }
+})
+
 test('shared dialogs stay above app chrome and preserve nested discard decisions', async ({ page, request, trackRun }) => {
   const workspace = await createWorkspace(request)
   const scriptId = await seedScript(request, workspace)
@@ -182,9 +206,9 @@ test('shared dialogs stay above app chrome and preserve nested discard decisions
   const id = idOf(run); trackRun(id)
   await page.setViewportSize({ width: 923, height: 987 })
   await page.goto(`/#/command-center/${id}?${scopeQuery(workspace)}`)
-  const opener = page.getByRole('button', { name: 'Test notes', exact: true })
+  const opener = page.getByRole('button', { name: 'Run notes', exact: true })
   await opener.click()
-  const notes = page.getByRole('dialog', { name: 'Test notes', exact: true })
+  const notes = page.getByRole('dialog', { name: 'Run notes', exact: true })
   await expect(notes).toBeVisible()
   const bounds = await notes.boundingBox()
   expect(bounds!.x).toBeGreaterThanOrEqual(12)
@@ -202,4 +226,46 @@ test('shared dialogs stay above app chrome and preserve nested discard decisions
   await expect(notes).not.toBeVisible()
   await expect(opener).toBeFocused()
   await expect(page.locator('#root')).not.toHaveAttribute('inert')
+})
+
+test('Shared assets picks scripts by name, seeds a bound repository, and meets WCAG AA', async ({ page, request }) => {
+ await page.addInitScript({ content: axe.source })
+ const workspace = await createWorkspace(request)
+ const name = 'Assets_Browser_Checkout'
+ const script = { name, version: '1.0.0', protocol: 'browser', config: {}, actions: [{ name: 'Continue', type: 'browser_click', selector: '#continue' }, { name: 'Submit', type: 'browser_click', selector: '#submit' }] }
+ const scriptId = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script } })))
+ const form = page.getByRole('form', { name: 'New object repository' })
+ for (const theme of ['dark', 'light']) {
+  await page.addInitScript(value => { try { localStorage.setItem('apexload.theme', value) } catch { /* private mode */ } }, theme)
+  // A hash-only goto keeps the document, so leave it to load the theme afresh.
+  await page.goto('about:blank')
+  await page.goto(`/#/scripts?mode=list&${scopeQuery(workspace)}`)
+  await page.getByRole('button', { name: 'Shared assets', exact: true }).click()
+  await expect(page).toHaveURL(/mode=assets/)
+  await page.getByRole('button', { name: 'New repository', exact: true }).click()
+  // The script is chosen from the project's scripts by name, not typed as an id.
+  const picker = form.getByRole('combobox', { name: 'Script', exact: true })
+  await expect(picker.locator('option', { hasText: name })).toHaveCount(1)
+  await picker.selectOption(scriptId)
+  await page.addStyleTag({ content: '* {animation:none!important;transition:none!important}' })
+  const violations = await page.evaluate(async () => {
+   const scanner = (window as unknown as { axe: typeof import('axe-core') }).axe
+   const result = await scanner.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] } })
+   return result.violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => ({ target: node.target, summary: node.failureSummary })) }))
+  })
+  expect(violations, `Shared assets in ${theme}`).toEqual([])
+ }
+
+ await form.getByRole('checkbox', { name: /Point the script's actions at this repository/ }).check()
+ await form.getByRole('button', { name: 'Create repository', exact: true }).click()
+ await expect(form).toHaveCount(0)
+ await expect(page.locator('.pp-row', { hasText: `${name} objects` })).toContainText('2 objects')
+ const stored = await json(await request.get(`/api/v1/scripts/${scriptId}`)) as { script?: { actions?: Array<{ object_ref?: string }> } }
+ expect((stored.script?.actions || []).map(action => Boolean(action.object_ref))).toEqual([true, true])
+
+ // A reload returns to the tab, and the library no longer carries the panels.
+ await page.reload()
+ await expect(page.getByRole('button', { name: 'Shared assets', exact: true })).toHaveAttribute('aria-pressed', 'true')
+ await page.getByRole('button', { name: 'Script library', exact: true }).click()
+ await expect(page.getByRole('heading', { name: 'Object repositories' })).toHaveCount(0)
 })

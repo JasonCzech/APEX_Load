@@ -96,6 +96,8 @@ type ScriptDebugSession struct {
 	CurrentEvent               *engine.ReplayActionEvent   `json:"current_event,omitempty"`
 	Breakpoints                []ScriptDebugBreakpoint     `json:"breakpoints,omitempty"`
 	BreakOnFailure             bool                        `json:"break_on_failure"`
+	RunID                      string                      `json:"run_id,omitempty"`
+	ContinueOnError            bool                        `json:"continue_on_error"`
 	Events                     []engine.ReplayActionEvent  `json:"events,omitempty"`
 	DroppedEventCount          int                         `json:"dropped_event_count,omitempty"`
 	Logs                       []ScriptDebugLogEntry       `json:"logs,omitempty"`
@@ -376,6 +378,8 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		CurrentEventIndex:            -1,
 		Breakpoints:                  normalizeDebugBreakpoints(req.Breakpoints),
 		BreakOnFailure:               req.BreakOnFailure,
+		RunID:                        debugRunIdentity(req.RunID, sessionID),
+		ContinueOnError:              debugContinueOnError(req.ContinueOnError, script),
 		cancel:                       cancel,
 		lastActivityAt:               now,
 		stateChanged:                 make(chan struct{}),
@@ -438,6 +442,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		defer m.finishWorker(session)
 		defer releaseExecutionContext()
 		defer cancel()
+		continueOnError := session.ContinueOnError
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
 			LiveTableSeeds:  req.LiveTableSeeds,
 			ReplaySessionID: sessionID,
@@ -447,6 +452,8 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			RedactionRules:  req.RedactionRules,
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
+			RunID:           session.RunID,
+			ContinueOnError: &continueOnError,
 			DebugController: scriptDebugController{manager: m, session: session},
 			// Debug sessions offer no HAR: one the script's own capture policy
 			// recorded is retired rather than left in the HAR directory.
@@ -1731,6 +1738,8 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 		CurrentEventIndex:          s.CurrentEventIndex,
 		DroppedEventCount:          s.DroppedEventCount,
 		BreakOnFailure:             s.BreakOnFailure,
+		RunID:                      s.RunID,
+		ContinueOnError:            s.ContinueOnError,
 		Error:                      s.Error,
 	}
 	if len(s.Breakpoints) > 0 {
@@ -2522,11 +2531,7 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 			profile.Headless = &headless
 		}
 		if profile.FailurePolicy == "" {
-			if script.Config.ErrorHandling.ContinueOnErrorEnabled() {
-				profile.FailurePolicy = "continue_on_error"
-			} else {
-				profile.FailurePolicy = "stop_on_error"
-			}
+			profile.FailurePolicy = debugFailurePolicy(debugContinueOnError(req.ContinueOnError, script))
 		}
 	}
 	return profile
@@ -2546,11 +2551,7 @@ func replayRuntimeProfileForBrowser(script *dsl.Script, req BrowserReplayStartRe
 			headless := *script.Config.Browser.Headless
 			profile.Headless = &headless
 		}
-		if script.Config.ErrorHandling.ContinueOnErrorEnabled() {
-			profile.FailurePolicy = "continue_on_error"
-		} else {
-			profile.FailurePolicy = "stop_on_error"
-		}
+		profile.FailurePolicy = debugFailurePolicy(debugContinueOnError(req.ContinueOnError, script))
 	}
 	if req.Browser != nil {
 		if req.Browser.Engine != "" {

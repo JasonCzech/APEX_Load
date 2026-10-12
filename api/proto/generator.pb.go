@@ -3589,8 +3589,12 @@ type MetricsBatch struct {
 	// Run-to-date HTTP version mix of the generator's groups, cumulative like
 	// transaction_response_time_sla. Older generators omit it.
 	HttpVersionMix *HTTPVersionMix `protobuf:"bytes,36,opt,name=http_version_mix,json=httpVersionMix,proto3" json:"http_version_mix,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// request_counts_version is 1 when each GroupMetric's requests and
+	// request_errors are counted. An older generator sends 0: its zero request
+	// counts mean "not counted", not "no requests".
+	RequestCountsVersion uint32 `protobuf:"varint,37,opt,name=request_counts_version,json=requestCountsVersion,proto3" json:"request_counts_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -3875,6 +3879,13 @@ func (x *MetricsBatch) GetHttpVersionMix() *HTTPVersionMix {
 	return nil
 }
 
+func (x *MetricsBatch) GetRequestCountsVersion() uint32 {
+	if x != nil {
+		return x.RequestCountsVersion
+	}
+	return 0
+}
+
 type MetricsBatchTelemetry struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	DroppedResults    int64                  `protobuf:"varint,1,opt,name=dropped_results,json=droppedResults,proto3" json:"dropped_results,omitempty"`
@@ -4005,10 +4016,15 @@ func (x *MetricsBatchTelemetry) GetCollectionSequence() uint64 {
 }
 
 type GroupMetric struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	ActiveVusers  int32                  `protobuf:"varint,2,opt,name=active_vusers,json=activeVusers,proto3" json:"active_vusers,omitempty"`
-	Metrics       *MetricAggregate       `protobuf:"bytes,3,opt,name=metrics,proto3" json:"metrics,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Name         string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	ActiveVusers int32                  `protobuf:"varint,2,opt,name=active_vusers,json=activeVusers,proto3" json:"active_vusers,omitempty"`
+	Metrics      *MetricAggregate       `protobuf:"bytes,3,opt,name=metrics,proto3" json:"metrics,omitempty"`
+	// Requests the group attempted in the window: every result that is not a
+	// business transaction, failed ones included. request_errors is the
+	// failed ones. A generator that predates them reports zero.
+	Requests      int64 `protobuf:"varint,4,opt,name=requests,proto3" json:"requests,omitempty"`
+	RequestErrors int64 `protobuf:"varint,5,opt,name=request_errors,json=requestErrors,proto3" json:"request_errors,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4062,6 +4078,20 @@ func (x *GroupMetric) GetMetrics() *MetricAggregate {
 		return x.Metrics
 	}
 	return nil
+}
+
+func (x *GroupMetric) GetRequests() int64 {
+	if x != nil {
+		return x.Requests
+	}
+	return 0
+}
+
+func (x *GroupMetric) GetRequestErrors() int64 {
+	if x != nil {
+		return x.RequestErrors
+	}
+	return 0
 }
 
 // HTTPVersionMix counts HTTP actions by negotiated version (1.1, 2, 3,
@@ -8132,7 +8162,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xea\x11\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xa0\x12\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -8170,7 +8200,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1asequence_prefix_state_only\x18! \x01(\bR\x17sequencePrefixStateOnly\x12F\n" +
 	"\x10joint_metrics_v4\x18\" \x03(\v2\x1c.apexload.v1.MetricAggregateR\x0ejointMetricsV4\x12K\n" +
 	"\x12joint_metrics_info\x18# \x01(\v2\x1d.apexload.v1.JointMetricsInfoR\x10jointMetricsInfo\x12E\n" +
-	"\x10http_version_mix\x18$ \x01(\v2\x1b.apexload.v1.HTTPVersionMixR\x0ehttpVersionMix\"\xb9\x04\n" +
+	"\x10http_version_mix\x18$ \x01(\v2\x1b.apexload.v1.HTTPVersionMixR\x0ehttpVersionMix\x124\n" +
+	"\x16request_counts_version\x18% \x01(\rR\x14requestCountsVersion\"\xb9\x04\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -8183,11 +8214,13 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1ftest_dropped_subscriber_batches\x18\t \x01(\x03H\x00R\x1ctestDroppedSubscriberBatches\x88\x01\x01\x12/\n" +
 	"\x13collection_sequence\x18\n" +
 	" \x01(\x04R\x12collectionSequenceB\"\n" +
-	" _test_dropped_subscriber_batches\"~\n" +
+	" _test_dropped_subscriber_batches\"\xc1\x01\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\x126\n" +
-	"\ametrics\x18\x03 \x01(\v2\x1c.apexload.v1.MetricAggregateR\ametrics\"\xb6\x06\n" +
+	"\ametrics\x18\x03 \x01(\v2\x1c.apexload.v1.MetricAggregateR\ametrics\x12\x1a\n" +
+	"\brequests\x18\x04 \x01(\x03R\brequests\x12%\n" +
+	"\x0erequest_errors\x18\x05 \x01(\x03R\rrequestErrors\"\xb6\x06\n" +
 	"\x0eHTTPVersionMix\x12\x18\n" +
 	"\aactions\x18\x01 \x01(\x03R\aactions\x12I\n" +
 	"\n" +

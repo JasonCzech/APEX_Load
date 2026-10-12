@@ -28,7 +28,7 @@ it('confirms saving without navigation, and opens only an explicitly selected sa
   await act(async () => root.render(<Harness />))
   await act(async () => outcome.publish(result))
   expect(notify).toHaveBeenLastCalledWith({ ...result, stayInImportReview: true })
-  expect(container.textContent).toContain('Saved 1 script to the Script Library')
+  expect(container.textContent).toContain('Saved 1 script to the script library')
   await act(async () => container.querySelectorAll('button')[0].click())
   expect(more).toHaveBeenCalledOnce()
   expect(notify).toHaveBeenCalledTimes(1)

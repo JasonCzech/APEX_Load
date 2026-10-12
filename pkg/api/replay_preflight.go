@@ -21,6 +21,9 @@ type ReplayPreflight struct {
 	ParameterCount       int                    `json:"parameter_count"`
 	BrowserRequired      bool                   `json:"browser_required"`
 	MissingVariables     []string               `json:"missing_variables,omitempty"`
+	BlockingVariables    []string               `json:"blocking_variables,omitempty"`
+	PlaceholderVariables []string               `json:"placeholder_variables,omitempty"`
+	DataSourceIssues     []string               `json:"data_source_issues,omitempty"`
 	RequiredSecrets      []string               `json:"required_secrets,omitempty"`
 	MissingSecrets       []string               `json:"missing_secrets,omitempty"`
 	RuntimePrerequisites []string               `json:"runtime_prerequisites,omitempty"`
@@ -62,17 +65,25 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 	}
 	readiness := requestimport.AnalyzeVariableReadiness(script, variables)
 	preflight.MissingVariables = readiness.Missing
+	// Blocking variables refuse replay; placeholder variables are sent as their
+	// placeholder text. They split MissingVariables so a client can list each
+	// one without parsing the checks' display text.
+	preflight.BlockingVariables = append([]string(nil), readiness.Blocking...)
 	// HTTP replay keeps a missing variable as its placeholder text, and the
 	// request that sends it warns, as the load-test runtime does. Only
 	// references with no placeholder fallback refuse replay; an importer that
 	// must never send a placeholder stamps an execution gate instead.
 	if placeholders := replayPlaceholderVariables(readiness); len(placeholders) > 0 {
+		preflight.PlaceholderVariables = placeholders
 		preflight.Warnings = append(preflight.Warnings, "variable(s) with no seed or preceding extractor are sent as placeholder text: "+strings.Join(placeholders, ", "))
 	}
 	preflight.RequiredSecrets, preflight.MissingSecrets = replaySecretRefs(script, secretResolver)
 	dataWarnings := replayDataSourceWarnings(script)
 	if len(dataWarnings) > 0 {
 		preflight.Warnings = append(preflight.Warnings, dataWarnings...)
+		// They are worded as warnings but refuse replay (see Valid below), so
+		// they are also listed on their own for a client to show as blockers.
+		preflight.DataSourceIssues = append([]string(nil), dataWarnings...)
 	}
 	if len(preflight.MissingSecrets) > 0 {
 		if controllerManagedSecrets {
@@ -195,6 +206,9 @@ func cloneReplayPreflight(preflight *ReplayPreflight) *ReplayPreflight {
 	}
 	cloned := *preflight
 	cloned.MissingVariables = append([]string(nil), preflight.MissingVariables...)
+	cloned.BlockingVariables = append([]string(nil), preflight.BlockingVariables...)
+	cloned.PlaceholderVariables = append([]string(nil), preflight.PlaceholderVariables...)
+	cloned.DataSourceIssues = append([]string(nil), preflight.DataSourceIssues...)
 	cloned.RequiredSecrets = append([]string(nil), preflight.RequiredSecrets...)
 	cloned.MissingSecrets = append([]string(nil), preflight.MissingSecrets...)
 	cloned.RuntimePrerequisites = append([]string(nil), preflight.RuntimePrerequisites...)

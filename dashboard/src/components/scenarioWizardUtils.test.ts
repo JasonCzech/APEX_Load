@@ -60,19 +60,22 @@ describe('scenarioWizardUtils', () => {
     expect(parseDurationSeconds('', 45)).toBe(45)
   })
 
-  it('builds a simple VUser ramp model with ramp down', () => {
+  it('builds a simple VUser ramp model with ramp down, as the engine steps it', () => {
     const preview = buildScenarioModelPreview({
       duration: '10m',
       groups: [{ name: 'Checkout', vusers: 10, ramp_up: '2m', ramp_down: '1m' }],
     })
 
-    const start = preview.points.find(point => point.elapsedSeconds === 0)
-    const rampComplete = preview.points.find(point => point.elapsedSeconds === 120)
-    const configuredEnd = preview.points.find(point => point.elapsedSeconds === 600)
-    const end = preview.points.find(point => point.elapsedSeconds === 660)
+    const at = (second: number) => preview.points.find(point => point.elapsedSeconds === second)
+    const configuredEnd = at(600)
+    const end = at(660)
 
-    expect(start?.totalVusers).toBe(0)
-    expect(rampComplete?.group_0_vusers).toBe(10)
+    // One VUser starts every 12 s, the first at once, so all ten run by 108 s;
+    // after the deadline one stops every 6 s.
+    expect(at(0)?.totalVusers).toBe(1)
+    expect(at(12)?.totalVusers).toBe(2)
+    expect(at(108)?.group_0_vusers).toBe(10)
+    expect(at(606)?.totalVusers).toBe(9)
     expect(configuredEnd?.totalVusers).toBe(10)
     expect(end?.totalVusers).toBe(0)
     expect(preview.peakVusers).toBe(10)

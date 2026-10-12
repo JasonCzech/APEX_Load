@@ -40,7 +40,7 @@ function remoteHealthLabel(status: DesktopStatusResponse | null): string {
 }
 
 const QUICK_ACTIONS: Array<{ id: DesktopQuickAction; label: string; hint: string }> = [
-  { id: 'new-test', label: 'New Test', hint: 'Configure and queue a load test' },
+  { id: 'new-test', label: 'New run', hint: 'Configure and queue a run' },
   { id: 'import', label: 'Import', hint: 'Bring in a LoadRunner / JMeter / HAR script' },
   { id: 'record', label: 'Record', hint: 'Capture a browser session' },
   { id: 'scripts', label: 'Scripts', hint: 'Open the script library' },

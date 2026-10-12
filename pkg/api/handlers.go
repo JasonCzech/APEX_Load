@@ -961,6 +961,10 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "script not found")
 			return
 		}
+		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
+			writeError(w, http.StatusConflict, "script reference key is already in use; create the script without ref_key to get a new one")
+			return
+		}
 		// An unclassified failure may have committed; keep the receipt so a
 		// retry adopts the script rather than reusing the key.
 		if receipt != nil {

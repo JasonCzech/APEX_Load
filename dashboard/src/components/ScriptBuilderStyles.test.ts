@@ -10,7 +10,7 @@ function ruleBody(stylesheet: string, pattern: RegExp): string {
   return stylesheet.match(pattern)?.[1] || ''
 }
 
-describe('Script Builder styles', () => {
+describe('Script builder styles', () => {
   it('keeps the workflow cards solid while using theme tokens for selected state', async () => {
     const stylesheet = await readStylesheet()
     const workflowCard = ruleBody(stylesheet, /\.script-workflow-card \{([\s\S]*?)\n\}/)

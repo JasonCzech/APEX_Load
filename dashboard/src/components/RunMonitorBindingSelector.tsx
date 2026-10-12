@@ -4,7 +4,7 @@ import type { AnalysisCapabilities } from '../types/analysis'
 import type { MonitorBinding, MonitorSource } from '../types/runMonitoring'
 import './RunMonitoringControls.css'
 
-export default function RunMonitorBindingSelector({ projectId, value, onChange, legacyELKConnectionId, scenarioId, onConflictChange }: { projectId?: string; value: MonitorBinding[] | undefined; onChange: (value: MonitorBinding[] | undefined) => void; legacyELKConnectionId?: string; scenarioId?: string; onConflictChange?: (conflict: boolean) => void }) {
+export default function RunMonitorBindingSelector({ projectId, value, onChange, legacyELKConnectionId, scenarioId, onConflictChange, onInheritedCountChange }: { projectId?: string; value: MonitorBinding[] | undefined; onChange: (value: MonitorBinding[] | undefined) => void; legacyELKConnectionId?: string; scenarioId?: string; onConflictChange?: (conflict: boolean) => void; onInheritedCountChange?: (count: number) => void }) {
   const [sources, setSources] = useState<MonitorSource[]>([])
   const [enabled, setEnabled] = useState(false)
   const [error, setError] = useState('')
@@ -37,6 +37,8 @@ export default function RunMonitorBindingSelector({ projectId, value, onChange, 
   const conflicts = (value ?? inherited).filter(binding => sources.some(source => source.id === binding.source_id && source.pack === 'elastic' && source.connection_id === legacyELKConnectionId))
   const hasConflict = Boolean(legacyELKConnectionId) && conflicts.length > 0
   useEffect(() => { onConflictChange?.(hasConflict) }, [hasConflict, onConflictChange])
+  // How many scenario bindings the run inherits (none once it overrides them).
+  useEffect(() => { onInheritedCountChange?.(inherited.length) }, [inherited.length, onInheritedCountChange])
   if (!enabled && value === undefined && !inherited.length) return null
   const selectable = sources.filter(source => source.enabled && source.pack !== 'appdynamics')
   const effective = value ?? inherited

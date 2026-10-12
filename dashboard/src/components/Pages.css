@@ -3100,6 +3100,13 @@
   letter-spacing: var(--label-tracking, 0.04em);
 }
 
+/* A version reads as written ("v1.0.0"), not cased like a label. */
+.script-health-token.script-version-token,
+:root[data-theme] body .script-health-token.script-version-token {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .script-health-token.healthy {
   border-color: rgba(var(--success-rgb), 0.28);
   color: var(--success-text);
@@ -5351,35 +5358,15 @@
   outline-offset: 2px;
 }
 
-.new-test-row-toggle > span:nth-child(2) {
+.new-test-row-toggle > span {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.new-test-row-expander {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  font-size: 10px;
-  line-height: 1;
-  flex: 0 0 auto;
 }
 
 .new-test-release-token-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.new-test-scenario-expanded-row > td {
-  padding: 0;
-  background: var(--bg-primary);
 }
 
 .new-test-scenario-groups-panel {
@@ -6105,33 +6092,7 @@
 
 .new-test-profile-chart {
   width: 100%;
-  height: 210px;
-  min-height: 210px;
   min-width: 0;
-}
-
-.new-test-profile-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.new-test-profile-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.25;
-}
-
-.new-test-profile-legend i {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  flex: 0 0 auto;
 }
 
 .new-test-profile-meta {
@@ -8675,3 +8636,10 @@ col.results-actions-col {
   margin-right: 4px;
   color: var(--text-muted);
 }
+
+/* Collapsed run details leave a slim rail, like every collapsed side panel
+   (wide layouts only: below 901px the details stack under the calendar). */
+@media (min-width: 901px) { .run-calendar-workspace.detail-collapsed { grid-template-columns: minmax(0, 1fr) 32px; } }
+/* The card library's collapsed rail is quiet too. */
+.dashboard-workspace-library-restore.ux-panel-toggle { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.dashboard-workspace-library-restore.ux-panel-toggle:hover { border-color: var(--border); background: var(--bg-hover); color: var(--text-primary); }

@@ -20,6 +20,8 @@ type BrowserReplayStartRequest struct {
 	Breakpoints     []int                         `json:"breakpoints,omitempty"`
 	Browser         *dsl.BrowserConfig            `json:"browser,omitempty"`
 	IgnoreThinkTime *bool                         `json:"ignore_think_time,omitempty"`
+	RunID           string                        `json:"run_id,omitempty"`
+	ContinueOnError *bool                         `json:"continue_on_error,omitempty"`
 	// RecordHAR records a native HAR of the replay. It is opt-in: a
 	// recording runs under the HAR size, memory and owner limits, which close
 	// the browser context, so an unrequested one could fail a replay that
@@ -131,6 +133,10 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateDebugRunIdentity(req.RunID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

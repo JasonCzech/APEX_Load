@@ -597,7 +597,7 @@
 
 .command-group-row {
   display: grid;
-  grid-template-columns: minmax(170px, 1.3fr) 78px minmax(190px, 1.2fr) 72px 78px 78px;
+  grid-template-columns: minmax(170px, 1.3fr) 78px minmax(190px, 1.2fr) 88px 78px 88px;
   align-items: center;
   gap: 9px;
   min-width: 0;
@@ -841,7 +841,7 @@ button.command-group-name:focus-visible {
 }
 
 .command-group-panel.compact .command-group-row {
-  grid-template-columns: minmax(130px, 1fr) 56px 86px 58px 62px 62px;
+  grid-template-columns: minmax(130px, 1fr) 56px 86px 72px 62px 76px;
   gap: 6px;
   padding: 7px;
 }
@@ -856,7 +856,7 @@ button.command-group-name:focus-visible {
 }
 
 .command-group-panel.paired .command-group-row {
-  grid-template-columns: minmax(125px, 1fr) 54px 56px 64px 60px;
+  grid-template-columns: minmax(125px, 1fr) 54px 76px 64px 84px;
   gap: 8px;
 }
 
@@ -936,7 +936,6 @@ button.command-group-name:focus-visible {
 
 .command-load-model-chart {
   min-width: 0;
-  height: 132px;
 }
 
 .command-load-model-progress {
@@ -2480,9 +2479,19 @@ button.command-group-name:focus-visible {
 }
 
 .command-table-caption {
-  margin: 0 0 6px;
+  margin: 0;
+  padding: 12px 12px 0;
   color: var(--text-secondary);
   font-size: 11px;
+}
+
+/* A group grid header names its column, then what the figure covers. */
+.command-group-row.header small,
+.command-v2-group-row.header small {
+  display: block;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .command-control-readonly {
@@ -2497,3 +2506,27 @@ button.command-group-name:focus-visible {
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Scrolled past, the run shelf is one 48 px row: the run, its load, clock and
+   errors, and its controls (on a narrow page the controls take a second row).
+   Its bottom margin keeps the room it had in the page (see useStuckShelf). */
+.command-control-shelf.compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 6px 12px;
+}
+/* The run's name gives way first (the top bar names the run too), so the row
+   keeps one line at 1280 px even with an hour-long clock. */
+.command-control-shelf.compact .command-run-identity { flex: 1 1 96px; min-width: 0; }
+.command-control-shelf.compact .command-run-identity > :first-child { flex-shrink: 0; }
+.command-control-shelf.compact .command-run-identity div > span { display: none; }
+.command-run-compact-summary { flex: none; display: flex; gap: 16px; color: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.command-run-compact-summary strong { margin-right: 4px; color: var(--text-muted); font-weight: 700; }
+.command-run-compact-summary .danger { color: var(--danger-text); }
+.command-control-shelf.compact .command-run-actions { flex: none; flex-wrap: nowrap; margin-left: auto; }
+/* The run's status line stays announced while the shelf is compact. */
+.command-control-shelf.compact :is(.command-control-feedback, .command-control-readonly) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }

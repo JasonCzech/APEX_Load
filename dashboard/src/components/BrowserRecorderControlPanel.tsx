@@ -992,7 +992,7 @@ export default function BrowserRecorderControlPanel({
       : converted.script ? [converted.script] : []
     if (stored.length !== reviewedScripts.length) {
       throw new Error(
-        `The server returned ${stored.length} persisted script(s), but ${reviewedScripts.length} reviewed script(s) were expected. Refresh the Script Library before retrying.`,
+        `The server returned ${stored.length} persisted script(s), but ${reviewedScripts.length} reviewed script(s) were expected. Refresh the script library before retrying.`,
       )
     }
     return stored.map((entry, index) => withFallbackPersistedScript(entry, reviewedScripts[index]))
@@ -1998,7 +1998,7 @@ export default function BrowserRecorderControlPanel({
                 {(preview.parameterization?.summary?.total ?? 0) > 0 &&
                   ` · ${preview.parameterization!.summary.total} parameterization suggestions`}
               </div>
-              <p>Destination: Script Library · {folderId ? 'selected folder' : 'project root'}. Saves remain drafts; debug and approve each saved script before execution. Recording verification checks the selected conversion with think time skipped.</p>
+              <p>Destination: script library · {folderId ? 'selected folder' : 'project root'}. Saves remain drafts; debug and approve each saved script before execution. Recording verification checks the selected conversion with think time skipped.</p>
               {importResultScripts(preview).map((script, index) => (
                 <section key={index} className="brp-output-review" aria-label={`Output ${index + 1}: ${script.name}`}>
                   <strong>{script.name} · {script.protocol}</strong>
@@ -2118,7 +2118,7 @@ export default function BrowserRecorderControlPanel({
           )}
           {savedScript && (
             <div className="brp-saved-note">
-              Saved as “{savedScript.name}”{standalone ? ' — find it in the Script Library.' : '.'}
+              Saved as “{savedScript.name}”{standalone ? ' — find it in the script library.' : '.'}
             </div>
           )}
         </div>

@@ -47,6 +47,15 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	dropCounterUnavailable := false
 	groupsByName := make(map[string]int32)
 	groupMetricsByName := make(map[string][]generatorrpc.MetricAggregate)
+	// Requests, failed requests and the request rate per group. Generators'
+	// windows can differ in length, so each rates its own window, as TPS does.
+	groupRequestsByName := make(map[string]generatorrpc.GroupMetric)
+	// A fleet's request counts are only whole when every generator counts
+	// them; otherwise the sample carries none rather than part of the fleet's.
+	requestCountsVersion := uint32(generatorrpc.CurrentRequestCountsVersion)
+	if len(batches) == 0 {
+		requestCountsVersion = 0
+	}
 	fleetTPS := 0.0
 	groupTPS := make(map[string]float64)
 	statsList := make([]generatorrpc.GeneratorStats, 0, len(batches))
@@ -156,6 +165,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		} else {
 			actionsVersion = min(actionsVersion, batch.ActionMetricsVersion)
 		}
+		if batch.RequestCountsVersion != generatorrpc.CurrentRequestCountsVersion {
+			requestCountsVersion = 0
+		}
 		dimensionMetrics = append(dimensionMetrics, batch.ActionDimensionMetrics...)
 		jointMetrics = append(jointMetrics, batch.ActionPropertyMetrics...)
 		actionMetrics = append(actionMetrics, batch.ActionMetrics...)
@@ -204,6 +216,13 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				continue
 			}
 			groupsByName[name] += group.ActiveVUsers
+			if requests, requestErrors := distributedGroupRequestCounts(group); requests > 0 {
+				merged := groupRequestsByName[name]
+				merged.Requests += requests
+				merged.RequestErrors += requestErrors
+				merged.RequestRate += float64(requests) / windowSec
+				groupRequestsByName[name] = merged
+			}
 			if group.Metrics != nil && group.Metrics.Count > 0 {
 				metrics := *group.Metrics
 				metrics.Name = name
@@ -341,14 +360,79 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	}
 	sort.Strings(groupNames)
 	for _, name := range groupNames {
+		requests := groupRequestsByName[name]
 		combined.Groups = append(combined.Groups, generatorrpc.GroupMetric{
-			Name:         name,
-			ActiveVUsers: groupsByName[name],
-			Metrics:      mergeGeneratorMetricAggregates(groupMetricsByName[name]),
+			Name:          name,
+			ActiveVUsers:  groupsByName[name],
+			Metrics:       mergeGeneratorMetricAggregates(groupMetricsByName[name]),
+			Requests:      requests.Requests,
+			RequestErrors: requests.RequestErrors,
+			RequestRate:   requests.RequestRate,
 		})
 	}
+	combined.RequestCountsVersion = requestCountsVersion
 	combined.Stats = aggregateDistributedGeneratorStats(statsList)
 	return combined, fleetTPS, groupTPS
+}
+
+// distributedGroupRequestCounts is a group's attempted requests in a
+// window and the failed ones, bounded to the attempts.
+func distributedGroupRequestCounts(group generatorrpc.GroupMetric) (int64, int64) {
+	if group.Requests <= 0 {
+		return 0, 0
+	}
+	return group.Requests, min(max(group.RequestErrors, 0), group.Requests)
+}
+
+// distributedRequestCounts is a batch's attempted and failed requests: the
+// sum of its named groups', as the merge of generators' batches keeps them.
+// It reports false for a batch whose generator does not count requests.
+func distributedRequestCounts(batch generatorrpc.MetricsBatch) (requests, requestErrors int64, counted bool) {
+	if batch.RequestCountsVersion != generatorrpc.CurrentRequestCountsVersion {
+		return 0, 0, false
+	}
+	for _, group := range batch.Groups {
+		if strings.TrimSpace(group.Name) == "" {
+			continue
+		}
+		groupRequests, groupErrors := distributedGroupRequestCounts(group)
+		requests += groupRequests
+		requestErrors += groupErrors
+	}
+	return requests, requestErrors, true
+}
+
+// applyDistributedRequestMetrics sets a sample's request counters from its
+// named groups', as distributedWindowCounts counts them, unless a generator
+// in the batch does not count requests. A group's rate is the one the merge
+// of the generators' windows set, else its requests over the batch's window.
+func applyDistributedRequestMetrics(live *LiveMetrics, batch generatorrpc.MetricsBatch) {
+	if batch.RequestCountsVersion != generatorrpc.CurrentRequestCountsVersion {
+		return
+	}
+	windowSec := batchWindowSeconds(batch.WindowMs)
+	for _, group := range batch.Groups {
+		requests, requestErrors := distributedGroupRequestCounts(group)
+		if requests == 0 {
+			continue
+		}
+		rate := group.RequestRate
+		if rate <= 0 {
+			rate = float64(requests) / windowSec
+		}
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			continue
+		}
+		live.Requests += requests
+		live.RequestErrors += requestErrors
+		live.RequestRate += rate
+		if groupLive := live.GroupMetrics[name]; groupLive != nil {
+			groupLive.Requests += requests
+			groupLive.RequestErrors += requestErrors
+			groupLive.RequestRate += rate
+		}
+	}
 }
 
 // batchWindowSeconds converts a batch window (ms) to seconds for rate math.
@@ -688,6 +772,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		}
 	}
 	defer func() {
+		applyDistributedRequestMetrics(live, batch)
 		actions := map[string]*TxMetrics{}
 		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 3 {
 			for _, a := range batch.ActionMetrics {

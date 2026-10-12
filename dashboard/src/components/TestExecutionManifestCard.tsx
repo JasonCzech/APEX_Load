@@ -96,7 +96,7 @@ function configurationEntries(config: TestRunManifestConfiguration): DefinitionE
     ['Duration', config.duration],
     ['Total VUsers', config.total_vusers],
     ['Active VUsers', config.active_vusers],
-    ['Start Delay', config.start_delay],
+    ['Start delay', config.start_delay],
     ['Scenario Mode', config.scenario_mode],
     ['Script shakeout', formatBoolean(config.script_shakeout)],
     ['Resource baseline', formatBoolean(config.resource_baseline)],

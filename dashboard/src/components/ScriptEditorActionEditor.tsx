@@ -3,7 +3,8 @@ import NativeScriptActionFields from './NativeScriptActionFields'
 import { useActionParameterMenu } from './useActionParameterMenu'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
 import type { HTTP3ScriptContext } from './httpQUICModel'
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, createContext, useContext, useId } from 'react'
+import TabList from './ux/TabList'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
 import type { ActionEditorParameterDraft } from './scriptEditorState'
 import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
@@ -70,6 +71,9 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   issues: AuthoringIssue[]
 }) {
   const [section, setSection] = useState(initialSection)
+  const sectionIdBase = useId()
+  // Only the open action editor has section tabs; elsewhere every section shows.
+  const sectionPanel = (value: string) => inspector ? { role: 'tabpanel', id: `${sectionIdBase}-${value}-panel`, 'aria-labelledby': `${sectionIdBase}-${value}-tab` } : {}
   const isWebSocketScript = protocol === 'websocket'
   const isGrpcScript = protocol === 'grpc'
   const isDatabaseScript = protocol === 'database'
@@ -89,10 +93,10 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
     <ActionProtocolContext.Provider value={protocol}><div className="action-editor-panel">
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
-      {inspector && <div className="inspector-section-tabs" role="group" aria-label="Action property sections">
-        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" key={value} aria-pressed={section === value} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isNativeRendezvous ? 'Rendezvous' : isNativeScript ? 'Host JavaScript' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
-      </div>}
-      <div hidden={inspector && section !== 'request'}>
+      {inspector && <TabList className="inspector-section-tabs ux-underline-tabs" aria-label="Action property sections">
+        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" role="tab" key={value} id={`${sectionIdBase}-${value}-tab`} aria-controls={`${sectionIdBase}-${value}-panel`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isNativeRendezvous ? 'Rendezvous' : isNativeScript ? 'Host JavaScript' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
+      </TabList>}
+      <div hidden={inspector && section !== 'request'} {...sectionPanel('request')}>
       <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
       <ManagedActionChecks.Provider value={inspector}>
       {isHTTPSequence ? (
@@ -237,12 +241,12 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       </ManagedActionChecks.Provider>
       </OpenActionBody.Provider>
       </div>
-      {inspector && (isHTTPRuntimeControl || isHTTPSequence || isControlAction(action)) && <div hidden={section !== 'checks'} className="sub-section"><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : isHTTPRuntimeControl ? 'This action changes HTTP state and has no response to extract or check.' : 'Select a request inside this block to configure response extraction and checks.'}</p></div>}
-      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && !isControlAction(action) && <div hidden={section !== 'checks'}>
+      {inspector && (isHTTPRuntimeControl || isHTTPSequence || isControlAction(action)) && <div hidden={section !== 'checks'} className="sub-section" {...sectionPanel('checks')}><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : isHTTPRuntimeControl ? 'This action changes HTTP state and has no response to extract or check.' : 'Select a request inside this block to configure response extraction and checks.'}</p></div>}
+      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && !isControlAction(action) && <div hidden={section !== 'checks'} {...sectionPanel('checks')}>
         {!isBrowserScript && <ProtocolExtractorsSection action={action} index={index} protocol={protocol} onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />}
         <ProtocolAssertionsSection action={action} index={index} protocol={protocol} onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
       </div>}
-      <div hidden={inspector && section !== 'metadata'}>
+      <div hidden={inspector && section !== 'metadata'} {...sectionPanel('metadata')}>
         {inspector && <ActionCoreFields typeOnly action={action} index={index} protocol={protocol} isBrowserScript={isBrowserScript} isJmsScript={isJmsScript} onUpdate={onUpdate} />}		  <details className="sub-section"><summary>Advanced: analytics attribution</summary>
 			<div className="form-grid">
 			  <label>
@@ -255,7 +259,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
 			  </label>
 			</div>
 		  </details></div>
-      <div hidden={inspector && section !== 'timing'}>
+      <div hidden={inspector && section !== 'timing'} {...sectionPanel('timing')}>
       {!isHTTPRuntimeControl && <ActionThinkTimeToggle action={action} index={index} onUpdate={onUpdate} />}
 
       </div>
@@ -396,7 +400,7 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
   return (
     <>
       <div className="action-editor-top">
-        <span className={`action-badge${reviewAction ? ' action-badge-review' : ''}`} style={reviewAction ? undefined : { background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
+        <span className={`action-badge${reviewAction ? ' action-badge-review' : ''}`} style={reviewAction ? undefined : { color: methodColor(action.type) }}>{badgeLabel}</span>
         <h3 tabIndex={-1} data-inspector-focus>{action.name || 'Unnamed Action'}</h3>
         {(isControlAction(action) || reviewGated || executionBlocked || fallbackCount > 0) && (
           <div className="action-editor-issue-pills">

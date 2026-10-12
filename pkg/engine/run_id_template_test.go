@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -130,5 +131,62 @@ func TestManagedShakeoutResolvesRunIDButDirectShakeoutFailsClosed(t *testing.T) 
 	}
 	if got := <-observed; got != "managed-test" {
 		t.Fatalf("managed shakeout identity = %q", got)
+	}
+}
+
+func TestReplayResolvesRunIDFromItsOptionsAndContinuesWhenTold(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	requested := func() string { mu.Lock(); defer mu.Unlock(); return strings.Join(seen, ",") }
+	reset := func() { mu.Lock(); defer mu.Unlock(); seen = nil }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/fail" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	statusOK := []dsl.Assertion{{Type: "status_code", Expected: 200}}
+	script := &dsl.Script{
+		Name: "replay run identity", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: server.URL},
+		Actions: []dsl.Action{
+			{Name: "tagged", Type: "request", Method: "GET", Target: "/runs/{{run.id}}"},
+			{Name: "fails", Type: "request", Method: "GET", Target: "/fail", Assertions: statusOK},
+			{Name: "after", Type: "request", Method: "GET", Target: "/after"},
+		},
+	}
+	carryOn := true
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{RunID: "debug-session-1", ContinueOnError: &carryOn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := requested(); got != "/runs/debug-session-1,/fail,/after" {
+		t.Fatalf("requests = %s, want the run identity substituted and the action after the failure run", got)
+	}
+	if report.Success {
+		t.Fatal("report succeeded despite the failed action")
+	}
+
+	reset()
+	stop := false
+	if _, err := ReplayScript(context.Background(), script, ReplayOptions{RunID: "debug-session-2", ContinueOnError: &stop}); err != nil {
+		t.Fatal(err)
+	}
+	if got := requested(); got != "/runs/debug-session-2,/fail" {
+		t.Fatalf("requests = %s, want the iteration to stop at the failure", got)
+	}
+
+	// Without a run identity the action fails closed and sends nothing.
+	reset()
+	if _, err := ReplayScript(context.Background(), &dsl.Script{Name: "no identity", Protocol: "http", Config: script.Config, Actions: script.Actions[:1]}, ReplayOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := requested(); got != "" {
+		t.Fatalf("requests = %s, want none without a run identity", got)
 	}
 }

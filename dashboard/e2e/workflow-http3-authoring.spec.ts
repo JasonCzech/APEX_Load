@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { Socket } from 'node:net'
 import type { Locator, Page } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // A TLS target that answers over HTTP/2 and advertises HTTP/3 (Alt-Svc). The
@@ -92,7 +92,7 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     await expect(quic.getByRole('alert')).toHaveCount(0)
     await quicField(runtime, 'Alt-Svc cache').selectOption('per_iteration')
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     const saved = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
     expect(saved.config.http).toMatchObject({ version: '3', quic: { handshake_timeout_ms: 2500, alt_svc_cache: 'per_iteration' } })
 
@@ -145,7 +145,7 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     expect((await json(await request.get(`/api/v1/scripts/${id}`))).script).toMatchObject({ config: { http: { version: '3' } } })
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    await expectDebugOutcome(page, 'passed')
     await page.locator('.debugger-action-row-main').filter({ hasText: 'Home' }).click()
     const disclosure = page.locator('details.replay-protocol-evidence')
     if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
@@ -157,7 +157,7 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     await expect(page.getByRole('status').filter({ hasText: 'Switched this request to auto+h3' })).toBeVisible()
     await page.screenshot({ path: info.outputPath('http3-switch.png') })
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
-    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    await expectEditorSaved(page)
     const switched = (await json(await request.get(`/api/v1/scripts/${replayId}`))).script as unknown as ScriptDefinition
     expect(switched.actions[0].http_version).toBe('auto+h3')
     expect(switched.config.http?.version).toBe('2')

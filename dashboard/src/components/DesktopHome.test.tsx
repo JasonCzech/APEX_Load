@@ -71,7 +71,7 @@ describe('DesktopHome', () => {
     expect(text).toContain('sqlite')
     expect(text).toContain('1/2 remote workspaces healthy')
 
-    const newTest = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('New Test'))
+    const newTest = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('New run'))
     await act(async () => { newTest?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(onQuickAction).toHaveBeenCalledWith('new-test')
   })

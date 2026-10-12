@@ -4,7 +4,7 @@ import { analysisIdentityMappingError, analysisIdentityMappingShapeError, analys
 
 export default function AnalysisIdentityMapping({ mapping, columns, onChange }: { mapping: AnalysisMapping; columns: AnalysisColumn[]; onChange: (mapping: AnalysisMapping) => void }) {
   const shapeError = analysisIdentityMappingShapeError(mapping.identity)
-  if (shapeError) return <fieldset aria-label="Imported measurement identities"><legend>Source and labels</legend><p role="alert">{shapeError}</p><button type="button" onClick={() => onChange({ ...mapping, version: 2, identity: {} })}>Reset identity mapping</button></fieldset>
+  if (shapeError) return <fieldset aria-label="Imported measurement identities"><legend>Source and labels</legend><p role="alert">{shapeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...mapping, version: 2, identity: {} })}>Reset identity mapping</button></fieldset>
   // Schema previews share the worker's bounded 1024-column contract. Refuse
   // malformed options before serializing paths or creating controls.
   if (!Array.isArray(columns) || columns.length > 1024 || columns.some(column => !column || typeof column !== 'object' || !!analysisIdentityTextError(column.path, 8207, true) || analysisIdentityMappingShapeError({ source: column.path_components }) || !column.path_components?.length)) return <fieldset aria-label="Imported measurement identities"><legend>Source and labels</legend><p role="alert">Column preview is invalid or exceeds the supported limit. Reload the schema preview.</p></fieldset>
@@ -24,8 +24,8 @@ export default function AnalysisIdentityMapping({ mapping, columns, onChange }: 
     {dimensions.map((dimension, index) => <div key={index}>
       <label>Dimension {index + 1} name<input value={dimension.name} maxLength={128} onChange={event => update({ ...identity, dimensions: dimensions.map((row, at) => at === index ? { ...row, name: event.target.value } : row) })} /></label>
       <label>Dimension {index + 1} column<select value={JSON.stringify(dimension.value)} onChange={event => update({ ...identity, dimensions: dimensions.map((row, at) => at === index ? { ...row, value: JSON.parse(event.target.value) } : row) })}><option value="[]">Choose a scalar column</option>{options}</select></label>
-      <button type="button" onClick={() => update({ ...identity, dimensions: dimensions.filter((_, at) => at !== index) })}>Remove dimension {index + 1}</button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => update({ ...identity, dimensions: dimensions.filter((_, at) => at !== index) })}>Remove dimension {index + 1}</button>
     </div>)}
-    <button type="button" disabled={dimensions.length >= 16} onClick={() => update({ ...identity, dimensions: [...dimensions, { name: '', value: [] }] })}>Add dimension</button>
+    <button type="button" className="btn btn-secondary btn-sm" disabled={dimensions.length >= 16} onClick={() => update({ ...identity, dimensions: [...dimensions, { name: '', value: [] }] })}>Add dimension</button>
   </fieldset>
 }

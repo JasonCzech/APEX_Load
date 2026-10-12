@@ -3849,6 +3849,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -3871,6 +3875,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -3889,6 +3897,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -20841,6 +20853,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -20863,6 +20879,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -20881,6 +20901,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -36451,6 +36475,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -37719,6 +37745,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -37741,6 +37771,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -37759,6 +37793,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -38172,6 +38210,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -38205,6 +38245,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -38306,6 +38347,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -39574,6 +39617,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -39596,6 +39643,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -39614,6 +39665,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -40027,6 +40082,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -40060,6 +40117,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -40242,6 +40300,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -41510,6 +41570,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -41532,6 +41596,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -41550,6 +41618,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -41963,6 +42035,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -41996,6 +42070,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -42060,6 +42135,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -43328,6 +43405,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -43350,6 +43431,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -43368,6 +43453,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -43781,6 +43870,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -43814,6 +43905,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -43878,6 +43970,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -45146,6 +45240,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -45168,6 +45266,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -45186,6 +45288,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -45599,6 +45705,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -45632,6 +45740,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -89675,6 +89784,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -89829,7 +89947,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -91189,11 +91319,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -91673,6 +91824,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -91827,7 +91987,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -96038,6 +96210,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -96192,7 +96373,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -97552,11 +97745,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -98036,6 +98250,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -98190,7 +98413,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -102402,6 +102637,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -102556,7 +102800,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -103916,11 +104172,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -104400,6 +104677,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -104554,7 +104840,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -108778,6 +109076,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -108932,7 +109239,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -110292,11 +110611,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -110776,6 +111116,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -110930,7 +111279,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -115154,6 +115515,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -115308,7 +115678,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -116668,11 +117050,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -117152,6 +117555,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -117306,7 +117718,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -121530,6 +121954,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -121684,7 +122117,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -123044,11 +123489,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -123528,6 +123994,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -123682,7 +124157,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -127906,6 +128393,15 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             resources:
                               type: object
                               properties:
@@ -128060,7 +128556,19 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
                             run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -129420,11 +129928,32 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                request_errors:
+                                  type: integer
+                                  format: int64
+                                request_rate:
+                                  type: number
+                                  format: double
+                                requests:
+                                  type: integer
+                                  format: int64
                                 run_error_pct:
                                   type: number
                                   format: double
                                   nullable: true
                                 run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_request_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_request_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -129904,6 +130433,15 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          request_errors:
+                            type: integer
+                            format: int64
+                          request_rate:
+                            type: number
+                            format: double
+                          requests:
+                            type: integer
+                            format: int64
                           resources:
                             type: object
                             properties:
@@ -130058,7 +130596,19 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          run_request_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_request_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
                           run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_requests:
                             type: integer
                             format: int64
                             nullable: true
@@ -131994,6 +132544,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -133352,6 +133904,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -133374,6 +133930,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -133392,6 +133952,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -133809,6 +134373,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -133927,6 +134493,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -134048,6 +134615,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -135406,6 +135975,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -135428,6 +136001,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -135446,6 +136023,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -135863,6 +136444,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -135981,6 +136564,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -136162,6 +136746,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -137520,6 +138106,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -137542,6 +138132,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -137560,6 +138154,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -137977,6 +138575,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -138095,6 +138695,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -138222,6 +138823,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -139580,6 +140183,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -139602,6 +140209,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -139620,6 +140231,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -140037,6 +140652,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -140155,6 +140772,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -140276,6 +140894,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -141634,6 +142254,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -141656,6 +142280,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -141674,6 +142302,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -142091,6 +142723,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -142209,6 +142843,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -142335,6 +142970,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -143693,6 +144330,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -143715,6 +144356,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -143733,6 +144378,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -144150,6 +144799,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -144268,6 +144919,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -144395,6 +145047,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -145753,6 +146407,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -145775,6 +146433,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -145793,6 +146455,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -146210,6 +146876,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -146328,6 +146996,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -185679,6 +186348,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -187037,6 +187708,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -187059,6 +187734,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -187077,6 +187756,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -187494,6 +188177,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -187612,6 +188297,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -187734,6 +188420,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -189092,6 +189780,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -189114,6 +189806,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -189132,6 +189828,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -189549,6 +190249,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -189667,6 +190369,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -189850,6 +190553,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -191208,6 +191913,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -191230,6 +191939,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -191248,6 +191961,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -191665,6 +192382,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -191783,6 +192502,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -191911,6 +192631,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -193269,6 +193991,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -193291,6 +194017,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -193309,6 +194039,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -193726,6 +194460,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -193844,6 +194580,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -193966,6 +194703,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -195324,6 +196063,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -195346,6 +196089,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -195364,6 +196111,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -195781,6 +196532,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -195899,6 +196652,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -196026,6 +196780,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -197384,6 +198140,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -197406,6 +198166,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -197424,6 +198188,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -197841,6 +198609,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -197959,6 +198729,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -198087,6 +198858,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -199445,6 +200218,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -199467,6 +200244,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -199485,6 +200266,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -199902,6 +200687,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -200020,6 +200807,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -218911,6 +219699,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -218965,6 +219756,8 @@ paths:
                       replacement:
                         type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 script:
                   type: object
@@ -220851,6 +221644,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -220873,6 +221670,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -220891,6 +221692,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -220924,6 +221729,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -222192,6 +222999,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -222214,6 +223025,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -222232,6 +223047,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -222645,6 +223464,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -222678,6 +223499,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -223197,6 +224019,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -223252,6 +224077,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -225165,6 +225992,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -225187,6 +226018,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -225205,6 +226040,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -225291,6 +226130,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -226649,6 +227490,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -226671,6 +227516,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -226689,6 +227538,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -227106,6 +227959,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -227224,6 +228079,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -230379,6 +231235,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -230434,6 +231293,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -232347,6 +233208,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -232369,6 +233234,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -232387,6 +233256,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -232473,6 +233346,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -233831,6 +234706,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -233853,6 +234732,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -233871,6 +234754,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -234288,6 +235175,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -234406,6 +235295,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -237727,6 +238617,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -237749,6 +238643,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -237767,6 +238665,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -253546,6 +254448,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -253600,6 +254505,8 @@ paths:
                       replacement:
                         type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 script:
                   type: object
@@ -255488,6 +256395,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -255510,6 +256421,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -255528,6 +256443,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -255561,6 +256480,8 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      continue_on_error:
+                        type: boolean
                       current_event:
                         type: object
                         properties:
@@ -256829,6 +257750,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -256851,6 +257776,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -256869,6 +257798,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -257282,6 +258215,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_profile:
                         type: object
                         properties:
@@ -257315,6 +258250,7 @@ paths:
                       status:
                         type: string
                     required:
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -263830,6 +264766,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -263885,6 +264824,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -265798,6 +266739,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -265820,6 +266765,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -265838,6 +266787,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -265924,6 +266877,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -267282,6 +268237,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -267304,6 +268263,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -267322,6 +268285,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -267739,6 +268706,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -267857,6 +268826,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -293347,6 +294317,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -293369,6 +294343,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -293387,6 +294365,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -300813,6 +301795,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -300835,6 +301821,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -300853,6 +301843,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -314350,6 +315344,9 @@ paths:
                           type: integer
                           format: int64
                   nullable: true
+                continue_on_error:
+                  type: boolean
+                  nullable: true
                 group_name:
                   type: string
                 ignore_think_time:
@@ -314405,6 +315402,8 @@ paths:
                 replay_profile:
                   type: string
                 replay_session_id:
+                  type: string
+                run_id:
                   type: string
                 runtime_profile:
                   type: object
@@ -316318,6 +317317,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -316340,6 +317343,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -316358,6 +317365,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -316444,6 +317455,8 @@ paths:
                               type: string
                           required:
                             - result
+                      continue_on_error:
+                        type: boolean
                       current_action:
                         type: object
                         properties:
@@ -317802,6 +318815,10 @@ paths:
                           action_count:
                             type: integer
                             format: int64
+                          blocking_variables:
+                            type: array
+                            items:
+                              type: string
                           browser_required:
                             type: boolean
                           checks:
@@ -317824,6 +318841,10 @@ paths:
                           data_source_count:
                             type: integer
                             format: int64
+                          data_source_issues:
+                            type: array
+                            items:
+                              type: string
                           expected_action_count:
                             type: integer
                             format: int64
@@ -317842,6 +318863,10 @@ paths:
                           parameter_count:
                             type: integer
                             format: int64
+                          placeholder_variables:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
@@ -318259,6 +319284,8 @@ paths:
                           - started_at
                           - success
                         nullable: true
+                      run_id:
+                        type: string
                       runtime_evidence_unavailable:
                         type: boolean
                       runtime_profile:
@@ -318377,6 +319404,7 @@ paths:
                         type: string
                     required:
                       - break_on_failure
+                      - continue_on_error
                       - current_event_index
                       - group
                       - id
@@ -328620,6 +329648,10 @@ paths:
                       action_count:
                         type: integer
                         format: int64
+                      blocking_variables:
+                        type: array
+                        items:
+                          type: string
                       browser_required:
                         type: boolean
                       checks:
@@ -328642,6 +329674,10 @@ paths:
                       data_source_count:
                         type: integer
                         format: int64
+                      data_source_issues:
+                        type: array
+                        items:
+                          type: string
                       expected_action_count:
                         type: integer
                         format: int64
@@ -328660,6 +329696,10 @@ paths:
                       parameter_count:
                         type: integer
                         format: int64
+                      placeholder_variables:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
@@ -343803,11 +344843,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -344356,6 +345417,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -344510,7 +345580,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -347589,11 +348671,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -349558,6 +350661,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -349712,7 +350824,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -357293,11 +358417,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -357846,6 +358991,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -358000,7 +359154,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -361079,11 +362245,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -363048,6 +364235,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -363202,7 +364398,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -402340,11 +403548,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -402893,6 +404122,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -403047,7 +404285,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -406126,11 +407376,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -408095,6 +409366,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -408249,7 +409529,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -415774,11 +417066,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -416327,6 +417640,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -416481,7 +417803,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -419560,11 +420894,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -421529,6 +422884,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -421683,7 +423047,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -435089,11 +436465,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -435642,6 +437039,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -435796,7 +437202,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -438875,11 +440293,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -440844,6 +442283,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -440998,7 +442446,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true
@@ -450553,11 +452013,32 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              request_errors:
+                                type: integer
+                                format: int64
+                              request_rate:
+                                type: number
+                                format: double
+                              requests:
+                                type: integer
+                                format: int64
                               run_error_pct:
                                 type: number
                                 format: double
                                 nullable: true
                               run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_request_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_request_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_requests:
                                 type: integer
                                 format: int64
                                 nullable: true
@@ -451106,6 +452587,15 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        request_errors:
+                          type: integer
+                          format: int64
+                        request_rate:
+                          type: number
+                          format: double
+                        requests:
+                          type: integer
+                          format: int64
                         resources:
                           type: object
                           properties:
@@ -451260,7 +452750,19 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        run_request_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_request_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
                         run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_requests:
                           type: integer
                           format: int64
                           nullable: true
@@ -454327,11 +455829,32 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            request_errors:
+                              type: integer
+                              format: int64
+                            request_rate:
+                              type: number
+                              format: double
+                            requests:
+                              type: integer
+                              format: int64
                             run_error_pct:
                               type: number
                               format: double
                               nullable: true
                             run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_request_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_request_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_requests:
                               type: integer
                               format: int64
                               nullable: true
@@ -456296,6 +457819,15 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      request_errors:
+                        type: integer
+                        format: int64
+                      request_rate:
+                        type: number
+                        format: double
+                      requests:
+                        type: integer
+                        format: int64
                       resources:
                         type: object
                         properties:
@@ -456450,7 +457982,19 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      run_request_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_request_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
                       run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_requests:
                         type: integer
                         format: int64
                         nullable: true

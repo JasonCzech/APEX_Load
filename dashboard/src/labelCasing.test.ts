@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 // UI labels follow the restyle's sentence case. Older screens still carry Title
 // Case copies of labels that read in sentence case elsewhere; this ratchet keeps
 // that debt from growing. Lower the budget whenever a group is normalized.
-const CASE_VARIANT_GROUP_BUDGET = 242
+const CASE_VARIANT_GROUP_BUDGET = 232
 
 const sources = import.meta.glob<string>(
   ['./**/*.{ts,tsx}', '!./**/*.test.{ts,tsx}', '!./types/generated/**', '!./test/**'],

@@ -8,7 +8,20 @@ const request = vi.hoisted(() => vi.fn())
 const api = vi.hoisted(() => ({ createDynatraceOperation: vi.fn(), getDynatraceOperation: vi.fn() }))
 vi.mock('../hooks/apiClient', () => ({ request }))
 vi.mock('../hooks/api/useDynatraceConnectionsApi', () => ({ useDynatraceConnectionsApi: () => api }))
+const monitoring = vi.hoisted(() => ({ enabled: true }))
+vi.mock('./useMonitoringCapabilities', () => ({ useMonitoringEnabled: () => monitoring.enabled }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+it('does not ask for monitor sources when the project has no run monitoring', async () => {
+  monitoring.enabled = false
+  request.mockReset()
+  const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<MonitorRuleEditor projectId="project" value={[]} onChange={() => undefined} />))
+    expect(request).not.toHaveBeenCalled()
+  } finally {
+    act(() => root.unmount()); container.remove(); monitoring.enabled = true
+  }
+})
 it('selects an exact native Dynatrace series from preview without combining entity/resolution identities', async () => {
   const rule: MonitorRule = { source_id: 'source', metric: 'cpu', unit: '%', statistic: 'avg', comparator: 'lte', threshold: 80, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, evaluation_operation: 'time_average' }
   const source = { id: 'source', name: 'CPU', pack: 'dynatrace', enabled: true, connection_id: 'connection', dynatrace: { metrics: [{ name: 'cpu', metric_selector: 'builtin:host.cpu.usage', aggregation: 'avg', unit: '%', semantics: 'gauge' }] } }

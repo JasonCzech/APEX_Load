@@ -82,6 +82,8 @@ vi.mock('../hooks/useProject', () => ({
 vi.mock('recharts', () => ({
   Area: () => <span data-testid="mock-area" />,
   AreaChart: ({ children }: { children?: ReactNode }) => <div data-testid="mock-load-profile-chart">{children}</div>,
+  ComposedChart: ({ children }: { children?: ReactNode }) => <div data-testid="mock-load-profile-chart">{children}</div>,
+  ReferenceLine: () => <span data-testid="mock-reference-line" />,
   CartesianGrid: () => <span data-testid="mock-cartesian-grid" />,
   Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <span data-testid="mock-line" data-key={dataKey || ''} data-name={name || ''} />,
   ReferenceArea: () => <span data-testid="mock-reference-area" />,
@@ -289,7 +291,7 @@ describe('NewTestPage', () => {
     expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
   })
 
-  it('suggests assigned applications but requires release selection and clears it on application override', async () => {
+  it('suggests assigned applications, starts them without a release, and returns to the workspace release with the workspace application', async () => {
     const initial = await apiMock.listScenarios()
     initial.scenarios[0].library_assignment = { application: { id: 'app-2', name: 'Assigned App' }, releases: [{ id: 'release-2', name: 'Assigned Release', application_id: 'app-2' }], revision: 1 }
     apiMock.listScenarios.mockResolvedValue(initial)
@@ -304,8 +306,48 @@ describe('NewTestPage', () => {
     expect(release.textContent).toContain('assigned')
     await act(async () => setSelectValue(release, 'release-2'))
     expect(release.value).toBe('release-2')
+    // The workspace's release is the user's own choice of context.
     await act(async () => setSelectValue(application, 'app-1'))
+    expect(release.value).toBe('release-1')
+  })
+
+  it('leaves the release to the user when the scenario is assigned to another release of the application', async () => {
+    const initial = await apiMock.listScenarios()
+    initial.scenarios[0].library_assignment = { application: { id: 'app-1', name: 'App' }, releases: [{ id: 'release-2', name: 'Assigned Release', application_id: 'app-1' }], revision: 1 }
+    apiMock.listScenarios.mockResolvedValue(initial)
+    const releases = [{ id: 'release-1', name: 'Workspace Release', application_id: 'app-1', created_at: '', updated_at: '' }, { id: 'release-2', name: 'Assigned Release', application_id: 'app-1', created_at: '', updated_at: '' }]
+    apiMock.listReleases.mockResolvedValue({ releases })
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={releases[0]} releases={releases} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await flushPromises()
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
     expect(release.value).toBe('')
+    expect(Array.from(release.options).find(option => option.value === 'release-2')?.textContent).toBe('Assigned Release — assigned')
+  })
+
+  it('starts at the workspace release and links each launch blocker to its field', async () => {
+    const initial = await apiMock.listScenarios()
+    const workspace = { activeApplication: { id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, releases: [{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }], initialScenarioId: initial.scenarios[0].id, onSelectTest: vi.fn(), onCreateRelease: vi.fn() }
+    await act(async () => root.render(<NewTestPage {...workspace} activeRelease={{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }} />))
+    await flushPromises()
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
+    expect(release.value).toBe('release-1')
+    expect(container.querySelector('#new-test-launch-blockers')?.textContent ?? '').not.toContain('release')
+    // Required fields come before the optional ones.
+    const application = container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')!
+    const runName = container.querySelector('[aria-labelledby="new-test-run-name-label"]')!
+    const monitoring = container.querySelector('.new-test-monitoring')!
+    expect(application.compareDocumentPosition(release) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(release.compareDocumentPosition(runName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(runName.compareDocumentPosition(monitoring) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // Without a workspace release, the blocker takes the user to the field.
+    await act(async () => root.render(null))
+    await act(async () => root.render(<NewTestPage {...workspace} activeRelease={null} />))
+    await flushPromises()
+    const link = Array.from(container.querySelectorAll<HTMLButtonElement>('#new-test-launch-blockers button')).find(button => button.textContent === 'Select or create a release')
+    expect(link).toBeTruthy()
+    await act(async () => link!.click())
+    expect(document.activeElement).toBe(container.querySelector('[aria-labelledby="new-test-release-label"]'))
   })
 
   it('says why the launch buttons are disabled until a release is chosen', async () => {
@@ -510,7 +552,7 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    const builderLink = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Open Scenario Builder')
+    const builderLink = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Open scenario builder')
     expect(builderLink).toBeTruthy()
     expect(builderLink?.className).toContain('new-test-builder-button')
 
@@ -538,7 +580,7 @@ describe('NewTestPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('No scenarios are available yet. Open Scenario Builder to create the first reusable workload.')
+    expect(container.textContent).toContain('No scenarios are available yet. Create the first reusable workload in the scenario builder.')
     expect(container.textContent).not.toContain('No scenarios match this search.')
     const runSetupStep = Array.from(container.querySelectorAll<HTMLElement>('.new-test-step'))
       .find(step => step.querySelector('h3')?.textContent === 'Run Setup')
@@ -594,16 +636,14 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Builder Created Scenario')
-    expect(container.textContent).toContain('Goal')
-    const selectedRow = container.querySelector('.new-test-scenario-table-row.selected')
-    expect(selectedRow?.textContent).toContain('Builder Created Scenario')
-    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
-    await act(async () => {
-      selectedRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(container.textContent).toContain('Order API')
-    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Order API')
+    // A scenario the user arrives with is chosen: the list folds away and
+    // the scenario's card shows its groups.
+    const card = container.querySelector('[aria-label="Selected scenario"]')
+    expect(card?.querySelector('h4')?.textContent).toContain('Builder Created Scenario')
+    expect(card?.textContent).toContain('Goal')
+    expect(card?.querySelector('.new-test-script-table')?.textContent).toContain('Order API')
+    expect(container.querySelector('.new-test-scenario-table')).toBeNull()
+    expect(Array.from(card!.querySelectorAll('button')).some(button => button.textContent === 'Change scenario')).toBe(true)
   })
 
   it('treats the calendar date prefill as navigation context rather than an unsaved edit', async () => {
@@ -752,6 +792,7 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     const runNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Change scenario')?.click())
     const alternateRow = Array.from(container.querySelectorAll<HTMLTableRowElement>('.new-test-scenario-table-row'))
       .find(row => row.textContent?.includes('Alternate Checkout'))
     expect(runNameInput).toBeTruthy()
@@ -768,7 +809,8 @@ describe('NewTestPage', () => {
       .find(button => button.textContent?.includes('Discard changes'))
     await act(async () => discardButton?.click())
 
-    expect(container.querySelector('.new-test-scenario-table-row.selected')?.textContent).toContain('Alternate Checkout')
+    expect(container.querySelector('[aria-label="Selected scenario"] h4')?.textContent).toContain('Alternate Checkout')
+    expect(container.querySelector('.new-test-scenario-table')).toBeNull()
     expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).not.toBe('Dirty launch name')
   })
 
@@ -1345,7 +1387,8 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('2 available scenarios')
     expect(container.querySelector('.new-test-scenario-table')?.textContent).toContain('Most Recent Run')
     expect(container.querySelector('.new-test-scenario-table')?.textContent).toContain('Releases')
-    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    // The scenario the page picked leaves the list open: no groups in its card yet.
+    expect(container.querySelector('[aria-label="Selected scenario"] .new-test-scenario-groups-panel')).toBeNull()
     const releaseFilter = container.querySelector('.new-test-scenario-filter select') as HTMLSelectElement | null
     const searchLabel = container.querySelector('.new-test-scenario-search')
     expect(releaseFilter).toBeTruthy()
@@ -1398,14 +1441,21 @@ describe('NewTestPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Goal')
-    expect(container.textContent).toContain('40')
-    expect(container.textContent).toContain('Batch Script')
-    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Iterations')
-    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Log level')
+    // Choosing a scenario folds the list away; its card shows its groups.
+    const card = container.querySelector('[aria-label="Selected scenario"]')
+    expect(card?.textContent).toContain('Goal')
+    expect(card?.textContent).toContain('40')
+    expect(card?.textContent).toContain('Batch Script')
+    expect(card?.querySelector('.new-test-script-table')?.textContent).toContain('Iterations')
+    expect(card?.querySelector('.new-test-script-table')?.textContent).toContain('Log level')
+    expect(container.querySelector('.new-test-scenario-table')).toBeNull()
+    expect(document.activeElement).toBe(card?.querySelector('h4'))
 
+    await act(async () => Array.from(card!.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Change scenario')?.click())
+    const reopenedSearch = Array.from(container.querySelectorAll('input[type="search"]')).find(input => input.getAttribute('placeholder')?.includes('Find by scenario')) as HTMLInputElement
+    expect(document.activeElement).toBe(reopenedSearch)
     await act(async () => {
-      setInputValue(searchInput, 'does-not-exist')
+      setInputValue(reopenedSearch, 'does-not-exist')
     })
 
     expect(container.textContent).toContain('0 matching scenarios')
@@ -1456,7 +1506,7 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     const headers = Array.from(container.querySelectorAll('.new-test-step-header h3'))
-    const scenarioHeader = headers.find(element => element.textContent === 'Select Scenario')
+    const scenarioHeader = headers.find(element => element.textContent === 'Scenario')
     const setupHeader = headers.find(element => element.textContent === 'Run Setup')
     const defaultsHeader = headers.find(element => element.textContent === 'Global Run Settings')
     const groupsHeader = headers.find(element => element.textContent === 'Script Groups')
@@ -1480,19 +1530,22 @@ describe('NewTestPage', () => {
     expect(scenarioSection?.textContent).toContain('VUsers')
     expect(scenarioSection?.textContent).toContain('Duration')
     expect(scenarioSection?.textContent).toContain('PI28')
-    expect(scenarioSection?.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    // The scenario the page picked leaves the list open: no groups in its card yet.
+    expect(scenarioSection?.querySelector('[aria-label="Selected scenario"] .new-test-scenario-groups-panel')).toBeNull()
     const selectedScenarioRow = scenarioSection?.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
     expect(selectedScenarioRow).toBeTruthy()
     await act(async () => {
       selectedScenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(scenarioSection?.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Script Groups')
+    // Keeping the scenario folds the list; its card shows its groups.
+    expect(scenarioSection?.querySelector('[aria-label="Selected scenario"] .new-test-scenario-groups-panel')?.textContent).toContain('Script Groups')
+    expect(scenarioSection?.querySelector('.new-test-scenario-table')).toBeNull()
     const setupSection = setupHeader.closest('.new-test-step')
     expect(setupSection?.textContent).not.toContain('Application')
     expect(setupSection?.textContent).not.toContain('Previously Tested')
     const runOnlyNotice = container.querySelector('.new-test-run-only-callout')
     expect(runOnlyNotice?.textContent).toContain('Note: Changes on this page only override the default settings for the current run.')
-    expect(runOnlyNotice?.textContent).toContain('To change scenario defaults, edit the scenario through the Scenario Editor.')
+    expect(runOnlyNotice?.textContent).toContain('To change scenario defaults, edit the scenario in the scenario builder.')
     expect(runOnlyNotice).toBeTruthy()
     if (!runOnlyNotice) return
     expect(scenarioHeader.compareDocumentPosition(runOnlyNotice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -1517,19 +1570,21 @@ describe('NewTestPage', () => {
     expect(summaryList?.textContent).toContain('Run Name')
     expect(summaryList?.textContent).toContain('Checkout Smoke')
     expect(summaryList?.textContent).toContain('Release')
-    expect(summaryList?.textContent).toContain('None selected')
+    // The workspace's release, without a selection.
+    expect(summaryList?.textContent).toContain('ReleasePI29')
     expect(summaryList?.textContent).toContain('Total VUsers')
     expect(summaryList?.textContent).toContain('Script Groups')
     expect(summaryList?.textContent).toContain('Capacity')
     expect(readinessCard.textContent).not.toContain('Application')
-    expect(profileCard.textContent).toContain('Modeled Load Profile')
+    expect(profileCard.textContent).toContain('Modeled load profile')
     expect(profileCard.textContent).toContain('Planned VUsers for this run.')
     expect(profileCard.textContent).toContain('10peak')
     expect(profileCard.textContent).toContain('20m total')
     expect(profileCard.querySelector('[data-testid="mock-responsive-container"]')).toBeTruthy()
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-type')).toBe('number')
-    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,dataMax')
+    // Elapsed time across the whole plan (20 m), on round ticks.
+    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,1200')
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
     expect(launchCard.textContent).toContain('Run timing')
     expect(launchCard.textContent).toContain('Hold for Manual Start')
@@ -1775,7 +1830,8 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    // The scenario the page picked leaves the list open: no groups in its card yet.
+    expect(container.querySelector('[aria-label="Selected scenario"] .new-test-scenario-groups-panel')).toBeNull()
     const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
     expect(scenarioRow).toBeTruthy()
     await act(async () => {
@@ -3437,7 +3493,8 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    // The scenario the page picked leaves the list open: no groups in its card yet.
+    expect(container.querySelector('[aria-label="Selected scenario"] .new-test-scenario-groups-panel')).toBeNull()
     const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
     expect(scenarioRow).toBeTruthy()
     await act(async () => {
@@ -4574,12 +4631,13 @@ describe('NewTestPage', () => {
 
     expect(container.querySelector('[aria-labelledby="new-test-run-name-label"]')).toBeInstanceOf(HTMLInputElement)
     expect(container.querySelector('[aria-labelledby="new-test-release-label"]')).toBeInstanceOf(HTMLSelectElement)
-    // Each scenario row is reached by a real button that carries its expanded and current state.
-    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')!
-    const rowToggle = scenarioRow.querySelector<HTMLButtonElement>('button.new-test-row-toggle')!
-    expect(scenarioRow.hasAttribute('aria-expanded')).toBe(false)
-    expect(rowToggle.getAttribute('aria-expanded')).not.toBeNull()
-    expect(rowToggle.getAttribute('aria-controls') === null || document.getElementById(rowToggle.getAttribute('aria-controls')!) !== null).toBe(true)
+    // Each scenario row is chosen with a real button, named by its visible
+    // text, that carries the current choice.
+    const selectedRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row.selected')!
+    const rowToggle = selectedRow.querySelector<HTMLButtonElement>('button.new-test-row-toggle')!
+    expect(rowToggle.getAttribute('aria-current')).toBe('true')
+    expect(rowToggle.hasAttribute('aria-label')).toBe(false)
+    expect(rowToggle.hasAttribute('aria-expanded')).toBe(false)
 
     const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
     await act(async () => schedulesButton?.click())
@@ -4644,8 +4702,12 @@ describe('NewTestPage', () => {
     expect(container.querySelectorAll('.new-test-scenario-table-row')).toHaveLength(0)
     expect(container.querySelector('[aria-label="Selected scenario"]')?.textContent).toContain('scenario-1')
     expect(container.querySelector('.new-test-launch-card')?.textContent).toContain('scenario-1')
-    await act(async () => auditButton('Show selected scenario')?.click())
-    expect(container.querySelectorAll('.new-test-scenario-table-row')).toHaveLength(1)
+    // Keeping the scenario the page picked folds the list away and shows its groups.
+    await act(async () => auditButton('Keep this scenario')?.click())
+    expect(container.querySelector('.new-test-scenario-table')).toBeNull()
+    expect(container.querySelector('[aria-label="Selected scenario"] .new-test-script-table')).not.toBeNull()
+    await act(async () => auditButton('Change scenario')?.click())
+    expect(document.activeElement).toBe(container.querySelector('input[type="search"]'))
   })
 
   it('restores a saved run draft after unmount without executing or modifying a schedule', async () => {
@@ -4746,6 +4808,139 @@ describe('NewTestPage', () => {
     expect(review.textContent).toContain('1 script assertions configured')
     expect(review.textContent).toContain('No group response-time SLA configured')
     expect(review.textContent).toContain('Target monitoring coverage is not verified')
+    // New Test shows the review once, folded to a one-line summary.
+    expect(review.tagName).toBe('DETAILS')
+    expect((review as HTMLDetailsElement).open).toBe(false)
+    expect(review.querySelector('summary')?.textContent).toBe('Run readiness1 script · no response-time SLA · no data pools')
+  })
+
+  it('folds capture options under Monitoring for this run and keeps archive and history in More', async () => {
+    const initial = await apiMock.listScenarios()
+    await act(async () => root.render(<NavigationGuardProvider><NewTestPage
+      activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+      activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+      releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+      initialScenarioId={initial.scenarios[0].id}
+      onSelectTest={vi.fn()} onCreateRelease={vi.fn().mockResolvedValue(null)}
+    /></NavigationGuardProvider>))
+    await flushPromises()
+    const monitoring = container.querySelector<HTMLDetailsElement>('details.new-test-monitoring')!
+    expect(monitoring.open).toBe(false)
+    expect(monitoring.querySelector('summary')?.textContent).toBe('Monitoring for this runNone for this run')
+    expect(monitoring.querySelector('[aria-labelledby="new-test-elk-label"]')).not.toBeNull()
+
+    // The scenario card leads with the scenario, not with Archive or history.
+    const card = container.querySelector('[aria-label="Selected scenario"]')!
+    const header = card.querySelector('.new-test-selected-header')!
+    expect(Array.from(header.querySelectorAll(':scope button')).filter(button => !button.closest('.ux-row-actions-menu')).map(button => button.textContent)).toEqual(['Change scenario', 'More'])
+    expect(card.querySelector('.object-activity-attribution')).toBeNull()
+    expect(card.textContent).not.toContain('Created by')
+    const menu = card.querySelector('.ux-row-actions-menu')!
+    expect(Array.from(menu.querySelectorAll('button')).map(button => button.textContent)).toEqual(['History', 'Archive'])
+    await act(async () => (menu.querySelector('button') as HTMLButtonElement).click())
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(`History · ${initial.scenarios[0].name}`)
+  })
+
+  it('follows a changed workspace release without leaving unsaved changes', async () => {
+    const releases = [{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }, { id: 'release-2', name: 'PI30', application_id: 'app-1', created_at: '', updated_at: '' }]
+    apiMock.listReleases.mockResolvedValue({ releases })
+    const left = vi.fn()
+    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run Setup</button> }
+    const renderWith = (activeRelease: typeof releases[number]) => root.render(<NavigationGuardProvider><NewTestPage
+      activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+      activeRelease={activeRelease} releases={releases} initialScenarioId="scenario-1"
+      onSelectTest={vi.fn()} onCreateRelease={vi.fn().mockResolvedValue(null)}
+    /><LeaveRunSetup /></NavigationGuardProvider>)
+    await act(async () => renderWith(releases[0]))
+    await flushPromises()
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
+    expect(release.value).toBe('release-1')
+
+    // The workspace moves to another release: the untouched run and schedule
+    // follow it, and nothing is left for the user to save or discard.
+    await act(async () => renderWith(releases[1]))
+    await flushPromises()
+    expect(release.value).toBe('release-2')
+    await act(async () => auditButton('Schedules')?.click())
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')?.value).toBe('release-2')
+    await act(async () => auditButton('Leave Run Setup')?.click())
+    expect(left).toHaveBeenCalledOnce()
+  })
+
+  it('waits for script assignments before starting at the workspace release', async () => {
+    let resolveScripts!: (value: { scripts: unknown[] }) => void
+    apiMock.listScripts.mockImplementation(() => new Promise(resolve => { resolveScripts = resolve }))
+    await renderAuditPage()
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
+    // Which releases the scenario's scripts are assigned to is not known yet,
+    // so no release is offered that might be withdrawn.
+    expect(release.value).toBe('')
+    await act(async () => resolveScripts({ scripts: [{ id: 'script-1', name: 'Checkout Script', project_id: 'project-1', library_assignment: { application: { id: 'app-1', name: 'ACC' }, releases: [{ id: 'release-2', name: 'PI30', application_id: 'app-1' }], revision: 1 } }] }))
+    await flushPromises()
+    // Assigned to another release of the application: the user chooses.
+    expect(release.value).toBe('')
+  })
+
+  it('flags a stored schedule whose release an application change cleared', async () => {
+    apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'ACC', project_id: 'project-1' }, { id: 'app-2', name: 'Other App', project_id: 'project-1' }] })
+    apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [{ ...scheduleWithDistinctWindowTimezones(), release_id: 'release-1' }], count: 1 })
+    const left = vi.fn()
+    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run Setup</button> }
+    await renderAuditPage(<LeaveRunSetup />)
+    await act(async () => auditButton('Schedules')?.click())
+    await flushPromises()
+    await act(async () => auditButton('Edit')?.click())
+    const scheduleRelease = () => container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!
+    expect(scheduleRelease().value).toBe('release-1')
+
+    await act(async () => auditButton('Run Setup')?.click())
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')!, 'app-2'))
+    await flushPromises()
+    await act(async () => auditButton('Schedules')?.click())
+    expect(scheduleRelease().value).toBe('')
+    // The schedule lost its release: the user saves or discards that, it is
+    // not dropped silently.
+    await act(async () => auditButton('Leave Run Setup')?.click())
+    expect(left).not.toHaveBeenCalled()
+    expect(auditButton('Discard changes')).toBeTruthy()
+  })
+
+  it('opens monitoring from its launch blocker even after the user folded it', async () => {
+    const catalog = await apiMock.listScenarios()
+    const rule = { source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, dimensions: { host: 'inherited' } }
+    apiMock.listScenarios.mockResolvedValue({ ...catalog, scenarios: catalog.scenarios.map((scenario: Record<string, unknown>) => ({ ...scenario, goal_config: { monitor_rules: [rule] } })) })
+    await renderAuditPage()
+    const monitoring = container.querySelector<HTMLDetailsElement>('details.new-test-monitoring')!
+    expect(monitoring.open).toBe(false)
+    expect(monitoring.querySelector('summary')?.textContent).toBe('Monitoring for this run1 monitor rule')
+
+    // A rule that needs fixing opens the section and says so.
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="Criterion 1 entity dimensions"]')!, '{'))
+    expect(monitoring.open).toBe(true)
+    expect(monitoring.querySelector('summary small')?.textContent).toBe('Needs review')
+
+    // Folded by the user, it opens again from the blocker that names it.
+    await act(async () => monitoring.querySelector('summary')!.click())
+    expect(monitoring.open).toBe(false)
+    const blocker = Array.from(container.querySelectorAll<HTMLButtonElement>('#new-test-launch-blockers button')).find(button => button.textContent === 'Fix the monitor rules')
+    expect(blocker).toBeTruthy()
+    await act(async () => blocker!.click())
+    expect(monitoring.open).toBe(true)
+    expect(document.activeElement).toBe(monitoring.querySelector('summary'))
+  })
+
+  it('counts the scenario monitor bindings a run inherits in the monitoring summary', async () => {
+    const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (url.includes('/monitor-bindings')) return respond({ sources: [{ source_id: 'elastic', required: false }, { source_id: 'dynatrace', required: true }] })
+      if (url.includes('/analysis/capabilities')) return respond({ monitoring_enabled: false })
+      return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } })
+    }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    await renderAuditPage()
+    await flushPromises()
+    expect(container.querySelector('details.new-test-monitoring > summary small')?.textContent).toBe('2 monitor bindings from the scenario')
   })
 
 })

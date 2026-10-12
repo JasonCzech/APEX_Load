@@ -38,7 +38,7 @@ describe('settingsPageFormatters', () => {
 
   it('formatReadinessStatus maps known states and passes through unknowns', () => {
     expect(formatReadinessStatus('ready')).toBe('Ready')
-    expect(formatReadinessStatus('not_ready')).toBe('Not Ready')
+    expect(formatReadinessStatus('not_ready')).toBe('Not ready')
     expect(formatReadinessStatus('mystery')).toBe('mystery')
     expect(formatReadinessStatus(undefined)).toBe('Unknown')
   })

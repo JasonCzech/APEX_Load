@@ -62,6 +62,35 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	if err != nil {
 		return nil
 	}
+	// Only the costly projection is cached. Every caller decodes its own copy
+	// of it, whether or not the cache already held it, and the restores below
+	// run against the caller's own script, so they keep its typed values.
+	key := sha256.Sum256(payload)
+	encoded := maskedScripts.get(key)
+	if encoded == nil {
+		projected := projectScriptDisclosureCopy(script, payload)
+		if projected == nil {
+			return nil
+		}
+		if encoded, err = json.Marshal(projected); err != nil {
+			return nil
+		}
+		maskedScripts.put(key, encoded)
+	}
+	var projectedScript dsl.Script
+	if err := json.Unmarshal(encoded, &projectedScript); err != nil {
+		return nil
+	}
+	restoreBrunoNativeCompactProvenance(&projectedScript, script)
+	restoreProjectedJavaVuserApprovalEvidence(&projectedScript, script)
+	restoreProjectedBoundedNonSecretHeaders(&projectedScript, script)
+	return &projectedScript
+}
+
+// projectScriptDisclosureCopy is the costly, payload-determined part of
+// maskScriptSecrets, and its result is fully masked. It comes from a JSON
+// decode, so it survives the cache's JSON round trip unchanged.
+func projectScriptDisclosureCopy(script *dsl.Script, payload []byte) *dsl.Script {
 	var working dsl.Script
 	if err := json.Unmarshal(payload, &working); err != nil {
 		return nil
@@ -84,7 +113,7 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	if !ok {
 		return nil
 	}
-	payload, err = json.Marshal(&working)
+	payload, err := json.Marshal(&working)
 	if err != nil {
 		return nil
 	}
@@ -118,9 +147,6 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	if err != nil {
 		return nil
 	}
-	restoreBrunoNativeCompactProvenance(projectedScript, script)
-	restoreProjectedJavaVuserApprovalEvidence(projectedScript, script)
-	restoreProjectedBoundedNonSecretHeaders(projectedScript, script)
 	maskRestoredImportBodies(projectedScript, script)
 	return projectedScript
 }

@@ -1,4 +1,4 @@
-import { test, expect, json, login, seedScript, idOf } from './support/workflow'
+import { test, expect, json, login, seedScript, idOf, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import { readFile } from 'node:fs/promises'
 
@@ -24,7 +24,7 @@ test('scenario Data step previews script parameters and restores them after remo
   const steps = page.locator('[aria-label="Scenario builder steps"]')
   const panel = page.getByRole('region', { name: 'Script data & parameters', exact: true })
   await page.getByPlaceholder('Scenario name').fill('Script data preview scenario')
-  await page.getByRole('button', { name: 'Choose script for Group 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Add script to Group 1', exact: true }).click()
   await page.getByRole('row').filter({ hasText: 'Checkout_data_preview' }).getByRole('button', { name: 'Use for Group 1', exact: true }).click()
   await steps.getByRole('button', { name: /^Data/ }).click()
   await expect(panel.getByRole('definition')).toHaveCount(4)
@@ -35,7 +35,7 @@ test('scenario Data step previews script parameters and restores them after remo
   await expect(panel.getByLabel('Data preview for customers')).toContainText('demo@example.test,retail')
   await expect(page.getByText(/no script source or scenario pool supplies it/)).toHaveCount(0)
   await page.setViewportSize({ width: 1440, height: 1600 })
-  await page.getByRole('heading', { name: 'Data Pools', exact: true }).scrollIntoViewIfNeeded()
+  await page.getByRole('heading', { name: 'Data pools', exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('scenario-script-data-desktop.png'), fullPage: true })
   await page.setViewportSize({ width: 600, height: 900 })
   await expect(panel.getByRole('heading', { name: 'Script data & parameters' })).toBeVisible()
@@ -63,7 +63,7 @@ test('scenario save and reopen preserves both bindings and attaching another poo
  const scenario=idOf(await json(await request.post('/api/v1/scenarios',{data:{project_id:workspace.projectId,name:'Pool parity',duration:'1m',groups:[{name:'Load',script_id:script,vusers:1,initialization:'at_runtime'}],data_pools:bindings}})))
  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
  await page.reload()
- await page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}).getByRole('button',{name:/^Edit\b/}).click()
+ await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}),'Pool parity')
  const steps=page.getByLabel('Scenario builder steps')
  await steps.getByRole('button',{name:/^Data/}).click()
  await expect(page.getByLabel('Pool Alias')).toHaveCount(2)
@@ -85,7 +85,7 @@ test('scenario save and reopen preserves both bindings and attaching another poo
  expect(stored.data_pools).toEqual(expect.arrayContaining(bindings.map(binding=>expect.objectContaining(binding))))
  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
  await page.reload()
- await page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}).getByRole('button',{name:/^Edit\b/}).click()
+ await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}),'Pool parity')
  await page.getByLabel('Scenario builder steps').getByRole('button',{name:/^Data/}).click()
  await expect(page.getByLabel('Pool Alias')).toHaveCount(3)
  expect(await page.getByLabel('Pool Alias').evaluateAll(inputs=>inputs.map(input=>(input as HTMLInputElement).value))).toEqual(['addresses','customers','orders'])
@@ -131,12 +131,12 @@ test('legacy browser checkpoint migrates a first-pool replacement through save a
  await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeEnabled()
  await expect(page.getByRole('region', { name: 'Saved browser draft' })).toHaveCount(0)
  await expect(page.getByText('Editing · Saved', { exact: true })).toBeVisible()
- await page.getByRole('group', { name: 'Scenario page view' }).getByRole('button', { name: 'Scenario Library', exact: true }).click()
+ await page.getByRole('group', { name: 'Scenario page view' }).getByRole('button', { name: 'Scenario library', exact: true }).click()
  const row = page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Legacy pool migration' })
  await expect(row).toBeVisible()
  await page.reload()
  await expect(row).toBeVisible()
- await row.getByRole('button', { name: /^Edit\b/ }).click()
+ await editScenarioFromRow(row, 'Legacy pool migration')
  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Data/ }).click()
  await expect(page.getByLabel('Pool Alias')).toHaveCount(2)
  expect(await page.getByLabel('Pool Alias').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(['orders', 'replacement'])

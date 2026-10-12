@@ -53,7 +53,7 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	}
 
 	fileMenu := appMenu.AddSubmenu("File")
-	fileMenu.AddText("New Test", keys.CmdOrCtrl("n"), app.menuAction("new-test"))
+	fileMenu.AddText("New Run", keys.CmdOrCtrl("n"), app.menuAction("new-test"))
 	fileMenu.AddText("Open Script…", keys.CmdOrCtrl("o"), app.menuAction("open-script"))
 	fileMenu.AddText("Import…", keys.Combo("i", keys.CmdOrCtrlKey, keys.ShiftKey), app.menuAction("import"))
 	app.appendOpenRecentSubmenu(fileMenu)

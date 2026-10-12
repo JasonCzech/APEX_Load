@@ -13,7 +13,6 @@
   border-radius: 10px;
   background: var(--bg-secondary);
 }
-.new-test-selected > strong, .new-test-selected > span { flex-basis: 100%; overflow-wrap: break-word; }
 .new-test-reference { display: block; color: var(--text-secondary); font-weight: normal; overflow-wrap: anywhere; }
 .new-test-workspace .new-test-scenario-table th { white-space: nowrap; overflow-wrap: normal; }
 .new-test-workspace .new-test-scenario-table td { overflow-wrap: break-word; }
@@ -69,9 +68,45 @@
 }
 
 /* Run-level trace context (approved-origin correlation headers). */
-.run-trace-context-controls { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 320px; }
+/* The setting row stacks its parts, so a flex basis here would be a height. */
+.run-trace-context-controls { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 auto; }
 .run-trace-context-controls .checkbox-label { display: flex; align-items: center; gap: 8px; }
 .run-trace-context-hint { margin: 0; }
 .run-trace-context-origins { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .run-trace-context-origins textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .run-trace-context-errors { margin: 0; padding-left: 18px; color: var(--danger-text); }
+
+/* The chosen scenario: its identity, actions and groups, in the scenario step. */
+.new-test-step > .new-test-selected { flex-direction: column; align-items: stretch; margin: 0 18px 18px; }
+.new-test-selected-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.new-test-selected-header > div:first-child { min-width: 0; flex: 1 1 280px; }
+.new-test-selected-header h4 { margin: 0 0 4px; overflow-wrap: anywhere; }
+.new-test-selected-header h4:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.new-test-selected-meta { margin: 0; color: var(--text-secondary); overflow-wrap: break-word; }
+.new-test-selected-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.new-test-selected .new-test-scenario-groups-panel { padding: 0; background: transparent; }
+
+/* Optional capture for this run, folded under one heading. Run Setup's
+   rows keep their own height instead of stretching to the column. */
+.new-test-run-config-row .new-test-setup-grid { align-content: start; }
+.new-test-monitoring { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 8px; }
+.new-test-monitoring > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 10px 12px; cursor: pointer; font-weight: 600; }
+/* A flex summary loses its marker; draw one that turns when open. */
+:is(.new-test-monitoring, .new-test-readiness-summary) > summary { list-style: none; }
+:is(.new-test-monitoring, .new-test-readiness-summary) > summary::-webkit-details-marker { display: none; }
+:is(.new-test-monitoring, .new-test-readiness-summary) > summary::before { content: '▸'; display: inline-block; width: 1em; color: var(--text-secondary); transition: transform 0.15s ease; }
+:is(.new-test-monitoring, .new-test-readiness-summary)[open] > summary::before { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { :is(.new-test-monitoring, .new-test-readiness-summary) > summary::before { transition: none; } }
+.new-test-monitoring > summary small { color: var(--text-secondary); font-weight: 400; overflow-wrap: anywhere; }
+.new-test-monitoring > summary small.warning { color: var(--warning-text); font-weight: 600; }
+.new-test-monitoring-body { display: grid; gap: 12px; padding: 0 12px 12px; }
+
+/* Readiness once: a summary line that opens to the full review. */
+.new-test-readiness-summary > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 18px; cursor: pointer; font-weight: 600; }
+.new-test-readiness-summary > summary small { color: var(--text-secondary); font-weight: 400; overflow-wrap: anywhere; }
+.new-test-readiness-summary-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px; }
+.new-test-readiness-summary-actions p { margin: 0; color: var(--text-secondary); }
+
+/* A launch blocker the user can fix here takes them to its field. */
+.new-test-blocker-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.new-test-blocker-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

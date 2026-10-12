@@ -32,12 +32,12 @@ export default function ManagementCollectionState({ projectId, sourceId, canMana
     <h4>Management collection ownership</h4>
     {state && <p>{state.state}{state.generation ? ` · generation ${state.generation}` : ''}{state.collector_instance_id ? ` · collector instance ${state.collector_instance_id}` : ''}{state.deadline ? ` · poll deadline ${state.deadline}` : ''}</p>}
     {error && <p role="alert">{error}</p>}
-    <button type="button" disabled={busy} onClick={() => setRefresh(value => value + 1)}>Refresh collection ownership</button>
+    <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRefresh(value => value + 1)}>Refresh collection ownership</button>
     {canManage && state?.poll_id && ['collecting', 'draining', 'draining_unverified'].includes(state.state) && <fieldset disabled={busy}>
       <legend>Release stopped collector ownership</legend>
       <p>Poll expiry does not prove that provider requests stopped. Release this ownership only after verifying that the named collector process has stopped; the attestation is audited.</p>
       <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />The named collector process is stopped</label>
-      <button type="button" disabled={!confirmed} onClick={() => void release()}>Attest process stop and release ownership</button>
+      <button type="button" className="btn btn-danger btn-sm" disabled={!confirmed} onClick={() => void release()}>Attest process stop and release ownership</button>
     </fieldset>}
   </section>
 }

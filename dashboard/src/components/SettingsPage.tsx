@@ -4263,7 +4263,7 @@ export default function SettingsPage({
                         <div className="setting-row">
                           <div className="setting-info">
                             <span className="setting-label">Approval Policy</span>
-                            <span className="setting-desc">Default review policy used by New Test schedules before each recurring run materializes.</span>
+                            <span className="setting-desc">Default review policy used by New run schedules before each recurring run materializes.</span>
                           </div>
                           <select aria-label="Approval Policy"
                             className="settings-input"

@@ -1,4 +1,4 @@
-import { test, expect, json, idOf, login, seedScript, seedScenario, signOut } from './support/workflow'
+import { test, expect, json, idOf, login, seedScript, seedScenario, signOut, showLibraryFilters } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('Operators move scripts individually and in bulk, recover failures, and retain assignments after reload', async ({ page }, testInfo) => {
@@ -26,6 +26,7 @@ test('Operators move scripts individually and in bulk, recover failures, and ret
   await expect(row).toContainText('Checkout')
   await page.reload()
   await expect(row).toContainText('Checkout')
+  await showLibraryFilters(page)
   await page.locator('.library-folder-filter').selectOption(folder)
   await row.getByText('More', { exact: true }).click()
   await row.getByRole('button', { name: 'Move to folder…' }).click()

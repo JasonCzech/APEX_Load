@@ -1,7 +1,7 @@
-import { test, expect, json, idOf, login, seedScript, seedScenario, signOut } from './support/workflow'
+import { test, expect, json, idOf, login, seedScript, seedScenario, signOut, showLibraryFilters } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
-test('Library assignments persist, bulk failures recover, and launches require an explicit release', async ({ page }, testInfo) => {
+test('Library assignments persist, bulk failures recover, and launches start at the workspace release they are assigned to', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
   const workspace = await createWorkspace(request)
@@ -30,6 +30,7 @@ test('Library assignments persist, bulk failures recover, and launches require a
   await expect(dialog).toBeHidden()
   await page.reload()
   await expect(row.locator('[aria-label="Assignment"]')).not.toHaveText('Unassigned')
+  await showLibraryFilters(page)
   await page.getByLabel('Assigned application', { exact: true }).selectOption(workspace.applicationId)
   await expect(page.locator('.scripts-library-table tbody tr').filter({ hasText: 'Assigned_Second' })).toHaveCount(0)
   await page.getByLabel('Assigned application', { exact: true }).selectOption('all')
@@ -68,7 +69,8 @@ test('Library assignments persist, bulk failures recover, and launches require a
   const storedScenario = await json(await request.get(`/api/v1/scenarios/${scenario}`))
   expect(JSON.stringify(storedScenario.scripts)).toContain(first)
   await page.goto(`/#/new-test?scenarioId=${scenario}&${scopeQuery(workspace)}`)
-  await expect(page.getByLabel('Release', { exact: true })).toHaveValue('')
+  // The workspace's release, which the scenario is assigned to, is the start.
+  await expect(page.getByLabel('Release', { exact: true })).toHaveValue(workspace.releaseId)
   await expect(page.getByLabel('Release', { exact: true }).locator('option').filter({ hasText: 'assigned' })).toHaveCount(1)
   await page.getByLabel('Release', { exact: true }).selectOption(releaseId)
   await expect(page.getByLabel('Release', { exact: true })).toHaveValue(releaseId)

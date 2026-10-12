@@ -19,7 +19,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown'; focus?: ReportFocus } & RootCauseRouteState
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
-  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string; importLauncher?: string; importMode?: string }
+  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import' | 'assets'; scriptId?: string; importLauncher?: string; importMode?: string }
   | { page: 'swagger'; search?: string }
   | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
@@ -42,7 +42,7 @@ const NAV_PAGES: NavPage[] = [
   'settings',
 ]
 
-const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
+const SCRIPT_MODES = ['list', 'create', 'edit', 'import', 'assets'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
@@ -539,8 +539,8 @@ export function workspaceScopeForAppView(view: AppView): AppWorkspaceScope {
 
 /**
  * The scripts route naming what the authoring surface has open, so a refresh
- * or a shared link returns to it: the library, a saved script's editor, or a
- * named importer. The create options, the recorder and an unsaved draft have
+ * or a shared link returns to it: the library, the script assets, a saved
+ * script's editor, or a named importer. The create options, the recorder and an unsaved draft have
  * no route of their own and reopen at the create options, never at the
  * archive importer a bare import route opens.
  */
@@ -549,6 +549,7 @@ export function scriptsRouteForAuthoringState(
   scope: AppWorkspaceScope,
 ): Extract<AppView, { page: 'scripts' }> {
   if (state.subView === 'list') return { page: 'scripts', mode: 'list', ...scope }
+  if (state.subView === 'assets') return { page: 'scripts', mode: 'assets', ...scope }
   if (state.subView === 'edit' && state.editingId) return { page: 'scripts', mode: 'edit', scriptId: state.editingId, ...scope }
   if (state.importLauncher && isScriptImportLauncher(state.importLauncher)) {
     return { page: 'scripts', mode: 'import', importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}), ...scope }
@@ -713,12 +714,14 @@ export function terminalRunReportView(view: AppView, status: string, enabled: bo
   if (!enabled || !['COMPLETE', 'FAILED', 'ABORTED'].includes(status)) return view
   if (view.page !== 'test' && view.page !== 'command-center') return view
   if (!view.testId) return view
+  // A run's overview (and Command Center) hands over to the report's Summary;
+  // its configuration and control tabs to Execution.
   const sections: Partial<Record<TestWorkspaceTabID, ReportSection>> = {
-    overview: 'execution', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
+    overview: 'summary', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
     archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'performance', 'transaction-drilldown': 'diagnostics',
   }
   const focus = view.page === 'test' && REPORT_FOCUS.includes(view.tab as ReportFocus) ? view.tab as ReportFocus : undefined
   return { page: 'report', testId: view.testId, ...workspaceScopeForAppView(view),
-    section: view.page === 'test' && view.tab ? sections[view.tab] || 'execution' : 'execution',
+    section: view.page === 'test' && view.tab ? sections[view.tab] || 'summary' : 'summary',
     ...(focus ? { focus } : {}) }
 }

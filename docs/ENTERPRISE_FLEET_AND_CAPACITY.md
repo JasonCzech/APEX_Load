@@ -577,7 +577,7 @@ query matches a tested expression.
 For fenced stateless HTTP runs, enable peak pod reservations and set
 `assignment.tolerate_generator_loss: true` plus a positive
 `assignment.recovery_spare_vusers` budget. The scenario builder exposes this as
-**Recovery spare VUser budget** under Controller/Generator. Zero preserves ordinary
+**Recovery spare VUser budget** under Controller/generator. Zero preserves ordinary
 placement. The budget is an integer quota envelope, not additional generated traffic;
 it is charged alongside peak workload demand to test, project, pool and fleet VUser
 limits. Group-level budgets, weighted/source-affinity placement and bounded iteration

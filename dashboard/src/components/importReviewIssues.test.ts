@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScriptDefinition } from '../types/scripts'
-import { draftImportFindings, findingCategory, groupImportFindings, issueRepairOptions, issueTitle } from './importReviewIssues'
+import { draftImportFindings, findingCategory, groupImportFindings, issueRepairOptions, issueTitle, reviewSectionFindings, warningIssueTitle } from './importReviewIssues'
 const script = { name: 'Review', version: '1', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [] } as ScriptDefinition
 
 describe('import issue queue', () => {
@@ -101,5 +101,41 @@ describe('HTTP/3 import review codes', () => {
       expect(issueTitle(code)).toBe(title)
       expect(findingCategory(code)).toBe('runtime')
     }
+  })
+})
+
+describe('import issue titles', () => {
+  it('say what to do for known converter warnings and keep the message as detail', () => {
+    const [finding] = reviewSectionFindings([{ key: 'warnings', title: 'Warnings', severity: 'warning', summary: '', items: [
+      'line 15: web_set_sockets_option SSL_VERSION=SSL3 is unsupported; APEX TLS defaults remain unchanged and review is required',
+    ] }])
+    expect(finding.title).toBe('Choose supported TLS settings')
+    expect(finding.detail).toContain('SSL_VERSION=SSL3 is unsupported')
+  })
+  it('cut other long warnings at a word, never mid-word', () => {
+    const message = `${'Converted request keeps a recorded header '.repeat(4)}that APEX sends unchanged`
+    const title = warningIssueTitle(`line 3: ${message}`)
+    expect(title.endsWith('…')).toBe(true)
+    expect(title.length).toBeLessThanOrEqual(101)
+    const kept = title.slice(0, -1)
+    expect(message.startsWith(kept)).toBe(true)
+    expect(message[kept.length]).toBe(' ')
+    expect(warningIssueTitle('manual review recommended')).toBe('manual review recommended')
+  })
+  it('name the one place an issue applies, so the same fix in two places reads apart', () => {
+    const s = { ...script, actions: [
+      { name: 'login', type: 'POST', target: '/' },
+      { name: 'search', type: 'GET', target: '/' },
+    ] } as ScriptDefinition
+    const groups = groupImportFindings([
+      { code: 'legacy_tls_replacement', action_path: 'actions[0]', source_ref: 'vuser_init.c:15', detail: '' },
+      { code: 'legacy_tls_replacement', action_path: 'actions[1]', source_ref: 'Action.c:', detail: '' },
+      { code: 'import_review_required', action_path: 'actions[1]', detail: '' },
+    ], s)
+    expect(groups.map(group => group.title).sort()).toEqual([
+      'Choose supported TLS settings — Action.c',
+      'Choose supported TLS settings — vuser_init.c:15',
+      'Review imported behavior — search',
+    ])
   })
 })

@@ -1,8 +1,9 @@
 import type { TestSummary } from '../types'
 import { isPendingTestStatus, normalizeTestStatus } from '../utils/testStatusUtils'
 import { parseDurationToSeconds } from '../utils/timeUtils'
-import { recordedTime, formatElapsedSeconds } from './runReport/executionPresentation'
+import { recordedTime, formatElapsedSeconds, runActiveSeconds } from './runReport/executionPresentation'
 import { formatDateTime } from '../utils/dateTime'
+import { liveCountsErrorPercent, livePopulation, liveRate, liveRunCounts, liveThroughputPopulation } from '../utils/liveErrorRate'
 
 export function commandRunWaiting(run: TestSummary): boolean {
   return isPendingTestStatus(run.status) || normalizeTestStatus(run.status) === 'SHAKEOUT_REVIEW'
@@ -12,9 +13,12 @@ export function commandRunHealth(run: TestSummary, now: number) {
   const metrics = run.live_metrics
   const stamp = recordedTime(metrics?.timestamp)
   const waiting = commandRunWaiting(run)
-  const hasSamples = Boolean(metrics && metrics.total_transactions + metrics.total_errors > 0)
+  // Counted as the run's own Command Center counts it: requests once it has
+  // sent any (else transactions), run to date.
+  const counts = liveRunCounts(metrics)
+  const hasSamples = Boolean(counts && counts.attempts > 0)
   const stale = !waiting && Boolean(metrics) && (stamp === undefined || now - stamp > 30_000 || stamp > now + 5_000)
-  const errorPct = hasSamples ? metrics!.total_errors / (metrics!.total_transactions + metrics!.total_errors) * 100 : undefined
+  const errorPct = counts && hasSamples ? liveCountsErrorPercent(counts) : undefined
   const issue = Boolean((errorPct ?? 0) > 0 || metrics?.throughput_target_missed)
   return {
     errorPct,
@@ -28,13 +32,19 @@ export function commandRunHealth(run: TestSummary, now: number) {
   }
 }
 
+/** The run's throughput in its own unit: requests/s once it has sent requests, TPS for goal runs and runs without requests. */
+export function commandRunThroughput(run: TestSummary): { rate: number | undefined; unit: string } {
+  const population = liveThroughputPopulation(run, livePopulation(run.live_metrics))
+  return { rate: liveRate(run.live_metrics, population), unit: population === 'requests' ? 'req/s' : 'TPS' }
+}
+
 export function commandRunTiming(run: TestSummary, now: number) {
-  const started = recordedTime(run.started_at || run.start_time)
   if (commandRunWaiting(run)) return { elapsed: 'Not started', remaining: run.duration || 'Unavailable' }
-  if (run.termination_mode === 'iterations') return { elapsed: formatElapsedSeconds(started === undefined ? undefined : Math.max(0, (now-started)/1000)), remaining: `${run.live_metrics?.completed_iterations ?? 0} / ${(run.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0),0)} iterations` }
-  const elapsed = started === undefined ? undefined : Math.max(0, (now - started) / 1000)
-  // The summary has no cumulative paused-duration field. Do not present a
-  // wall-clock subtraction as an authoritative execution countdown.
+  // The run's own clock: paused time is left out, since the engine makes it up
+  // after a resume. Remaining stays an estimate (a start delay is not counted),
+  // and a paused run says so rather than tick down.
+  const elapsed = runActiveSeconds(run, now)
+  if (run.termination_mode === 'iterations') return { elapsed: formatElapsedSeconds(elapsed), remaining: `${run.live_metrics?.completed_iterations ?? 0} / ${(run.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0),0)} iterations` }
   return {
     elapsed: formatElapsedSeconds(elapsed),
     remaining: run.status === 'PAUSED' ? 'Paused' : elapsed === undefined ? 'Unavailable'

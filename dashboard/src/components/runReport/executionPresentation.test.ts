@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
-import { executionDate, executionFacts, executionLoadPoints, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds } from './executionPresentation'
+import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, executionPauses, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds, runActiveSeconds } from './executionPresentation'
+import { plannedVUsersAt } from '../loadPlanSteps'
 
 const test: TestSummary = { id: 'run', name: 'Run', status: 'FAILED', duration: '20m', total_vusers: 10, groups: [], created_at: '', error: 'Controller restarted' }
 
@@ -41,6 +42,25 @@ describe('execution evidence presentation', () => {
 })
 
 
+describe('run active time', () => {
+  const START = '2026-10-12T04:00:00Z'
+  const at = (seconds: number) => Date.parse(START) + seconds * 1000
+
+  it("counts a run's own time, leaving out the pauses it makes up", () => {
+    expect(runActiveSeconds({ started_at: START }, at(100))).toBe(100)
+    // 15 s paused earlier, then paused again since 90 s.
+    expect(runActiveSeconds({ started_at: START, cumulative_pause_ns: 15e9 }, at(100))).toBe(85)
+    expect(runActiveSeconds({ started_at: START, cumulative_pause_ns: 15e9, paused_at: new Date(at(90)).toISOString() }, at(100))).toBe(75)
+  })
+
+  it('stops at the end of an ended run and waits for a recorded start', () => {
+    expect(runActiveSeconds({ started_at: START, ended_at: new Date(at(55)).toISOString(), cumulative_pause_ns: 15e9 }, at(500))).toBe(40)
+    expect(runActiveSeconds({ start_time: START }, at(10))).toBe(10)
+    expect(runActiveSeconds({}, at(10))).toBeUndefined()
+    expect(runActiveSeconds({ started_at: '0001-01-01T00:00:00Z' }, at(10))).toBeUndefined()
+  })
+})
+
 describe('lifecycle elapsed', () => {
   it('keeps controller lifecycle and archived evidence windows distinct', () => {
     const current = { ...test, started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:05:07Z' }
@@ -53,5 +73,49 @@ describe('lifecycle elapsed', () => {
     expect(formatElapsedSeconds(undefined)).toBe('Not recorded')
     expect(formatElapsedSeconds(0)).toBe('0s')
     expect(lifecycleElapsedSeconds({ ...test, started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T11:59:00Z' })).toBeUndefined()
+  })
+  it('plans the load from the preserved configuration, not the mutable record', () => {
+    const group = { name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s' }
+    const manifest = {
+      initial_configuration_provenance: { source: 'archive_provenance', immutable: true },
+      initial_configuration: { duration: '2m', groups: [group] },
+    } as unknown as TestRunManifest
+    // The record was later changed to 20 VUsers; the run itself ramped 4.
+    const plan = executionLoadPlan({ ...test, duration: '20m', groups: [{ ...group, vusers: 20 }] } as TestSummary, manifest)
+    expect([0, 10, 30, 119, 120].map(second => plannedVUsersAt(plan, second))).toEqual([1, 2, 4, 4, 0])
+    expect(plannedVUsersAt(executionLoadPlan({ ...test, groups: [{ ...group, vusers: 20 }] } as TestSummary), 600)).toBe(20)
+  })
+  it('moves the plan on by the pauses its events place, as the run made them up', () => {
+    const group = { name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s' }
+    const event = (action: string, at: string, status = 'success') => ({ id: at, action, label: action, status, created_at: at })
+    const manifest = { runtime_changes: [
+      event('test.start', '2026-09-10T12:00:00Z'),
+      event('test.pause', '2026-09-10T12:00:20Z', 'failure'), // refused: not a pause
+      event('test.pause', '2026-09-10T12:00:30Z'),
+      event('test.resume', '2026-09-10T12:01:30Z'),
+    ] } as unknown as TestRunManifest
+    const run = { ...test, duration: '2m', started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:03:00Z', groups: [group] } as TestSummary
+    expect(executionPauses(run, manifest)).toEqual([{ atSecond: 30, seconds: 60 }])
+    const plan = executionLoadPlan(run, manifest)
+    // VUsers start at 0, 10 and 20 s; the fourth, due at 30 s, waits out the
+    // minute paused and starts at 90 s, and the run ends a minute late.
+    expect([20, 40, 89, 90, 179, 180].map(second => plannedVUsersAt(plan, second))).toEqual([3, 3, 3, 4, 4, 0])
+    expect(plan.totalSeconds).toBe(180)
+    // A pause never resumed lasts to the run's end.
+    expect(executionPauses(run, { runtime_changes: [event('test.pause', '2026-09-10T12:02:30Z')] } as unknown as TestRunManifest)).toEqual([{ atSecond: 150, seconds: 30 }])
+  })
+  it('plans a run to its iterations through the time it ran', () => {
+    const group = { name: 'Browse', script_id: 's', vusers: 4, ramp_up: '40s', ramp_down: '20s' }
+    const plan = executionLoadPlan({ ...test, termination_mode: 'iterations', duration: '', started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:03:00Z', groups: [group] } as TestSummary)
+    expect(plan.totalSeconds).toBe(180)
+    expect([0, 30, 179].map(second => plannedVUsersAt(plan, second))).toEqual([1, 4, 4])
+  })
+  it('places observed samples on elapsed seconds from the run start', () => {
+    const start = Date.parse('2026-09-10T12:00:00Z')
+    const samples = [-1000, 2000, 26_000].map(offset => ({ time: '', timestampMs: start + offset, vusers: 3 }) as MetricsHistoryPoint)
+    expect(executionObservedLoad(samples, '2026-09-10T12:00:00Z').map(sample => sample.second)).toEqual([2, 26])
+    // Without a recorded start the first sample is the origin.
+    expect(executionObservedLoad(samples.slice(1)).map(sample => sample.second)).toEqual([0, 24])
+    expect(executionObservedLoad([])).toEqual([])
   })
 })

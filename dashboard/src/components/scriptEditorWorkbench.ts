@@ -125,10 +125,9 @@ export function readCenterTabsState(storageKey: string): CenterTabsState {
         tabs.indexOf(tab) === index
       )),
     ]
-    const normalizedActiveTabId = normalizeCenterWorkbenchTabId(parsed.activeTabId)
-    const activeTabId = normalizedActiveTabId && normalizedTabs.includes(normalizedActiveTabId)
-      ? normalizedActiveTabId
-      : ACTION_LIST_TAB_ID
+    // A fixed tab can be active without being in the open list; the editor
+    // falls back to the action editor when the script does not offer it.
+    const activeTabId = normalizeCenterWorkbenchTabId(parsed.activeTabId) ?? ACTION_LIST_TAB_ID
     return {
       tabs: normalizedTabs,
       activeTabId,
@@ -480,15 +479,21 @@ export function wrapActionsInTransactionMarkers(
 /**
  * If `action` is a transaction marker (a source_transaction start/end), return
  * its role and name; otherwise null. Used to render marker rows distinctly.
+ * The name is the call's first argument, as LoadRunner pairs them: an import
+ * names the step itself "Start_<name>_transaction" / "End_<name>_transaction".
+ * `sub` marks lr_start_sub_transaction / lr_end_sub_transaction.
  */
 export function actionTransactionMarker(
   action: ScriptActionDefinition,
-): { role: 'start' | 'end'; name: string } | null {
+): { role: 'start' | 'end'; name: string; sub?: true } | null {
   if ((action.type || '').toLowerCase() !== 'source_transaction') return null
-  const fn = String((action.params as Record<string, unknown> | undefined)?.function || '').toLowerCase()
-  const name = (action.name || '').trim()
-  if (fn.includes('start')) return { role: 'start', name }
-  if (fn.includes('end') || fn.includes('stop')) return { role: 'end', name }
+  const params = action.params as Record<string, unknown> | undefined
+  const fn = String(params?.function || '').toLowerCase()
+  const args = Array.isArray(params?.args) ? params.args : []
+  const name = (typeof args[0] === 'string' && args[0].trim()) || (action.name || '').trim()
+  const sub = fn.includes('sub_transaction') ? { sub: true as const } : {}
+  if (fn.includes('start')) return { role: 'start', name, ...sub }
+  if (fn.includes('end') || fn.includes('stop')) return { role: 'end', name, ...sub }
   return null
 }
 
@@ -515,7 +520,8 @@ export interface TransactionBandCell {
  * Annotate a list of action rows with the transaction "band" each belongs to,
  * so the outline can bracket a transaction's rows with a left rail. Covers both
  * representations: a span marker pair (the lr_start row, the actions between,
- * and the lr_end row) and a contiguous run of metadata-tagged rows. Bands pair
+ * and the lr_end row; sub-transaction markers stay inside it) and a contiguous
+ * run of metadata-tagged rows. Bands pair
  * only within one phase. Returned map is keyed by `${phase}-${actionIndex}`.
  */
 export function computeTransactionBands(rows: ScriptPhaseActionRow[]): Map<string, TransactionBandCell> {
@@ -525,7 +531,9 @@ export function computeTransactionBands(rows: ScriptPhaseActionRow[]): Map<strin
   let phase: string | null = null
   rows.forEach((row, i) => {
     if (row.phase !== phase) { openMarkers.length = 0; phase = row.phase }
-    const marker = actionTransactionMarker(row.action)
+    // A sub-transaction is a step inside its parent's band, not a band of its own.
+    const found = actionTransactionMarker(row.action)
+    const marker = found?.sub ? null : found
     if (marker?.role === 'start') {
       bandName[i] = marker.name
       openMarkers.push(marker.name)
@@ -551,6 +559,70 @@ export function computeTransactionBands(rows: ScriptPhaseActionRow[]): Map<strin
     out.set(`${row.phase}-${row.actionIndex}`, { name, first: !prevSame, last: !nextSame })
   })
   return out
+}
+
+/**
+ * The end of a long outline name kept visible when the middle is elided: the
+ * longest run of trailing name segments (from a _ | . - / or space) that fits
+ * in 18 characters, else the last 10. Empty when the name is short enough.
+ */
+export function outlineNameTail(name: string): string {
+  if (name.length <= 28) return ''
+  let tail = ''
+  for (let index = name.length - 2; index >= name.length - 18 && index > 0; index--) {
+    if ('_|.-/ '.includes(name[index]) && !'_|.-/ '.includes(name[index - 1])) tail = name.slice(index)
+  }
+  return tail || name.slice(-10)
+}
+
+/** One entry of the outline tree: a step, or a transaction holding its steps. */
+export type OutlineTreeEntry =
+  | { kind: 'step'; item: DebugRailRenderRow }
+  | {
+    kind: 'transaction'
+    key: string
+    name: string
+    /** The lr_start_transaction marker that opens it, when it has one. */
+    start?: DebugRailRenderRow
+    /** Everything inside, in order: steps, their nested rows and the end marker. */
+    items: DebugRailRenderRow[]
+    /** Top-level steps inside, not counting the markers. */
+    stepCount: number
+  }
+
+/**
+ * Group outline rows into transactions, as VuGen's Step Navigator brackets a
+ * transaction's steps: a marker pair (the start marker heads the group) or a
+ * contiguous run of steps tagged with one transaction. A step's nested rows
+ * stay with it. `bands` comes from computeTransactionBands over every row, so
+ * a filtered list keeps each row's transaction.
+ */
+export function groupOutlineByTransaction(items: DebugRailRenderRow[], bands: Map<string, TransactionBandCell>): OutlineTreeEntry[] {
+  const entries: OutlineTreeEntry[] = []
+  // Keyed by name and occurrence, so a collapsed group stays collapsed when
+  // steps are inserted above it.
+  const occurrences = new Map<string, number>()
+  let group: Extract<OutlineTreeEntry, { kind: 'transaction' }> | null = null
+  for (const item of items) {
+    if (item.depth === 0) {
+      const band = bands.get(`${item.row.phase}-${item.row.actionIndex}`)
+      if (group && !(band && !band.first && band.name === group.name)) group = null
+      if (band && !group) {
+        const marker = actionTransactionMarker(item.row.action)
+        const occurrence = `${item.row.phase}:${band.name}`
+        occurrences.set(occurrence, (occurrences.get(occurrence) || 0) + 1)
+        group = { kind: 'transaction', key: `transaction:${occurrence}#${occurrences.get(occurrence)}`, name: band.name, items: [], stepCount: 0 }
+        entries.push(group)
+        if (marker?.role === 'start' && !marker.sub) { group.start = item; continue }
+      }
+      // Steps, not the markers around them, count; a sub-transaction marker is
+      // not a step either.
+      if (group && !actionTransactionMarker(item.row.action)) group.stepCount += 1
+    }
+    if (group) group.items.push(item)
+    else entries.push({ kind: 'step', item })
+  }
+  return entries
 }
 
 /**

@@ -1038,7 +1038,7 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("{{var.session_id}}");
     expect(container.textContent).toContain("85% confidence");
     expect(container.textContent).toContain("reused in a later request");
-    expect(container.textContent).toContain("Save to Script Library");
+    expect(container.textContent).toContain("Save to script library");
     expect(container.textContent).toContain("Open in Visual Editor");
 
     const editButton = Array.from(container.querySelectorAll("button")).find(
@@ -1075,7 +1075,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save to Script Library",
+      (button) => button.textContent?.trim() === "Save to script library",
     );
     expect(saveButton).toBeTruthy();
     if (!saveButton) {
@@ -1253,7 +1253,7 @@ describe("RecordingStudio", () => {
     });
     const saveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Save to Script Library");
+    ).find((button) => button.textContent?.trim() === "Save to script library");
     await act(async () => {
       saveButton?.click();
       await Promise.resolve();
@@ -1839,7 +1839,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save to Script Library",
+      (button) => button.textContent?.trim() === "Save to script library",
     );
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2141,7 +2141,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save to Script Library",
+      (button) => button.textContent?.trim() === "Save to script library",
     );
     expect(saveButton).toBeDefined();
     await act(async () => {

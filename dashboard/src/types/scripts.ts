@@ -1247,6 +1247,12 @@ export interface ReplayPreflight {
   parameter_count: number
   browser_required?: boolean
   missing_variables?: string[]
+  /** Missing variables that refuse replay. */
+  blocking_variables?: string[]
+  /** Missing variables that replay sends as their placeholder text. */
+  placeholder_variables?: string[]
+  /** Data-source warnings that refuse replay (they are also in warnings). */
+  data_source_issues?: string[]
   required_secrets?: string[]
   missing_secrets?: string[]
   runtime_prerequisites?: string[]

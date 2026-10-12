@@ -62,7 +62,7 @@ describe('ConfirmRunActionModal', () => {
     const dialog = container.querySelector('.confirm-run-action-modal')
     expect(dialog?.getAttribute('role')).toBe('dialog')
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(container.textContent).toContain('Stop this test run?')
+    expect(container.textContent).toContain('Stop this run?')
     expect(container.textContent).toContain('cannot be resumed')
     expect(container.textContent).toContain('Checkout Peak')
     expect(container.textContent).toContain('RUN-20260817-A')
@@ -71,7 +71,7 @@ describe('ConfirmRunActionModal', () => {
   it('confirms and cancels through the expected buttons', async () => {
     const { onConfirm, onCancel } = await render()
 
-    await click(button('Stop Test') as HTMLButtonElement)
+    await click(button('Stop run') as HTMLButtonElement)
     expect(onConfirm).toHaveBeenCalledTimes(1)
     expect(onCancel).not.toHaveBeenCalled()
 

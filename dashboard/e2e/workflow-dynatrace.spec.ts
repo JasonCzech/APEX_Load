@@ -176,6 +176,8 @@ test('Dynatrace terminal criteria preview approved sources and clear superseded 
   })
   await page.goto(`/#/new-test?${scopeQuery(workspace)}&scenarioId=${scenarioId}`)
   await page.reload()
+  // Capture options sit under "Monitoring for this run", folded until opened.
+  await page.getByText('Monitoring for this run', { exact: true }).click()
   const criteria = page.getByRole('group', { name: 'Monitoring performance criteria', exact: true })
   await criteria.getByRole('button', { name: 'Add monitoring performance criterion' }).click()
   await criteria.getByRole('combobox', { name: 'Criterion 1 source', exact: true }).selectOption(source.id)

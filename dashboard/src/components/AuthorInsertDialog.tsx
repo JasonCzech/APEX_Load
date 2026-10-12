@@ -18,13 +18,17 @@ function actionGroup(type: string): string {
 }
 const GROUP_ORDER = ['Requests', 'Flow control', 'Session, state and other', 'Imported source markers (advanced)']
 
-export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabel, canInsertInside, onPlan, onInsert, onClose, library }: {
+export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabel, canInsertInside, onPlan, onInsert, onClose, onOpenThinkTime, library }: {
   protocol: string; seed: Action; phase: 'init' | 'action' | 'teardown'; position: InsertPosition
   anchorLabel?: string; canInsertInside: boolean
   onPlan: (phase: 'init' | 'action' | 'teardown', position: InsertPosition) => void
-  onInsert: (action: Action) => void; onClose: () => void; library: ReactNode
+  onInsert: (action: Action) => void; onClose: () => void
+  /** VuGen users look for lr_think_time here; this takes them to where it is set. */
+  onOpenThinkTime?: () => void
+  library: ReactNode
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null), firstRef = useRef<HTMLInputElement | null>(null)
+  // What to add comes first, then its name, then where it goes.
+  const dialogRef = useRef<HTMLDivElement | null>(null), firstRef = useRef<HTMLInputElement | null>(null), nameRef = useRef<HTMLInputElement | null>(null)
   useModalDialog({ dialogRef, initialFocusRef: firstRef, onClose })
   const [draft, setDraft] = useState<Action>({ ...seed, name: '' })
   const [filter, setFilter] = useState('')
@@ -42,25 +46,32 @@ export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabe
     setError('')
   }
   const submit = () => {
-    if (!draft.name.trim()) { setError('Give the action a name.'); firstRef.current?.focus(); return }
+    if (!draft.name.trim()) { setError('Give the action a name.'); nameRef.current?.focus(); return }
     if (needsTarget && !draft.target?.trim()) { setError('Enter a target before inserting this request.'); dialogRef.current?.querySelector<HTMLInputElement>('[name="target"]')?.focus(); return }
     onInsert({ ...draft, name: draft.name.trim() })
   }
   return createPortal(<DialogLayer><div className="modal-overlay"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="author-insert-title" className="modal author-insert-dialog">
     <h3 id="author-insert-title">Insert action or block</h3>
     <p>Choose what to add and where it belongs. Cancel leaves the document unchanged.</p>
-    <div className="form-grid"><label>Phase<select aria-label="Phase" value={phase} onChange={e => onPlan(e.target.value as typeof phase, 'end')}><option value="init">Init</option><option value="action">Actions</option><option value="teardown">Teardown</option></select></label>
-    <label>Placement<select aria-label="Placement" value={position} onChange={e => onPlan(phase, e.target.value as InsertPosition)}><option value="end">End of phase</option>{anchorLabel && <><option value="before">Before selected action</option><option value="after">After selected action</option>{canInsertInside && <option value="inside">Inside selected block</option>}</>}</select></label></div>
-    <p role="status">Insert {position === 'end' ? `at the end of ${phase === 'action' ? 'Actions' : humanActionType(phase)}` : `${position} ${anchorLabel}`}.</p>
-    <label>Action name<input ref={firstRef} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
-    <label>Find action type<input type="search" value={filter} onChange={e => setFilter(e.target.value)} /></label>
-    <label>Action type<select aria-label="Action type" value={draft.type} onChange={e => changeType(e.target.value)}>{GROUP_ORDER.map(group => {
-      const members = visibleSpecs.filter(spec => actionGroup(spec.type) === group)
-      return members.length ? <optgroup key={group} label={group}>{members.map(spec => <option key={spec.type} value={spec.type}>{humanActionType(spec.type)}</option>)}</optgroup> : null
-    })}</select></label>
-    <p className="author-insert-hint">Requests are measured under their action names. Think time and pacing are set in Runtime Settings, not inserted as actions.</p>
-    <p>{selectedSpec?.summary}</p>
-    {!isControl && <label>Target{needsTarget ? ' (required)' : ' (optional)'}<input name="target" value={draft.target || ''} onChange={e => setDraft({ ...draft, target: e.target.value })} /></label>}
+    <fieldset className="author-insert-group"><legend>Type</legend>
+      <label>Find action type<input ref={firstRef} type="search" value={filter} onChange={e => setFilter(e.target.value)} /></label>
+      <label>Action type<select aria-label="Action type" value={draft.type} onChange={e => changeType(e.target.value)}>{GROUP_ORDER.map(group => {
+        const members = visibleSpecs.filter(spec => actionGroup(spec.type) === group)
+        return members.length ? <optgroup key={group} label={group}>{members.map(spec => <option key={spec.type} value={spec.type}>{humanActionType(spec.type)}</option>)}</optgroup> : null
+      })}</select></label>
+      {selectedSpec?.summary && <p className="author-insert-hint">{selectedSpec.summary}</p>}
+      <p className="author-insert-hint">Think time and pacing are not actions; they are set in Runtime Settings.{onOpenThinkTime && <> <button type="button" className="link-button" onClick={onOpenThinkTime}>Open think time settings</button></>}</p>
+    </fieldset>
+    <fieldset className="author-insert-group"><legend>{isControl ? 'Name' : 'Name and target'}</legend>
+      <label>Action name<input ref={nameRef} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
+      {!isControl && <label>Target{needsTarget ? ' (required)' : ' (optional)'}<input name="target" value={draft.target || ''} onChange={e => setDraft({ ...draft, target: e.target.value })} /></label>}
+      <p className="author-insert-hint">Requests are measured under their action names.</p>
+    </fieldset>
+    <fieldset className="author-insert-group"><legend>Place</legend>
+      <div className="form-grid"><label>Phase<select aria-label="Phase" value={phase} onChange={e => onPlan(e.target.value as typeof phase, 'end')}><option value="init">Init</option><option value="action">Actions</option><option value="teardown">Teardown</option></select></label>
+      <label>Placement<select aria-label="Placement" value={position} onChange={e => onPlan(phase, e.target.value as InsertPosition)}><option value="end">End of phase</option>{anchorLabel && <><option value="before">Before selected action</option><option value="after">After selected action</option>{canInsertInside && <option value="inside">Inside selected block</option>}</>}</select></label></div>
+      <p role="status">Insert {position === 'end' ? `at the end of ${phase === 'action' ? 'Actions' : humanActionType(phase)}` : `${position} ${anchorLabel}`}.</p>
+    </fieldset>
     {error && <p role="alert">{error}</p>}
     {library}
     <div className="author-edit-toolbar"><button className="btn btn-secondary" type="button" onClick={onClose}>Cancel</button><button className="btn btn-primary" type="button" onClick={submit}>Insert action</button></div>

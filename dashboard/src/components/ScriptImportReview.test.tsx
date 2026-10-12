@@ -185,6 +185,21 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector('.script-import-review-header details')).toBeNull()
   })
 
+  it('names the running save step in the header and makes opening the draft the primary action', () => {
+    const render = (progress?: { label: string; action?: 'save' | 'edit' }) => act(() => root.render(
+      <ScriptImportReview compactReview title="Review and resolve" script={script} readinessMessage="Imported — ready for review."
+        onEdit={() => {}} onSave={() => {}} editLabel="Save draft and open in Visual Editor" saveLabel="Save draft" progress={progress} />,
+    ))
+    render()
+    const edit = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.script-import-review-actions button'))[0]
+    expect(edit().className).toContain('btn-primary')
+    expect(container.querySelector('.script-import-review-header [role="status"]')?.textContent).toContain('Imported — ready for review.')
+
+    render({ label: 'Saving the draft, then opening it in the Visual Editor…', action: 'edit' })
+    expect(container.querySelector('.script-import-review-header [role="status"]')?.textContent).toContain('Saving the draft, then opening it in the Visual Editor…')
+    expect(edit().textContent).toBe('Saving and opening…')
+  })
+
   it('passes a selected source finding to the source review surface', () => {
     function SourceFocusProbe() {
       const focus = useContext(ImportSourceIssueFocusContext)

@@ -14,8 +14,8 @@ test('Command Center supports empty actions, run triage, persistent switching an
   const overview = page.getByRole('region', { name: 'Active run overview', exact: true })
   await expect(overview.getByRole('heading', { name: 'No active runs', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open analysis', exact: true })).toHaveCount(0)
-  await expect(overview.getByRole('button', { name: 'New Test', exact: true })).toBeEnabled()
-  await overview.getByRole('button', { name: 'New Test', exact: true }).click()
+  await expect(overview.getByRole('button', { name: 'New run', exact: true })).toBeEnabled()
+  await overview.getByRole('button', { name: 'New run', exact: true }).click()
   await expect(page).toHaveURL(/#\/new-test/)
   await page.getByRole('button', { name: 'Command Center', exact: true }).click()
 
@@ -64,7 +64,7 @@ test('Command Center supports empty actions, run triage, persistent switching an
   await page.reload()
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true })).toHaveValue(ids[0])
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Pause this test run?' })
+  const dialog = page.getByRole('dialog', { name: 'Pause this run?' })
   await expect(dialog).toContainText('Audit checkout 0')
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
@@ -151,7 +151,7 @@ const exportTest = test.extend<{ exportRun: LiveRun }>({
  }, { timeout: 150_000 }],
 })
 
-exportTest('analysis load exports retain run identity and distinguish resampled observations', async ({ page, exportRun: run }) => {
+exportTest('analysis load exports retain run identity and keep observed samples on the run clock', async ({ page, exportRun: run }) => {
  exportTest.setTimeout(150_000)
  await page.goto(`/#/command-center/${run.testId}`)
  await page.getByRole('button', { name: 'Open analysis', exact: true }).click()
@@ -161,8 +161,10 @@ exportTest('analysis load exports retain run identity and distinguish resampled 
  await card.getByRole('button', { name: 'Export Planned and actual load data as CSV', exact: true }).click()
  const csv = await readFile((await (await csvDownload).path())!, 'utf8')
  expect(csv).toContain(run.testId)
- expect(csv).toContain('Resampled observed VUsers (VUsers)')
- expect(csv).toContain('future actual values remain missing')
+ // Planned steps and observed samples, each at its own elapsed second: nothing is resampled.
+ expect(csv).toContain('Planned VUsers (VUsers)')
+ expect(csv).toContain('Observed VUsers (VUsers)')
+ expect(csv).toContain("elapsed seconds from the run's start")
  const svgDownload = page.waitForEvent('download')
  await card.getByRole('button', { name: 'Export Planned and actual load image as SVG', exact: true }).click()
  const svg = await readFile((await (await svgDownload).path())!, 'utf8')
@@ -170,7 +172,7 @@ exportTest('analysis load exports retain run identity and distinguish resampled 
  expect(svg).toContain('<svg')
  expect(svg).not.toContain('var(')
  await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
- await page.getByRole('tab', { name: /^Active (?:Tests|& Queued)/ }).click()
+ await page.getByRole('tab', { name: /^Active (?:tests|& queued)/ }).click()
  const openRun = page.getByRole('button', { name: /^Open live test command-load-export/ })
  const activeCard = page.locator('.dash-active-card').filter({ has: openRun })
  await expect(activeCard.locator('[role="button"] button')).toHaveCount(0)
@@ -196,7 +198,7 @@ exportTest('pause waits for controller confirmation and preserves running state 
  // External boundary failure: the real dashboard must preserve the live state.
  await page.route(path, route => route.fulfill({ status: 409, json: { error: 'Processor pause quiescence is unconfirmed' } }))
  await page.getByRole('button', { name: 'Pause', exact: true }).click()
- await page.getByRole('dialog', { name: 'Pause this test run?' }).getByRole('button', { name: 'Pause Test' }).click()
+ await page.getByRole('dialog', { name: 'Pause this run?' }).getByRole('button', { name: 'Pause run' }).click()
  await expect(page.getByText('Processor pause quiescence is unconfirmed', { exact: true })).toBeVisible()
  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveCount(0)
  await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('RUNNING')
@@ -209,7 +211,7 @@ exportTest('pause waits for controller confirmation and preserves running state 
  await page.route(path, async route => { markPending(); await pending; await route.continue() })
  try {
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Pause this test run?' }).getByRole('button', { name: 'Pause Test' }).click()
+  await page.getByRole('dialog', { name: 'Pause this run?' }).getByRole('button', { name: 'Pause run' }).click()
   await seen
   // The UI cannot publish PAUSED ahead of the controller's committed response.
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
@@ -222,7 +224,7 @@ exportTest('pause waits for controller confirmation and preserves running state 
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('PAUSED')
   await page.screenshot({ path: testInfo.outputPath('acknowledged-pause.png'), fullPage: true })
   await page.getByRole('button', { name: 'Resume', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Resume this test run?' }).getByRole('button', { name: 'Resume Test' }).click()
+  await page.getByRole('dialog', { name: 'Resume this run?' }).getByRole('button', { name: 'Resume run' }).click()
   await expect.poll(async () => (await json(await request.get(`/api/v1/tests/${run.testId}`))).status).toBe('RUNNING')
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('RUNNING')

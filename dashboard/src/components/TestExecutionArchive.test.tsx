@@ -521,7 +521,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('3 missed target intervals')
     expect(container.textContent).toContain('Named transaction volume')
     expect(container.textContent).toContain('1 / 10 transactions')
-    expect(container.textContent).toContain('Staged Load')
+    expect(container.textContent).toContain('Staged load')
     expect(container.textContent).toContain('1 group · 1 once-only')
     expect(container.textContent).toContain('buyers · 1 VUsers · init once')
     expect(container.textContent).toContain('Completeness Score')

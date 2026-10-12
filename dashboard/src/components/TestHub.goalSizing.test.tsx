@@ -33,6 +33,8 @@ vi.mock('recharts', () => ({
   CartesianGrid: () => <span />,
   ComposedChart: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Line: () => <span />,
+  ReferenceArea: () => <span />,
+  ReferenceLine: () => <span />,
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Tooltip: () => <span />,
   XAxis: () => <span />,
@@ -127,13 +129,13 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { await Promise.resolve() })
   }
 
-  // Goal setup is started from the Goal-Driven family on the Model & Shape step.
+  // Goal setup is started from the Goal-Driven family on the Model & shape step.
   async function openBuildFromGoal() {
     const click = async (element: Element | undefined) => {
       expect(element).toBeDefined()
       await act(async () => { element?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     }
-    await click(Array.from(container.querySelectorAll('.scenario-wizard-step')).find(step => step.textContent?.includes('Model & Shape')))
+    await click(Array.from(container.querySelectorAll('.scenario-wizard-step')).find(step => step.textContent?.includes('Model & shape')))
     await click(Array.from(container.querySelectorAll('.scenario-source-card')).find(card => card.querySelector('span')?.textContent === 'Goal-Driven'))
     await click(findButton(container, 'Use Goal-Driven Scenario'))
   }
@@ -144,12 +146,12 @@ describe('TestHub build-from-goal', () => {
     })
     await flush()
 
-    await act(async () => { findButton(container, 'Scenario Builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { findButton(container, 'Scenario builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await openBuildFromGoal()
     await flush()
 
     expect(apiMock.listTests).toHaveBeenCalled()
-    expect(container.textContent).toContain('Goal-Driven Scenario Setup')
+    expect(container.textContent).toContain('Goal-Driven scenario setup')
     expect(container.textContent).toContain('Throughput goal')
     expect(container.textContent).toContain('Estimate adaptive demand')
     expect(container.textContent).not.toContain('Scenario Mode')
@@ -192,7 +194,7 @@ describe('TestHub build-from-goal', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
-    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Scenario builder')?.click() })
     await openBuildFromGoal()
     await flush()
 
@@ -212,7 +214,7 @@ describe('TestHub build-from-goal', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
-    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Scenario builder')?.click() })
     await openBuildFromGoal()
     expect(apiMock.listTests).toHaveBeenCalledWith({ limit: 1000, offset: 0, project_id: 'project-1', summary: true })
 
@@ -254,13 +256,13 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     const picker = container.querySelector<HTMLSelectElement>('[aria-label="Completed baseline run"]')!
     await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
-    await act(async () => findButton(container, 'Start Over')?.click())
+    await act(async () => findButton(container, 'Start over')?.click())
     await act(async () => report.resolve({
       manifest: { provenance: { groups: [{ name: 'Checkout', script_id: 'script-a', script_name: 'Checkout', protocol: 'http', vusers: 1 }] } },
       by_group: { Checkout: { transactions: 10, avg_response_ms: 3000 } },
       overview: { transactions: 10, avg_response_ms: 3000 },
     }))
-    await act(async () => findButton(container, 'Run Settings')?.click())
+    await act(async () => findButton(container, 'Run settings')?.click())
     expect(container.querySelector('[aria-label="Scenario Mode"]')).toBeNull()
     expect(container.querySelector('.goal-driven-worksheet')).toBeNull()
     expect(container.querySelector('.composition-timeline')).not.toBeNull()
@@ -290,7 +292,7 @@ describe('TestHub build-from-goal', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
-    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Scenario builder')?.click() })
     await openBuildFromGoal()
     await flush()
 

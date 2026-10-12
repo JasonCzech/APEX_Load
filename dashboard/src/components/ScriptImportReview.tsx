@@ -500,6 +500,9 @@ interface Props {
   reviewBusy?: boolean
   onReviewBusyChange?: (busy: boolean) => void
   onCredentialActionStart?: (action: CredentialAction) => void
+  // The step a running save or save-and-open is on, shown in the header's
+  // status line. action names the button that started it, once known.
+  progress?: { label: string; action?: CredentialAction }
   saveLabel?: string
   editLabel?: string
   previewTitle?: string
@@ -573,7 +576,8 @@ export default function ScriptImportReview({
   reviewBusy = false,
   onReviewBusyChange,
   onCredentialActionStart,
-  saveLabel = 'Save to Script Library',
+  progress,
+  saveLabel = 'Save to script library',
   editLabel = 'Open in Visual Editor',
   previewTitle = 'Generated Script Preview',
   previewAside,
@@ -671,7 +675,7 @@ export default function ScriptImportReview({
   const configureLaterCount = preparedSecrets?.configureLaterCount ?? defaultConfigureLaterCount
   const selectedBindingCount = preparedSecrets?.selectedBindingCount
     ?? secretBindingRequirements.filter(requirement => requirement.destination_value_preserved !== true).length
-  const deferredSaveLabel = /^Save to Script Library$/i.test(saveLabel) ? 'Save' : saveLabel
+  const deferredSaveLabel = /^Save to script library$/i.test(saveLabel) ? 'Save' : saveLabel
   const resolvedSaveLabel = hasUnresolvedSecretBindings && configureLaterCount > 0
     ? `${deferredSaveLabel} with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure`
     : saveLabel
@@ -1028,7 +1032,7 @@ export default function ScriptImportReview({
   const content = (
     <div className={`script-import-review ${compactHeader ? 'script-import-review-compact' : ''}`}>
       <div className="script-import-review-header" tabIndex={-1} ref={reviewSummaryRef}>
-        <p role="status">{readinessMessage || (hasReviewBlockers ? 'Import review has blockers. Resolve them before replay.' : 'Import review ready. Review blockers and warnings before saving.')} {' '}
+        <p role="status">{progress ? <><span className="spinner" aria-hidden="true" /> {progress.label}</> : readinessMessage || (hasReviewBlockers ? 'Import review has blockers. Resolve them before replay.' : 'Import review ready. Review blockers and warnings before saving.')} {' '}
           {!compactHeader && <>{(script.init?.length || 0) + (script.actions?.length || 0) + (script.teardown?.length || 0)} total actions
           {' '}({script.init?.length || 0} initialization, {script.actions?.length || 0} main, {script.teardown?.length || 0} teardown).</>}
         </p>
@@ -1038,7 +1042,8 @@ export default function ScriptImportReview({
         <div className="script-import-review-actions">
           {onEdit && (
             <button
-              className="btn btn-secondary"
+              // In the importer, opening the draft is the step's one primary.
+              className={compactReview ? 'btn btn-primary' : 'btn btn-secondary'}
               onClick={() => { void runAction('edit') }}
               disabled={Boolean(editDisabledReason) || credentialEditing || settingsBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               title={editDisabledReason ? editDisabledReason : importDraftExpired
@@ -1047,14 +1052,14 @@ export default function ScriptImportReview({
                   ? 'Enter valid secret reference names before editing this draft.'
                   : undefined}
             >
-              {credentialAction === 'edit' ? 'Preparing editor…' : compactReview ? editLabel : resolvedEditLabel}
+              {credentialAction === 'edit' ? 'Preparing editor…' : progress?.action === 'edit' ? 'Saving and opening…' : compactReview ? editLabel : resolvedEditLabel}
             </button>
           )}
           {savedAction ? (
             <button type="button" className="btn btn-primary" onClick={savedAction.onClick}>{savedAction.label}</button>
           ) : onSave && (
             <button
-              className={compactReview ? "btn btn-secondary" : "btn btn-primary"}
+              className={compactReview && onEdit ? 'btn btn-secondary' : 'btn btn-primary'}
               onClick={() => { void runAction('save') }}
               disabled={credentialEditing || settingsBusy || importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               aria-describedby={visibleSaveDisabledReason ? saveDisabledReasonId : undefined}
@@ -1062,7 +1067,7 @@ export default function ScriptImportReview({
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
                 : visibleSaveDisabledReason || undefined}
             >
-              {saving ? 'Saving…' : credentialAction === 'save' ? 'Preparing credentials…' : (compactReview || tabbed) ? saveLabel : resolvedSaveLabel}
+              {saving && progress?.action !== 'edit' ? 'Saving…' : credentialAction === 'save' ? 'Preparing credentials…' : (compactReview || tabbed) ? saveLabel : resolvedSaveLabel}
             </button>
           )}
         </div>

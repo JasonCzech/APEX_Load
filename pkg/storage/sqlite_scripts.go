@@ -131,6 +131,11 @@ func (s *SQLiteStore) CreateScriptAuthoringIfAbsent(script *dsl.Script) (*Script
 		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	if err != nil {
+		// An id conflict is DO NOTHING, so the only unique index left to
+		// violate is the reference key's.
+		if isUniqueConstraintErr(err) {
+			return nil, fmt.Errorf("%w: %s", ErrScriptRefKeyTaken, script.RefKey)
+		}
 		return nil, err
 	}
 	rows, err := result.RowsAffected()

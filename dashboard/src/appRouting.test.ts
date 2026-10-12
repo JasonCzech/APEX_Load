@@ -125,6 +125,9 @@ describe('appRouting', () => {
     const scope = { projectId: 'p1' }
     const route = (state: Parameters<typeof scriptsRouteForAuthoringState>[0]) => parseAppViewFromHash(viewToLocationHash(scriptsRouteForAuthoringState(state, scope)))
     expect(route({ subView: 'list', editingId: null })).toEqual({ page: 'scripts', mode: 'list', projectId: 'p1' })
+    expect(route({ subView: 'assets', editingId: null })).toEqual({ page: 'scripts', mode: 'assets', projectId: 'p1' })
+    expect(parseAppViewFromHash('#/scripts?mode=assets')).toEqual({ page: 'scripts', mode: 'assets' })
+    expect(resetProjectScopedAssetView({ page: 'scripts', mode: 'assets', projectId: 'p1' }, 'p2')).toEqual({ page: 'scripts', mode: 'assets', projectId: 'p2' })
     expect(route({ subView: 'edit', editingId: 'script-1' })).toEqual({ page: 'scripts', mode: 'edit', scriptId: 'script-1', projectId: 'p1' })
     expect(route({ subView: 'traffic_har', editingId: null, importLauncher: 'traffic_har', importMode: 'auto_detect' })).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p1' })
     // The recorder, an unsaved draft and the create options have no route of
@@ -458,8 +461,9 @@ it('round trips an archive-tab focus on the report and drops unknown focus targe
 describe('terminal run route compatibility', () => {
   it.each(['COMPLETE', 'FAILED', 'ABORTED'])('keeps %s runs inside Results regardless of legacy entry point', status => {
     const scope = { projectId: 'p', applicationId: 'a', releaseId: 'r' }
-    expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'execution' })
-    for (const [tab, section] of [['overview', 'execution'], ['control', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
+    expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'summary' })
+    expect(terminalRunReportView({ page: 'test', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'summary' })
+    for (const [tab, section] of [['overview', 'summary'], ['control', 'execution'], ['configuration', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
       const focus = ['action-summary', 'load-impact', 'transaction-drilldown'].includes(tab) ? { focus: tab } : {}
       expect(terminalRunReportView({ page: 'test', testId: 'run', tab, ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section, ...focus })
     }

@@ -1,4 +1,4 @@
-import { test, expect, seedScript, seedScenario, json, login, signOut } from './support/workflow'
+import { test, expect, seedScript, seedScenario, json, login, signOut, showLibraryFilters } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import type { Locator } from '@playwright/test'
 
@@ -15,16 +15,21 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   const scriptId = await seedScript(request, workspace, name)
   const scenarioId = await seedScenario(request, workspace, scriptId, `${name} scenario`)
   await page.goto(`/#/scripts?mode=edit&scriptId=${scriptId}&${scopeQuery(workspace)}`); await page.reload()
-  const history = page.getByRole('region', { name: 'Object history' })
+  // History lives in the editor's More menu and opens loaded.
+  await page.getByRole('button', { name: 'More actions for script editor', exact: true }).click()
+  await page.getByRole('button', { name: 'History', exact: true }).click()
+  const historyDialog = page.getByRole('dialog', { name: `History · ${name}` })
+  const history = historyDialog.getByRole('region', { name: 'Object history' })
   await expect(history).toContainText('Created by')
   await expect(history).not.toContainText('Created by Unknown')
-  await history.getByText('History', { exact: true }).click()
   await expect(history.getByRole('table', { name: 'Object activity history' })).toContainText('Created')
+  await historyDialog.getByRole('button', { name: 'Close', exact: true }).click()
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`); await page.reload()
   const row = page.getByRole('row').filter({ hasText: name })
   await expect(row).toBeVisible()
   await rowMenuAction(row, /^Archive\b/)
   await expect(row).toHaveCount(0)
+  await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('archived')
   await expect(row).toContainText('Archived')
   const blocked = await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, scenario_id: scenarioId, name: 'Must be blocked', duration: '1s', groups: [{ name: 'orders', script_id: scriptId, vusers: 1 }] } })
@@ -33,8 +38,10 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   await expect(page.getByRole('alert').filter({ hasText: 'blocks execution' })).toContainText(name)
   await expect(page.getByRole('button', { name: 'Start Now', exact: true })).toBeDisabled()
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`)
+  await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('archived')
   await rowMenuAction(row, /^Restore\b/)
+  await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('active'); await expect(row).toBeVisible()
   const current = await json(await request.get(`/api/v1/scripts/${scriptId}`))
   expect(current.activity).toBeTruthy()
@@ -42,6 +49,7 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   const scenarioRow = page.getByRole('row').filter({ hasText: `${name} scenario` })
   await rowMenuAction(scenarioRow, /^Archive\b/)
   await expect(scenarioRow).toHaveCount(0)
+  await showLibraryFilters(page)
   await page.getByLabel('Scenario archive state').selectOption('archived')
   await expect(scenarioRow).toContainText('Archived')
   await rowMenuAction(scenarioRow, /^Restore\b/)

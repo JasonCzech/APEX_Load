@@ -281,7 +281,7 @@ describe('DashboardWorkspace', () => {
   it('persists card library collapse state', async () => {
     await renderWorkspace()
 
-    await click(buttonNamed('Collapse'))
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Collapse card library"]')!)
 
     expect(buttonNamed('Cards')).toBeTruthy()
     expect(JSON.parse(window.localStorage.getItem(CARD_LIBRARY_STORAGE_KEY) || 'false')).toBe(true)

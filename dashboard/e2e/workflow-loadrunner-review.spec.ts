@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
@@ -159,6 +160,13 @@ for (const scenario of [
   })
 }
 
+// Runtime settings open on what needs a decision; these checks inspect the rest.
+async function showAllRuntimeStatuses(page: Page) {
+  for (const toggle of await page.getByRole('group', { name: 'Overall runtime setting counts' }).getByRole('checkbox').all()) {
+    if (!await toggle.isChecked()) await toggle.check()
+  }
+}
+
 // The real converter and store must persist every ready archive even when
 // another ZIP fails validation. This runs under dev-admin and local-auth.
 test('LoadRunner batch saves ready scripts, stays on import, and accepts another ZIP', async ({ page }, testInfo) => {
@@ -190,8 +198,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await page.getByRole('button', { name: 'Validate 3 Scripts', exact: true }).click()
   await expect(page.locator('.lr-file-row.failed')).toHaveCount(1)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  if (await page.locator('.lr-completed-setup').getAttribute('open') !== '') await page.locator('.lr-completed-setup > summary').click()
-  await page.locator('.lr-import-actions-card').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
+  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
   const receipt = await json(await saved)
   const scripts = receipt.scripts as { id: string; name: string }[]
   expect(scripts).toHaveLength(2)
@@ -210,8 +217,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await page.getByRole('button', { name: 'Validate 4 Scripts', exact: true }).click()
   await expect(page.locator('.lr-file-row.validated')).toHaveCount(1)
   const nextSave = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  if (await page.locator('.lr-completed-setup').getAttribute('open') !== '') await page.locator('.lr-completed-setup > summary').click()
-  await page.locator('.lr-import-actions-card').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
+  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
   expect((await json(await nextSave)).scripts).toHaveLength(1)
   await expect(page.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()
   expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(3)
@@ -221,7 +227,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
   const authorPanes = page.getByRole('group', { name: 'Author panes' })
   if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Script Name', exact: true })).toHaveValue(scripts[0].name)
+  await expect(page.getByRole('textbox', { name: 'Script name', exact: true })).toHaveValue(scripts[0].name)
   await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
 })
 
@@ -291,7 +297,7 @@ test('LoadRunner guided repair previews redacted changes before applying', async
   await expect(page.getByText('Repair applied. Requirements were refreshed from the protected draft.', { exact: true })).toBeVisible()
   expect(applies).toBe(1)
   await repair.getByRole('combobox', { name: 'Show', exact: true }).selectOption('resolved')
-  await expect(repair.getByRole('button', { name: /Restore protected request body Resolved/ })).toBeVisible()
+  await expect(repair.getByRole('button', { name: /Restore protected request body.* Resolved/ })).toBeVisible()
   await page.getByRole('tab', { name: /^Data & parameters(,|$)/ }).click()
   await page.getByRole('tablist', { name: 'Data views' }).getByRole('tab', { name: 'Allocation preview', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Preview unique data allocation' })).toHaveCount(0)
@@ -555,7 +561,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   await expect(page.getByRole('tab', { name: /^Credentials(,|$)/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: 'Cancel credentials', exact: true })).toHaveCount(0)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save to Script Library', exact: true }).click()
+  await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save to script library', exact: true }).click()
   const savedResponse = await saved
   expect(savedResponse.ok(), await savedResponse.text()).toBeTruthy()
   const savedResult = await json(savedResponse)
@@ -576,6 +582,7 @@ test('LoadRunner percentage think time shows source bounds and saves edited perc
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
+  await showAllRuntimeStatuses(page)
   await page.getByRole('navigation', { name: 'Runtime categories' }).getByRole('button', { name: /^Think time/ }).click()
   const mapped = page.getByRole('region', { name: 'Mapped for replay', exact: true })
   await expect(mapped).toContainText('ThinkTimeRandomLow: 50')
@@ -621,6 +628,7 @@ test('LoadRunner runtime context explains inactive settings and repairs an overs
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
+  await showAllRuntimeStatuses(page)
   const mappedTable = page.getByRole('region', { name: 'Mapped for replay', exact: true }).getByRole('table')
   const originalViewport = page.viewportSize()!
   await page.setViewportSize({ width: 1920, height: 1080 })
@@ -714,6 +722,7 @@ test('LoadRunner run-logic sections share one category and retain searchable sou
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
   await page.getByRole('tab', { name: /^Runtime settings(,|$)/ }).click()
+  await showAllRuntimeStatuses(page)
   const categories = page.getByRole('navigation', { name: 'Runtime categories' })
   await expect(categories.getByRole('button', { name: /^Run logic/ })).toHaveCount(1)
   await expect(categories.getByRole('button', { name: /RunLogic|Profile Actions/ })).toHaveCount(0)
@@ -914,7 +923,7 @@ test('LoadRunner Java JAR attachment follows policy and survives review-session 
   const sessionCard = page.locator('.authoring-session-card').filter({ has: page.getByRole('heading', { name: String(saved.name), exact: true }) })
   await sessionCard.getByRole('button', { name: 'Resume', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
-  const resumedName = page.getByRole('textbox', { name: 'Script Name', exact: true })
+  const resumedName = page.getByRole('textbox', { name: 'Script name', exact: true })
   if (!await resumedName.isVisible()) {
     await page.getByRole('group', { name: 'Author panes' }).getByRole('button', { name: 'Outline', exact: true }).click()
   }

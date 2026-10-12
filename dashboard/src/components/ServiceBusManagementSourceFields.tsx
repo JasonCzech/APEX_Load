@@ -34,10 +34,10 @@ export default function ServiceBusManagementSourceFields({ source, savedSource, 
             <label>Topic path {index + 1}<input value={serviceBus?.topic ?? ''} maxLength={256} onChange={event => changeEntity(index, { service_bus: { topic: event.target.value, subscription: serviceBus?.subscription ?? '' } })} /></label>
             <label>Subscription name {index + 1}<input value={serviceBus?.subscription ?? ''} maxLength={50} onChange={event => changeEntity(index, { service_bus: { topic: serviceBus?.topic ?? '', subscription: event.target.value } })} /></label>
           </>}
-          <button type="button" disabled={scope.entities.length <= 1} onClick={() => changeScope({ ...scope, entities: scope.entities.filter((_, position) => position !== index) })}>Remove Service Bus entity {index + 1}</button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={scope.entities.length <= 1} onClick={() => changeScope({ ...scope, entities: scope.entities.filter((_, position) => position !== index) })}>Remove Service Bus entity {index + 1}</button>
         </fieldset>
       })}
-      <button type="button" disabled={scope.entities.length >= 256} onClick={() => changeScope({ ...scope, entities: [...scope.entities, { service_bus: { queue: '' } }] })}>Add Service Bus entity</button>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={scope.entities.length >= 256} onClick={() => changeScope({ ...scope, entities: [...scope.entities, { service_bus: { queue: '' } }] })}>Add Service Bus entity</button>
     </div>
     {available && error && <p role="status">{error}</p>}
     {savedApproval?.management_scope && savedApproval.management_identity && <details><summary>Saved collector approval · revision {savedApproval.revision}</summary><p>Copy this saved scope and identity into the local collector target. Saving a changed credential pins a new opaque version.</p><pre>{JSON.stringify({ scope: savedApproval.management_scope, identity: savedApproval.management_identity }, null, 2)}</pre></details>}

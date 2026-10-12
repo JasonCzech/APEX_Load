@@ -110,6 +110,50 @@ body :is(.repository-tab-row, .access-subtab-row) > button:disabled {
   opacity: 0.55;
 }
 
+/* Any other tab row (an editor's section tabs, a debugger dock) opts in with
+ * .ux-underline-tabs on its tablist, so every level of tabs looks the same.
+ * Tabs are matched by role, so a tab wrapped for its tooltip still counts. */
+body .ux-underline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+body .ux-underline-tabs [role='tab'] {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  /* In-content tab rows stay compact, so the content below keeps its room. */
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 -3px 0 transparent;
+  color: var(--tab-link, var(--text-secondary));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+body .ux-underline-tabs [role='tab']:hover:not(:disabled) {
+  box-shadow: inset 0 -3px 0 var(--border);
+  color: var(--accent-text);
+}
+body .ux-underline-tabs [role='tab'][aria-selected='true'] {
+  background: transparent;
+  box-shadow: inset 0 -3px 0 var(--brand-highlight, var(--accent));
+  color: var(--text-primary);
+}
+body .ux-underline-tabs [role='tab']:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* Count badges inside tabs (Dashboard, Access, Repository). */
 body .main-topbar .topbar-page-section-toggle :is(button, a) > strong,
 body :is(.repository-tab-row, .access-subtab-row) > button > strong {

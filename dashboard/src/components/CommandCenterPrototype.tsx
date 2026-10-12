@@ -4,20 +4,9 @@ import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Legend,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 
 import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
@@ -28,13 +17,14 @@ import type { RcaAnalysisResponse } from '../types/rca'
 import { normalizeRcaAssessment, rcaSummaryLine } from './rca/rcaModel'
 import { rcaSummaryWithResponse } from './rca/useRootCauseSummary'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { runActiveSeconds } from './runReport/executionPresentation'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
+import type { BrowserReplaySnapshot, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange, ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
-import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
+import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -42,11 +32,11 @@ import { usePrometheusGraphs } from './usePrometheusGraphs'
 import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS, EXECUTION_POLL_INTERVAL_MS } from './useExecutionTestPolling'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { omitTransactionChartSeries } from './transactionChartSeries'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import ConfirmRunActionModal from './ConfirmRunActionModal'
+import { pauseDurationNote } from './runActionConfirmation'
 import TestNotesDialog from './TestNotesDialog'
 import GroupParametersDialog from './GroupParametersDialog'
 import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
@@ -59,17 +49,22 @@ import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { listAllCommandCenterActiveRuns } from './commandCenterRunDiscovery'
 import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 import {
-  buildScenarioRunRows,
+  buildGroupRunRows,
+  buildTransactionRunRows,
   type CommandGroup,
-  type ScenarioRunRow,
+  type GroupRunRow,
+  type TransactionRunRow,
 } from './commandCenterScenarioRows'
-import { buildLoadModelProfile, type LoadModelPoint } from './commandCenterLoadModel'
+import { buildRunLoadPlan, loadChangeImpact, observedVUsersSince, planAfterPauses, runLoadStatus } from './commandCenterLoadModel'
+import LoadPlanChart from './LoadPlanChart'
+import { LOAD_PLAN_COLORS } from './loadPlanSteps'
+import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 import type { CommandCenterPrototypeFixtures } from './commandCenterPrototypeFixtures'
 import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
 } from '../utils/snapshotFormatUtils'
-import { attemptErrorPercent, errorRateBasisLabel, groupRunCounts, groupRunErrorPercent, liveRunCounts, type ErrorRateBasis } from '../utils/liveErrorRate'
+import { errorRateBasisLabel, errorRateLabel, groupRunCounts, liveCountsErrorPercent, livePopulation, liveRate, liveRunCounts, liveThroughputPopulation, throughputLabel, type ErrorRateBasis, type LivePopulation } from '../utils/liveErrorRate'
 import { formatPercentValue } from '../utils/numberFormat'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
@@ -79,7 +74,7 @@ import LoadingState from './ux/LoadingState'
 const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
 
 type VariantId = 'ops' | 'grafana'
-type CommandTableTab = 'scenario' | 'errors' | 'infrastructure'
+type CommandTableTab = 'groups' | 'transactions' | 'errors' | 'infrastructure'
 type SortDirection = 'asc' | 'desc'
 type TargetTransitionMode = 'immediate' | 'gradual'
 export type GroupSettingsDialogKind = 'runtime-settings' | 'parameters'
@@ -227,6 +222,14 @@ function clampTpsTarget(value: number) {
   return Math.max(0, Math.min(100000, Math.round(value * 10) / 10))
 }
 
+// A group target change ready to send: the clamped target, and its ramp when gradual.
+interface TargetChange {
+  targetMode: CommandGroup['targetMode']
+  target: number
+  rampDuration: string
+  useGradualVuserChange: boolean
+}
+
 function formatTargetValue(value: number, mode: CommandGroup['targetMode']) {
   return mode === 'tps'
     ? `${formatNumber(value, 1)} TPS`
@@ -242,12 +245,6 @@ function metricTone(value: number, warning: number, danger: number) {
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.min(100, value))
-}
-
-function loadProgressPercent(durationSeconds: number, remainingSeconds: number) {
-  if (durationSeconds <= 0) return 0
-  const elapsedSeconds = Math.max(0, Math.min(durationSeconds, durationSeconds - remainingSeconds))
-  return clampPercent(elapsedSeconds / durationSeconds * 100)
 }
 
 function coerceTestStatus(status: string | undefined, fallback: TestStatus = 'RUNNING'): TestStatus {
@@ -267,12 +264,10 @@ function computeRemainingSeconds(test: TestSummary, status: TestStatus) {
   }
   const durationSeconds = parseDurationToSeconds(test.duration)
   if (durationSeconds <= 0) return 0
-  const startedAt = test.started_at || test.start_time
-  if (!startedAt) return durationSeconds
-  const startedMs = Date.parse(startedAt)
-  if (Number.isNaN(startedMs)) return durationSeconds
-  const elapsedSeconds = Math.floor((Date.now() - startedMs) / 1000)
-  return Math.max(durationSeconds - elapsedSeconds, 0)
+  // Paused time does not count: the engine makes it up after a resume.
+  const elapsedSeconds = runActiveSeconds(test)
+  if (elapsedSeconds === undefined) return durationSeconds
+  return Math.max(durationSeconds - Math.floor(elapsedSeconds), 0)
 }
 
 function isHistoricalRunStatus(status: TestStatus | string | undefined) {
@@ -289,26 +284,17 @@ function groupActionsSelector(groupName: string) {
 
 // Error rates on this page are run-to-date whenever the controller reports
 // run counters; a one-second window misreports a failing run as 0.00%.
-function groupErrorPercent(group: GroupLiveMetrics | undefined) {
-  return groupRunErrorPercent(group)
-}
-
-function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[]) {
-  const counts = liveRunCounts(metrics)
-  if (counts) return attemptErrorPercent(counts.transactions, counts.errors)
-  return attemptErrorPercent(groups.reduce((sum, group) => sum + group.transactions, 0), groups.reduce((sum, group) => sum + group.errors, 0))
-}
-
-function wholeTestErrorRateBasis(metrics: LiveMetrics | undefined): ErrorRateBasis | undefined {
-  return liveRunCounts(metrics)?.basis
+function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[], population: LivePopulation) {
+  const counts = liveRunCounts(metrics, population)
+  if (counts) return liveCountsErrorPercent(counts)
+  return liveCountsErrorPercent({ attempts: groups.reduce((sum, group) => sum + group.attempts, 0), errors: groups.reduce((sum, group) => sum + group.errors, 0) })
 }
 
 function highestGroupErrorRate(groups: CommandGroup[]) {
   if (groups.length <= 1) return undefined
   const highest = groups.reduce((current, group) => {
-    if (group.errors <= 0) return current
-    const attempts = group.transactions + group.errors
-    const errorPct = group.errors / attempts * 100
+    if (group.errors <= 0 || group.attempts <= 0) return current
+    const errorPct = Math.min(100, group.errors / group.attempts * 100)
     if (current && errorPct === current.errorPct) return { ...current, names: [...current.names, group.name] }
     return !current || errorPct > current.errorPct
       ? { names: [group.name], errorPct }
@@ -322,6 +308,16 @@ function highestGroupErrorRate(groups: CommandGroup[]) {
 
 function isGoalOrientedRun(test: TestSummary) {
   return test.scenario_mode === 'goal_oriented'
+}
+
+// As the engine measures it: how far below its target a throughput is, and
+// whether that misses the 5% alert threshold. At or above target there is no gap.
+const THROUGHPUT_GAP_ALERT_PCT = 5
+
+function goalThroughputGap(rate: number, target: number | undefined): Pick<CommandGroup, 'throughputGapPct' | 'throughputTargetMissed'> {
+  if (!target || target <= 0 || rate >= target) return { throughputGapPct: undefined, throughputTargetMissed: false }
+  const gap = (target - rate) / target * 100
+  return { throughputGapPct: gap, throughputTargetMissed: gap >= THROUGHPUT_GAP_ALERT_PCT }
 }
 
 function finitePositive(value: unknown): number {
@@ -379,13 +375,62 @@ function suggestedGroupVusers(test: TestSummary, groupName: string, currentVuser
   return Math.round(suggestedTotal * currentVusers / currentTotal)
 }
 
-function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>): CommandGroup[] {
+// How the page counts its live figures: the population its error rates
+// count and the one its throughput counts (goal targets are in TPS, so a
+// goal-oriented run's throughput stays TPS), the basis of its error rates,
+// the window its rates cover and the history they are averaged from. Every
+// view labels its figures from this.
+interface CommandMetricBasis {
+  population: LivePopulation
+  throughputPopulation: LivePopulation
+  errorBasis?: ErrorRateBasis
+  /** RECENT_AVERAGE_LABEL when the history has samples to average, else "last sample". */
+  rateWindow: string
+  history: ReadonlyArray<MetricsHistoryPoint>
+}
+
+const CommandMetricBasisContext = createContext<CommandMetricBasis>({ population: 'transactions', throughputPopulation: 'transactions', rateWindow: 'last sample', history: [] })
+
+/** "Requests/s (10 s avg)" or "TPS (last sample)". */
+function rateHeader(basis: CommandMetricBasis) {
+  return `${throughputLabel(basis.throughputPopulation)} (${basis.rateWindow})`
+}
+
+/** "Request error rate (run to date)" or "Transaction error rate (last sample)". */
+function errorRateHeader(basis: CommandMetricBasis) {
+  return `${errorRateLabel(basis.population)} (${errorRateBasisLabel(basis.errorBasis)})`
+}
+
+/** "averaged over the last 10 s" or "the last sample's". */
+function rateWindowPhrase(basis: CommandMetricBasis) {
+  return basis.rateWindow === RECENT_AVERAGE_LABEL ? `averaged over the last ${RECENT_AVERAGE_WINDOW}` : 'the last sample\'s'
+}
+
+// Column headers in the narrow group grids: the name, then what it covers.
+function RateColumnHeader({ basis }: { basis: CommandMetricBasis }) {
+  return <>{throughputLabel(basis.throughputPopulation)} <small>({basis.rateWindow})</small></>
+}
+
+function ErrorRateColumnHeader({ basis }: { basis: CommandMetricBasis }) {
+  return <>Error rate <small>({basis.population === 'requests' ? 'requests' : 'transactions'}, {errorRateBasisLabel(basis.errorBasis)})</small></>
+}
+
+function lowerFirst(value: string) {
+  return value.charAt(0).toLowerCase() + value.slice(1)
+}
+
+function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>, population: LivePopulation, throughputPopulation: LivePopulation, recent: RecentMetricAverages): CommandGroup[] {
   const targetMode = isGoalOrientedRun(test) ? 'tps' : 'vusers'
   const goalTargets = targetMode === 'tps' ? buildGoalTargetMap(test) : {}
   return (test.groups || []).map((group, index) => {
     const metrics = test.live_metrics?.groups?.[group.name]
     const aggregateFallback = !metrics && test.groups.length === 1 ? test.live_metrics : undefined
-    const fallbackCounts = liveRunCounts(aggregateFallback)
+    const counts = metrics ? groupRunCounts(metrics, population) : liveRunCounts(aggregateFallback, population)
+    // The same samples as the run's average: the group's own, or a single
+    // group's whole-run figures when it reports none of its own.
+    const averaged = metrics ? recent.groups?.[group.name] : aggregateFallback ? { tps: recent.tps, requestRate: recent.requestRate } : undefined
+    const averagedRate = throughputPopulation === 'requests' ? averaged?.requestRate : averaged?.tps
+    const rate = averagedRate ?? liveRate(metrics ?? aggregateFallback, throughputPopulation) ?? 0
     const activeVuserRamp = test.vuser_ramps?.[group.name]
     const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
@@ -402,18 +447,24 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       targetVusers: liveTargetVusers,
       targetMode,
       targetTps,
-      throughputGapPct: metrics?.throughput_gap_pct ?? aggregateFallback?.throughput_gap_pct,
-      throughputTargetMissed: metrics?.throughput_target_missed ?? aggregateFallback?.throughput_target_missed,
+      committedTargetTps: targetMode === 'tps' ? liveTarget : undefined,
+      // A goal run's rate is TPS over the page's window; measure its gap to
+      // the committed target over the same window.
+      ...(targetMode === 'tps' ? goalThroughputGap(rate, liveTarget) : {
+        throughputGapPct: metrics?.throughput_gap_pct ?? aggregateFallback?.throughput_gap_pct,
+        throughputTargetMissed: metrics?.throughput_target_missed ?? aggregateFallback?.throughput_target_missed,
+      }),
       suggestedVusers: targetMode === 'tps' ? suggestedGroupVusers(test, group.name, current) : undefined,
       minVusers: test.live_metrics?.goal_status?.min_vusers ?? test.goal_config?.min_vusers,
       maxVusers: test.live_metrics?.goal_status?.max_vusers ?? test.goal_config?.max_vusers,
       activeVuserRamp,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
+      rate,
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
-      errorPct: metrics ? groupErrorPercent(metrics) : fallbackCounts ? attemptErrorPercent(fallbackCounts.transactions, fallbackCounts.errors) : 0,
+      errorPct: counts ? liveCountsErrorPercent(counts) : 0,
       p99: metrics?.p99_ms ?? aggregateFallback?.p99_ms ?? 0,
-      transactions: groupRunCounts(metrics)?.transactions ?? fallbackCounts?.transactions ?? 0,
-      errors: groupRunCounts(metrics)?.errors ?? fallbackCounts?.errors ?? 0,
+      attempts: counts?.attempts ?? 0,
+      errors: counts?.errors ?? 0,
       color: COMMAND_GROUP_COLORS[index % COMMAND_GROUP_COLORS.length],
     }
   })
@@ -440,7 +491,9 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
     return {
       id: `live-${signatureId}`,
       signature: pattern.signature,
-      title: pattern.signature || `Error pattern ${index + 1}`,
+      // Titled by a real example ("expected status 200, got 503"); the
+      // normalized signature only groups the failures.
+      title: pattern.sample?.trim() || pattern.signature || `Error pattern ${index + 1}`,
       group,
       transaction: pattern.actions?.[0] || pattern.snapshot_url || 'Transaction evidence',
       count: pattern.count,
@@ -457,6 +510,20 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
       latestEvidenceId: pattern.latest_evidence_id,
     }
   })
+}
+
+// The signature an error is grouped by, when it says something its title does not.
+function errorPatternGrouping(pattern: ErrorPattern) {
+  const signature = pattern.signature?.trim()
+  return signature && signature !== pattern.title ? signature : ''
+}
+
+// The line under an error's title: the signature it is grouped by, otherwise its sample.
+function errorPatternSubtext(pattern: ErrorPattern) {
+  const grouping = errorPatternGrouping(pattern)
+  if (grouping) return `Grouped as ${grouping}`
+  const sample = pattern.sample.trim()
+  return sample !== pattern.title ? sample : ''
 }
 
 function buildGroupsWithTargets(prototypeGroups: CommandGroup[], targets: Record<string, number>) {
@@ -597,7 +664,7 @@ export default function CommandCenterPrototype({
   const [expandedCharts, setExpandedCharts] = useState<Record<VariantId, string | null>>({ ops: null, grafana: null })
   const [activeGraphCursor, setActiveGraphCursor] = useState<GraphCursorState | null>(null)
   const [graphWallGroupVisibility, setGraphWallGroupVisibility] = useState<Record<string, boolean>>({})
-  const [activeTableTab, setActiveTableTab] = useState<CommandTableTab>('scenario')
+  const [activeTableTab, setActiveTableTab] = useState<CommandTableTab>('groups')
   const [selectedEvidenceId, setSelectedEvidenceId] = useState('')
   const [liveEvidenceByRunSignature, setLiveEvidenceByRunSignature] = useState<Record<string, LiveErrorEvidence[]>>({})
   const [evidenceLoadingKey, setEvidenceLoadingKey] = useState('')
@@ -609,7 +676,7 @@ export default function CommandCenterPrototype({
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const [showNotes, setShowNotes] = useState(false)
   const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
-  const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
+  const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
   const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind; plannedOwner?: { scope: string; token: { generation: number } } } | null>(null)
   const archiveCheckGenerationRef = useRef(0)
   const archiveCheckInFlightRef = useRef(false)
@@ -958,9 +1025,16 @@ export default function CommandCenterPrototype({
     ? groupSettingsDialog.plannedOwner.scope === plannedSettingsScope && groupSettingsDialog.plannedOwner.token === plannedSettingsTokenRef.current ? groupSettingsDialog : null
     : groupSettingsDialog
 
+  const metricPopulation = livePopulation(displayTest.live_metrics)
+  const throughputPopulation = liveThroughputPopulation(displayTest, metricPopulation)
+  const groupNamesKey = (displayTest.groups || []).map(group => group.name).join('\u001f')
+  const recentAverages = useMemo(
+    () => recentMetricAverages(liveMode ? localMetricsHistory : [], undefined, { groups: groupNamesKey ? groupNamesKey.split('\u001f') : [] }),
+    [groupNamesKey, liveMode, localMetricsHistory],
+  )
   const groups = useMemo(
-    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
-    [displayTest, emptyMode, hasLiveRoute, liveMode, prototypeFixtures, state.vuserTargets],
+    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets, metricPopulation, throughputPopulation, recentAverages) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
+    [displayTest, emptyMode, hasLiveRoute, liveMode, metricPopulation, prototypeFixtures, recentAverages, state.vuserTargets, throughputPopulation],
   )
   const graphWallGroups = useMemo(
     () => groups.filter(group => graphWallGroupVisibility[group.key] !== false),
@@ -1054,14 +1128,22 @@ export default function CommandCenterPrototype({
     liveMode ? chartData : [],
     liveMode ? (displayTest.project_id || projectId) : undefined,
   )
-  const noRequestSamples = liveMode && (!displayTest.live_metrics || displayTest.live_metrics.total_transactions === 0) && archiveSummaryHistory.length === 0 && !localMetricsHistory.some(point => point.tps > 0 || point.avgMs > 0 || point.errorPct > 0)
+  const sentRequests = metricPopulation === 'requests'
+  const noRequestSamples = liveMode && (!displayTest.live_metrics || (displayTest.live_metrics.total_transactions === 0 && !sentRequests)) && archiveSummaryHistory.length === 0 && !localMetricsHistory.some(point => point.tps > 0 || (point.requestRate ?? 0) > 0 || point.avgMs > 0 || point.errorPct > 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
-  const runSummaryAverages = recentMetricAverages(liveMode ? localMetricsHistory : [])
-  const runSummaryTps = runSummaryAverages.tps
-    ?? displayTest.live_metrics?.tps
-    ?? groups.reduce((sum, group) => sum + group.tps, 0)
+  const recentRunRate = throughputPopulation === 'requests' ? recentAverages.requestRate : recentAverages.tps
+  const runSummaryRate = recentRunRate
+    ?? liveRate(displayTest.live_metrics, throughputPopulation)
+    ?? groups.reduce((sum, group) => sum + group.rate, 0)
+  const metricBasis = useMemo<CommandMetricBasis>(() => ({
+    population: metricPopulation,
+    throughputPopulation,
+    errorBasis: liveRunCounts(displayTest.live_metrics, metricPopulation)?.basis,
+    rateWindow: recentRunRate !== undefined ? RECENT_AVERAGE_LABEL : 'last sample',
+    history: liveMode ? localMetricsHistory : [],
+  }), [displayTest.live_metrics, liveMode, localMetricsHistory, metricPopulation, recentRunRate, throughputPopulation])
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode
     ? computeRemainingSeconds(displayTest, runStatus)
@@ -1345,20 +1427,34 @@ export default function CommandCenterPrototype({
     }))
   }
 
-  const applyTarget = async (groupName: string, value: number) => {
-    const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
+  // The change a group's Apply asks for, clamped and checked, or why it cannot be made.
+  const planTargetChange = (groupName: string, value: number): TargetChange | { error: string } => {
+    const targetMode: CommandGroup['targetMode'] = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
     const role = displayTest.groups.find(group => group.name === groupName)?.role
     const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value, role)
-    if (targetMode === 'tps' && target <= 0) {
-      setState(prev => ({ ...prev, feedback: `${groupName} target TPS must be greater than zero.` }))
-      return
-    }
+    if (targetMode === 'tps' && target <= 0) return { error: `${groupName} target TPS must be greater than zero.` }
     const rampDuration = state.targetRampDuration.trim()
     const useGradualVuserChange = targetMode === 'vusers' && state.targetTransitionMode === 'gradual'
-    if (useGradualVuserChange && !isValidDurationInput(rampDuration)) {
-      setState(prev => ({ ...prev, feedback: 'Enter a valid ramp duration before applying gradual load changes.' }))
+    if (useGradualVuserChange && !isValidDurationInput(rampDuration)) return { error: 'Enter a valid ramp duration before applying gradual load changes.' }
+    return { targetMode, target, rampDuration, useGradualVuserChange }
+  }
+
+  // A change to a running test's load is confirmed like Pause and Stop, with
+  // what it does to the run. A run that has not started takes plan edits as is.
+  const requestApplyTarget = (groupName: string, value: number) => {
+    const plan = planTargetChange(groupName, value)
+    if ('error' in plan) {
+      setState(prev => ({ ...prev, feedback: plan.error }))
       return
     }
+    if (!liveMode || !testId || runStatus === 'QUEUED' || runStatus === 'RESERVED' || runStatus === 'SCHEDULED') {
+      void applyTarget(groupName, plan)
+      return
+    }
+    confirmRunAction('apply-target', () => applyTarget(groupName, plan), loadChangeImpact(groups, groupName, plan.target, plan.useGradualVuserChange ? plan.rampDuration : ''))()
+  }
+
+  const applyTarget = async (groupName: string, { targetMode, target, rampDuration, useGradualVuserChange }: TargetChange) => {
     if (liveMode && testId) {
       try {
         if (targetMode === 'tps') {
@@ -1466,6 +1562,7 @@ export default function CommandCenterPrototype({
 
   return (
     <CommandViewMemoryContext.Provider key={viewMemory.testId} value={viewMemory.values}>
+    <CommandMetricBasisContext.Provider value={metricBasis}>
     <div ref={pageRef} className={`page command-center-page ${experienceVersion === 'v2' ? 'command-center-v2' : 'command-center-original'}`}>
       {active && !emptyMode && (commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch)}
       {emptyMode ? (
@@ -1502,12 +1599,13 @@ export default function CommandCenterPrototype({
         totalCurrent={totalCurrent}
         totalTarget={totalTarget}
         targetMode={targetMode}
-        errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups)}
-        errorRateBasis={wholeTestErrorRateBasis(displayTest.live_metrics)}
+        errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups, metricPopulation)}
+        errorLabel={errorRateHeader(metricBasis)}
         noRequestSamples={noRequestSamples}
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
-        tps={runSummaryTps}
-        tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
+        throughput={runSummaryRate}
+        throughputLabel={rateHeader(metricBasis)}
+        throughputUnit={throughputLabel(metricBasis.throughputPopulation)}
         // Average and P95 from the same metrics window, so P95 never reads below the average.
         responseAvgMs={displayTest.live_metrics?.avg_response_ms}
         responseP95Ms={displayTest.live_metrics?.p95_ms}
@@ -1515,7 +1613,7 @@ export default function CommandCenterPrototype({
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
         onStart={confirmRunAction('start', startRun)}
         // One button, two directions: confirm whichever one it is about to do.
-        onPauseResume={confirmRunAction(runStatus === 'PAUSED' ? 'resume' : 'pause', togglePause)}
+        onPauseResume={runStatus === 'PAUSED' ? confirmRunAction('resume', togglePause) : confirmRunAction('pause', togglePause, pauseDurationNote(displayTest))}
         onStop={confirmRunAction('stop', stopRun)}
         onAbort={confirmRunAction('abort', abortRun)}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
@@ -1537,6 +1635,7 @@ export default function CommandCenterPrototype({
           action={pendingAction}
           runName={displayTest.name}
           runRef={displayTest.ref_key}
+          detail={pendingDetail}
           onConfirm={onConfirmRunAction}
           onCancel={onCancelRunAction}
         />
@@ -1638,7 +1737,7 @@ export default function CommandCenterPrototype({
       )}
       <ThresholdAlertStrip alerts={scopedThresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
 
-      {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} testGroups={displayTest.groups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} /></section>}
+      {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} test={displayTest} runStatus={runStatus} history={liveMode ? localMetricsHistory : []} /></section>}
       {(!noRequestSamples || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (variant === 'ops' || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (
         <OpsCockpitView
           runId={testId}
@@ -1646,6 +1745,7 @@ export default function CommandCenterPrototype({
           variant={variant}
           onVariantChange={changeVariant}
           groups={groups}
+          test={displayTest}
           testGroups={displayTest.groups}
           metrics={displayTest.live_metrics}
           metricsHistory={liveMode ? localMetricsHistory : []}
@@ -1667,7 +1767,7 @@ export default function CommandCenterPrototype({
           onTargetTransitionModeChange={changeTargetTransitionMode}
           onTargetRampDurationChange={changeTargetRampDuration}
           onTargetChange={changeTarget}
-          onApplyTarget={applyTarget}
+          onApplyTarget={requestApplyTarget}
           onErrorSelect={selectError}
           onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
           onOpenPlannedGroupSettings={plannedSettingsScope ? openPlannedGroupSettings : undefined}
@@ -1712,13 +1812,14 @@ export default function CommandCenterPrototype({
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
           onTargetChange={changeTarget}
-          onApplyTarget={applyTarget}
+          onApplyTarget={requestApplyTarget}
           onErrorSelect={selectError}
         />
       )}
         </>
       )}
     </div>
+    </CommandMetricBasisContext.Provider>
     </CommandViewMemoryContext.Provider>
   )
 }
@@ -1742,11 +1843,15 @@ interface RunControlShelfProps {
   totalTarget: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
-  errorRateBasis?: ErrorRateBasis
+  /** Names the error rate's population and basis, e.g. "Request error rate (run to date)". */
+  errorLabel: string
   highestErrorGroup?: { name: string; errorPct: number }
-  tps?: number
-  tpsHint?: string
-  /** Average and P95 response time (ms) from the latest metrics window. */
+  throughput?: number
+  /** Names the throughput's population and window, e.g. "Requests/s (10 s avg)". */
+  throughputLabel: string
+  /** The throughput's unit alone ("Requests/s" or "TPS"), for the compact row. */
+  throughputUnit: string
+  /** Average and P95 transaction response time (ms) from the latest metrics window. */
   responseAvgMs?: number
   responseP95Ms?: number
   feedback: string
@@ -1773,10 +1878,11 @@ function RunControlShelf({
   totalTarget,
   targetMode,
   errorPct,
-  errorRateBasis,
+  errorLabel,
   highestErrorGroup,
-  tps,
-  tpsHint,
+  throughput,
+  throughputLabel: throughputMetricLabel,
+  throughputUnit,
   responseAvgMs,
   responseP95Ms,
   feedback,
@@ -1800,14 +1906,23 @@ function RunControlShelf({
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
   const fullyTerminal = status === 'ABORTED' || status === 'COMPLETE' || status === 'FAILED'
   const canStart = status === 'QUEUED' || status === 'RESERVED'
-  const startedMs = test.started_at ? Date.parse(test.started_at) : Number.NaN
-  const endMs = test.ended_at ? Date.parse(test.ended_at) : Date.now()
-  // An unreadable timestamp shows 0:00 rather than NaN.
-  const elapsedSeconds = Number.isFinite(startedMs) && Number.isFinite(endMs) ? Math.max(0, (endMs - startedMs) / 1000) : 0
+  // The run's own clock, as the engine counts it: paused time is left out
+  // (the run makes it up). An unrecorded start shows 0s rather than NaN.
+  const elapsedSeconds = runActiveSeconds(test) ?? 0
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
+  const loadValue = canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
+    ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
+    : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`
+  const clockValue = test.termination_mode === 'iterations' ? formatRunClock(elapsedSeconds) : `${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`
+  const errorValue = canStart || noRequestSamples ? 'No samples' : formatOptionalPercent(errorPct)
+  const throughputValue = canStart ? 'Not started' : noRequestSamples ? 'No samples' : formatNumber(throughput ?? 0, 1)
+  // The compact row names each value by the label of its pill.
+  const loadLabel = canStart ? 'Planned load' : 'Observed / Target Load'
+  const clockLabel = test.termination_mode === 'iterations' ? 'Elapsed' : 'Elapsed · remaining'
+  const { shelfRef, stuck } = useStuckShelf()
   return (
-    <section className="command-control-shelf" aria-label="Command center run controls">
+    <section ref={shelfRef} className={`command-control-shelf${stuck ? ' compact' : ''}`} aria-label="Command center run controls">
       <div className="command-run-identity">
         <StatusBadge status={status} />
         <div>
@@ -1816,26 +1931,28 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className="command-run-stats" aria-label="Run summary">
-        <MetricPill
-          label={canStart ? "Planned load" : "Observed / Target Load"}
-          value={canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
-            ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
-            : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
-          tone="info"
-        />
-        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(elapsedSeconds)} /></> : <MetricPill label="Elapsed · remaining" value={`${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
-        {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
-        <MetricPill label="Response time (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
-        <MetricPill label={`Error Rate (${errorRateBasisLabel(errorRateBasis)})`} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
-        {test.groups.length > 1 && (
-          <MetricPill
-            label={`Highest Error Rate (${errorRateBasisLabel(errorRateBasis)})`}
-            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
-            tone={highestErrorGroup ? "danger" : "default"}
-          />
-        )}
-      </div>
+      {/* Scrolled down, the shelf is one row: the run, its load, rate, clock and errors, and its controls. */}
+      {stuck ? <div className="command-run-compact-summary" role="group" aria-label="Run summary">
+        <span title={loadLabel}><strong>Load</strong> {loadValue}</span>
+        {throughput !== undefined && <span title={throughputMetricLabel}><strong>{throughputUnit}</strong> {throughputValue}</span>}
+        <span title={clockLabel}><strong>Time</strong> {clockValue}</span>
+        <span title={errorLabel} className={errorPct && errorPct > 0 ? 'danger' : undefined}><strong>Errors</strong> {errorValue}</span>
+      </div> : (
+        <div className="command-run-stats" aria-label="Run summary">
+          <MetricPill label={loadLabel} value={loadValue} tone="info" />
+          {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label={clockLabel} value={clockValue} /></> : <MetricPill label={clockLabel} value={clockValue} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
+          {throughput !== undefined && <MetricPill label={throughputMetricLabel} value={throughputValue} tone="accent" />}
+          <MetricPill label="Transaction response (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
+          <MetricPill label={errorLabel} value={errorValue} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
+          {test.groups.length > 1 && (
+            <MetricPill
+              label={`Highest ${lowerFirst(errorLabel)}`}
+              value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
+              tone={highestErrorGroup ? "danger" : "default"}
+            />
+          )}
+        </div>
+      )}
 
       <div className="command-run-actions">
         {onOpenExecution && !historicalRun && (
@@ -1846,7 +1963,7 @@ function RunControlShelf({
         {onOpenTestNotes && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
             <NotesIcon />
-            Test notes
+            Run notes
           </button>
         )}
         {onCreateQueuedCopy && (
@@ -1863,7 +1980,7 @@ function RunControlShelf({
           <>
             {canStart && (
               <button type="button" className="btn btn-sm btn-success" onClick={onStart} disabled={readOnly} aria-describedby={readOnlyNoteId}>
-                Start Test
+                Start run
               </button>
             )}
             {canPauseResume && (
@@ -1889,6 +2006,62 @@ function RunControlShelf({
       <p className="command-control-feedback" role="status">{feedback}</p>
     </section>
   )
+}
+
+// Whether the run shelf is stuck under the header (the page scrolled past
+// it), measured against where it sits in the page: the element before it
+// plus the page's gap. It is checked once a frame while the page scrolls or
+// its layout changes. Compact, the shelf keeps the room it had in the page as
+// a bottom margin, so changing it moves nothing below.
+function useStuckShelf() {
+  const shelfRef = useRef<HTMLElement | null>(null)
+  const expandedHeightRef = useRef(0)
+  const [stuck, setStuck] = useState(false)
+  useEffect(() => {
+    const shelf = shelfRef.current
+    const page = shelf?.parentElement
+    const scroller = shelf?.closest<HTMLElement>('.main-content')
+    if (!shelf || !page || !scroller) return
+    const update = () => {
+      const previous = shelf.previousElementSibling
+      const flowTop = previous
+        ? previous.getBoundingClientRect().bottom + (Number.parseFloat(getComputedStyle(page).rowGap) || 0)
+        : page.getBoundingClientRect().top + (Number.parseFloat(getComputedStyle(page).paddingTop) || 0)
+      if (!shelf.classList.contains('compact')) expandedHeightRef.current = shelf.offsetHeight
+      setStuck(shelf.getBoundingClientRect().top > flowTop + 1)
+    }
+    let frame = 0
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; update() })
+    }
+    update()
+    scroller.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    // Content above the shelf, or the column, can change without a scroll.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(page)
+    observer?.observe(scroller)
+    return () => {
+      cancelAnimationFrame(frame)
+      scroller.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      observer?.disconnect()
+    }
+  }, [])
+  useLayoutEffect(() => {
+    const shelf = shelfRef.current
+    if (!shelf) return
+    if (!stuck) {
+      shelf.style.marginBottom = ''
+      return
+    }
+    const keepRoom = () => { shelf.style.marginBottom = `${Math.max(0, expandedHeightRef.current - shelf.offsetHeight)}px` }
+    keepRoom()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(keepRoom)
+    observer?.observe(shelf)
+    return () => observer?.disconnect()
+  }, [stuck])
+  return { shelfRef, stuck }
 }
 
 function NotesIcon() {
@@ -2034,6 +2207,8 @@ interface OpsCockpitViewProps {
   variant: VariantId
   onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
+  /** The run itself: its plan, start and status for the load model. */
+  test: TestSummary
   testGroups: TestGroup[]
   metrics?: LiveMetrics
   metricsHistory?: MetricsHistoryPoint[]
@@ -2082,6 +2257,7 @@ function OpsCockpitView({
   variant,
   onVariantChange,
   groups,
+  test,
   testGroups,
   metrics,
   metricsHistory,
@@ -2125,7 +2301,7 @@ function OpsCockpitView({
             ))}
           </ul>
         )}
-        <LoadModelPanel groups={groups} testGroups={testGroups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} />
+        <LoadModelPanel groups={groups} test={test} runStatus={runStatus} history={metricsHistory ?? []} />
       </section>
     )
   }
@@ -2136,6 +2312,7 @@ function OpsCockpitView({
         variant={variant}
         onVariantChange={onVariantChange}
         groups={groups}
+        test={test}
         testGroups={testGroups}
         metrics={metrics}
         metricsHistory={metricsHistory}
@@ -2182,10 +2359,9 @@ function OpsCockpitView({
           />
           <LoadModelPanel
             groups={groups}
-            testGroups={testGroups}
+            test={test}
             runStatus={runStatus}
-            totalDurationSeconds={totalDurationSeconds}
-            remainingSeconds={remainingSeconds}
+            history={metricsHistory ?? []}
           />
         </div>
         <CommandRunTables
@@ -2227,7 +2403,7 @@ type OpsCockpitV2ViewProps = Omit<OpsCockpitViewProps, 'experienceVersion' | 'on
 function OpsCockpitV2View({
   runId,
   groups,
-  testGroups,
+  test,
   metrics,
   metricsHistory = [],
   errorPatterns,
@@ -2239,6 +2415,7 @@ function OpsCockpitV2View({
   onTableTabChange,
   evidenceLoading,
   evidenceError,
+  runStatus,
   totalDurationSeconds,
   remainingSeconds,
   readOnly = false,
@@ -2251,28 +2428,15 @@ function OpsCockpitV2View({
   onErrorSelect,
   onChangeDuration,
 }: OpsCockpitV2ViewProps) {
-  const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
-  const profile = useMemo(
-    () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
-    [groups, testGroups, totalDurationSeconds],
-  )
+  const basis = useContext(CommandMetricBasisContext)
+  const { chartPlan, observed, elapsedSeconds, live, ended, plannedNow, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, metricsHistory)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
-  const plannedNow = plannedLoadAtProgress(profile, progressPct)
-  const chartProfile = profile.map(point => {
-    if (point.pct > progressPct) return { ...point, actual: null }
-    if (metricsHistory.length === 0) {
-      return { ...point, actual: point.pct === 0 ? totalCurrent : null }
-    }
-    const historyIndex = Math.min(
-      metricsHistory.length - 1,
-      Math.max(0, Math.round((point.pct / Math.max(1, progressPct)) * (metricsHistory.length - 1))),
-    )
-    return {
-      ...point,
-      actual: numericCommandValue(metricsHistory[historyIndex], 'vusers', 'activeVusers', 'active_vusers'),
-    }
-  })
+  // The export holds the plan's steps and the observed samples, each at its own elapsed second.
+  const exportRows = [
+    ...chartPlan.points.map(point => ({ second: point.second, planned: point.total })),
+    ...observed.map(sample => ({ second: sample.second, actual: sample.vusers })),
+  ].sort((left, right) => left.second - right.second)
   return (
     <section className="command-v2" aria-label="Command Center analysis Ops view">
       <div className="command-v2-workbench">
@@ -2280,30 +2444,21 @@ function OpsCockpitV2View({
           <section className="command-v2-load-model" aria-label="Command Center analysis load model">
             <div className="command-v2-section-header">
               <div>
-                <h3>Load Model</h3>
-                <p>{loadPhaseAtProgress(profile, progressPct)} / tracking planned and actual VUsers</p>
+                <h3>Load model</h3>
+                <p>{phase} / tracking planned and actual VUsers</p>
               </div>
               <div className="command-v2-model-kpis">
-                <span>Planned <strong>{formatNumber(plannedNow)}</strong></span>
+                <span>Planned <strong>{ended ? MISSING_VALUE : formatNumber(plannedNow)}</strong></span>
                 <span>Actual <strong>{formatNumber(totalCurrent)}</strong></span>
-                <span>Delta <strong>{totalCurrent - plannedNow >= 0 ? '+' : ''}{formatNumber(totalCurrent - plannedNow)}</strong></span>
-                <span>Elapsed <strong>{formatNumber(progressPct, 0)}%</strong></span>
+                <span>Delta <strong>{ended ? MISSING_VALUE : `${totalCurrent - plannedNow >= 0 ? '+' : ''}${formatNumber(totalCurrent - plannedNow)}`}</strong></span>
+                <span>Time <strong>{elapsedLabel}</strong></span>
               </div>
             </div>
 
-            <div className="command-v2-chart" aria-label="Planned and actual VUsers over test duration">
-              <SeriesChartExport id="command-observed-load" title="Planned and actual load" rows={chartProfile} axes={[{ key: "progress", label: "Planned duration progress (%)", value: point => point.pct }]} series={[{ key: "planned", label: "Target VUsers", unit: "VUsers" }, { key: "actual", label: "Resampled observed VUsers", unit: "VUsers" }]} context={{ run_id: runId, progress_pct: progressPct, basis: "Observed samples resampled onto the planned progress grid; future actual values remain missing" }}><ResponsiveContainer width="100%" height={230} minWidth={320}>
-                <AreaChart data={chartProfile} margin={{ top: 10, right: 18, left: -8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="pct" type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={value => `${value}%`} stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <YAxis stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} labelFormatter={value => `${formatNumber(Number(value))}% elapsed`} />
-                  <ReferenceLine x={progressPct} stroke="var(--text-primary)" strokeWidth={1.5} ifOverflow="extendDomain" />
-                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--chart-1)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.16} strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Legend verticalAlign="bottom" height={22} iconType="plainline" wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
-                </AreaChart>
-              </ResponsiveContainer></SeriesChartExport>
+            <div className="command-v2-chart">
+              <SeriesChartExport id="command-observed-load" title="Planned and actual load" rows={exportRows} axes={[{ key: "elapsed", label: "Elapsed seconds", value: row => row.second }]} series={[{ key: "planned", label: "Planned VUsers", unit: "VUsers" }, { key: "actual", label: "Observed VUsers", unit: "VUsers" }]} context={{ run_id: runId, elapsed_seconds: elapsedSeconds, basis: "Planned steps and observed samples on elapsed seconds from the run's start" }}>
+                <LoadPlanChart label="Planned and actual VUsers" points={chartPlan.points} totalSeconds={chartPlan.totalSeconds} groups={chartGroups} phases={chartPlan} observed={observed} nowSecond={live ? elapsedSeconds : undefined} height={230} />
+              </SeriesChartExport>
             </div>
 
             <div className="command-v2-capacity" aria-label="Capacity pressure">
@@ -2316,27 +2471,26 @@ function OpsCockpitV2View({
               <div className="command-v2-group-row header" role="row">
                 <span role="columnheader">Group</span>
                 <span role="columnheader">VUsers (actual / target)</span>
-                <span role="columnheader">TPS</span>
+                <span role="columnheader"><RateColumnHeader basis={basis} /></span>
                 <span role="columnheader">ART</span>
-                <span role="columnheader">Errors</span>
+                <span role="columnheader"><ErrorRateColumnHeader basis={basis} /></span>
                 <span role="columnheader">Adjust target</span>
               </div>
               {groups.map((group, index) => {
                 const art = numericCommandValue(group, 'art', 'artMs', 'avgResponseMs', 'avg_response_ms')
-                const errors = numericCommandValue(group, 'errorPct', 'errorRate', 'error_pct')
                 const target = Math.max(0, Math.round(group.target))
                 return (
                   <div className="command-v2-group-row" role="row" key={group.name}>
                     <span role="cell" className="command-v2-group-name"><i data-group-index={index} /><strong>{group.name}</strong><small>{group.protocol}</small></span>
                     <span role="cell"><strong>{formatNumber(group.current)} / {formatNumber(target)}</strong><em>{target > 0 ? formatNumber((group.current / target) * 100, 0) : '0'}%</em></span>
-                    <span role="cell"><strong>{formatNumber(group.tps, 1)}</strong></span>
+                    <span role="cell"><strong>{formatNumber(group.rate, 1)}</strong></span>
                     <span role="cell"><strong>{formatNumber(art, 0)} ms</strong></span>
-                    <span role="cell" className={errors > 1 ? 'danger' : 'healthy'}><strong>{formatNumber(errors, 2)}%</strong></span>
+                    <span role="cell" className={group.attempts > 0 && group.errorPct > 1 ? 'danger' : 'healthy'}><strong>{group.attempts > 0 ? formatPercent(group.errorPct) : MISSING_VALUE}</strong></span>
                     <span role="cell" className="command-v2-target-stepper">
                       <button type="button" disabled={readOnly || target <= 0} aria-label={`Decrease ${group.name} target`} onClick={() => onTargetChange(group.name, Math.max(0, target - 1))}>−</button>
                       <strong>{formatNumber(target)}</strong>
                       <button type="button" disabled={readOnly} aria-label={`Increase ${group.name} target`} onClick={() => onTargetChange(group.name, target + 1)}>+</button>
-                      <button type="button" className="apply" disabled={readOnly} onClick={() => onApplyTarget(group.name, target)}>Apply</button>
+                      <button type="button" className="apply" disabled={readOnly} aria-label={`Apply ${group.name} target`} onClick={() => onApplyTarget(group.name, target)}>Apply</button>
                     </span>
                   </div>
                 )
@@ -2365,7 +2519,7 @@ function OpsCockpitV2View({
             <div className="command-v2-inspector-title"><h3>Change duration</h3><span>{formatRunClock(remainingSeconds)} left</span></div>
             <dl>
               <div><dt>Current duration</dt><dd>{formatRunClock(totalDurationSeconds)}</dd></div>
-              <div><dt>Elapsed</dt><dd>{formatNumber(progressPct, 0)}%</dd></div>
+              <div><dt>Elapsed</dt><dd>{formatTrafficProfileAxisTime(elapsedSeconds)}</dd></div>
             </dl>
             <div className="command-v2-inspector-actions">
               <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Adjust run</button>
@@ -2558,7 +2712,8 @@ function GroupSelectionPanel({
 }
 
 const COMMAND_TABLE_TABS: Array<{ id: CommandTableTab; label: string }> = [
-  { id: 'scenario', label: 'Run metrics' },
+  { id: 'groups', label: 'Groups' },
+  { id: 'transactions', label: 'Transactions' },
   { id: 'errors', label: 'Error Details' },
   { id: 'infrastructure', label: 'Infrastructure' },
 ]
@@ -2619,11 +2774,12 @@ function CommandRunTables({
   evidenceLoading,
   evidenceError,
 }: CommandRunTablesProps) {
-  const [filters, setFilters] = useCommandViewState<Record<CommandTableTab, string>>('tableFilters', { scenario: '', errors: '', infrastructure: '' })
+  const [filters, setFilters] = useCommandViewState<Record<CommandTableTab, string>>('tableFilters', { groups: '', transactions: '', errors: '', infrastructure: '' })
   const filter = filters[activeTab]
   const setFilter = (value: string) => setFilters(previous => ({ ...previous, [activeTab]: value }))
   const [sorts, setSorts] = useCommandViewState<Record<CommandTableTab, CommandSortState>>('tableSorts', {
-    scenario: { key: 'type', direction: 'asc' },
+    groups: { key: 'name', direction: 'asc' },
+    transactions: { key: 'name', direction: 'asc' },
     errors: { key: 'count', direction: 'desc' },
     infrastructure: { key: 'type', direction: 'asc' },
   })
@@ -2635,7 +2791,16 @@ function CommandRunTables({
     setTransactionSnapshot(incoming)
   }, [metrics?.transactions])
   const activeSort = sorts[activeTab]
-  const scenarioRows = useMemo(() => buildScenarioRunRows(groups, metrics, transactionSnapshot), [groups, metrics, transactionSnapshot])
+  const basis = useContext(CommandMetricBasisContext)
+  const transactionSource = metrics?.transactions && Object.keys(metrics.transactions).length > 0 ? metrics.transactions : transactionSnapshot
+  const transactionNamesKey = Object.entries(transactionSource).map(([key, tx]) => tx?.name?.trim() || key).join('\u001f')
+  // TPS over the same samples as the page's other rates.
+  const recentTransactionTps = useMemo(
+    () => transactionNamesKey ? recentMetricAverages(basis.history, undefined, { transactions: transactionNamesKey.split('\u001f') }).transactions : undefined,
+    [basis.history, transactionNamesKey],
+  )
+  const groupRows = useMemo(() => buildGroupRunRows(groups, metrics), [groups, metrics])
+  const transactionRows = useMemo(() => buildTransactionRunRows(metrics, transactionSnapshot, recentTransactionTps), [metrics, recentTransactionTps, transactionSnapshot])
   const infrastructureRows = useMemo(() => buildInfrastructureRows(groups, metrics), [groups, metrics])
   const activeEvidence = selectedEvidence.find(item => item.id === selectedEvidenceId) || selectedEvidence[0]
 
@@ -2649,9 +2814,13 @@ function CommandRunTables({
     })
   }
 
-  const filteredScenarioRows = useMemo(
-    () => filterAndSortRows(scenarioRows, filter, activeSort),
-    [activeSort, filter, scenarioRows],
+  const filteredGroupRows = useMemo(
+    () => filterAndSortRows(groupRows, filter, activeSort),
+    [activeSort, filter, groupRows],
+  )
+  const filteredTransactionRows = useMemo(
+    () => filterAndSortRows(transactionRows, filter, activeSort),
+    [activeSort, filter, transactionRows],
   )
   const sortedErrorRows = useMemo(
     () => filterAndSortRows(patterns, filter, activeSort),
@@ -2695,8 +2864,11 @@ function CommandRunTables({
       </div>
 
       <div className="command-table-surface">
-        {activeTab === 'scenario' && (
-          <ScenarioRunTable rows={filteredScenarioRows} sort={activeSort} onSort={updateSort} />
+        {activeTab === 'groups' && (
+          <GroupRunTable rows={filteredGroupRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No groups match the current filter.' : 'No groups in this run.'} />
+        )}
+        {activeTab === 'transactions' && (
+          <TransactionRunTable rows={filteredTransactionRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No transactions match the current filter.' : 'No transactions have completed yet.'} />
         )}
         {activeTab === 'errors' && (
           <ErrorDetailsTable
@@ -2741,74 +2913,128 @@ export function stabilizeErrorRowOrder(
   return stable
 }
 
-function ScenarioRunTable({
+interface MetricColumn<Row> {
+  label: string
+  sortKey: string
+  align?: 'right'
+  render: (row: Row) => ReactNode
+  className?: (row: Row) => string
+}
+
+// One metrics table with a column picker; the name column always shows.
+function MetricColumnsTable<Row extends { id: string }>({
+  label,
+  caption,
+  columns,
+  essentialColumns,
+  memoryKey,
   rows,
   sort,
   onSort,
+  emptyMessage,
 }: {
-  rows: ScenarioRunRow[]
+  label: string
+  caption: string
+  columns: MetricColumn<Row>[]
+  essentialColumns: number[]
+  memoryKey: string
+  rows: Row[]
   sort: CommandSortState
   onSort: (key: string) => void
+  emptyMessage: string
 }) {
-  const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VUsers', 'Target VUsers', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error rate', 'ART', 'P50', 'P90', 'P95', 'P99']
-  const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
-  const fullMetrics = columns.length === labels.length
+  const [visible, setVisible] = useCommandViewState(memoryKey, essentialColumns)
+  const fullMetrics = visible.length === columns.length
   return (
-    <div className="command-data-table-wrap" role="tabpanel" aria-label="Run metrics" tabIndex={0}>
-      <p className="command-table-caption">Rates and counts cover the last sample window; Group Load shows run-to-date error rates.</p>
-      <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
+    <div className="command-data-table-wrap" role="tabpanel" aria-label={label} tabIndex={0}>
+      <p className="command-table-caption">{caption}</p>
+      <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setVisible(event.target.checked ? columns.map((_, index) => index) : essentialColumns)} /> Show all {columns.length} metrics</label>
       <details className="command-column-picker"><summary>Choose columns</summary>
-        <div>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={columns.includes(index)} disabled={index < 2} onChange={event => setColumns(previous => event.target.checked ? [...previous, index] : previous.filter(column => column !== index))} />{label}</label>)}</div>
+        <div>{columns.map((column, index) => <label key={column.sortKey}><input type="checkbox" checked={visible.includes(index)} disabled={index === 0} onChange={event => setVisible(previous => event.target.checked ? [...previous, index] : previous.filter(item => item !== index))} />{column.label}</label>)}</div>
       </details>
       <table className={`command-data-table command-scenario-table ${fullMetrics ? 'full-metrics' : 'essential-metrics'}`}>
         <thead>
           <tr>
-            <SortableHeader hidden={!columns.includes(0)} label="Name" sortKey="name" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(1)} label="Group" sortKey="group" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(2)} label="Type" sortKey="type" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(3)} label="Protocol" sortKey="protocol" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(4)} label="Current VUsers" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(5)} label="Target VUsers" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(9)} label="Attempts" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(11)} label="Error rate" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(13)} label="P50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(14)} label="P90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(15)} label="P95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(16)} label="P99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            {columns.map((column, index) => <SortableHeader key={column.sortKey} hidden={!visible.includes(index)} label={column.label} sortKey={column.sortKey} sort={sort} onSort={onSort} align={column.align} />)}
           </tr>
         </thead>
         <tbody>
           {rows.map(row => (
-            <tr key={row.id} className={row.type === 'Group' ? 'command-table-group-row' : ''}>
-              <td hidden={!columns.includes(0)}><strong>{row.name}</strong></td>
-              <td hidden={!columns.includes(1)}>{row.group}</td>
-              <td hidden={!columns.includes(2)}>{row.type}</td>
-              <td hidden={!columns.includes(3)}>{row.protocol}</td>
-              <td hidden={!columns.includes(4)} className="numeric">{formatOptionalNumber(row.currentVusers)}</td>
-              <td hidden={!columns.includes(5)} className="numeric">{formatOptionalNumber(row.targetVusers)}</td>
-              <td hidden={!columns.includes(6)} className="numeric">{formatOptionalNumber(row.tps, 1)}</td>
-              <td hidden={!columns.includes(7)} className="numeric">{formatOptionalNumber(row.targetTps, 1)}</td>
-              <td hidden={!columns.includes(8)} className={`numeric ${typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : ''}`}>{formatOptionalPercent(row.throughputGap)}</td>
-              <td hidden={!columns.includes(9)} className="numeric">{formatOptionalNumber(row.transactions)}</td>
-              <td hidden={!columns.includes(10)} className="numeric">{formatOptionalNumber(row.errors)}</td>
-              <td hidden={!columns.includes(11)} className={`numeric ${metricTone(row.errorPct, 0.75, 1.5)}`}>{formatPercent(row.errorPct)}</td>
-              <td hidden={!columns.includes(12)} className="numeric">{formatOptionalMs(row.art)}</td>
-              <td hidden={!columns.includes(13)} className="numeric">{formatOptionalMs(row.p50)}</td>
-              <td hidden={!columns.includes(14)} className="numeric">{formatOptionalMs(row.p90)}</td>
-              <td hidden={!columns.includes(15)} className="numeric">{formatOptionalMs(row.p95)}</td>
-              <td hidden={!columns.includes(16)} className="numeric">{formatOptionalMs(row.p99)}</td>
+            <tr key={row.id}>
+              {columns.map((column, index) => (
+                <td key={column.sortKey} hidden={!visible.includes(index)} className={[column.align === 'right' ? 'numeric' : '', column.className?.(row) ?? ''].filter(Boolean).join(' ') || undefined}>{column.render(row)}</td>
+              ))}
             </tr>
           ))}
-          {rows.length === 0 && <EmptyTableRow colSpan={columns.length} message="No scenario metrics match the current filter." />}
+          {rows.length === 0 && <EmptyTableRow colSpan={visible.length} message={emptyMessage} />}
         </tbody>
       </table>
     </div>
+  )
+}
+
+function GroupRunTable({ rows, sort, onSort, emptyMessage }: { rows: GroupRunRow[]; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
+  const basis = useContext(CommandMetricBasisContext)
+  const countBasis = errorRateBasisLabel(basis.errorBasis)
+  const columns: MetricColumn<GroupRunRow>[] = [
+    { label: 'Group', sortKey: 'name', render: row => <strong>{row.name}</strong> },
+    { label: 'Protocol', sortKey: 'protocol', render: row => row.protocol },
+    { label: 'Current VUsers', sortKey: 'currentVusers', align: 'right', render: row => formatOptionalNumber(row.currentVusers) },
+    { label: 'Target VUsers', sortKey: 'targetVusers', align: 'right', render: row => formatOptionalNumber(row.targetVusers) },
+    { label: rateHeader(basis), sortKey: 'rate', align: 'right', render: row => formatOptionalNumber(row.rate, 1) },
+    { label: 'Target TPS', sortKey: 'targetTps', align: 'right', render: row => formatOptionalNumber(row.targetTps, 1) },
+    { label: 'Gap', sortKey: 'throughputGap', align: 'right', render: row => formatOptionalPercent(row.throughputGap), className: row => typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : '' },
+    { label: `${basis.population === 'requests' ? 'Requests' : 'Transactions'} (${countBasis})`, sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
+    { label: `Failed (${countBasis})`, sortKey: 'errors', align: 'right', render: row => formatOptionalNumber(row.errors) },
+    { label: errorRateHeader(basis), sortKey: 'errorPct', align: 'right', render: row => row.errorPct === undefined ? MISSING_VALUE : formatPercent(row.errorPct), className: row => row.errorPct === undefined ? '' : metricTone(row.errorPct, 0.75, 1.5) },
+    { label: 'ART', sortKey: 'art', align: 'right', render: row => formatOptionalMs(row.art) },
+    { label: 'P50', sortKey: 'p50', align: 'right', render: row => formatOptionalMs(row.p50) },
+    { label: 'P90', sortKey: 'p90', align: 'right', render: row => formatOptionalMs(row.p90) },
+    { label: 'P95', sortKey: 'p95', align: 'right', render: row => formatOptionalMs(row.p95) },
+    { label: 'P99', sortKey: 'p99', align: 'right', render: row => formatOptionalMs(row.p99) },
+  ]
+  return (
+    <MetricColumnsTable
+      label="Groups"
+      caption={`Throughput is ${rateWindowPhrase(basis)}; attempts, failures and error rates are ${countBasis}. Response times are the last sample's, for transactions.`}
+      columns={columns}
+      essentialColumns={[0, 2, 3, 4, 9, 13]}
+      memoryKey="groupColumns"
+      rows={rows}
+      sort={sort}
+      onSort={onSort}
+      emptyMessage={emptyMessage}
+    />
+  )
+}
+
+function TransactionRunTable({ rows, sort, onSort, emptyMessage }: { rows: TransactionRunRow[]; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
+  const basis = useContext(CommandMetricBasisContext)
+  const columns: MetricColumn<TransactionRunRow>[] = [
+    { label: 'Transaction', sortKey: 'name', render: row => <strong>{row.name}</strong> },
+    { label: 'Protocol', sortKey: 'protocol', render: row => row.protocol },
+    { label: `TPS (${basis.rateWindow})`, sortKey: 'tps', align: 'right', render: row => formatOptionalNumber(row.tps, 1) },
+    { label: 'Attempts (last sample)', sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
+    { label: 'Failed (last sample)', sortKey: 'errors', align: 'right', render: row => formatOptionalNumber(row.errors) },
+    { label: 'Error rate (last sample)', sortKey: 'errorPct', align: 'right', render: row => formatPercent(row.errorPct), className: row => metricTone(row.errorPct, 0.75, 1.5) },
+    { label: 'ART', sortKey: 'art', align: 'right', render: row => formatOptionalMs(row.art) },
+    { label: 'P50', sortKey: 'p50', align: 'right', render: row => formatOptionalMs(row.p50) },
+    { label: 'P90', sortKey: 'p90', align: 'right', render: row => formatOptionalMs(row.p90) },
+    { label: 'P95', sortKey: 'p95', align: 'right', render: row => formatOptionalMs(row.p95) },
+    { label: 'P99', sortKey: 'p99', align: 'right', render: row => formatOptionalMs(row.p99) },
+  ]
+  return (
+    <MetricColumnsTable
+      label="Transactions"
+      caption={`TPS is ${rateWindowPhrase(basis)}; attempts, failures, error rates and response times are the last sample's, across all groups.`}
+      columns={columns}
+      essentialColumns={[0, 2, 3, 5, 9]}
+      memoryKey="transactionColumns"
+      rows={rows}
+      sort={sort}
+      onSort={onSort}
+      emptyMessage={emptyMessage}
+    />
   )
 }
 
@@ -2845,7 +3071,7 @@ function ErrorDetailsTable({
         <table className="command-data-table command-error-table" role="grid" aria-label="Error patterns">
           <thead>
             <tr>
-              <SortableHeader label="Signature" sortKey="title" sort={sort} onSort={onSort} />
+              <SortableHeader label="Error" sortKey="title" sort={sort} onSort={onSort} />
               <SortableHeader label="Count" sortKey="count" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Share of errors" sortKey="rate" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Status" sortKey="statusCode" sort={sort} onSort={onSort} align="right" />
@@ -2866,7 +3092,7 @@ function ErrorDetailsTable({
                 onClick={() => onErrorSelect(row.id)}
                 onKeyDown={event => activateSelectableRow(event, () => onErrorSelect(row.id))}
               >
-                <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
+                <td><strong>{row.title}</strong><span className="command-table-subtext">{errorPatternSubtext(row)}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
                 <td className="numeric">{formatPercent(row.rate)}</td>
                 <td className="numeric">{row.statusCode || MISSING_VALUE}</td>
@@ -2921,7 +3147,7 @@ function ErrorEvidencePanel({
     <div className="command-evidence-panel" aria-label="Live error evidence" aria-busy={loading}>
       <div className="command-evidence-header">
         <div>
-          <span>Selected Signature</span>
+          <span>Selected error</span>
           <strong>{selectedError.title}</strong>
         </div>
         <small>{selectedError.evidenceCount ?? evidence.length} captured samples</small>
@@ -3723,49 +3949,66 @@ function CommandRuntimeGraphs({
   )
 }
 
-function plannedLoadAtProgress(profile: LoadModelPoint[], progressPct: number) {
-  if (profile.length === 0) return 0
-  const progress = clampPercent(progressPct)
-  const nextIndex = profile.findIndex(point => point.pct >= progress)
-  if (nextIndex <= 0) return profile[0].planned
-  const next = profile[nextIndex]
-  const previous = profile[nextIndex - 1]
-  if (!next) return profile[profile.length - 1].planned
-  const span = Math.max(1, next.pct - previous.pct)
-  const ratio = (progress - previous.pct) / span
-  return Math.round(previous.planned + (next.planned - previous.planned) * ratio)
-}
-
-function loadPhaseAtProgress(profile: LoadModelPoint[], progressPct: number) {
-  if (profile.length === 0) return 'Model'
-  const progress = clampPercent(progressPct)
-  const active = [...profile].reverse().find(point => point.pct <= progress)
-  return active?.phase || profile[0].phase
+// A run's load plan and where it stands: the plan the engine runs, the VUsers
+// it actually had, and "now", all on elapsed seconds from the run's start.
+function useRunLoadModel(test: TestSummary, groups: CommandGroup[], runStatus: TestStatus, history: MetricsHistoryPoint[]) {
+  const startedMs = Date.parse(test.started_at || test.start_time || '')
+  const notStarted = runStatus === 'RESERVED' || runStatus === 'QUEUED' || !Number.isFinite(startedMs)
+  const live = !notStarted && !isHistoricalRunStatus(runStatus)
+  const endedMs = Date.parse(test.ended_at || '')
+  const elapsedSeconds = notStarted ? 0 : Math.max(0, ((live || !Number.isFinite(endedMs) ? Date.now() : endedMs) - startedMs) / 1000)
+  // The run's own clock leaves its pauses out (the engine makes them up): it
+  // says where the run is in its plan, and the rest of the plan comes later.
+  const activeSeconds = notStarted ? 0 : Math.min(elapsedSeconds, runActiveSeconds(test) ?? elapsedSeconds)
+  const pausedSeconds = elapsedSeconds - activeSeconds
+  // A run to its iterations has no deadline: its plan runs to where it is now.
+  const openEnded = test.termination_mode === 'iterations'
+  const horizonSeconds = openEnded ? Math.ceil(activeSeconds) : undefined
+  const plan = useMemo(() => buildRunLoadPlan(test, groups, horizonSeconds), [groups, horizonSeconds, test])
+  // Drawn on the wall clock with the samples and Now.
+  const chartPlan = planAfterPauses(plan, activeSeconds, pausedSeconds)
+  // Colors by group name, so an unchanged legend keeps the chart's memo.
+  const groupColorKey = groups.map(group => `${group.name}\u0000${group.color}`).join('\u0001')
+  const chartGroups = useMemo(() => (test.groups || []).map((group, index) => ({
+    key: `group${index}`,
+    label: group.name,
+    color: groups.find(candidate => candidate.name === group.name)?.color || LOAD_PLAN_COLORS[index % LOAD_PLAN_COLORS.length],
+  // groups is read through groupColorKey, which changes when a name or color does.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  })), [groupColorKey, test.groups])
+  const observed = useMemo(() => notStarted ? [] : observedVUsersSince(history, startedMs), [history, notStarted, startedMs])
+  const staged = (test.groups || []).some(group => Boolean(group.stages?.length))
+  return {
+    plan,
+    observed,
+    elapsedSeconds,
+    live,
+    notStarted,
+    // An ended run is past its plan: there is no planned load to compare with.
+    ended: !notStarted && !live,
+    openEnded,
+    ...runLoadStatus(plan, activeSeconds, { state: notStarted ? 'not_started' : !live ? 'ended' : runStatus === 'PAUSED' ? 'paused' : 'running', openEnded, staged }),
+    chartPlan,
+    chartGroups,
+  }
 }
 
 function LoadModelPanel({
   groups,
-  testGroups,
+  test,
   runStatus,
-  totalDurationSeconds,
-  remainingSeconds,
+  history,
 }: {
   groups: CommandGroup[]
-  testGroups: TestGroup[]
+  test: TestSummary
   runStatus: TestStatus
-  totalDurationSeconds: number
-  remainingSeconds: number
+  /** The run's VUser samples, drawn over the plan. */
+  history: MetricsHistoryPoint[]
 }) {
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
-  const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
-  const profile = useMemo(
-    () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
-    [groups, testGroups, totalDurationSeconds],
-  )
-  const plannedNow = plannedLoadAtProgress(profile, progressPct)
+  const { chartPlan, observed, elapsedSeconds, live, notStarted, ended, openEnded, plannedNow, progressPct, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, history)
   const delta = totalCurrent - plannedNow
-  const phase = runStatus === 'PAUSED' ? 'Paused' : loadPhaseAtProgress(profile, progressPct)
 
   return (
     <section
@@ -3778,68 +4021,39 @@ function LoadModelPanel({
     >
       <div className="command-panel-header command-load-model-header">
         <div>
-          <h3>Load Model</h3>
-          <p>{phase} / {formatRunClock(remainingSeconds)} remaining</p>
+          <h3>Load model</h3>
+          {/* The run shelf counts down to the deadline; this names the phase of the plan. */}
+          <p>{phase}{openEnded && live ? ' / ends when its iterations do' : ''}</p>
           {runStatus === 'PAUSED' && <p>Allocated users are retained while active load pauses. Rolling throughput decays as its averaging window clears.</p>}
         </div>
-        <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
+        <span className="command-load-model-badge">{elapsedLabel}</span>
       </div>
 
       <details className="command-load-comparison"><summary>Load comparison</summary>
       <div className="command-load-model-stats">
-        <MetricPill label="Planned VU" value={formatNumber(plannedNow)} tone="accent" />
-        <MetricPill label="Actual VU" value={runStatus === "RESERVED" || runStatus === "QUEUED" ? "Not started" : formatNumber(totalCurrent)} tone="info" />
-        <MetricPill label="Delta VU" value={runStatus === "RESERVED" || runStatus === "QUEUED" ? "No samples" : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
+        <MetricPill label="Planned VU" value={ended ? 'Run ended' : formatNumber(plannedNow)} tone="accent" />
+        <MetricPill label="Actual VU" value={notStarted ? "Not started" : formatNumber(totalCurrent)} tone="info" />
+        <MetricPill label="Delta VU" value={notStarted ? "No samples" : ended ? MISSING_VALUE : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={!ended && Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
       </div>
 
       </details>
-      <div className="command-load-model-chart" aria-hidden="true">
-        <ResponsiveContainer width="100%" height={132} minWidth={240}>
-          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} accessibilityLayer={false}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-            <XAxis
-              dataKey="pct"
-              type="number"
-              domain={[0, 100]}
-              ticks={[0, 25, 50, 75, 100]}
-              tickFormatter={(value) => `${value}%`}
-              stroke="var(--text-muted)"
-              tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-            />
-            <YAxis
-              stroke="var(--text-muted)"
-              tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-              allowDecimals={false}
-              domain={[0, dataMax => Math.max(1, Number(dataMax), totalCurrent)]}
-              tickFormatter={(value) => `${formatNumber(Number(value))} VU`}
-            />
-            <Tooltip
-              contentStyle={chartTooltipContentStyle}
-              labelStyle={chartTooltipLabelStyle}
-              formatter={(value) => [`${formatNumber(Number(value))} VU`, 'Planned']}
-              labelFormatter={(value) => `${formatNumber(Number(value))}% elapsed`}
-            />
-            <ReferenceLine x={progressPct} stroke="var(--warning)" strokeDasharray="4 4" ifOverflow="extendDomain" />
-            <ReferenceLine y={totalCurrent} stroke="var(--chart-2)" strokeDasharray="3 3" ifOverflow="extendDomain" />
-            <Area
-              type="monotone"
-              dataKey="planned"
-              name="Planned VUsers"
-              stroke="var(--accent)"
-              fill="var(--accent-soft)"
-              fillOpacity={0.45}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4, stroke: 'var(--accent)', fill: 'var(--bg-card)' }}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+      <div className="command-load-model-chart">
+        <LoadPlanChart
+          compact
+          label="Load model"
+          points={chartPlan.points}
+          totalSeconds={chartPlan.totalSeconds}
+          groups={chartGroups}
+          phases={chartPlan}
+          observed={observed}
+          nowSecond={live ? elapsedSeconds : undefined}
+          height={140}
+        />
       </div>
 
-      <div className="command-load-model-progress" aria-hidden="true">
+      {!openEnded && <div className="command-load-model-progress" aria-hidden="true">
         <span style={{ width: `${progressPct}%` }} />
-      </div>
+      </div>}
     </section>
   )
 }
@@ -3869,6 +4083,7 @@ function GroupLoadTable({
   onApplyTarget: (groupName: string, value: number) => void
   onOpenGroupSettings?: (groupName: string, kind: GroupSettingsDialogKind) => void
 }) {
+  const basis = useContext(CommandMetricBasisContext)
   const [groupMenu, setGroupMenu] = useState<{ group: string; x: number; y: number } | null>(null)
   const groupMenuRef = useRef<HTMLDivElement | null>(null)
   const firstMenuItemRef = useRef<HTMLButtonElement | null>(null)
@@ -3955,7 +4170,7 @@ function GroupLoadTable({
       <div className="command-panel-header">
         <div>
           <h3>Group Load</h3>
-          <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, TPS, ART, and error rate by group.' : 'Current load, staged target, TPS, ART, and error rate by group.'}</p>
+          <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, throughput, ART and error rate by group.' : 'Current load, staged target, throughput, ART and error rate by group.'}</p>
         </div>
         {showTransitionControls && (
           <div className="command-group-transition-controls" aria-label="Group load transition controls">
@@ -3996,14 +4211,15 @@ function GroupLoadTable({
           <span role="columnheader">Group</span>
           <span role="columnheader">Current VUsers</span>
           <span role="columnheader">{targetHeader}</span>
-          <span role="columnheader">TPS</span>
+          <span role="columnheader"><RateColumnHeader basis={basis} /></span>
           <span role="columnheader">ART</span>
-          <span role="columnheader">Errors</span>
+          <span role="columnheader"><ErrorRateColumnHeader basis={basis} /></span>
         </div>
         {groups.map(group => {
           const isGoalTarget = group.targetMode === 'tps'
-          const indicatorCurrent = isGoalTarget ? group.tps : group.current
-          const committedTarget = isGoalTarget ? group.targetTps ?? group.target : group.targetVusers
+          // A goal-oriented run's rate is TPS, the unit of its targets.
+          const indicatorCurrent = isGoalTarget ? group.rate : group.current
+          const committedTarget = isGoalTarget ? group.committedTargetTps ?? group.targetTps ?? group.target : group.targetVusers
           const sliderMax = isGoalTarget
             ? Math.max(100, Math.ceil(Math.max(group.target, indicatorCurrent, committedTarget) * 2))
             : Math.min(maxVUsersForRole(group.role), sharedVuserSliderMax)
@@ -4107,20 +4323,20 @@ function GroupLoadTable({
                         activeRamp={group.activeVuserRamp}
                       />
                     </div>
-                    <button type="button" className="btn btn-sm btn-primary" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
+                    <button type="button" className="btn btn-sm btn-primary" disabled={applyDisabled} aria-label={`Apply ${group.name} target`} onClick={() => onApplyTarget(group.name, group.target)}>
                       Apply
                     </button>
                   </>
                 )}
               </span>
-              <span role="cell" data-label="TPS" className={group.throughputTargetMissed ? 'warning' : undefined}>
+              <span role="cell" data-label={rateHeader(basis)} className={group.throughputTargetMissed ? 'warning' : undefined}>
                 <span className="command-tps-stack">
-                  <strong>{formatNumber(group.tps, 1)}</strong>
-                  {isGoalTarget && <small>target {formatNumber(group.targetTps ?? group.target, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
+                  <strong>{formatNumber(group.rate, 1)}</strong>
+                  {isGoalTarget && <small>target {formatNumber(committedTarget, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
                 </span>
               </span>
               <span role="cell" data-label="ART">{formatNumber(group.art)} ms</span>
-              <span role="cell" data-label="Error rate" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
+              <span role="cell" data-label={errorRateHeader(basis)} className={group.attempts > 0 ? metricTone(group.errorPct, 0.75, 1.5) : undefined}>{group.attempts > 0 ? formatPercent(group.errorPct) : MISSING_VALUE}</span>
             </div>
           )
         })}
@@ -4240,7 +4456,7 @@ function ErrorDrilldown({
     <section className={`command-panel command-error-panel ${compact ? 'compact' : ''}`} aria-label="Error drill-down">
       <div className="command-panel-header">
         <div>
-          <h3>Error Drill-down</h3>
+          <h3>Error drill-down</h3>
           <p>Grouped failure signatures with transaction evidence.</p>
         </div>
       </div>
@@ -4270,6 +4486,12 @@ function ErrorDrilldown({
           <span>{selectedError.transaction}</span>
           <strong>{selectedError.sample}</strong>
           <dl>
+            {errorPatternGrouping(selectedError) && (
+              <div>
+                <dt>Grouped as</dt>
+                <dd>{errorPatternGrouping(selectedError)}</dd>
+              </div>
+            )}
             <div>
               <dt>Group</dt>
               <dd>{selectedError.group}</dd>

@@ -564,7 +564,7 @@ describe('Sidebar', () => {
 
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
-    expect(labels).toEqual(['New Test', 'Dashboard', 'Command Center', 'Results', 'Monitoring', 'Activity', 'Scripts', 'Scenarios', 'Repository', 'Settings', 'Help & documentation'])
+    expect(labels).toEqual(['New run', 'Dashboard', 'Command Center', 'Results', 'Monitoring', 'Activity', 'Scripts', 'Scenarios', 'Repository', 'Settings', 'Help & documentation'])
   })
 
   it('uses distinct Dashboard and Command Center sidebar icons', async () => {
@@ -774,7 +774,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Dev View')
     expect(container.textContent).toContain('Admin')
     expect(container.textContent).toContain('Editor')
-    expect(container.textContent).toContain('New Test')
+    expect(container.textContent).toContain('New run')
     expect(container.textContent).toContain('Help & documentation')
     expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
@@ -791,7 +791,7 @@ describe('Sidebar', () => {
 
     expect(window.localStorage.getItem('apexload.devViewMode')).toBe('user')
     expect(container.textContent).toContain('Editor preview')
-    expect(container.textContent).toContain('New Test')
+    expect(container.textContent).toContain('New run')
     expect(container.textContent).toContain('Help & documentation')
     expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
@@ -881,7 +881,7 @@ describe('Sidebar', () => {
     expect(navItems.every(item => !item.hasAttribute('title'))).toBe(true)
     await act(async () => navItems[0].focus())
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(navItems[0].getAttribute('aria-label'))
-    expect(navItems.find(item => item.getAttribute('aria-label') === 'New Test')?.getAttribute('aria-current')).toBe('page')
+    expect(navItems.find(item => item.getAttribute('aria-label') === 'New run')?.getAttribute('aria-current')).toBe('page')
     expect(container.querySelector<HTMLButtonElement>('.sidebar-brand')?.getAttribute('aria-label')).toBe('APEX Load dashboard')
   })
 

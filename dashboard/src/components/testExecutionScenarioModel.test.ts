@@ -82,9 +82,12 @@ describe('testExecutionScenarioModel', () => {
       ],
     } as TestSummary)
     const at = (second: number) => preview.points.find(point => point.second === second)
-    expect(at(30)).toMatchObject({ group0: 10, group1: 0 })
-    expect(at(50)).toMatchObject({ group0: 10, group1: 20 })
-    expect(preview.points.filter(point => point.second > 30 && point.second < 50).every(point => point.group1 > 0 && point.group1 < 20)).toBe(true)
+    // The engine starts the delayed group's first VUser as it activates and
+    // one more every second (20 s / 20), so all 20 run from 49 s.
+    expect(at(29)?.group1 ?? 0).toBe(0)
+    expect(at(30)).toMatchObject({ group0: 10, group1: 1 })
+    expect(at(49)).toMatchObject({ group0: 10, group1: 20 })
+    expect(preview.points.filter(point => point.second > 30 && point.second < 49).every(point => point.group1 > 1 && point.group1 < 20)).toBe(true)
     expect(at(120)).toMatchObject({ group0: 0, group1: 0 })
   })
 
