@@ -14,6 +14,8 @@ import FormField from './ux/FormField'
 import IntegerField from './ux/IntegerField'
 import FormErrorSummary from './ux/FormErrorSummary'
 import TabList from './ux/TabList'
+import InfoPopover from './ux/InfoPopover'
+import BadgeIcon from './ux/BadgeIcon'
 import { useScrollEdges } from './ux/useScrollEdges'
 import { confirmAction } from './ux/confirmAction'
 import { handleTabKey } from './tabKeyboard'
@@ -217,6 +219,11 @@ function runSettingsTabId(item: { tab: RunSettingsTab; section?: ScenarioSetting
   return item.section ? `scenario-settings-${item.section}-tab` : `scenario-run-settings-${item.tab}-tab`
 }
 
+
+// Scenario names compare without case or surrounding space, as people read them.
+function scenarioNameKey(name: string) {
+  return name.trim().toLowerCase()
+}
 
 function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
   return {
@@ -780,9 +787,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const activeProjectId = activeProject?.id
   const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>(undefined)
   const [archiveState, setArchiveState] = useState<'active' | 'archived' | 'all'>('active')
-  const archiveStateRef = useRef(archiveState)
-  archiveStateRef.current = archiveState
-  const [scenarios, setScenarios] = useState<StoredScenario[]>([])
+  // Every saved scenario, archived or not, so a name check sees them all; the
+  // library shows the ones its archive filter picks.
+  const [allScenarios, setAllScenarios] = useState<StoredScenario[]>([])
+  // The project whose scenarios have loaded, so an empty list before then is not an empty library.
+  const [scenariosLoadedFor, setScenariosLoadedFor] = useState<string | null>(null)
+  const scenarios = useMemo(
+    () => archiveState === 'all' ? allScenarios : allScenarios.filter(scenario => Boolean(scenario.archived_at) === (archiveState === 'archived')),
+    [allScenarios, archiveState],
+  )
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [loadModelTemplates, setLoadModelTemplates] = useState<LoadModelTemplate[]>([])
@@ -957,7 +970,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setPickedScriptIds([]); setScriptReadinessFilter('all'); setScriptProtocolFilter('all'); setScriptLibraryQuery('')
     checkpointBaselineRef.current = ''
     activeCheckpointSavedAtRef.current = ''
-    setScenarios([])
+    setAllScenarios([])
+    setScenariosLoadedFor(null)
     setAssignmentScenarios(null)
     setAssigningScenarioIds(new Set())
     setAssignmentNotice('')
@@ -1198,6 +1212,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   )
   const selectedShape = shapeCatalog.find(option => option.id === selectedShapeId)
   const selectedShapePreset: ScenarioShapePreset | undefined = selectedShape ? getScenarioShapePreset(selectedShape.id) : undefined
+  // A saved scenario's shape by the name the load-model catalog gives it.
+  const shapeNameById = useMemo(() => new Map(loadModelSupportMatrix.map(entry => [entry.id, entry.name])), [loadModelSupportMatrix])
   const modelFamilies = useMemo(
     () => availableScenarioModelFamilies(loadModelSupportMatrix.length === 0 ? null : new Set(loadModelSupportMatrix.map(shape => shape.id))),
     [loadModelSupportMatrix],
@@ -1285,13 +1301,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   ), [activeProjectId, form, selectedShapeId])
 
   const refresh = useCallback(async () => {
-    const requestedArchiveState = archiveStateRef.current
     const projectId = activeProjectId
     const requestGeneration = ++refreshGenerationRef.current
     if (!projectId) return
     try {
       const [scenarioRes, scriptRes, dataPoolRes, templateRes, supportRes] = await Promise.all([
-        requestedArchiveState === 'active' ? api.listScenarios(projectId) : api.listScenarios(projectId, requestedArchiveState),
+        api.listScenarios(projectId, 'all'),
         api.listScripts(projectId, undefined, { archiveState: 'all' }),
         api.listDataPools(projectId),
         api.listLoadModelTemplates({ project_id: projectId }),
@@ -1300,7 +1315,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       if (requestGeneration !== refreshGenerationRef.current || currentProjectIdRef.current !== projectId) return
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
-      setScenarios(nextScenarios)
+      setAllScenarios(nextScenarios)
+      setScenariosLoadedFor(projectId)
       setScripts(nextScripts)
       setDataPools(dataPoolRes.data_pools || [])
       setLoadModelTemplates(templateRes.templates || [])
@@ -1319,7 +1335,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
   }, [activeProjectId, api])
 
-  useEffect(() => { void refresh() }, [featurePolicySignal, refresh, archiveState])
+  useEffect(() => { void refresh() }, [featurePolicySignal, refresh])
 
   useEffect(() => {
     if (!featurePolicySignal) return
@@ -1507,6 +1523,17 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     () => showLocalScenarios ? sorted.map(scenario => scenario.id) : [],
     [showLocalScenarios, sorted],
   )
+  // Names shared by more than one saved scenario: their rows say so and show the reference.
+  const scenarioNameCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const scenario of scenarios) counts.set(scenarioNameKey(scenario.name), (counts.get(scenarioNameKey(scenario.name)) || 0) + 1)
+    return counts
+  }, [scenarios])
+  const duplicateScenarioName = (scenario: StoredScenario) => (scenarioNameCounts.get(scenarioNameKey(scenario.name)) || 0) > 1
+  // The library's filters that fold behind its Filters toggle, and how many are set.
+  const scenarioFilterCount = [archiveState !== 'active', assignedApplicationFilter !== 'all', assignedReleaseFilter !== 'all', scenarioReleaseFilter !== 'all'].filter(Boolean).length
+  // Nothing saved yet and nothing narrowing the list.
+  const scenarioLibraryEmpty = scenariosLoadedFor === activeProjectId && scenarios.length === 0 && federationRemoteScenarioRows.length === 0 && scenarioFilterCount === 0 && !scenarioQuery.trim()
   const scenarioPagination = useLibraryPagination(visibleScenarioIds.length + federationRemoteScenarioRows.length, JSON.stringify([activeProjectId, visibleScenarioIds, federationRemoteScenarioRows.map(item => item.id)]), filterScope)
   const pageScenarios = showLocalScenarios ? sorted.slice(scenarioPagination.start, scenarioPagination.end) : []
   // Every library row is local unless a remote workspace contributes rows, so the Source column only appears then.
@@ -3086,7 +3113,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     try {
       await api.deleteScenario(id, scenarios.find(scenario => scenario.id === id)?.updated_at)
       if (currentProjectIdRef.current !== scopeProjectId) return
-      setScenarios(current => current.filter(scenario => scenario.id !== id))
+      setAllScenarios(current => current.filter(scenario => scenario.id !== id))
       setSelectedScenarioIds(current => {
         const next = new Set(current)
         next.delete(id)
@@ -3140,7 +3167,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
       : [])
     const deleted = new Set(deletedIds)
-    setScenarios(current => current.filter(scenario => !deleted.has(scenario.id)))
+    setAllScenarios(current => current.filter(scenario => !deleted.has(scenario.id)))
     setSelectedScenarioIds(current => {
       const next = new Set(current)
       deletedIds.forEach(id => next.delete(id))
@@ -3646,12 +3673,19 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     </>
   )
 
+  // A name another saved scenario already uses: saving is still allowed, but
+  // the library would show two rows the author cannot tell apart.
+  const nameTakenBy = form.name.trim() ? allScenarios.find(scenario => !scenario.archived_at && scenario.id !== editingId && scenarioNameKey(scenario.name) === scenarioNameKey(form.name)) : undefined
   const renderScenarioNameField = () => (
     <div className="settings-grid scenario-core-grid">
-      <label className="scenario-field">
-        <span>Scenario name</span>
-        <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
-      </label>
+      {/* The note sits outside the label so it describes the field rather than naming it. */}
+      <div className="scenario-field">
+        <label className="scenario-field">
+          <span>Scenario name</span>
+          <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" aria-describedby={nameTakenBy ? 'scenario-name-taken' : undefined} />
+        </label>
+        {nameTakenBy && <small id="scenario-name-taken" className="scenario-field-warning">Another scenario here is already named {nameTakenBy.name}{nameTakenBy.ref_key ? ` (${nameTakenBy.ref_key})` : ''}. Give this one a different name to tell them apart.</small>}
+      </div>
     </div>
   )
 
@@ -3714,13 +3748,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         >
                           <td className="cell-name">
                             <div>{scenario.name}</div>
-                            <ScenarioNameMeta scenario={scenario}>
+                            <ScenarioNameMeta scenario={scenario} duplicateName={duplicateScenarioName(scenario)}>
                               <div><dt>Run releases</dt><dd>{releaseList(scenario)}</dd></div>
                               <div><dt>Updated</dt><dd>{formatDate(scenario.updated_at || scenario.created_at)}</dd></div>
                             </ScenarioNameMeta>
                           </td>
                           <td aria-label="Scenario workload">
-                            <ScenarioWorkloadSummary scenario={scenario} scriptsNeedReview={scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked)} />
+                            <ScenarioWorkloadSummary scenario={scenario} shapeName={shapeNameById.get(scenarioShapeId(scenario)) || scenarioShapeId(scenario)} scriptsNeedReview={scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked)} />
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <button
@@ -4686,7 +4720,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       {assignmentNotice && <p role="status">{assignmentNotice}</p>}
       {assignmentScenarios && activeProjectId && canManageTests && <LibraryAssignmentDialog key={activeProjectId} projectId={activeProjectId} kind="scenarios" items={assignmentScenarios} onClose={() => setAssignmentScenarios(null)} onBusy={ids => setAssigningScenarioIds(new Set(ids))} onResult={(values, notice) => {
         refreshGenerationRef.current += 1
-        setScenarios(current => current.map(scenario => values.has(scenario.id) ? { ...scenario, library_assignment: values.get(scenario.id) } : scenario))
+        setAllScenarios(current => current.map(scenario => values.has(scenario.id) ? { ...scenario, library_assignment: values.get(scenario.id) } : scenario))
         setSelectedScenarioIds(current => new Set([...current].filter(id => !values.has(id))))
         setAssignmentNotice(notice)
         void refresh()
@@ -4705,7 +4739,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         </div>
       )}
 
-      {!showForm && !showPlans && <label>Scenario archive state <select className="settings-input" value={archiveState} onChange={event => setArchiveState(event.target.value as typeof archiveState)}><option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option></select></label>}
       {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">{error}</div>}
       {savedNotice && <p className="scenario-save-notice" role="status">{savedNotice}</p>}
 
@@ -4895,14 +4928,17 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       <div className="page-section">
         <LibraryFederationControls
           kind="scenario"
-            filtersActive={assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || Boolean(scenarioQuery.trim()) || scenarioReleaseFilter !== 'all' || scenarioFederation.sourceFilter !== 'all'}
-          onResetFilters={() => { setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setScenarioQuery(''); setScenarioReleaseFilter('all'); scenarioFederation.setSourceFilter('all') }}
+            filtersActive={scenarioFilterCount > 0 || Boolean(scenarioQuery.trim()) || scenarioFederation.sourceFilter !== 'all'}
+          onResetFilters={() => { setArchiveState('active'); setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setScenarioQuery(''); setScenarioReleaseFilter('all'); scenarioFederation.setSourceFilter('all') }}
+          filterCount={scenarioFilterCount}
           primaryAction={canManageTests && <button className="btn btn-primary" onClick={openCreate}>Create scenario</button>}
           federation={scenarioFederation}
           projectName={activeProject?.name}
           onConfigureRemotes={openRemoteSettings}
           summaryText={`${scenarioPagination.total} matching scenario${scenarioPagination.total === 1 ? '' : 's'} · Project library across applications and releases.`}
-          searchControl={(<label className="project-redaction-rule-field">
+          // An empty library has nothing to search: its toolbar is the Source,
+          // Filters (for archived scenarios) and Create.
+          searchControl={scenarioLibraryEmpty ? undefined : (<label className="project-redaction-rule-field">
                 <span>Search scenarios</span>
                 <input
                   className="settings-input"
@@ -4914,6 +4950,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               </label>)}
             filterControls={(
             <>
+              <label className="project-redaction-rule-field">
+                <span>Scenario archive state</span>
+                <select className="settings-input" value={archiveState} onChange={event => setArchiveState(event.target.value as typeof archiveState)}><option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option></select>
+              </label>
               <LibraryAssignmentFilters items={scenarios} application={assignedApplicationFilter} release={assignedReleaseFilter} onApplication={setAssignedApplicationFilter} onRelease={setAssignedReleaseFilter} />
               <label className="project-redaction-rule-field">
                 <span>Run release</span>
@@ -4956,7 +4996,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               </button>
             </BulkActions>
         )}
-        <LibraryPagination label="Scenario library" pagination={scenarioPagination} />
+        {/* Ten or fewer scenarios fit on any page; the pager would only take room. */}
+        {scenarioPagination.total > 10 && <LibraryPagination label="Scenario library" pagination={scenarioPagination} />}
         <div className="data-table scenario-library-table" role="region" aria-label="Scenario catalog" tabIndex={0}>
           <table data-table-pagination="off">
             <thead>
@@ -4974,7 +5015,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 {showScenarioSource && <th>Source</th>}
                 <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <SortHeader label="Workload" field="scripts" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
-                <th>Assignment</th>
+                <th>
+                  {/* Assignment files a scenario under an application and releases; it is not where it ran. */}
+                  <span className="scenario-library-th-help">Assignment<InfoPopover label="About assignment" title="Assignment" triggerClassName="script-health-token script-info-badge" trigger={<BadgeIcon kind="info" />}>
+                    <p>The application and releases this scenario is filed under, set with Change application/releases. A scenario can run in any release without being assigned to it; the releases it ran in are under Run releases.</p>
+                  </InfoPopover></span>
+                </th>
                 <SortHeader label="Run releases" field="associated_releases" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                 <SortHeader label="Updated" field="updated_at" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -4985,6 +5031,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 const syncStatus = scenarioFederation.syncStatusForLocal(scenario.id)
                 const hostItem = scenarioFederation.hostItemForLocal(scenario.id)
                 const conflict = syncStatus === 'conflict'
+                const viewRunsButton = <button className="btn btn-sm btn-ghost" onClick={(event) => {
+                  event.stopPropagation()
+                  void toggleScenarioRuns(scenario)
+                }}>{expandedScenarioId === scenario.id ? 'Hide runs' : 'View runs'}</button>
+                const editButton = <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} aria-label={`Edit ${scenario.name}`} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
                 return (
                 <Fragment key={scenario.id}>
                   <tr className={`clickable-row${selectedScenarioIds.has(scenario.id) ? ' selected' : ''}`} onClick={() => toggleScenarioRuns(scenario)}>
@@ -5005,28 +5056,27 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     </td>}
                     <td className="cell-name">
                       <div>{scenario.name}</div>
-                      <ScenarioNameMeta scenario={scenario} />
+                      <ScenarioNameMeta scenario={scenario} duplicateName={duplicateScenarioName(scenario)} />
                     </td>
                     <td aria-label="Scenario workload">
-                      <ScenarioWorkloadSummary scenario={scenario} scriptsNeedReview={scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked)} />
+                      <ScenarioWorkloadSummary scenario={scenario} shapeName={shapeNameById.get(scenarioShapeId(scenario)) || scenarioShapeId(scenario)} scriptsNeedReview={scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked)} />
                     </td>
                     <td aria-label="Assignment">{assignmentSummary(scenario.library_assignment)}</td>
                     <td aria-label="Scenario releases">
                       <ScenarioUsageSummary scenario={scenario} />
                     </td>
                     <td className="cell-muted">{formatDate(scenario.updated_at || scenario.created_at)}</td>
+                    {/* One action in the row (New run, or Edit where runs are not started
+                        here); the rest wait in More, as in the scripts library. */}
                     <td className="library-row-actions-cell" style={{ textAlign: 'right' }}>
-                      <button className="btn btn-sm btn-secondary" onClick={(event) => {
-                        event.stopPropagation()
-                        void toggleScenarioRuns(scenario)
-                      }}>{expandedScenarioId === scenario.id ? 'Hide runs' : 'View runs'}</button>
                       {canManageTests ? (
                         <>
-                          {onCreateTestFromScenario && (
-                            <button className="btn btn-sm btn-secondary" disabled={!!scenario.archived_at} aria-label={`New run from ${scenario.name}`} onClick={(event) => { event.stopPropagation(); onCreateTestFromScenario(scenario.id) }}>New run</button>
-                          )}
-                          <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} aria-label={`Edit ${scenario.name}`} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
+                          {onCreateTestFromScenario
+                            ? <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at} aria-label={`New run from ${scenario.name}`} onClick={(event) => { event.stopPropagation(); onCreateTestFromScenario(scenario.id) }}>New run</button>
+                            : editButton}
                           <RowActions className="scenario-more-actions" label={scenario.name}>
+                          {viewRunsButton}
+                          {onCreateTestFromScenario && editButton}
                           {([['run', 'Edit run settings'], ['data', 'Edit data']] as const).map(([step, label]) => (
                             <button key={step} className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario, step) }}>{label}</button>
                           ))}
@@ -5035,7 +5085,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                           <ObjectArchiveControls inMenu resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
                           <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); void requestDeleteScenario(scenario) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
                           <button
-                            className="btn btn-sm btn-secondary"
+                            className="btn btn-sm btn-ghost"
                             onClick={(event) => { event.stopPropagation(); void scenarioFederation.pushLocalItem({ kind: 'scenario', id: scenario.id, name: scenario.name }) }}
                             disabled={scenarioFederation.actionBlocked || conflict}
                             aria-describedby={conflict || (scenarioFederation.actionBlocked && scenarioFederation.actionBlockedReason) ? `push-blocked-${scenario.id}` : undefined}
@@ -5045,9 +5095,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                             <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); void scenarioFederation.compareItems(scenario.id, hostItem) }}>Compare</button>
                           )}</RowActions>
                         </>
-                      ) : (
-                        <span className="cell-muted">Read-only</span>
-                      )}
+                      ) : <>{viewRunsButton}<span className="cell-muted">Read-only</span></>}
                     </td>
                   </tr>
                   {expandedScenarioId === scenario.id && (
@@ -5107,7 +5155,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
                   <td colSpan={scenarioColumnCount} className="cell-muted">
-                    {assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
+                    {scenarioFilterCount > 0 || scenarioQuery.trim() ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>
               )}

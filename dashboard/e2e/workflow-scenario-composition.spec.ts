@@ -1,4 +1,4 @@
-import { test, expect, seedScript, login, json, idOf } from './support/workflow'
+import { test, expect, seedScript, login, json, idOf, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('scenario composition combines group editing with a live preview', async ({ page }, testInfo) => {
@@ -117,7 +117,7 @@ test('scenario rename and reopen retain Results, WebSocket, named shape and grou
   const original = await json(await request.get(`/api/v1/scenarios/${scenario}`))
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Fidelity original' }).getByRole('button', { name: /^Edit\b/ }).click()
+  await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Fidelity original' }), 'Fidelity original')
   await page.getByPlaceholder('Scenario name').fill('Fidelity renamed only')
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
@@ -134,7 +134,7 @@ test('scenario rename and reopen retain Results, WebSocket, named shape and grou
   expect(stored.workload_shape_id).toBe('closed-vuser')
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Fidelity renamed only' }).getByRole('button', { name: /^Edit\b/ }).click()
+  await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Fidelity renamed only' }), 'Fidelity renamed only')
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Fidelity renamed only')
   await testInfo.attach('canonical-scenario-fidelity', { body: JSON.stringify({ original, submitted: sent, reopened: stored }, null, 2), contentType: 'application/json' })
 })
@@ -151,7 +151,7 @@ test('changing a saved workload shape retains the authored root SLA and rules', 
   await testInfo.attach('original-shape-guardrails', { body: JSON.stringify(original, null, 2), contentType: 'application/json' })
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Shape guardrail source' }).getByRole('button', { name: /^Edit\b/ }).click()
+  await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Shape guardrail source' }), 'Shape guardrail source')
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Model & shape/ }).click()
   await page.getByRole('button', { name: /^Stepped Ramp/ }).click()
   await page.getByRole('button', { name: 'Use Stepped Ramp', exact: true }).click()
@@ -182,7 +182,7 @@ test('changing a saved workload shape retains the authored root SLA and rules', 
   expect(reopened.scripts).toMatchObject([{ script_id: script, vusers: 14, initialization: 'at_once', transaction_response_time_sla_ms: 1250 }])
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Shape guardrail source' }).getByRole('button', { name: /^Edit\b/ }).click()
+  await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Shape guardrail source' }), 'Shape guardrail source')
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run settings/ }).click()
   await expect(page.getByRole('spinbutton', { name: 'Ending load level VUsers', exact: true })).toHaveValue('14')
   expect(target.count()).toBe(0)

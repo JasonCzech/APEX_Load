@@ -580,9 +580,17 @@ its recommended variant, another variant can be picked instead, and **Next** mov
 Goal-Driven asks for its targets in a sizing dialog, and Traffic Profile for its
 demand source. **Run settings** has one row of tabs for target load, ramp pattern, run
 phases, advanced settings, the browser and script runtime, and generator assignment;
-then come **Data** and **Review**. **Edit** opens a saved scenario at Start, and the
-row's **Edit run settings** and **Edit data** open it at those steps. Every step it
-has been through is marked done, and **Save draft** is on every step.
+then come **Data** and **Review**. Every step it has been through is marked done,
+and **Save draft** is on every step. The builder warns, without stopping you, when
+another scenario already has the name you type.
+
+The scenario library has one row of controls: search, **Source**, and **Filters**,
+which hold the archive state and the application and release filters (it shows how
+many are set). Each row's action is **New run**; **More** holds **View runs** (or
+click the row), **Edit**, which opens the scenario at Start, **Edit run settings** and
+**Edit data**, which open it at those steps, and the rest. The **Workload** column
+names each scenario's load model, and a name two scenarios share is marked
+**Duplicate name** with each one's reference beside it.
 
 A scenario brings together:
 

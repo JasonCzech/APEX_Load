@@ -35,7 +35,7 @@ function resultCount(scenario: StoredScenario) {
  * placement, browser settings, data pools) plus short tokens for what changes
  * how it runs. children adds rows to the info badge's details.
  */
-export function ScenarioNameMeta({ scenario, children }: { scenario: StoredScenario; children?: ReactNode }) {
+export function ScenarioNameMeta({ scenario, duplicateName = false, children }: { scenario: StoredScenario; duplicateName?: boolean; children?: ReactNode }) {
   const hosts = hostTargets(scenario)
   const browser = formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)
   const pools = dataPoolList(scenario)
@@ -47,17 +47,24 @@ export function ScenarioNameMeta({ scenario, children }: { scenario: StoredScena
       {children}
     </ObjectInfoBadge>
     {scenario.archived_at && <span className="script-health-token">Archived</span>}
+    {/* Two rows with one name: say so, and show the reference that tells them apart. */}
+    {duplicateName && <span className="script-health-token warning" title="Another scenario in this project has the same name.">Duplicate name</span>}
+    {duplicateName && scenario.ref_key && <span className="script-health-token script-version-token" title="Reference">{scenario.ref_key}</span>}
     {hosts && <span className="script-health-token" title={`Specific hosts: ${hosts}`}>Specific Hosts</span>}
     {browser && <span className="script-health-token" title={`Browser: ${browser}`}>Browser</span>}
   </div>
 }
 
-/** The workload at a glance: scripts and duration, peak VUsers and model, plus badges for data pools and scripts that need review. */
-export function ScenarioWorkloadSummary({ scenario, scriptsNeedReview }: { scenario: StoredScenario; scriptsNeedReview: boolean }) {
+/**
+ * The workload at a glance: scripts and duration, peak VUsers and model, plus badges for data pools and scripts that need review.
+ * shapeName is the load model's name, or its ID when the catalog has no name for it.
+ */
+export function ScenarioWorkloadSummary({ scenario, shapeName, scriptsNeedReview }: { scenario: StoredScenario; shapeName?: string; scriptsNeedReview: boolean }) {
   const poolCount = scenario.data_pools?.length || 0
   return <div className="scenario-table-workload">
     <strong>{scenarioScripts(scenario)} · {scenario.duration}</strong>
-    <span title="Sum of each group's peak VUsers">{peakVUsers(scenario)} VUsers · {scenario.workload_shape_id || 'Custom model'}</span>
+    {/* The load model by its name; an ID shows only if the catalog has none for it. */}
+    <span title="Sum of each group's peak VUsers">{peakVUsers(scenario)} VUsers · {shapeName || 'Custom model'}</span>
     {(poolCount > 0 || scriptsNeedReview) && <span className="script-health-badges">
       {poolCount > 0 && <span className="script-health-token" title={`Data pools: ${dataPoolList(scenario)}`}>{poolCount} data {poolCount === 1 ? 'pool' : 'pools'}</span>}
       {scriptsNeedReview && <span className="script-health-token script-health-badge static danger" title="A script in this scenario has authoring blockers. Resolve them in script review before creating a run."><BadgeIcon kind="ban" />Script review required</span>}

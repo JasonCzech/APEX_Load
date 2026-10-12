@@ -1,4 +1,4 @@
-import { expect, test as base, type Page, type APIRequestContext, type APIResponse, type Response } from '@playwright/test'
+import { expect, test as base, type Page, type Locator, type APIRequestContext, type APIResponse, type Response } from '@playwright/test'
 import { createServer } from 'node:http'
 import { type AddressInfo } from 'node:net'
 import { type Workspace } from './workspace'
@@ -288,3 +288,15 @@ export const test = base.extend<WorkflowFixtures>({
   }, { auto: true, timeout: 30_000 }],
 })
 export { expect } from '@playwright/test'
+
+/** Opens a library's filters, which fold behind its Filters toggle, if they are closed. */
+export async function showLibraryFilters(page: Page) {
+  const toggle = page.locator('.ux-library-filters-toggle')
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+}
+
+/** Opens a scenario for editing from its library row, where Edit sits in the More menu. */
+export async function editScenarioFromRow(row: Locator, name: string) {
+  await row.getByRole('button', { name: /^More actions for/ }).click()
+  await row.getByRole('button', { name: `Edit ${name}`, exact: true }).click()
+}

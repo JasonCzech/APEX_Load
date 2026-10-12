@@ -1,4 +1,4 @@
-import { test, expect, json, idOf, login, seedScript, seedScenario, signOut } from './support/workflow'
+import { test, expect, json, idOf, login, seedScript, seedScenario, signOut, showLibraryFilters } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('Library assignments persist, bulk failures recover, and launches start at the workspace release they are assigned to', async ({ page }, testInfo) => {
@@ -30,6 +30,7 @@ test('Library assignments persist, bulk failures recover, and launches start at 
   await expect(dialog).toBeHidden()
   await page.reload()
   await expect(row.locator('[aria-label="Assignment"]')).not.toHaveText('Unassigned')
+  await showLibraryFilters(page)
   await page.getByLabel('Assigned application', { exact: true }).selectOption(workspace.applicationId)
   await expect(page.locator('.scripts-library-table tbody tr').filter({ hasText: 'Assigned_Second' })).toHaveCount(0)
   await page.getByLabel('Assigned application', { exact: true }).selectOption('all')

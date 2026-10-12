@@ -1049,7 +1049,7 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1', 'all')
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1', undefined, { archiveState: 'all' })
     expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1')
     expect(apiMock.listLoadModelTemplates).toHaveBeenCalled()
@@ -2470,7 +2470,7 @@ describe('TestHub', () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
     })
     await flushPromises()
-    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-a')
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-a', 'all')
 
     await act(async () => {
       projectState.activeProject = { id: 'project-b', name: 'Project B', created_at: '', updated_at: '' }
@@ -2478,7 +2478,7 @@ describe('TestHub', () => {
     })
     await flushPromises()
 
-    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-b')
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-b', 'all')
     expect(container.textContent).toContain('Project B Scenario')
 
     await act(async () => {
@@ -3984,6 +3984,83 @@ describe('TestHub', () => {
     const cells = Array.from(container.querySelectorAll('.scenario-group-vusers'))
     expect(cells.map(cell => cell.querySelector('strong')?.textContent)).toEqual(['Auto', '3'])
     expect(cells[0].getAttribute('title')).toBe('Sized from the traffic profile on the Run settings step')
+  })
+
+  it('keeps the scenario library to one toolbar row, one row action and rows that tell apart', async () => {
+    const scenario = (id: string, ref: string, shape?: string): StoredScenario => ({ id, ref_key: ref, name: 'Checkout peak hour', duration: '5m', workload_shape_id: shape, scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 })
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [scenario('a', 'SCN-0001', 'closed-vuser'), scenario('b', 'SCN-0002')], count: 2 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} onCreateTestFromScenario={vi.fn()} initialView="library" />))
+    await flushPromises()
+
+    // The archive state and assignment filters fold behind Filters; two scenarios need no pager.
+    const filters = container.querySelector<HTMLElement>('.ux-library-filter-fields')!
+    expect(filters.hidden).toBe(true)
+    expect(filters.querySelector('select')?.closest('label')?.textContent).toContain('Scenario archive state')
+    expect(container.querySelector('.ux-library-filters-toggle')?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.library-pagination')).toBeNull()
+
+    const rows = Array.from(container.querySelectorAll('.scenario-library-table tbody tr'))
+    // One action in the row; View runs, Edit and the rest are in More.
+    const cell = rows[0].querySelector('.library-row-actions-cell')!
+    expect(Array.from(cell.querySelectorAll(':scope > button')).map(button => button.textContent)).toEqual(['New run'])
+    const more = Array.from(cell.querySelectorAll('.scenario-more-actions button')).map(button => button.textContent)
+    expect(more).toEqual(expect.arrayContaining(['View runs', 'Edit', 'Edit run settings', 'Edit data', 'Duplicate']))
+    // The load model by name, and a shared name flagged with the reference that tells the rows apart.
+    expect(rows[0].textContent).toContain('Closed VUser')
+    expect(rows[0].textContent).not.toContain('closed-vuser')
+    expect(rows[0].textContent).toContain('Duplicate name')
+    expect(rows[0].textContent).toContain('SCN-0001')
+    expect(rows[1].textContent).toContain('SCN-0002')
+    // Assignment says what it is.
+    expect(container.querySelector('.scenario-library-table thead button[aria-label="About assignment"]')).not.toBeNull()
+  })
+
+  it('filters archived scenarios in the library and checks names against every active one', async () => {
+    const active = { id: 'live', ref_key: 'SCN-0001', name: 'Checkout replay', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], traffic_profile: { version: 1, runtime_target: 'tps', interpolation: 'step', source_duration: '5m', target_duration: '5m', mappings: [] }, created_at: '', updated_at: '', script_count: 1 } as unknown as StoredScenario
+    const archived: StoredScenario = { id: 'old', ref_key: 'SCN-0002', name: 'Old checkout', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], archived_at: '2026-10-01T00:00:00Z', created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [active, archived], count: 2 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    const rowText = () => Array.from(container.querySelectorAll('.scenario-library-table tbody tr')).map(row => row.textContent || '')
+    // A scenario with only a traffic profile is production replay, named by the catalog.
+    expect(rowText()).toHaveLength(1)
+    expect(rowText()[0]).toContain('Checkout replay')
+    expect(rowText()[0]).toContain('Production Traffic Profile')
+    expect(rowText()[0]).not.toContain('Custom model')
+
+    const archiveFilter = Array.from(container.querySelectorAll<HTMLSelectElement>('.ux-library-filter-fields select')).find(select => select.closest('label')?.textContent?.includes('Scenario archive state'))!
+    await act(async () => setSelectValue(archiveFilter, 'archived'))
+    expect(rowText()).toHaveLength(1)
+    expect(rowText()[0]).toContain('Old checkout')
+    // An archive filter that hides everything is a filter, not an empty library.
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [active], count: 1 })
+    await clickButton('Refresh')
+    await flushPromises()
+    expect(container.textContent).toContain('No scenarios match these filters.')
+    expect(container.querySelector('input[placeholder="Find scenarios, scripts, or data pools…"]')).not.toBeNull()
+
+    // Creating from the archived view still checks against the active scenarios.
+    await clickButton('Create scenario')
+    await flushPromises()
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!
+    await act(async () => setInputValue(name, 'Checkout replay'))
+    expect(container.querySelector('#scenario-name-taken')?.textContent).toContain('already named Checkout replay (SCN-0001)')
+  })
+
+  it('warns in the builder when another scenario already has the name', async () => {
+    const stored: StoredScenario = { id: 'taken', ref_key: 'SCN-0042', name: 'Checkout peak hour', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!
+    await act(async () => setInputValue(name, '  checkout PEAK hour '))
+    const warning = container.querySelector('#scenario-name-taken')
+    expect(warning?.textContent).toBe('Another scenario here is already named Checkout peak hour (SCN-0042). Give this one a different name to tell them apart.')
+    expect(name.getAttribute('aria-describedby')).toBe('scenario-name-taken')
+    // The note describes the field; it is not part of its name.
+    expect(name.closest('label')?.textContent).toBe('Scenario name')
+    await act(async () => setInputValue(name, 'Checkout off-peak'))
+    expect(container.querySelector('#scenario-name-taken')).toBeNull()
   })
 
   it('only enables adding another group after every existing group has a script', async () => {

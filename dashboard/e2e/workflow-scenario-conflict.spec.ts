@@ -1,4 +1,4 @@
-import { test, expect, seedScript, seedScenario, json, login, mutation } from './support/workflow'
+import { test, expect, seedScript, seedScenario, json, login, mutation, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import type { Page } from '@playwright/test'
 
@@ -25,7 +25,7 @@ test('two scenario editors reconcile a stale save without losing either change',
       await editor.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
       if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await editor.reload()
       const read = editor.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/scenarios/${id}`)
-      await editor.locator('.scenario-library-table').getByRole('row').filter({ hasText: name }).getByRole('button', { name: /^Edit\b/ }).click()
+      await editScenarioFromRow(editor.locator('.scenario-library-table').getByRole('row').filter({ hasText: name }), name)
       expect((await read).headers().etag).toBe(initialTag)
       await expect(editor.getByPlaceholder('Scenario name')).toHaveValue(name)
     }

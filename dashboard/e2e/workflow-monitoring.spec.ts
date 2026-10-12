@@ -1,4 +1,4 @@
-import { test, expect, json, login, seedScript, seedScenario, showAccountCard } from './support/workflow'
+import { test, expect, json, login, seedScript, seedScenario, showAccountCard, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import { abortLiveRun, startLiveRun } from './support/liveRun'
 
@@ -193,7 +193,7 @@ test('Scenario criteria retain invalid drafts across steps and require correctio
   })
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Criterion workflow' }).getByRole('button', { name: /^Edit\b/ }).click()
+  await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Criterion workflow' }), 'Criterion workflow')
   const steps = page.getByLabel('Scenario builder steps', { exact: true })
   await steps.getByRole('button', { name: /^Data/ }).click()
   const rules = page.getByRole('group', { name: 'Monitoring performance criteria', exact: true })

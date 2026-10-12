@@ -137,7 +137,7 @@ describe('TestHub build-from-goal', () => {
     }
     await click(Array.from(container.querySelectorAll('.scenario-wizard-step')).find(step => step.textContent?.includes('Model & shape')))
     await click(Array.from(container.querySelectorAll('.scenario-source-card')).find(card => card.querySelector('span')?.textContent === 'Goal-Driven'))
-    await click(findButton(container, 'Use Goal-Driven scenario'))
+    await click(findButton(container, 'Use Goal-Driven Scenario'))
   }
 
   it('opens Build from Goal in the guided worksheet and imports matching baseline ART', async () => {

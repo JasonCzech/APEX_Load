@@ -2585,3 +2585,8 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
   .scenario-group-table .scenario-group-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
   .scenario-group-table .scenario-group-actions { align-items: flex-start; }
 }
+
+/* A non-blocking note under a field, such as a name another scenario uses. */
+.scenario-field-warning { color: var(--warning-text); font-size: 12px; }
+/* A column header with a help badge beside it. */
+.scenario-library-th-help { display: inline-flex; align-items: center; gap: 6px; }

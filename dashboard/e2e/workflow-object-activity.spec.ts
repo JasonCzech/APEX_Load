@@ -1,4 +1,4 @@
-import { test, expect, seedScript, seedScenario, json, login, signOut } from './support/workflow'
+import { test, expect, seedScript, seedScenario, json, login, signOut, showLibraryFilters } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import type { Locator } from '@playwright/test'
 
@@ -29,6 +29,7 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   await expect(row).toBeVisible()
   await rowMenuAction(row, /^Archive\b/)
   await expect(row).toHaveCount(0)
+  await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('archived')
   await expect(row).toContainText('Archived')
   const blocked = await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, scenario_id: scenarioId, name: 'Must be blocked', duration: '1s', groups: [{ name: 'orders', script_id: scriptId, vusers: 1 }] } })
@@ -37,8 +38,10 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   await expect(page.getByRole('alert').filter({ hasText: 'blocks execution' })).toContainText(name)
   await expect(page.getByRole('button', { name: 'Start Now', exact: true })).toBeDisabled()
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`)
+  await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('archived')
   await rowMenuAction(row, /^Restore\b/)
+  await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('active'); await expect(row).toBeVisible()
   const current = await json(await request.get(`/api/v1/scripts/${scriptId}`))
   expect(current.activity).toBeTruthy()
@@ -46,6 +49,7 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   const scenarioRow = page.getByRole('row').filter({ hasText: `${name} scenario` })
   await rowMenuAction(scenarioRow, /^Archive\b/)
   await expect(scenarioRow).toHaveCount(0)
+  await showLibraryFilters(page)
   await page.getByLabel('Scenario archive state').selectOption('archived')
   await expect(scenarioRow).toContainText('Archived')
   await rowMenuAction(scenarioRow, /^Restore\b/)

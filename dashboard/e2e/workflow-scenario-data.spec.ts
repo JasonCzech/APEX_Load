@@ -1,4 +1,4 @@
-import { test, expect, json, login, seedScript, idOf } from './support/workflow'
+import { test, expect, json, login, seedScript, idOf, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('scenario Data step previews script parameters and restores them after removing a shared pool', async ({ page }, testInfo) => {
@@ -62,7 +62,7 @@ test('scenario save and reopen preserves both bindings and attaching another poo
  const scenario=idOf(await json(await request.post('/api/v1/scenarios',{data:{project_id:workspace.projectId,name:'Pool parity',duration:'1m',groups:[{name:'Load',script_id:script,vusers:1,initialization:'at_runtime'}],data_pools:bindings}})))
  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
  await page.reload()
- await page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}).getByRole('button',{name:/^Edit\b/}).click()
+ await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}),'Pool parity')
  const steps=page.getByLabel('Scenario builder steps')
  await steps.getByRole('button',{name:/^Data/}).click()
  await expect(page.getByLabel('Pool Alias')).toHaveCount(2)
@@ -84,7 +84,7 @@ test('scenario save and reopen preserves both bindings and attaching another poo
  expect(stored.data_pools).toEqual(expect.arrayContaining(bindings.map(binding=>expect.objectContaining(binding))))
  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
  await page.reload()
- await page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}).getByRole('button',{name:/^Edit\b/}).click()
+ await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({hasText:'Pool parity'}),'Pool parity')
  await page.getByLabel('Scenario builder steps').getByRole('button',{name:/^Data/}).click()
  await expect(page.getByLabel('Pool Alias')).toHaveCount(3)
  expect(await page.getByLabel('Pool Alias').evaluateAll(inputs=>inputs.map(input=>(input as HTMLInputElement).value))).toEqual(['addresses','customers','orders'])
@@ -135,7 +135,7 @@ test('legacy browser checkpoint migrates a first-pool replacement through save a
  await expect(row).toBeVisible()
  await page.reload()
  await expect(row).toBeVisible()
- await row.getByRole('button', { name: /^Edit\b/ }).click()
+ await editScenarioFromRow(row, 'Legacy pool migration')
  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Data/ }).click()
  await expect(page.getByLabel('Pool Alias')).toHaveCount(2)
  expect(await page.getByLabel('Pool Alias').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(['orders', 'replacement'])

@@ -1214,6 +1214,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
             kind="script"
             filtersActive={archiveState !== 'active' || assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || Boolean(libraryQuery.trim()) || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' || federation.sourceFilter !== 'all'}
             onResetFilters={() => { setArchiveState('active'); setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setLibraryQuery(''); setHealthFilter('all'); setReleaseFilter('all'); setFolderFilter('all'); federation.setSourceFilter('all') }}
+            filterCount={[archiveState !== 'active', assignedApplicationFilter !== 'all', assignedReleaseFilter !== 'all', releaseFilter !== 'all', folderFilter !== 'all'].filter(Boolean).length}
             primaryAction={canManageScripts && <button className="btn btn-primary" type="button" onClick={openCreateOptions}>Create script</button>}
             federation={federation}
             projectName={activeProject?.name}
