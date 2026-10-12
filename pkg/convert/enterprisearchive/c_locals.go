@@ -31,19 +31,22 @@ const (
 var (
 	cLocalDeclarationRe       = regexp.MustCompile(`^int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*;?$`)
 	cLocalAssignmentRe        = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*;?$`)
-	cLocalDeclarationsRe      = regexp.MustCompile(`\bint\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*-?\d+\s*;`)
 	cLocalIntegerLiteralValue = regexp.MustCompile(`^\s*-?\d+\s*$`)
 )
 
 // cLocalCandidates returns the names declared exactly once as `int NAME =
 // <integer>;` whose every write in content is a literal assignment. The AST
 // walk still requires the declaration to sit inside a function.
+//
+// The scans below are linear passes over code, written out by hand. As
+// regexps (\bint\s+NAME\s*=\s*-?\d+\s*; and the write patterns in
+// cLocalHasOtherWrites) each began with \b, which leaves no literal prefix
+// to search for, so every pattern stepped through every byte of the source,
+// once per local. On a multi-megabyte preprocessed source that cost more than
+// the C parse itself. The tests keep those regexps as the oracle.
 func cLocalCandidates(content string) map[string]bool {
 	code := cCodeOnly(content)
-	declared := map[string]int{}
-	for _, match := range cLocalDeclarationsRe.FindAllStringSubmatch(code, -1) {
-		declared[match[1]]++
-	}
+	declared := cLocalDeclarationCounts(code)
 	candidates := map[string]bool{}
 	for name, count := range declared {
 		if count == 1 && !cLocalHasOtherWrites(code, name) {
@@ -53,29 +56,122 @@ func cLocalCandidates(content string) map[string]bool {
 	return candidates
 }
 
+// cLocalDeclarationCounts counts each `int NAME = <integer>;` in code.
+func cLocalDeclarationCounts(code string) map[string]int {
+	declared := map[string]int{}
+	for index := 0; index < len(code); {
+		if !isCIdentifierContinue(code[index]) {
+			index++
+			continue
+		}
+		end := cLocalWordEnd(code, index)
+		if code[index:end] == "int" {
+			if name, next, ok := cLocalDeclarationAfterInt(code, end); ok {
+				declared[name]++
+				index = next
+				continue
+			}
+		}
+		index = end
+	}
+	return declared
+}
+
+// cLocalDeclarationAfterInt matches `\s+NAME\s*=\s*-?\d+\s*;` at index, just
+// past an `int` word, and returns NAME and the index past the semicolon.
+func cLocalDeclarationAfterInt(code string, index int) (string, int, bool) {
+	start := cLocalSkipSpace(code, index)
+	if start == index || start == len(code) || !isCIdentifierStart(code[start]) {
+		return "", 0, false
+	}
+	end := cLocalWordEnd(code, start)
+	index = cLocalSkipSpace(code, end)
+	if index == len(code) || code[index] != '=' {
+		return "", 0, false
+	}
+	index = cLocalSkipSpace(code, index+1)
+	if index < len(code) && code[index] == '-' {
+		index++
+	}
+	digits := index
+	for index < len(code) && code[index] >= '0' && code[index] <= '9' {
+		index++
+	}
+	if index == digits {
+		return "", 0, false
+	}
+	index = cLocalSkipSpace(code, index)
+	if index == len(code) || code[index] != ';' {
+		return "", 0, false
+	}
+	return code[start:end], index + 1, true
+}
+
+// cLocalHasOtherWrites reports whether code writes name other than through a
+// literal assignment statement: NAME++ / ++NAME (and --), NAME op= for the
+// compound operators, &NAME (not &&NAME), or NAME = anything else.
 func cLocalHasOtherWrites(code, name string) bool {
-	quoted := regexp.QuoteMeta(name)
-	for _, pattern := range []string{
-		`\b` + quoted + `\s*(\+\+|--)`,
-		`(\+\+|--)\s*` + quoted + `\b`,
-		`\b` + quoted + `\s*(<<|>>|[-+*/%&|^])=`,
-		`(^|[^&])&\s*` + quoted + `\b`,
-	} {
-		if regexp.MustCompile(pattern).MatchString(code) {
+	for from := 0; from < len(code); {
+		offset := strings.Index(code[from:], name)
+		if offset < 0 {
+			return false
+		}
+		start := from + offset
+		end := start + len(name)
+		// No identifier can start inside this match, so search on from its end.
+		from = end
+		if (start > 0 && isCIdentifierContinue(code[start-1])) || (end < len(code) && isCIdentifierContinue(code[end])) {
+			continue
+		}
+		before := start
+		for before > 0 && cLocalSpace(code[before-1]) {
+			before--
+		}
+		if before >= 2 && (code[before-2:before] == "++" || code[before-2:before] == "--") {
 			return true
 		}
-	}
-	for _, location := range regexp.MustCompile(`\b`+quoted+`\s*=`).FindAllStringIndex(code, -1) {
-		rest := code[location[1]:]
+		if before >= 1 && code[before-1] == '&' && (before == 1 || code[before-2] != '&') {
+			return true
+		}
+		rest := code[cLocalSkipSpace(code, end):]
+		if strings.HasPrefix(rest, "++") || strings.HasPrefix(rest, "--") || strings.HasPrefix(rest, "<<=") || strings.HasPrefix(rest, ">>=") {
+			return true
+		}
+		if len(rest) >= 2 && rest[1] == '=' && strings.IndexByte("-+*/%&|^", rest[0]) >= 0 {
+			return true
+		}
+		if !strings.HasPrefix(rest, "=") {
+			continue
+		}
+		rest = rest[1:]
 		if strings.HasPrefix(rest, "=") {
 			continue // NAME == value is a comparison
 		}
 		stop := strings.IndexAny(rest, ";),")
-		if stop < 0 || rest[stop] != ';' || !cLocalIntegerLiteralValue.MatchString(rest[:stop]) || !cLocalWriteIsStatement(code[:location[0]]) {
+		if stop < 0 || rest[stop] != ';' || !cLocalIntegerLiteralValue.MatchString(rest[:stop]) || !cLocalWriteIsStatement(code[:start]) {
 			return true
 		}
 	}
 	return false
+}
+
+// cLocalSpace matches the regexp class \s, which the scans above replace.
+func cLocalSpace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\f' || ch == '\r'
+}
+
+func cLocalSkipSpace(code string, index int) int {
+	for index < len(code) && cLocalSpace(code[index]) {
+		index++
+	}
+	return index
+}
+
+func cLocalWordEnd(code string, index int) int {
+	for index < len(code) && isCIdentifierContinue(code[index]) {
+		index++
+	}
+	return index
 }
 
 // cLocalWriteIsStatement reports whether a write starting after before is its

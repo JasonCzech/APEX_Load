@@ -3842,8 +3842,10 @@ func runtimeSectionHasNonBlankValue(section map[string]string, aliases ...string
 	return false
 }
 
+var compactRuntimeEnumReplacer = strings.NewReplacer("_", "", "-", "", " ", "")
+
 func compactRuntimeEnum(value string) string {
-	return strings.NewReplacer("_", "", "-", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(value)))
+	return compactRuntimeEnumReplacer.Replace(strings.ToLower(strings.TrimSpace(value)))
 }
 
 func runtimeCfgPacingSecondsToMS(rc *RuntimeConfig, field, raw string) (int, bool) {

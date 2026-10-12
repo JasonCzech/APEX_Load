@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -160,8 +161,8 @@ func TestRuntimeOperationAbsenceIsConservative(t *testing.T) {
 		{"mixed language", "http", map[string]string{"Action.c": `Action(){ return 0; }`, "custom.js": "execute();"}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stream, sync := runtimeSourceOperationsAbsent(tc.files, tc.protocol)
-			if stream != tc.stream || sync != tc.sync {
+			absent := runtimeSourceOperationsAbsentMatching(tc.files, nil, tc.protocol, "web_stream", "web_sync")
+			if stream, sync := absent[0], absent[1]; stream != tc.stream || sync != tc.sync {
 				t.Fatalf("absent=%v/%v want %v/%v", stream, sync, tc.stream, tc.sync)
 			}
 		})
@@ -177,6 +178,70 @@ func TestRuntimeOperationAbsenceIsConservative(t *testing.T) {
 			if row.Status != want {
 				t.Fatalf("%s %s=%#v want %s", operation, key, row, want)
 			}
+		}
+	}
+}
+
+func TestRuntimeOperationAbsenceInspectsCompiledSources(t *testing.T) {
+	const usr = "[General]\nType=Web\n[Actions]\nvuser_init=vuser_init.c\nAction=Action.c\nvuser_end=vuser_end.c\n"
+	base := map[string]string{
+		"sample.usr":   usr,
+		"vuser_init.c": `vuser_init(){ return 0; }`,
+		"vuser_end.c":  `vuser_end(){ return 0; }`,
+		// VuGen's preprocessor output and a stray copy never compile.
+		"pre_cci.c":    `int web_stream_open(char *name, ...); Action(){ web_stream_open("old", LAST); }`,
+		"Action_old.c": `Action(){ web_sync("old", LAST); }`,
+	}
+	with := func(extra map[string]string) map[string]string {
+		files := maps.Clone(base)
+		maps.Copy(files, extra)
+		return files
+	}
+	for _, tc := range []struct {
+		name         string
+		files        map[string]string
+		stream, sync bool
+	}{
+		{"uncompiled files ignored", with(map[string]string{"Action.c": `Action(){ return 0; }`}), true, true},
+		{"included header inspected", with(map[string]string{"Action.c": "#include \"lrun.h\"\n#include \"helper.h\"\nAction(){ return 0; }", "helper.h": `void step(){ web_sync("step", LAST); }`}), true, false},
+		{"nested include inspected", with(map[string]string{"Action.c": "#include \"a.h\"\nAction(){ return 0; }", "a.h": "#include <b.h>\n", "b.h": `void play(){ web_stream_open("s", LAST); }`}), false, true},
+		{"include by basename", with(map[string]string{"Action.c": "#include \"..\\common\\helper.h\"\nAction(){ return 0; }", "lib/helper.h": `void step(){ web_sync("step", LAST); }`}), true, false},
+		{"globals header inspected", with(map[string]string{"Action.c": `Action(){ return 0; }`, "globals.h": "#include \"lrun.h\"\n#include \"body.h\"\n", "body.h": `void step(){ web_sync("step", LAST); }`}), true, false},
+		{"combined file inspected", with(map[string]string{"Action.c": `Action(){ return 0; }`, "combined_sample.c": "#include \"vuser_init.c\"\n#include \"Action.c\"\n#include \"extra.c\"\n", "extra.c": `void play(){ web_stream_open("s", LAST); }`}), false, true},
+		{"extra file inspected", with(map[string]string{"sample.usr": usr + "[ExtraFiles]\nnotes.txt=\nhelpers.c=\n", "Action.c": `Action(){ return 0; }`, "helpers.c": `void step(){ web_sync("step", LAST); }`}), true, false},
+		{"commented include ignored", with(map[string]string{"Action.c": "// #include \"helper.h\"\n/* #include \"helper.h\" */\nAction(){ return 0; }", "helper.h": `void step(){ web_sync("step", LAST); }`}), true, true},
+		{"computed include inspects everything", with(map[string]string{"Action.c": "#include HELPER\nAction(){ return 0; }"}), false, false},
+		{"missing action inspects everything", with(map[string]string{"Other.c": `Action(){ return 0; }`}), false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			project, err := ParseUSRFile(tc.files["sample.usr"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			absent := runtimeSourceOperationsAbsentMatching(tc.files, compiledSourceFiles(project, tc.files), "http", "web_stream", "web_sync")
+			if absent[0] != tc.stream || absent[1] != tc.sync {
+				t.Fatalf("absent=%v/%v want %v/%v (scope %v)", absent[0], absent[1], tc.stream, tc.sync, compiledSourceFiles(project, tc.files))
+			}
+		})
+	}
+	// The archive importer applies the scope: an uncompiled copy that streams
+	// no longer keeps the saved streaming options reviewable.
+	result, err := ConvertZip(buildSourceZip(t, map[string]string{
+		"sample.usr":   "[General]\nType=Web\n[Actions]\nAction=Action.c\n",
+		"default.cfg":  "[Streaming]\nStreamTimeout=60\nStreamRetryTime=5\nStreamSeekMethod=normal",
+		"Action.c":     `Action(){ web_url("page", "URL=https://example.test/", LAST); }`,
+		"Action_old.c": `Action(){ web_stream_open("stream", LAST); }`,
+	}), ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := result.Script.Metadata.Import.Preserved["runtime_setting_dispositions"].(map[string]map[string]map[string]RuntimeSettingDisposition)["default.cfg"]["Streaming"]
+	if len(rows) == 0 {
+		t.Fatal("streaming rows missing")
+	}
+	for key, row := range rows {
+		if row.Status != RuntimeSettingDispositionNonApplicable {
+			t.Fatalf("%s=%#v want %s", key, row, RuntimeSettingDispositionNonApplicable)
 		}
 	}
 }

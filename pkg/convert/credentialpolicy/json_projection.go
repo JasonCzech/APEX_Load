@@ -596,8 +596,10 @@ func (parser *jsonProjectionParser) consumeByte(value byte) bool {
 	return true
 }
 
+var jsonPointerEscaper = strings.NewReplacer("~", "~0", "/", "~1")
+
 func escapeJSONPointer(value string) string {
-	return strings.NewReplacer("~", "~0", "/", "~1").Replace(value)
+	return jsonPointerEscaper.Replace(value)
 }
 
 func isHexDigit(value byte) bool {

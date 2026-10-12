@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -42,7 +43,7 @@ func runtimeHTTPFeatureExplicitlyDisabled(sections map[string]map[string]string,
 
 // Refinement uses the selected profile identity and source corpus, not just an
 // individual INI row. Never erase source evidence; explain why it is dormant.
-func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[string]RuntimeSettingDisposition, rc *RuntimeConfig, files map[string]string, protocol string) {
+func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[string]RuntimeSettingDisposition, rc *RuntimeConfig, files map[string]string, protocol string, projectConfig *ProjectConfig) {
 	defer func() {
 		for _, sections := range dispositions {
 			for section, keys := range sections {
@@ -56,8 +57,16 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 	if rc != nil {
 		usp = rc.selectedRunLogicFile
 	}
-	streamAbsent, syncAbsent := runtimeSourceOperationsAbsent(files, protocol)
-	wsAbsent, socketAbsent := runtimeSourceOperationsAbsentMatching(files, protocol, "web_websocket", "web_socket")
+	// The absence proof parses the archive's C sources, which dominates the
+	// cost of importing a large archive. Run it once, and only when a saved
+	// row depends on it.
+	var operationsAbsent []bool
+	operationAbsent := func(operation int) bool {
+		if operationsAbsent == nil {
+			operationsAbsent = runtimeSourceOperationsAbsentMatching(files, compiledSourceFiles(projectConfig, files), protocol, runtimeSourceOperationNames...)
+		}
+		return operationsAbsent[operation]
+	}
 	for file, sections := range dispositions {
 		_, source, _ := findRuntimeArchiveFile(files, file)
 		authConflict, paceConflict := false, false
@@ -121,7 +130,7 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 							note = "Inactive saved PAC URL: automatic proxy configuration is explicitly disabled."
 						}
 					case "websocketcallbacktimerintervalms":
-						if wsAbsent && socketAbsent {
+						if operationAbsent(runtimeSourceWebSocket) && operationAbsent(runtimeSourceSocket) {
 							note = "Inactive: no WebSocket operation or indirect reference exists in the inspected C source."
 						}
 					}
@@ -165,10 +174,10 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 				if canonicalSection == "http" && compactKey == "prefetchprerendercallbacktimerintervalms" && rc != nil && rc.BESimulatePrefetch != nil && !*rc.BESimulatePrefetch {
 					note = "Saved prefetch callback interval is inactive because prefetch/prerender simulation is disabled."
 				}
-				if canonicalSection == "streaming" && streamAbsent && (compactKey == "streamtimeout" || compactKey == "streamretrytime" || compactKey == "streamseekmethod") {
+				if canonicalSection == "streaming" && (compactKey == "streamtimeout" || compactKey == "streamretrytime" || compactKey == "streamseekmethod") && operationAbsent(runtimeSourceStream) {
 					note = "Saved streaming option is inactive: no web_stream operation is present in the inspected C source."
 				}
-				if canonicalSection == "http" && syncAbsent && (compactKey == "websyncretryintervalms" || compactKey == "websyncretrytimeoutms") {
+				if canonicalSection == "http" && (compactKey == "websyncretryintervalms" || compactKey == "websyncretrytimeoutms") && operationAbsent(runtimeSourceSync) {
 					note = "Saved synchronization option is inactive: no web_sync operation is present in the inspected C source."
 				}
 				if note != "" {
@@ -179,13 +188,125 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 	}
 }
 
-// This is a conservative absence check, not a control-flow reachability proof.
-// Inspect all C/header files, including helpers. Unparseable or mixed-language
-// source leaves the warning intact. Macro and function-pointer references keep it, while
-// generated SDK function declarations are not mistaken for operations.
-func runtimeSourceOperationsAbsent(files map[string]string, protocol string) (stream, sync bool) {
-	return runtimeSourceOperationsAbsentMatching(files, protocol, "web_stream", "web_sync")
+// runtimeSourceOperationNames indexes the operations refinement can prove
+// absent, so one pass over the source answers every saved row.
+var runtimeSourceOperationNames = []string{"web_stream", "web_sync", "web_websocket", "web_socket"}
+
+const (
+	runtimeSourceStream = iota
+	runtimeSourceSync
+	runtimeSourceWebSocket
+	runtimeSourceSocket
+)
+
+// compiledSourceFiles returns the archive paths of the C sources LoadRunner
+// compiles for the project, and every archive file they #include,
+// transitively. VuGen compiles combined_<script>.c, which includes globals.h
+// and each declared action file; the project's extra C/header files are kept
+// too. Nothing else can run, so VuGen's generated pre_cci.c and stray copies
+// such as Action_old.c are left out. It returns nil, meaning every C source
+// must be inspected, when that set is unknown: no project, a declared action
+// file that is missing or ambiguous, or an #include whose target a macro
+// computes.
+func compiledSourceFiles(projectConfig *ProjectConfig, files map[string]string) []string {
+	if projectConfig == nil {
+		return nil
+	}
+	keyByPath := make(map[string]string, len(files))
+	keysByBase := make(map[string][]string)
+	for key := range files {
+		normalized := strings.ToLower(normalizeRuntimeArchivePath(key))
+		keyByPath[normalized] = key
+		keysByBase[path.Base(normalized)] = append(keysByBase[path.Base(normalized)], key)
+	}
+	var compiled []string
+	seen := map[string]bool{}
+	add := func(key string) {
+		if !seen[key] {
+			seen[key] = true
+			compiled = append(compiled, key)
+		}
+	}
+	// Inspecting too much is safe, so a file named without a resolvable path
+	// reaches every archive file with its basename. A name no archive file has
+	// is absent from the archive, such as the SDK header lrun.h.
+	addByBase := func(name string) {
+		for _, key := range keysByBase[strings.ToLower(path.Base(normalizeRuntimeArchivePath(name)))] {
+			add(key)
+		}
+	}
+	declarations := orderedSourceActionFileDeclarations(projectConfig, files)
+	if len(declarations) == 0 {
+		return nil
+	}
+	for _, declaration := range declarations {
+		resolved, _, ambiguous := findSourceArchiveFile(files, declaration.Name)
+		key, ok := keyByPath[strings.ToLower(resolved)]
+		if resolved == "" || len(ambiguous) > 0 || !ok {
+			return nil
+		}
+		add(key)
+	}
+	addByBase("globals.h")
+	for _, extra := range projectConfig.ExtraFiles {
+		if extension := strings.ToLower(path.Ext(extra)); extension == ".c" || extension == ".h" {
+			addByBase(extra)
+		}
+	}
+	for base, keys := range keysByBase {
+		if strings.HasPrefix(base, "combined_") && strings.HasSuffix(base, ".c") {
+			for _, key := range keys {
+				add(key)
+			}
+		}
+	}
+	for next := 0; next < len(compiled); next++ {
+		includes, ok := cSourceIncludes(files[compiled[next]])
+		if !ok {
+			return nil
+		}
+		for _, include := range includes {
+			addByBase(include)
+		}
+	}
+	sort.Strings(compiled)
+	return compiled
 }
+
+// cSourceIncludes returns the targets of content's #include directives,
+// including those in inactive #if blocks. It reports false for a directive
+// whose target is not a quoted or bracketed name, since a macro computes it.
+func cSourceIncludes(content string) ([]string, bool) {
+	var includes []string
+	inComment := false
+	for line := range strings.SplitSeq(content, "\n") {
+		code := strings.TrimSpace(stripCComments(line, &inComment))
+		if !strings.HasPrefix(code, "#") {
+			continue
+		}
+		directive, isInclude := strings.CutPrefix(strings.TrimSpace(code[1:]), "include")
+		if !isInclude {
+			continue
+		}
+		directive = strings.TrimSpace(directive)
+		closing := byte(0)
+		switch {
+		case strings.HasPrefix(directive, `"`):
+			closing = '"'
+		case strings.HasPrefix(directive, "<"):
+			closing = '>'
+		default:
+			return nil, false
+		}
+		end := strings.IndexByte(directive[1:], closing)
+		if end < 0 {
+			return nil, false
+		}
+		includes = append(includes, directive[1:1+end])
+	}
+	return includes, true
+}
+
 func rcSections(files map[string]string, rc *RuntimeConfig) map[string]map[string]string {
 	// Resolve the selected cfg rather than whichever profile happens to appear first.
 	if rc == nil {
@@ -202,51 +323,93 @@ func rcSections(files map[string]string, rc *RuntimeConfig) map[string]map[strin
 	}
 	return nil
 }
-func runtimeSourceOperationsAbsentMatching(files map[string]string, protocol, firstName, secondName string) (stream, sync bool) {
+
+// runtimeSourceOperationsAbsentMatching reports, for each operation name
+// prefix, whether the inspected source provably never references it. This is a
+// conservative absence check, not a control-flow reachability proof. It
+// inspects the archive paths in scope (see compiledSourceFiles), or every
+// C/header file when scope is nil. Unparseable source, or any Java, JavaScript
+// or native library in the archive, leaves every answer false. Macro and
+// function-pointer references count as references, while generated SDK
+// function declarations are not mistaken for operations.
+//
+// Every inspected file is lexed before any is parsed: an incomplete corpus or a
+// reference to every name decides the answer without the C parse, which costs
+// far more than the rest of the check combined.
+func runtimeSourceOperationsAbsentMatching(files map[string]string, scope []string, protocol string, names ...string) []bool {
+	absent := make([]bool, len(names))
 	if protocol != "http" && protocol != "http/1.1" && protocol != "http/2" && protocol != "http/3" && protocol != "soap" {
-		return false, false
+		return absent
 	}
-	seen, complete, hasStream, hasSync := false, true, false, false
-	for file, content := range files {
-		switch strings.ToLower(path.Ext(file)) {
-		case ".java", ".js", ".dll", ".so":
-			complete = false
-		case ".c", ".h":
-			seen = true
-			parsed, err := ParseActionFile(file, content)
-			if err != nil || parsed == nil || len(parsed.ParseFailures) > 0 {
-				complete = false
-			}
-			if parsed != nil {
-				for _, call := range parsed.Functions {
-					hasStream = hasStream || strings.HasPrefix(strings.ToLower(call.Name), firstName)
-					hasSync = hasSync || strings.HasPrefix(strings.ToLower(call.Name), secondName)
-				}
-			}
-			// A function can be passed or assigned without being called by name.
-			// Keep those references reviewable without counting SDK prototypes:
-			// their identifier is followed by an argument list. Direct calls are
-			// covered by ParseActionFile above; literals/comments are not tokens.
-			tokens := lexCTransactionTokens(content, true)
-			for i, token := range tokens {
-				if token.kind != cTransactionIdentifier || (i+1 < len(tokens) && tokens[i+1].text == "(") {
-					continue
-				}
-				hasStream = hasStream || strings.HasPrefix(strings.ToLower(token.text), firstName)
-				hasSync = hasSync || strings.HasPrefix(strings.ToLower(token.text), secondName)
-			}
-			inComment := false
-			for line := range strings.SplitSeq(content, "\n") {
-				code := strings.ToLower(stripCComments(line, &inComment))
-				if strings.HasPrefix(strings.TrimSpace(code), "#") {
-					hasStream = hasStream || strings.Contains(code, firstName)
-					hasSync = hasSync || strings.Contains(code, secondName)
-					if strings.Contains(code, "##") || strings.HasSuffix(strings.TrimSpace(code), "\\") {
-						complete = false
-					}
-				}
+	found := make([]bool, len(names))
+	remaining := len(names)
+	mark := func(text string, matches func(string, string) bool) {
+		for i, name := range names {
+			if !found[i] && matches(text, name) {
+				found[i] = true
+				remaining--
 			}
 		}
 	}
-	return seen && complete && !hasStream, seen && complete && !hasSync
+	var sources []string
+	for file := range files {
+		switch strings.ToLower(path.Ext(file)) {
+		case ".java", ".js", ".dll", ".so":
+			return absent
+		case ".c", ".h":
+			if scope == nil {
+				sources = append(sources, file)
+			}
+		}
+	}
+	if scope != nil {
+		sources = scope
+	}
+	if len(sources) == 0 {
+		return absent
+	}
+	for _, file := range sources {
+		content := files[file]
+		// A function can be passed or assigned without being called by name.
+		// Keep those references reviewable without counting SDK prototypes:
+		// their identifier is followed by an argument list. Direct calls are
+		// covered by ParseActionFile below; literals/comments are not tokens.
+		tokens := lexCTransactionTokens(content, true)
+		for i, token := range tokens {
+			if token.kind != cTransactionIdentifier || (i+1 < len(tokens) && tokens[i+1].text == "(") {
+				continue
+			}
+			mark(strings.ToLower(token.text), strings.HasPrefix)
+		}
+		inComment := false
+		for line := range strings.SplitSeq(content, "\n") {
+			code := stripCComments(line, &inComment)
+			if strings.HasPrefix(strings.TrimSpace(code), "#") {
+				code = strings.ToLower(code)
+				mark(code, strings.Contains)
+				if strings.Contains(code, "##") || strings.HasSuffix(strings.TrimSpace(code), "\\") {
+					return absent
+				}
+			}
+		}
+		if remaining == 0 {
+			return absent
+		}
+	}
+	for _, file := range sources {
+		parsed, err := ParseActionFile(file, files[file])
+		if err != nil || parsed == nil || len(parsed.ParseFailures) > 0 {
+			return absent
+		}
+		for _, call := range parsed.Functions {
+			mark(strings.ToLower(call.Name), strings.HasPrefix)
+		}
+		if remaining == 0 {
+			return absent
+		}
+	}
+	for i := range names {
+		absent[i] = !found[i]
+	}
+	return absent
 }

@@ -2416,7 +2416,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	}
 	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
 	dispositions := classifyRuntimeSelectedSections(selectedSections, script.Protocol)
-	refineRuntimeSettingDispositions(dispositions, runtimeCfg, files, script.Protocol)
+	refineRuntimeSettingDispositions(dispositions, runtimeCfg, files, script.Protocol, projectConfig)
 	refineTruClientBrowserRuntimeDispositions(dispositions, script)
 	appendTruClientBrowserProfileRuntimeEvidence(preserved, runtimeSections, dispositions)
 	if len(runtimeSections) > 0 {

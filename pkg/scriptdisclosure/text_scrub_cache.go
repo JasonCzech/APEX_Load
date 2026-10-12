@@ -1,23 +1,24 @@
 package scriptdisclosure
 
 const (
-	minCachedScrubTextBytes = 1024
-	maxCachedScrubTexts     = 256
+	maxCachedScrubTexts     = 1 << 16
 	maxCachedScrubTextBytes = 8 << 20
 )
 
 // scrubText reuses only the context-independent built-in scrub result. Import
-// review metadata repeats source files and snippets at several evidence paths.
-// The cache belongs to one projection, is bounded by both bytes and entries,
-// and never changes the subsequent field-aware or known-credential checks.
+// drafts repeat header values, labels, source files and snippets across
+// thousands of actions and evidence paths, and scrubbing even a short value
+// runs a dozen regexps, so every length is cached. The cache belongs to one
+// projection, is bounded by both bytes and entries, and never changes the
+// subsequent field-aware or known-credential checks.
 func (p *projector) scrubText(value string) string {
-	if len(value) < minCachedScrubTextBytes {
-		return scrubText(value)
+	if value == "" {
+		return value
 	}
 	if projected, ok := p.textScrubCache[value]; ok {
 		return projected
 	}
-	projected := scrubText(value)
+	projected := scrubWithTemplateProjector(value, false, p.scrubMemo.Value)
 	bytes := len(value) + len(projected)
 	if len(p.textScrubCache) < maxCachedScrubTexts &&
 		bytes <= maxCachedScrubTextBytes-p.textScrubCacheBytes {

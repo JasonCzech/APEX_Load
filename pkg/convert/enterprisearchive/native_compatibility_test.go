@@ -35,7 +35,7 @@ func TestNativeArchiveCompatibilityAccounting(t *testing.T) {
 	name, rc := resolveRuntimeConfig(files, nil)
 	selected := selectedRuntimeSections(collectRuntimeSections(files), name, rc)
 	rows := classifyRuntimeSelectedSections(selected, "http")
-	refineRuntimeSettingDispositions(rows, rc, files, "http")
+	refineRuntimeSettingDispositions(rows, rc, files, "http", nil)
 	count := 0
 	for file, sections := range selected {
 		for section, keys := range sections {
