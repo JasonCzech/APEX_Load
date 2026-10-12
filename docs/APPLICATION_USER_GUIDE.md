@@ -687,8 +687,9 @@ Open the **Command Center** to see active runs in your selected project, applica
 and release. With no release selected, the overview includes all releases in that
 scope. Search by name or reference, filter by status, and sort by attention, newest,
 or name. Each row shows run status, waiting reasons, load, throughput, cumulative
-error percentage, timing, and metric freshness. Remaining time is an estimate because
-the summary does not include cumulative pause time.
+error percentage, timing, and metric freshness. Elapsed and remaining time leave out
+time spent paused, which a run makes up after it resumes; remaining time is an
+estimate, and a paused run shows Paused instead.
 
 When there are no active runs, choose **New Test** or **Browse scenarios**. New Test
 requires permission to manage tests. Select a release before opening Results; if
@@ -707,7 +708,7 @@ From the Command Center you can also control the run while it is in flight:
 | Control | Available when | Effect |
 | --- | --- | --- |
 | **Start** | `QUEUED` or `RESERVED` | Begins execution now |
-| **Pause** | `RUNNING` | Holds every VUser between actions. A run to a duration keeps its clock running while paused, so paused time counts against the duration |
+| **Pause** | `RUNNING` | Holds every VUser between actions. Paused time does not count against a run's duration: the run makes it up after it resumes, so it ends that much later |
 | **Resume** | `PAUSED` | Releases the hold |
 | **Stop** | `RUNNING`, `INITIALIZING`, or `PAUSED` | Graceful: finishes the action in flight, skips later actions and think time, runs teardown. The run stays `STOPPING` until generator teardown and archive finalization complete |
 | **Abort** | Any non-terminal state | Force-cancels active work immediately |

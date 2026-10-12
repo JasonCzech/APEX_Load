@@ -64,7 +64,7 @@ export default function CommandCenterOverview(props: CommandCenterOverviewProps)
       <LibraryPagination label="Active runs" pagination={pagination} />
       {filtered.length === 0 && <p role="status">No runs match these filters.</p>}
       {visible.length > 0 && <div className="command-overview-table"><table>
-        <caption>Run health and live metrics. Estimated remaining time may differ after pauses.</caption>
+        <caption>Run health and live metrics. Elapsed and remaining time leave out pauses, which a run makes up.</caption>
         <thead><tr><th scope="col">Run</th><th scope="col">Status / health</th><th scope="col">Current / planned VU</th><th scope="col">TPS</th><th scope="col">Overall error %</th><th scope="col">Elapsed / remaining</th><th scope="col">Metrics updated</th></tr></thead>
         <tbody>{visible.map(run => {
           const health = commandRunHealth(run, now)

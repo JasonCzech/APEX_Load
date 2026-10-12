@@ -67,7 +67,7 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     const pauseDialog = page.getByRole('dialog', { name: 'Pause this test run?' })
     await expect(pauseDialog).toBeVisible()
-    await expect(pauseDialog).toContainText('Paused time counts against the')
+    await expect(pauseDialog).toContainText('Paused time does not count against the')
     await pauseDialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(pauseDialog).toBeHidden()
     expect(await status(request, testId), 'cancelled confirmation must not pause the run').toBe('RUNNING')

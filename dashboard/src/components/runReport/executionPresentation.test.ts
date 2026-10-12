@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
-import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds } from './executionPresentation'
+import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds, runActiveSeconds } from './executionPresentation'
 import { plannedVUsersAt } from '../loadPlanSteps'
 
 const test: TestSummary = { id: 'run', name: 'Run', status: 'FAILED', duration: '20m', total_vusers: 10, groups: [], created_at: '', error: 'Controller restarted' }
@@ -41,6 +41,25 @@ describe('execution evidence presentation', () => {
 
 })
 
+
+describe('run active time', () => {
+  const START = '2026-10-12T04:00:00Z'
+  const at = (seconds: number) => Date.parse(START) + seconds * 1000
+
+  it("counts a run's own time, leaving out the pauses it makes up", () => {
+    expect(runActiveSeconds({ started_at: START }, at(100))).toBe(100)
+    // 15 s paused earlier, then paused again since 90 s.
+    expect(runActiveSeconds({ started_at: START, cumulative_pause_ns: 15e9 }, at(100))).toBe(85)
+    expect(runActiveSeconds({ started_at: START, cumulative_pause_ns: 15e9, paused_at: new Date(at(90)).toISOString() }, at(100))).toBe(75)
+  })
+
+  it('stops at the end of an ended run and waits for a recorded start', () => {
+    expect(runActiveSeconds({ started_at: START, ended_at: new Date(at(55)).toISOString(), cumulative_pause_ns: 15e9 }, at(500))).toBe(40)
+    expect(runActiveSeconds({ start_time: START }, at(10))).toBe(10)
+    expect(runActiveSeconds({}, at(10))).toBeUndefined()
+    expect(runActiveSeconds({ started_at: '0001-01-01T00:00:00Z' }, at(10))).toBeUndefined()
+  })
+})
 
 describe('lifecycle elapsed', () => {
   it('keeps controller lifecycle and archived evidence windows distinct', () => {

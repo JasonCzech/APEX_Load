@@ -86,3 +86,30 @@ export function loadChangeImpact(groups: CommandGroup[], groupName: string, targ
   const totalFrom = groups.reduce((sum, item) => sum + applied(item), 0)
   return `${change} · ${mode === 'tps' ? 'run goal' : 'run total'} ${amount(totalFrom)} → ${amount(totalFrom - from + target)} ${unit}`
 }
+
+/**
+ * A run's plan on the wall clock after its pauses. The engine makes paused
+ * time up, so the plan from where the run is on its own clock (activeSeconds)
+ * goes on pausedSeconds later, holding its level through the pause: every
+ * step and phase boundary from there on moves. Where earlier pauses fell is
+ * not recorded, so they are drawn as one, just before now; the samples show
+ * what the run actually did before that.
+ */
+export function planAfterPauses(plan: RunLoadProfilePreview, activeSeconds: number, pausedSeconds: number): RunLoadProfilePreview {
+  if (!(pausedSeconds > 0)) return plan
+  // A run whose clock has passed its plan's end (a stop that ran over) still
+  // paused within the plan: its end moves.
+  const from = Math.min(activeSeconds, plan.totalSeconds)
+  const later = (second: number) => second >= from ? second + pausedSeconds : second
+  const steadyStart = later(plan.preBaselineSeconds)
+  const steadyEnd = later(plan.preBaselineSeconds + plan.steadySeconds)
+  const totalSeconds = later(plan.totalSeconds)
+  return {
+    ...plan,
+    points: plan.points.map(point => ({ ...point, second: later(point.second) })),
+    totalSeconds,
+    preBaselineSeconds: steadyStart,
+    steadySeconds: steadyEnd - steadyStart,
+    postBaselineSeconds: totalSeconds - later(plan.totalSeconds - plan.postBaselineSeconds),
+  }
+}

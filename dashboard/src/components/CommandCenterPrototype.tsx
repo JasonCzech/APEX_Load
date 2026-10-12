@@ -17,6 +17,7 @@ import type { RcaAnalysisResponse } from '../types/rca'
 import { normalizeRcaAssessment, rcaSummaryLine } from './rca/rcaModel'
 import { rcaSummaryWithResponse } from './rca/useRootCauseSummary'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { runActiveSeconds } from './runReport/executionPresentation'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
 import type { BrowserReplaySnapshot, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
@@ -54,7 +55,7 @@ import {
   type GroupRunRow,
   type TransactionRunRow,
 } from './commandCenterScenarioRows'
-import { buildRunLoadPlan, loadChangeImpact, observedVUsersSince, runLoadStatus } from './commandCenterLoadModel'
+import { buildRunLoadPlan, loadChangeImpact, observedVUsersSince, planAfterPauses, runLoadStatus } from './commandCenterLoadModel'
 import LoadPlanChart from './LoadPlanChart'
 import { LOAD_PLAN_COLORS } from './loadPlanSteps'
 import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
@@ -263,12 +264,10 @@ function computeRemainingSeconds(test: TestSummary, status: TestStatus) {
   }
   const durationSeconds = parseDurationToSeconds(test.duration)
   if (durationSeconds <= 0) return 0
-  const startedAt = test.started_at || test.start_time
-  if (!startedAt) return durationSeconds
-  const startedMs = Date.parse(startedAt)
-  if (Number.isNaN(startedMs)) return durationSeconds
-  const elapsedSeconds = Math.floor((Date.now() - startedMs) / 1000)
-  return Math.max(durationSeconds - elapsedSeconds, 0)
+  // Paused time does not count: the engine makes it up after a resume.
+  const elapsedSeconds = runActiveSeconds(test)
+  if (elapsedSeconds === undefined) return durationSeconds
+  return Math.max(durationSeconds - Math.floor(elapsedSeconds), 0)
 }
 
 function isHistoricalRunStatus(status: TestStatus | string | undefined) {
@@ -1891,10 +1890,9 @@ function RunControlShelf({
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
   const fullyTerminal = status === 'ABORTED' || status === 'COMPLETE' || status === 'FAILED'
   const canStart = status === 'QUEUED' || status === 'RESERVED'
-  const startedMs = test.started_at ? Date.parse(test.started_at) : Number.NaN
-  const endMs = test.ended_at ? Date.parse(test.ended_at) : Date.now()
-  // An unreadable timestamp shows 0:00 rather than NaN.
-  const elapsedSeconds = Number.isFinite(startedMs) && Number.isFinite(endMs) ? Math.max(0, (endMs - startedMs) / 1000) : 0
+  // The run's own clock, as the engine counts it: paused time is left out
+  // (the run makes it up). An unrecorded start shows 0s rather than NaN.
+  const elapsedSeconds = runActiveSeconds(test) ?? 0
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
   const loadValue = canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
@@ -2415,12 +2413,12 @@ function OpsCockpitV2View({
   onChangeDuration,
 }: OpsCockpitV2ViewProps) {
   const basis = useContext(CommandMetricBasisContext)
-  const { plan, observed, elapsedSeconds, live, ended, plannedNow, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, metricsHistory)
+  const { chartPlan, observed, elapsedSeconds, live, ended, plannedNow, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, metricsHistory)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
   // The export holds the plan's steps and the observed samples, each at its own elapsed second.
   const exportRows = [
-    ...plan.points.map(point => ({ second: point.second, planned: point.total })),
+    ...chartPlan.points.map(point => ({ second: point.second, planned: point.total })),
     ...observed.map(sample => ({ second: sample.second, actual: sample.vusers })),
   ].sort((left, right) => left.second - right.second)
   return (
@@ -2443,7 +2441,7 @@ function OpsCockpitV2View({
 
             <div className="command-v2-chart">
               <SeriesChartExport id="command-observed-load" title="Planned and actual load" rows={exportRows} axes={[{ key: "elapsed", label: "Elapsed seconds", value: row => row.second }]} series={[{ key: "planned", label: "Planned VUsers", unit: "VUsers" }, { key: "actual", label: "Observed VUsers", unit: "VUsers" }]} context={{ run_id: runId, elapsed_seconds: elapsedSeconds, basis: "Planned steps and observed samples on elapsed seconds from the run's start" }}>
-                <LoadPlanChart label="Planned and actual VUsers" points={plan.points} totalSeconds={plan.totalSeconds} groups={chartGroups} phases={plan} observed={observed} nowSecond={live ? elapsedSeconds : undefined} height={230} />
+                <LoadPlanChart label="Planned and actual VUsers" points={chartPlan.points} totalSeconds={chartPlan.totalSeconds} groups={chartGroups} phases={chartPlan} observed={observed} nowSecond={live ? elapsedSeconds : undefined} height={230} />
               </SeriesChartExport>
             </div>
 
@@ -3943,10 +3941,16 @@ function useRunLoadModel(test: TestSummary, groups: CommandGroup[], runStatus: T
   const live = !notStarted && !isHistoricalRunStatus(runStatus)
   const endedMs = Date.parse(test.ended_at || '')
   const elapsedSeconds = notStarted ? 0 : Math.max(0, ((live || !Number.isFinite(endedMs) ? Date.now() : endedMs) - startedMs) / 1000)
+  // The run's own clock leaves its pauses out (the engine makes them up): it
+  // says where the run is in its plan, and the rest of the plan comes later.
+  const activeSeconds = notStarted ? 0 : Math.min(elapsedSeconds, runActiveSeconds(test) ?? elapsedSeconds)
+  const pausedSeconds = elapsedSeconds - activeSeconds
   // A run to its iterations has no deadline: its plan runs to where it is now.
   const openEnded = test.termination_mode === 'iterations'
-  const horizonSeconds = openEnded ? Math.ceil(elapsedSeconds) : undefined
+  const horizonSeconds = openEnded ? Math.ceil(activeSeconds) : undefined
   const plan = useMemo(() => buildRunLoadPlan(test, groups, horizonSeconds), [groups, horizonSeconds, test])
+  // Drawn on the wall clock with the samples and Now.
+  const chartPlan = planAfterPauses(plan, activeSeconds, pausedSeconds)
   // Colors by group name, so an unchanged legend keeps the chart's memo.
   const groupColorKey = groups.map(group => `${group.name}\u0000${group.color}`).join('\u0001')
   const chartGroups = useMemo(() => (test.groups || []).map((group, index) => ({
@@ -3967,7 +3971,8 @@ function useRunLoadModel(test: TestSummary, groups: CommandGroup[], runStatus: T
     // An ended run is past its plan: there is no planned load to compare with.
     ended: !notStarted && !live,
     openEnded,
-    ...runLoadStatus(plan, elapsedSeconds, { state: notStarted ? 'not_started' : !live ? 'ended' : runStatus === 'PAUSED' ? 'paused' : 'running', openEnded, staged }),
+    ...runLoadStatus(plan, activeSeconds, { state: notStarted ? 'not_started' : !live ? 'ended' : runStatus === 'PAUSED' ? 'paused' : 'running', openEnded, staged }),
+    chartPlan,
     chartGroups,
   }
 }
@@ -3986,7 +3991,7 @@ function LoadModelPanel({
 }) {
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
-  const { plan, observed, elapsedSeconds, live, notStarted, ended, openEnded, plannedNow, progressPct, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, history)
+  const { chartPlan, observed, elapsedSeconds, live, notStarted, ended, openEnded, plannedNow, progressPct, phase, elapsedLabel, chartGroups } = useRunLoadModel(test, groups, runStatus, history)
   const delta = totalCurrent - plannedNow
 
   return (
@@ -4020,10 +4025,10 @@ function LoadModelPanel({
         <LoadPlanChart
           compact
           label="Load model"
-          points={plan.points}
-          totalSeconds={plan.totalSeconds}
+          points={chartPlan.points}
+          totalSeconds={chartPlan.totalSeconds}
           groups={chartGroups}
-          phases={plan}
+          phases={chartPlan}
           observed={observed}
           nowSecond={live ? elapsedSeconds : undefined}
           height={140}

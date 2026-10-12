@@ -826,6 +826,10 @@ export interface TestSummary {
   baseline_pinned_at?: string
   started_at?: string
   ended_at?: string
+  /** While the run is paused: when this pause began. */
+  paused_at?: string
+  /** Time spent in earlier pauses, which the run makes up (nanoseconds). */
+  cumulative_pause_ns?: number
   created_by_subject?: string
   created_by_display_name?: string
   started_by_subject?: string

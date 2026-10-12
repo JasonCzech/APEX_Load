@@ -1,7 +1,7 @@
 import type { TestSummary } from '../types'
 import { isPendingTestStatus, normalizeTestStatus } from '../utils/testStatusUtils'
 import { parseDurationToSeconds } from '../utils/timeUtils'
-import { recordedTime, formatElapsedSeconds } from './runReport/executionPresentation'
+import { recordedTime, formatElapsedSeconds, runActiveSeconds } from './runReport/executionPresentation'
 import { formatDateTime } from '../utils/dateTime'
 
 export function commandRunWaiting(run: TestSummary): boolean {
@@ -29,12 +29,12 @@ export function commandRunHealth(run: TestSummary, now: number) {
 }
 
 export function commandRunTiming(run: TestSummary, now: number) {
-  const started = recordedTime(run.started_at || run.start_time)
   if (commandRunWaiting(run)) return { elapsed: 'Not started', remaining: run.duration || 'Unavailable' }
-  if (run.termination_mode === 'iterations') return { elapsed: formatElapsedSeconds(started === undefined ? undefined : Math.max(0, (now-started)/1000)), remaining: `${run.live_metrics?.completed_iterations ?? 0} / ${(run.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0),0)} iterations` }
-  const elapsed = started === undefined ? undefined : Math.max(0, (now - started) / 1000)
-  // The summary has no cumulative paused-duration field. Do not present a
-  // wall-clock subtraction as an authoritative execution countdown.
+  // The run's own clock: paused time is left out, since the engine makes it up
+  // after a resume. Remaining stays an estimate (a start delay is not counted),
+  // and a paused run says so rather than tick down.
+  const elapsed = runActiveSeconds(run, now)
+  if (run.termination_mode === 'iterations') return { elapsed: formatElapsedSeconds(elapsed), remaining: `${run.live_metrics?.completed_iterations ?? 0} / ${(run.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0),0)} iterations` }
   return {
     elapsed: formatElapsedSeconds(elapsed),
     remaining: run.status === 'PAUSED' ? 'Paused' : elapsed === undefined ? 'Unavailable'

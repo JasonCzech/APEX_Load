@@ -35,6 +35,9 @@ describe('Command Center overview evidence', () => {
   it('labels estimates and avoids a false ticking countdown while paused', () => {
     expect(commandRunTiming(run('active'), now)).toEqual({ elapsed: '5m', remaining: '~5m' })
     expect(commandRunTiming(run('paused', 'PAUSED'), now).remaining).toBe('Paused')
+    // Paused time is left out of the clock: the run makes it up.
+    expect(commandRunTiming({ ...run('resumed'), cumulative_pause_ns: 60e9 }, now)).toEqual({ elapsed: '4m', remaining: '~6m' })
+    expect(commandRunTiming({ ...run('paused-now', 'PAUSED'), paused_at: new Date(now - 30_000).toISOString() }, now).elapsed).toBe('4m 30s')
     expect(commandRunTiming({ ...run('unknown'), started_at: 'invalid' }, now).remaining).toBe('Unavailable')
     expect(commandRunTiming(run('queue', 'QUEUED'), now)).toEqual({ elapsed: 'Not started', remaining: '10m' })
   })

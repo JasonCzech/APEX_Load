@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { pauseDurationNote, runActionConfirmationCopy } from './runActionConfirmation'
 
 describe('run action confirmations', () => {
-  it("says that a paused run to a duration keeps its clock running", () => {
-    expect(pauseDurationNote({ duration: '4m', termination_mode: 'duration' })).toBe('Paused time counts against the 4m duration; resuming does not add it back.')
+  it('says that a run makes up the time it spends paused', () => {
+    expect(pauseDurationNote({ duration: '4m', termination_mode: 'duration' })).toBe('Paused time does not count against the 4m duration: the run makes it up after you resume, so it ends that much later.')
     expect(pauseDurationNote({ duration: '4m' })).toContain('the 4m duration')
     // A duration the controller stored after an adjustment reads as the page shows it.
     expect(pauseDurationNote({ duration: '1h30m0s' })).toContain('the 1h 30m duration')

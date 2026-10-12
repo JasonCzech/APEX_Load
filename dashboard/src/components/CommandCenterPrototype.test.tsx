@@ -475,14 +475,27 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
-  it('says in the Pause dialog that a paused run keeps spending its duration', async () => {
+  it('leaves paused time out of the run clock, as the engine makes it up', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const run = buildLiveVuserTest()
+    // Five minutes after the start, one of them spent paused.
+    vi.setSystemTime(Date.parse(run.started_at!) + 5 * 60_000)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={{ ...run, cumulative_pause_ns: 60e9 }} history={[]} />) })
+    const clock = Array.from(container.querySelectorAll('.command-metric-pill')).find(pill => pill.querySelector('span')?.textContent === 'Elapsed · remaining')
+    expect(clock?.querySelector('strong')?.textContent).toBe('4m 00s · 6m 00s')
+    // The load model says where the run is in its plan on the same clock.
+    expect(container.querySelector('[aria-label="Load model profile"]')?.textContent).toContain('4m of 10m elapsed')
+  })
+
+  it('says in the Pause dialog that the run makes up its paused time', async () => {
     const run = buildLiveVuserTest()
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
     await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={[]} />) })
     await click(buttonNamed('Pause'))
     const dialog = container.querySelector('.confirm-run-action-modal')!
     const detail = dialog.querySelector('.confirm-run-action-detail')!
-    expect(detail.textContent).toBe('Paused time counts against the 10m duration; resuming does not add it back.')
+    expect(detail.textContent).toBe('Paused time does not count against the 10m duration: the run makes it up after you resume, so it ends that much later.')
     expect(dialog.getAttribute('aria-describedby')?.split(' ')).toContain(detail.id)
   })
 

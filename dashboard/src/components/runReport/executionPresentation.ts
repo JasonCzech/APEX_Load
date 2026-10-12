@@ -25,6 +25,21 @@ export function lifecycleElapsedSeconds(test: TestSummary): number | undefined {
   return start !== undefined && end !== undefined && end >= start ? (end - start) / 1000 : undefined
 }
 
+/**
+ * How long a run has run, in seconds: the time since it started with its
+ * paused time left out. The engine makes paused time up (a 4 m run paused for
+ * 15 s ends 15 s later), so this is the clock its duration counts against.
+ * Undefined until the run has a recorded start.
+ */
+export function runActiveSeconds(test: Pick<TestSummary, 'started_at' | 'start_time' | 'ended_at' | 'paused_at' | 'cumulative_pause_ns'>, now = Date.now()): number | undefined {
+  const start = recordedTime(test.started_at) ?? recordedTime(test.start_time)
+  if (start === undefined) return undefined
+  const end = recordedTime(test.ended_at) ?? now
+  const pausedAt = recordedTime(test.paused_at)
+  const pausedMs = Math.max(0, Number(test.cumulative_pause_ns) || 0) / 1e6 + (pausedAt === undefined ? 0 : Math.max(0, end - pausedAt))
+  return Math.max(0, (end - start - pausedMs) / 1000)
+}
+
 export function formatElapsedSeconds(seconds?: number): string {
   if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return 'Not recorded'
   return formatTimeLong(seconds)

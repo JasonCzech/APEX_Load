@@ -57,10 +57,10 @@ export function runActionConfirmationCopy(kind: RunActionConfirmationKind): RunA
 }
 
 /**
- * What pausing does to a run's clock: a run to a duration keeps counting
- * while paused, so the paused time is not run again after resuming.
+ * What pausing does to a run's clock: the engine makes paused time up, so a
+ * run to a duration still gets all of it and ends that much later.
  */
 export function pauseDurationNote(run?: Pick<TestSummary, 'duration' | 'termination_mode'> | null): string {
   if (!run || run.termination_mode === 'iterations' || !isValidDurationInput(run.duration)) return ''
-  return `Paused time counts against the ${formatDurationDisplay(run.duration)} duration; resuming does not add it back.`
+  return `Paused time does not count against the ${formatDurationDisplay(run.duration)} duration: the run makes it up after you resume, so it ends that much later.`
 }
