@@ -13,7 +13,7 @@ import (
 )
 
 const executionPlanScheduleColumns = `id, plan_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr,
-	COALESCE(timezone, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(missed_run_policy, ''),
+	COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(missed_run_policy, ''),
 	COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(last_run_run_id, ''),
 	last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''),
 	COALESCE(actor_type, 'legacy'), COALESCE(actor_subject, 'controller:execution-plan-schedule-legacy'),
@@ -55,17 +55,17 @@ func (s *SQLiteStore) SaveExecutionPlanSchedule(schedule *ExecutionPlanSchedule)
 	if err := bindExecutionPlanScheduleParent(tx, schedule); err != nil {
 		return err
 	}
-	result, err := tx.Exec(`INSERT INTO execution_plan_schedules (id, plan_id, project_id, revision, name, cron_expr, timezone, run_name_template, enabled, missed_run_policy, conflict_summary, next_required_action, last_run_run_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, actor_type, actor_subject, actor_display_name, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := tx.Exec(`INSERT INTO execution_plan_schedules (id, plan_id, project_id, revision, name, cron_expr, timezone, release_id, run_name_template, enabled, missed_run_policy, conflict_summary, next_required_action, last_run_run_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, actor_type, actor_subject, actor_display_name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, name=excluded.name,
-		cron_expr=excluded.cron_expr, timezone=excluded.timezone, run_name_template=excluded.run_name_template, enabled=excluded.enabled,
+		cron_expr=excluded.cron_expr, timezone=excluded.timezone, release_id=excluded.release_id, run_name_template=excluded.run_name_template, enabled=excluded.enabled,
 		missed_run_policy=excluded.missed_run_policy, conflict_summary=excluded.conflict_summary, next_required_action=excluded.next_required_action,
 		last_run_run_id=excluded.last_run_run_id, last_run_at=excluded.last_run_at, next_run_at=excluded.next_run_at,
 		disabled_from=excluded.disabled_from, disabled_until=excluded.disabled_until, last_error=excluded.last_error,
 		actor_type=excluded.actor_type, actor_subject=excluded.actor_subject, actor_display_name=excluded.actor_display_name,
 		updated_at=excluded.updated_at
 		WHERE execution_plan_schedules.plan_id=excluded.plan_id AND execution_plan_schedules.project_id=excluded.project_id`,
-		schedule.ID, schedule.PlanID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.RunNameTemplate,
+		schedule.ID, schedule.PlanID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate,
 		schedule.Enabled, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.LastRunRunID,
 		schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError,
 		schedule.ActorType, schedule.ActorSubject, schedule.ActorDisplayName, schedule.CreatedAt, schedule.UpdatedAt)
@@ -96,10 +96,10 @@ func createExecutionPlanScheduleIfAbsentWithExecutor(executor testSaveExecutor, 
 	if err := bindExecutionPlanScheduleParent(executor, schedule); err != nil {
 		return false, err
 	}
-	result, err := executor.Exec(`INSERT INTO execution_plan_schedules (id, plan_id, project_id, revision, name, cron_expr, timezone, run_name_template, enabled, missed_run_policy, conflict_summary, next_required_action, last_run_run_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, actor_type, actor_subject, actor_display_name, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := executor.Exec(`INSERT INTO execution_plan_schedules (id, plan_id, project_id, revision, name, cron_expr, timezone, release_id, run_name_template, enabled, missed_run_policy, conflict_summary, next_required_action, last_run_run_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, actor_type, actor_subject, actor_display_name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-		schedule.ID, schedule.PlanID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.RunNameTemplate,
+		schedule.ID, schedule.PlanID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate,
 		schedule.Enabled, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.LastRunRunID,
 		schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError,
 		schedule.ActorType, schedule.ActorSubject, schedule.ActorDisplayName, schedule.CreatedAt, schedule.UpdatedAt)
@@ -147,8 +147,8 @@ func updateExecutionPlanScheduleIfRevisionWithExecutor(executor testSaveExecutor
 		return false, err
 	}
 	nextRevision := expectedRevision + 1
-	result, err := executor.Exec(`UPDATE execution_plan_schedules SET revision=?, name=?, cron_expr=?, timezone=?, run_name_template=?, enabled=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, last_run_run_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, actor_type=?, actor_subject=?, actor_display_name=?, updated_at=? WHERE id=? AND plan_id=? AND project_id=? AND COALESCE(revision, 1)=?`,
-		nextRevision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.RunNameTemplate,
+	result, err := executor.Exec(`UPDATE execution_plan_schedules SET revision=?, name=?, cron_expr=?, timezone=?, release_id=?, run_name_template=?, enabled=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, last_run_run_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, actor_type=?, actor_subject=?, actor_display_name=?, updated_at=? WHERE id=? AND plan_id=? AND project_id=? AND COALESCE(revision, 1)=?`,
+		nextRevision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate,
 		schedule.Enabled, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.LastRunRunID,
 		schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError,
 		schedule.ActorType, schedule.ActorSubject, schedule.ActorDisplayName, schedule.UpdatedAt,
@@ -406,7 +406,7 @@ func scanExecutionPlanSchedule(row scanner) (*ExecutionPlanSchedule, error) {
 	var enabled any
 	err := row.Scan(
 		&schedule.ID, &schedule.PlanID, &schedule.ProjectID, &schedule.Revision, &schedule.Name, &schedule.CronExpr,
-		&schedule.Timezone, &schedule.RunNameTemplate, &enabled, &schedule.MissedRunPolicy,
+		&schedule.Timezone, &schedule.ReleaseID, &schedule.RunNameTemplate, &enabled, &schedule.MissedRunPolicy,
 		&schedule.ConflictSummary, &schedule.NextRequiredAction, &schedule.LastRunRunID,
 		&schedule.LastRunAt, &schedule.NextRunAt, &schedule.DisabledFrom, &schedule.DisabledUntil, &schedule.LastError,
 		&schedule.ActorType, &schedule.ActorSubject, &schedule.ActorDisplayName, &schedule.CreatedAt, &schedule.UpdatedAt,

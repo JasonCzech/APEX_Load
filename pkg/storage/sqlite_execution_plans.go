@@ -25,15 +25,16 @@ func saveExecutionPlanWithExecutor(executor testSaveExecutor, plan *ExecutionPla
 		plan.Revision = 1
 	}
 	result, err := executor.Exec(`INSERT INTO execution_plans (
-			id, project_id, revision, name, description, entries_json, run_mode, timeslot_id, status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, project_id, revision, name, description, entries_json, run_mode, timeslot_id, application_id, release_id, overlap_policy, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, description=excluded.description,
 			entries_json=excluded.entries_json, run_mode=excluded.run_mode, timeslot_id=excluded.timeslot_id,
+			application_id=excluded.application_id, release_id=excluded.release_id, overlap_policy=excluded.overlap_policy,
 			status=excluded.status, updated_at=excluded.updated_at, revision=execution_plans.revision+1
 			WHERE COALESCE(NULLIF(execution_plans.project_id, ''), ?) = excluded.project_id`,
 		plan.ID, plan.ProjectID, plan.Revision, plan.Name, plan.Description, string(entriesJSON), plan.RunMode,
-		plan.TimeslotID, plan.Status, plan.CreatedAt, plan.UpdatedAt, DefaultProjectID)
+		plan.TimeslotID, plan.ApplicationID, plan.ReleaseID, plan.OverlapPolicy, plan.Status, plan.CreatedAt, plan.UpdatedAt, DefaultProjectID)
 	if err != nil {
 		return err
 	}
@@ -55,6 +56,9 @@ func prepareExecutionPlanForWrite(plan *ExecutionPlan) ([]byte, error) {
 		return nil, fmt.Errorf("execution plan id is required")
 	}
 	plan.ProjectID = normalizeProjectID(plan.ProjectID)
+	plan.ApplicationID = strings.TrimSpace(plan.ApplicationID)
+	plan.ReleaseID = strings.TrimSpace(plan.ReleaseID)
+	plan.OverlapPolicy = strings.ToLower(strings.TrimSpace(plan.OverlapPolicy))
 	if plan.RunMode == "" {
 		plan.RunMode = "parallel"
 	}
@@ -84,11 +88,11 @@ func createExecutionPlanIfAbsentWithExecutor(executor testSaveExecutor, plan *Ex
 	}
 	plan.Revision = 1
 	result, err := executor.Exec(`INSERT INTO execution_plans (
-			id, project_id, revision, name, description, entries_json, run_mode, timeslot_id, status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, project_id, revision, name, description, entries_json, run_mode, timeslot_id, application_id, release_id, overlap_policy, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO NOTHING`,
 		plan.ID, plan.ProjectID, plan.Revision, plan.Name, plan.Description, string(entriesJSON), plan.RunMode,
-		plan.TimeslotID, plan.Status, plan.CreatedAt, plan.UpdatedAt)
+		plan.TimeslotID, plan.ApplicationID, plan.ReleaseID, plan.OverlapPolicy, plan.Status, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -110,10 +114,10 @@ func compareAndSwapExecutionPlanWithExecutor(executor testSaveExecutor, plan *Ex
 	}
 	result, err := executor.Exec(`UPDATE execution_plans SET
 			name = ?, description = ?, entries_json = ?, run_mode = ?,
-			timeslot_id = ?, status = ?, updated_at = ?, revision = revision + 1
+			timeslot_id = ?, application_id = ?, release_id = ?, overlap_policy = ?, status = ?, updated_at = ?, revision = revision + 1
 			WHERE id = ? AND revision = ? AND COALESCE(NULLIF(project_id, ''), ?) = ?`,
 		plan.Name, plan.Description, string(entriesJSON), plan.RunMode,
-		plan.TimeslotID, plan.Status, plan.UpdatedAt, plan.ID, expectedRevision, DefaultProjectID, plan.ProjectID)
+		plan.TimeslotID, plan.ApplicationID, plan.ReleaseID, plan.OverlapPolicy, plan.Status, plan.UpdatedAt, plan.ID, expectedRevision, DefaultProjectID, plan.ProjectID)
 	if err != nil {
 		return false, err
 	}
@@ -175,14 +179,16 @@ func (s *SQLiteStore) CompareAndSwapExecutionPlanIfLeaseTermHeld(plan *Execution
 }
 
 const executionPlanSelect = `SELECT id, COALESCE(project_id, ''), COALESCE(revision, 1), name, COALESCE(description, ''),
-	COALESCE(entries_json, ''), COALESCE(run_mode, 'parallel'), timeslot_id, COALESCE(status, 'draft'),
+	COALESCE(entries_json, ''), COALESCE(run_mode, 'parallel'), timeslot_id, COALESCE(application_id, ''),
+	COALESCE(release_id, ''), COALESCE(overlap_policy, ''), COALESCE(status, 'draft'),
 	created_at, updated_at FROM execution_plans`
 
 func scanExecutionPlan(row capacityRowScanner) (*ExecutionPlan, error) {
 	var plan ExecutionPlan
 	var entriesJSON string
 	if err := row.Scan(&plan.ID, &plan.ProjectID, &plan.Revision, &plan.Name, &plan.Description, &entriesJSON,
-		&plan.RunMode, &plan.TimeslotID, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt); err != nil {
+		&plan.RunMode, &plan.TimeslotID, &plan.ApplicationID, &plan.ReleaseID, &plan.OverlapPolicy, &plan.Status,
+		&plan.CreatedAt, &plan.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if entriesJSON != "" && entriesJSON != "null" {

@@ -131,8 +131,12 @@ type ScenarioScheduleHealth struct {
 	ExecutionPlanEnabled int                             `json:"execution_plan_enabled"`
 	ExecutionPlanDue     int                             `json:"execution_plan_due"`
 	ExecutionPlanBlocked int                             `json:"execution_plan_blocked"`
-	OneTimeScheduled     int                             `json:"one_time_scheduled"`
-	OneTimeDue           int                             `json:"one_time_due"`
+	// Plan schedules holding a run that waits for approval, or for the plan's
+	// previous run to finish (overlap policy queue). Neither is due or blocked.
+	ExecutionPlanAwaitingApproval   int `json:"execution_plan_awaiting_approval"`
+	ExecutionPlanWaitingPreviousRun int `json:"execution_plan_waiting_previous_run"`
+	OneTimeScheduled                int `json:"one_time_scheduled"`
+	OneTimeDue                      int `json:"one_time_due"`
 }
 
 type SchedulerSweepHealth struct {

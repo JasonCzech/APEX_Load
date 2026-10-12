@@ -337,6 +337,13 @@ func (tr *TestRunner) resolveExecutionPlanApprovalWithTerm(id, toStatus, resolve
 }
 
 func (tr *TestRunner) failExecutionPlanStagedTestWithTerm(testID, detail string, term executionLeaseTerm, expectedMaterializationKeys ...string) error {
+	return tr.endExecutionPlanStagedTestWithTerm(testID, "FAILED", detail, term, expectedMaterializationKeys...)
+}
+
+// endExecutionPlanStagedTestWithTerm ends a plan's staged run with a terminal
+// status: FAILED when materialization failed, ABORTED when the plan was stopped
+// before the run started.
+func (tr *TestRunner) endExecutionPlanStagedTestWithTerm(testID, terminalStatus, detail string, term executionLeaseTerm, expectedMaterializationKeys ...string) error {
 	if testID == "" {
 		return nil
 	}
@@ -370,7 +377,7 @@ func (tr *TestRunner) failExecutionPlanStagedTestWithTerm(testID, detail string,
 			transitionErr = retryDurableTransition(func() error {
 				var err error
 				result, err = store.UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld(
-					testID, expectedKey, "FAILED", &now, detail, executionLeaseName, term.ownerID, term.generation,
+					testID, expectedKey, terminalStatus, &now, detail, executionLeaseName, term.ownerID, term.generation,
 				)
 				return err
 			})
@@ -381,7 +388,7 @@ func (tr *TestRunner) failExecutionPlanStagedTestWithTerm(testID, detail string,
 			}
 			transitionErr = retryDurableTransition(func() error {
 				var err error
-				result, err = store.UpdateTestStatusIfActiveAndMaterializationKey(testID, expectedKey, "FAILED", &now, detail)
+				result, err = store.UpdateTestStatusIfActiveAndMaterializationKey(testID, expectedKey, terminalStatus, &now, detail)
 				return err
 			})
 		}
@@ -445,7 +452,7 @@ func (tr *TestRunner) failExecutionPlanStagedTestWithTerm(testID, detail string,
 			if test.cancel != nil {
 				test.cancel()
 			}
-			test.Status = "FAILED"
+			test.Status = terminalStatus
 			test.Error = detail
 			test.EndedAt = &now
 			test.PendingSince = nil

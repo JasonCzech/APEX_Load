@@ -326,6 +326,8 @@ function scheduleHealthPresentation(health: ScenarioScheduleHealth | null, now =
     health.failed > 0 ? `${health.failed} scenario occurrences failed` : '',
     health.blocked > 0 ? `${health.blocked} scenario occurrences blocked` : '',
     (health.execution_plan_blocked || 0) > 0 ? `${health.execution_plan_blocked} execution-plan schedules blocked` : '',
+    (health.execution_plan_awaiting_approval || 0) > 0 ? `${health.execution_plan_awaiting_approval} execution-plan run${health.execution_plan_awaiting_approval === 1 ? ' is' : 's are'} waiting for approval (Scenarios › Execution plans)` : '',
+    (health.execution_plan_waiting_previous_run || 0) > 0 ? `${health.execution_plan_waiting_previous_run} execution-plan run${health.execution_plan_waiting_previous_run === 1 ? ' is' : 's are'} queued behind the plan's previous run` : '',
     health.pending_approval > 0 ? `${health.pending_approval} pending approval` : '',
     health.storage_error ? `Storage: ${health.storage_error}` : '',
     failedSweeps.length > 0 ? `Failed sweeps: ${failedSweeps.map(([name]) => name).join(', ')}` : '',
@@ -342,6 +344,7 @@ function scheduleHealthPresentation(health: ScenarioScheduleHealth | null, now =
   if (missingSweeps.length > 0) return { severity: 'warning', label: `${missingSweeps.length} sweep pending`, summary: details }
   if (staleSweeps.length > 0) return { severity: 'warning', label: `${staleSweeps.length} sweep stale`, summary: details }
   if (health.pending_approval > 0) return { severity: 'warning', label: `${health.pending_approval} approval`, summary: details }
+  if ((health.execution_plan_awaiting_approval || 0) > 0) return { severity: 'warning', label: `${health.execution_plan_awaiting_approval} plan approval`, summary: details }
   if (due > 0) return { severity: 'warning', label: `${due} due`, summary: details }
   if (configured > 0) return { severity: 'healthy', label: `${configured} configured`, summary: details }
   return { severity: 'unknown', label: 'no schedules', summary: 'No schedules configured.' }
@@ -2613,7 +2616,7 @@ function RunCalendarPanel({
                   {(selectedEvent.scenario_name || selectedEvent.scenario_id) && (
                     <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
                   )}
-                  {selectedEvent.plan_id && <RunCalendarDetailRow label="Plan" value={selectedEvent.plan_id} />}
+                  {selectedEvent.plan_id && <RunCalendarDetailRow label="Plan" value={selectedEvent.plan_name || selectedEvent.plan_id} />}
                   <RunCalendarDetailRow label="Schedule" value={selectedEvent.schedule_name || selectedEvent.cron_expr || (selectedEvent.source === 'ad_hoc' ? 'Ad-hoc' : '-')} />
                   {selectedEvent.cron_expr && <RunCalendarDetailRow label="Cron" value={`${selectedEvent.cron_expr}${selectedEvent.timezone ? ` / ${selectedEvent.timezone}` : ''}`} />}
                   {selectedEvent.test_ref_key || selectedEvent.test_id ? <RunCalendarDetailRow label="Test" value={selectedEvent.test_ref_key || selectedEvent.test_id || '-'} /> : null}
@@ -2863,7 +2866,7 @@ function formatRunCalendarStatus(status: string, reason?: string) {
 function runCalendarSourceLabel(event: RunCalendarEvent) {
   if (event.source === 'cron') return event.projected ? 'Projected Cron' : 'Cron'
   if (event.source === 'ad_hoc') return 'Ad-hoc'
-  if (event.source === 'execution_plan') return event.projected ? 'Projected Plan' : 'Execution Plan'
+  if (event.source === 'execution_plan') return event.projected ? 'Projected Plan' : event.test_id ? 'Plan run' : 'Execution Plan'
   return event.source || 'Run'
 }
 

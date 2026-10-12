@@ -16,17 +16,26 @@ import { CronBuilder } from './ScheduleCronBuilder'
 import LoadingState from './ux/LoadingState'
 import { formatDateTime } from '../utils/dateTime'
 import {
-  COMMON_TIMEZONES,
   datetimeLocalToISO,
   describeCron,
   formatDatetimeLocalValue,
+  formatScheduleToken,
 } from './newTestScheduleFormat'
+import { ScheduleCurrentUtc, ScheduleNextRuns, ScheduleTimezoneSelect, type SchedulePreviewState } from './ScheduleCadenceFields'
+import { useScheduleClock } from '../hooks/useScheduleClock'
+import { occurrenceStatusLabel, overlapPolicyLabel, scheduleHoldSentence } from './executionPlanActivityModel'
 
 interface Props {
   plan: ExecutionPlan
   canManage: boolean
   canAdmin?: boolean
   onClose: () => void
+  /** Where the plan files its runs, e.g. "Storefront › R2026.11". */
+  planReleaseLabel?: string
+  /** Releases a schedule may file its runs under instead of the plan's. */
+  releaseOptions?: { id: string; name: string }[]
+  /** Opens the plan's approvals, for a scheduled run waiting on one. */
+  onReviewApproval?: () => void
 }
 
 type ScheduleDraft = {
@@ -35,6 +44,7 @@ type ScheduleDraft = {
   name: string
   cron_expr: string
   timezone: string
+  release_id: string
   run_name_template: string
   enabled: boolean
   missed_run_policy: string
@@ -60,12 +70,21 @@ function emptyDraft(): ScheduleDraft {
     name: '',
     cron_expr: '0 2 * * *',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    release_id: '',
     run_name_template: '',
     enabled: true,
     missed_run_policy: 'skip',
     disabled_from: '',
     disabled_until: '',
 	})
+}
+
+// Same wording as Settings › Schedule defaults and the select below.
+const MISSED_RUN_POLICY_LABELS: Record<string, string> = {
+  skip: 'Skip missed runs',
+  catch_up_once: 'Catch up once',
+  catch_up_all: 'Catch up all',
+  require_operator_decision: 'Require operator decision',
 }
 
 function isoToLocalInput(iso?: string): string {
@@ -79,11 +98,12 @@ function formatTimestamp(iso?: string): string {
   return formatDateTime(iso, { seconds: true, fallback: '—' })
 }
 
-function occurrenceStatusPill(status: string): string {
+function occurrenceStatusPill(status: string, reasonCode?: string): string {
   switch (status) {
     case 'materialized':
       return 'pp-pill pp-pill-success'
     case 'blocked':
+      return reasonCode === 'approval_required' || reasonCode === 'waiting_for_previous_run' ? 'pp-pill pp-pill-warning' : 'pp-pill pp-pill-danger'
     case 'failed':
       return 'pp-pill pp-pill-danger'
     case 'materializing':
@@ -93,7 +113,7 @@ function occurrenceStatusPill(status: string): string {
   }
 }
 
-export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin = false, onClose }: Props) {
+export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin = false, onClose, planReleaseLabel, releaseOptions = [], onReviewApproval }: Props) {
   const api = useExecutionPlansApi()
 	const { runGuarded } = useNavigationGuardRunner()
   const [schedules, setSchedules] = useState<ExecutionPlanSchedule[]>([])
@@ -117,6 +137,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
   const resolveInFlightRef = useRef(false)
   activePlanIdRef.current = plan.id
   const titleId = useId()
+  const releaseHelpId = useId()
   const draftOpen = Boolean(draft)
 	const discardScheduleDraft = useCallback(() => {
 		setDraft(null)
@@ -188,6 +209,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
       name: schedule.name,
       cron_expr: schedule.cron_expr,
       timezone: schedule.timezone || 'UTC',
+      release_id: schedule.release_id || '',
       run_name_template: schedule.run_name_template || '',
       enabled: schedule.enabled,
       missed_run_policy: schedule.missed_run_policy || 'skip',
@@ -201,6 +223,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
       name: draft.name.trim(),
       cron_expr: draft.cron_expr.trim(),
       timezone: draft.timezone.trim() || 'UTC',
+      release_id: draft.release_id,
       run_name_template: draft.run_name_template.trim() || undefined,
       enabled: draft.enabled,
       missed_run_policy: draft.missed_run_policy || undefined,
@@ -386,6 +409,34 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
     () => (draft?.cron_expr.trim() ? describeCron(draft.cron_expr) : ''),
     [draft?.cron_expr],
   )
+  const clock = useScheduleClock()
+  const previewKey = draft ? JSON.stringify([plan.id, draft.cron_expr.trim(), draft.timezone, draft.disabled_from, draft.disabled_until]) : ''
+  const [preview, setPreview] = useState<(SchedulePreviewState & { key: string }) | null>(null)
+  const currentPreview = preview?.key === previewKey ? preview : null
+  const previewPending = Boolean(draft?.cron_expr.trim() && !currentPreview)
+  useEffect(() => {
+    if (!previewKey) return undefined
+    const [planId, cron, timezone, disabledFrom, disabledUntil] = JSON.parse(previewKey) as string[]
+    if (!cron || typeof api.previewExecutionPlanSchedule !== 'function') return undefined
+    let cancelled = false
+    const handle = window.setTimeout(() => {
+      api.previewExecutionPlanSchedule(planId, {
+        name: 'schedule-preview',
+        cron_expr: cron,
+        timezone: timezone || 'UTC',
+        disabled_from: datetimeLocalToISO(disabledFrom) || undefined,
+        disabled_until: datetimeLocalToISO(disabledUntil) || undefined,
+      }, 5).then(result => {
+        if (!cancelled) setPreview({ key: previewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '' })
+      }).catch(err => {
+        if (!cancelled) setPreview({ key: previewKey, occurrences: [], error: err instanceof ApiError ? err.message : 'Invalid schedule' })
+      })
+    }, 400)
+    return () => { cancelled = true; window.clearTimeout(handle) }
+  }, [api, previewKey])
+  const releaseLabel = (releaseId?: string) => releaseId
+    ? releaseOptions.find(release => release.id === releaseId)?.name || `Release ${releaseId}`
+    : planReleaseLabel ? `the plan's release (${planReleaseLabel})` : "Imported Legacy (the plan has no release)"
   const draftValid = Boolean(draft && draft.name.trim() && draft.cron_expr.trim())
 
   return (
@@ -450,16 +501,11 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                     onChange={e => setDraft(d => (d ? { ...d, name: e.target.value } : d))}
                   />
                 </label>
-                <label className="pp-field">
-                  <span>Timezone</span>
-                  <select value={draft.timezone} onChange={e => setDraft(d => (d ? { ...d, timezone: e.target.value } : d))}>
-                    {COMMON_TIMEZONES.map(tz => (
-                      <option key={tz} value={tz}>
-                        {tz}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="pp-field">
+                  <span id={`${titleId}-timezone`}>Timezone</span>
+                  <ScheduleTimezoneSelect labelledBy={`${titleId}-timezone`} value={draft.timezone} now={clock} onChange={timezone => setDraft(d => (d ? { ...d, timezone } : d))} />
+                  <ScheduleCurrentUtc now={clock} />
+                </div>
               </div>
 
               <div className="pp-field">
@@ -483,7 +529,27 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   aria-label="Raw cron expression"
                   onChange={e => setDraft(d => (d ? { ...d, cron_expr: e.target.value } : d))}
                 />
+                <ScheduleNextRuns preview={currentPreview} pending={previewPending} timezone={draft.timezone} />
               </div>
+
+              <label className="pp-field">
+                <span>Release</span>
+                <select
+                  aria-label="Release this schedule's runs are filed under"
+                  aria-describedby={plan.application_id ? undefined : releaseHelpId}
+                  value={draft.release_id}
+                  onChange={e => setDraft(d => (d ? { ...d, release_id: e.target.value } : d))}
+                >
+                  <option value="">{planReleaseLabel ? `Use ${releaseLabel('')}` : releaseLabel('')}</option>
+                  {draft.release_id && !releaseOptions.some(release => release.id === draft.release_id) && <option value={draft.release_id}>{releaseLabel(draft.release_id)}</option>}
+                  {releaseOptions.map(release => <option key={release.id} value={release.id}>{release.name}</option>)}
+                </select>
+                {!plan.application_id && (
+                  <span id={releaseHelpId} className="setting-desc pp-field-help">
+                    To file scheduled runs under a release, edit the plan and choose its application and release first.
+                  </span>
+                )}
+              </label>
 
               <div className="pp-field-row">
                 <label className="pp-field">
@@ -500,11 +566,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                     value={draft.missed_run_policy}
                     onChange={e => setDraft(d => (d ? { ...d, missed_run_policy: e.target.value } : d))}
                   >
-                    {/* Same wording as Settings › Schedule defaults. */}
-                    <option value="skip">Skip missed runs</option>
-                    <option value="catch_up_once">Catch up once</option>
-                    <option value="catch_up_all">Catch up all</option>
-                    <option value="require_operator_decision">Require operator decision</option>
+                    {Object.entries(MISSED_RUN_POLICY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
               </div>
@@ -527,6 +589,15 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   />
                 </label>
               </div>
+
+              <section className="new-test-schedule-policy" aria-label="What this schedule's runs follow">
+                <dl>
+                  <dt>Runs are filed under</dt><dd>{releaseLabel(draft.release_id)}</dd>
+                  <dt>Missed runs</dt><dd>{MISSED_RUN_POLICY_LABELS[draft.missed_run_policy] || formatScheduleToken(draft.missed_run_policy)}</dd>
+                  <dt>If the plan is still running</dt><dd>{overlapPolicyLabel(plan.overlap_policy)} (set on the plan)</dd>
+                  <dt>Over the project quota</dt><dd>The run waits for a project admin's approval</dd>
+                </dl>
+              </section>
 
               <label className="pp-entry-enabled" title="Enabled">
                 <input
@@ -565,7 +636,10 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                         {schedule.enabled ? 'enabled' : 'paused'}
                       </span>
                       {schedule.next_required_action === 'approval_required' && (
-                        <span className="pp-pill pp-pill-danger">approval required</span>
+                        <span className="pp-pill pp-pill-warning">Waiting for approval</span>
+                      )}
+                      {schedule.next_required_action === 'waiting_for_previous_run' && (
+                        <span className="pp-pill pp-pill-info">Queued</span>
                       )}
                     </div>
                     <div className="pp-row-meta">
@@ -573,10 +647,18 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                         {schedule.cron_expr}
                         {schedule.timezone ? ` / ${schedule.timezone}` : ''}
                       </span>
-                      <span>next: {formatTimestamp(schedule.next_run_at)}</span>
+                      {scheduleHoldSentence(schedule.next_required_action, schedule.next_run_at)
+                        ? <span>{scheduleHoldSentence(schedule.next_required_action, schedule.next_run_at)}</span>
+                        : <span>next: {formatTimestamp(schedule.next_run_at)}</span>}
                       {schedule.last_run_at ? <span>last: {formatTimestamp(schedule.last_run_at)}</span> : null}
+                      <span>files runs under {releaseLabel(schedule.release_id)}</span>
+                      {schedule.next_required_action === 'approval_required' && onReviewApproval ? (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={onReviewApproval}>
+                          {canAdmin ? 'Review approval' : 'View approval'}
+                        </button>
+                      ) : null}
                     </div>
-                    {schedule.last_error ? (
+                    {schedule.last_error && schedule.next_required_action !== 'approval_required' && schedule.next_required_action !== 'waiting_for_previous_run' ? (
                       <div className="pp-row-meta">
                         <span className="pp-pill pp-pill-danger">last error</span>
                         <span>{schedule.last_error}</span>
@@ -608,12 +690,13 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                       ) : (
 						occurrences.map(occ => (
 						  <div className="pp-row-meta pp-occurrence-row" key={occ.id}>
-                            <span className={occurrenceStatusPill(occ.status)}>{occ.status}</span>
+                            <span className={occurrenceStatusPill(occ.status, occ.reason_code)}>{occurrenceStatusLabel(occ.status, occ.reason_code)}</span>
                             <span>{formatTimestamp(occ.planned_at)}</span>
-                            {occ.reason_code ? <span>{occ.reason_code}</span> : null}
-                            {occ.run_id ? <span>run {occ.run_id}</span> : null}
                             {occ.conflict_summary ? <span>{occ.conflict_summary}</span> : null}
-							{canAdmin && occ.reason_code !== 'approval_required' && (occ.status === 'blocked' || occ.status === 'failed') ? (
+                            {occ.status === 'blocked' && occ.reason_code === 'approval_required' && onReviewApproval ? (
+                              <button type="button" className="btn btn-ghost btn-sm" onClick={onReviewApproval}>{canAdmin ? 'Review approval' : 'View approval'}</button>
+                            ) : null}
+							{canAdmin && occ.reason_code !== 'approval_required' && occ.reason_code !== 'waiting_for_previous_run' && (occ.status === 'blocked' || occ.status === 'failed') ? (
 							  <span className="pp-row-actions" aria-label="Resolve occurrence">
 								<button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void resolveOccurrence(schedule, occ, 'retry')}>Retry</button>
 								<button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void resolveOccurrence(schedule, occ, 'catch_up')}>Catch up</button>

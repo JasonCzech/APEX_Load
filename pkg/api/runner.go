@@ -291,6 +291,13 @@ type TestRunner struct {
 	seqPlanRuns      map[string]*seqPlanRunState
 	seqPlanByTest    map[string]string
 	seqPlanRetrying  map[string]struct{}
+	// executionPlanStarts serializes starting runs of one plan, so the overlap
+	// policy's check and the new run's anchor cannot interleave with another
+	// start of the same plan.
+	executionPlanStarts sync.Map // plan ID -> *sync.Mutex
+	// pendingPlanStops holds Stop plan requests for sequential runs whose
+	// state recovery has not restored yet (guarded by seqMu).
+	pendingPlanStops map[string]string
 	// Accepted CI retries share one term-bound coordinator. Per-row goroutines
 	// would create an unbounded timer/provider herd during a shared outage.
 	ciRecoveryRetrying        map[string]queuedCIRecoveryRetryState
@@ -349,6 +356,9 @@ type TestRunner struct {
 	// an execution-plan caller's outer term check and the term-aware StartTest
 	// mutation. Production leaves it nil.
 	beforeExecutionPlanStartMutation func()
+	// afterExecutionPlanEntryClaim is a test barrier between a sequential
+	// entry's durable claim and the creation of its run.
+	afterExecutionPlanEntryClaim func()
 	// beforeLocalBuildFailureFinalize is a deterministic test barrier between a
 	// local engine build failure and the lifecycle-fenced terminal transition.
 	// Production leaves it nil.
@@ -583,6 +593,7 @@ type ManagedTest struct {
 	StoppedByDisplayName  string                                   `json:"stopped_by_display_name,omitempty"`
 	StartAuthorization    *QueuedStartAuthorization                `json:"start_authorization,omitempty"`
 	ExecutionPlanApproval *RunArchiveExecutionPlanApprovalSnapshot `json:"execution_plan_approval,omitempty"`
+	ExecutionPlan         *TestExecutionPlanLink                   `json:"execution_plan,omitempty"`
 	VUserRamps            map[string]VUserRampStatus               `json:"vuser_ramps,omitempty"`
 	LiveMetrics           *LiveMetrics                             `json:"live_metrics,omitempty"`
 	History               []*LiveMetrics                           `json:"history,omitempty"`
@@ -2121,6 +2132,7 @@ type CreateTestRequest struct {
 	RequestedTestID       string                         `json:"requested_test_id,omitempty"`
 	MaterializationKey    string                         `json:"-"`
 	ExecutionPlanApproval *storage.ExecutionPlanApproval `json:"-"`
+	ExecutionPlan         *TestExecutionPlanLink         `json:"-"`
 	Duration              string                         `json:"duration"`
 	StartDelay            string                         `json:"start_delay,omitempty"`
 	ReserveLaunchWindow   bool                           `json:"reserve_launch_window,omitempty"`

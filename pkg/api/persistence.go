@@ -894,6 +894,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.StoppedByDisplayName = stored.StoppedByDisplayName
 	current.StartAuthorization = cloneQueuedStartAuthorization(stored.StartAuthorization)
 	current.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(stored.ExecutionPlanApproval)
+	current.ExecutionPlan = cloneTestExecutionPlanLink(stored.ExecutionPlan)
 	current.initialArchiveProvenance = decodeStoredInitialProvenance(stored.initialArchiveProvenance)
 	current.Error = stored.Error
 }
@@ -1060,6 +1061,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		StoppedByDisplayName:     record.StoppedByDisplayName,
 		StartAuthorization:       decodeStoredStartAuthorization(record.StartAuthorization),
 		ExecutionPlanApproval:    decodeStoredExecutionPlanApproval(record.ExecutionPlanApproval),
+		ExecutionPlan:            decodeStoredExecutionPlanLink(record.ExecutionPlan),
 		initialArchiveProvenance: decodeStoredInitialProvenance(record.InitialProvenance),
 		Error:                    record.Error,
 		pinnedSecrets:            &runPinnedSecretState{},
@@ -1938,6 +1940,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		StoppedByDisplayName:           test.StoppedByDisplayName,
 		StartAuthorization:             startAuthorizationForStorage(test.StartAuthorization),
 		ExecutionPlanApproval:          test.ExecutionPlanApproval,
+		ExecutionPlan:                  executionPlanLinkForStorage(test.ExecutionPlan),
 		InitialProvenance:              initialProvenanceForStorage(test.initialArchiveProvenance),
 		ExpectedProjectUpdatedAt:       test.expectedProjectUpdatedAt,
 		ExpectedApplicationUpdatedAt:   test.expectedApplicationUpdatedAt,

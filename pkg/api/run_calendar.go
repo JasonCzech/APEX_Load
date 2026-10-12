@@ -87,6 +87,8 @@ type RunCalendarEvent struct {
 	ScenarioID       string              `json:"scenario_id,omitempty"`
 	ScenarioName     string              `json:"scenario_name,omitempty"`
 	PlanID           string              `json:"plan_id,omitempty"`
+	PlanName         string              `json:"plan_name,omitempty"`
+	PlanRunID        string              `json:"plan_run_id,omitempty"`
 	ApplicationID    string              `json:"application_id,omitempty"`
 	ReleaseID        string              `json:"release_id,omitempty"`
 	ProjectID        string              `json:"project_id,omitempty"`
@@ -341,12 +343,16 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 		appendEvent(runCalendarEventFromOccurrence(occurrence, schedule, test, snapshot.Scenarios, inventory, tr.manifestForCalendarTest(test), now))
 	}
 
+	planRunsWithTests := map[string]struct{}{}
 	for _, test := range snapshot.Tests {
 		if test == nil {
 			continue
 		}
 		if _, scheduled := scheduledTestIDs[test.ID]; scheduled {
 			continue
+		}
+		if test.ExecutionPlan != nil {
+			planRunsWithTests[test.ExecutionPlan.PlanRunID] = struct{}{}
 		}
 		appendEvent(runCalendarEventFromTest(test, snapshot.Scenarios, inventory, tr.manifestForCalendarTest(test), now))
 	}
@@ -383,6 +389,11 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 			continue
 		}
 		planOccurrenceByScheduleAt[runCalendarOccurrenceKey(occurrence.ScheduleID, occurrence.PlannedAt)] = struct{}{}
+		// A started plan run is shown by the runs it started, each linked to the
+		// plan; its occurrence would count the same load twice.
+		if _, shown := planRunsWithTests[strings.TrimSpace(occurrence.RunID)]; shown && strings.TrimSpace(occurrence.RunID) != "" {
+			continue
+		}
 		appendEvent(runCalendarEventFromPlanOccurrence(occurrence, planSchedulesByID[occurrence.ScheduleID], snapshot.Plans[occurrence.PlanID], snapshot.Scenarios))
 	}
 	for _, schedule := range snapshot.PlanSchedules {
@@ -801,11 +812,20 @@ func runCalendarEventFromTest(test *ManagedTest, scenarios map[string]runCalenda
 	if calendarOperatorStopped(test, manifest) {
 		reason = "operator_stopped"
 	}
+	source := "ad_hoc"
+	planID, planName, planRunID := "", "", ""
+	if link := test.ExecutionPlan; link != nil {
+		source, runType = "execution_plan", "execution_plan"
+		planID, planName, planRunID = link.PlanID, link.PlanName, link.PlanRunID
+	}
 	return RunCalendarEvent{
 		ReasonCode:    reason,
 		ID:            "test:" + test.ID,
-		Source:        "ad_hoc",
+		Source:        source,
 		RunType:       runType,
+		PlanID:        planID,
+		PlanName:      planName,
+		PlanRunID:     planRunID,
 		Title:         calendarTitle(firstNonEmpty(test.Name, "Ad-hoc Run")),
 		Status:        firstNonEmpty(test.Status, "queued"),
 		StartAt:       start.UTC(),
@@ -981,6 +1001,10 @@ func runCalendarEventFromPlanOccurrence(occurrence *storage.ExecutionPlanSchedul
 		event.CronExpr = schedule.CronExpr
 		event.Timezone = schedule.Timezone
 	}
+	if plan != nil {
+		event.PlanName = plan.Name
+	}
+	event.PlanRunID = strings.TrimSpace(occurrence.RunID)
 	return event
 }
 
@@ -990,6 +1014,10 @@ func projectRunCalendarPlanSchedule(schedule *storage.ExecutionPlanSchedule, pla
 		startFrom = now
 	}
 	totalVUsers, duration := executionPlanCalendarWorkload(plan, scenarios)
+	planName := ""
+	if plan != nil {
+		planName = plan.Name
+	}
 	allows := executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil)
 	cursor := startFrom.Add(-time.Minute)
 	events := make([]RunCalendarEvent, 0)
@@ -1018,6 +1046,7 @@ func projectRunCalendarPlanSchedule(schedule *storage.ExecutionPlanSchedule, pla
 			CronExpr:     schedule.CronExpr,
 			Timezone:     schedule.Timezone,
 			PlanID:       schedule.PlanID,
+			PlanName:     planName,
 			ProjectID:    normalizeProjectID(schedule.ProjectID),
 			Workload:     RunCalendarWorkload{TotalVUsers: totalVUsers, Duration: duration.String()},
 			Topology: RunCalendarTopology{

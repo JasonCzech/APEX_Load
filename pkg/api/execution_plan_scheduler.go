@@ -24,6 +24,7 @@ type CreateExecutionPlanScheduleRequest struct {
 	Name             string     `json:"name"`
 	CronExpr         string     `json:"cron_expr"`
 	Timezone         string     `json:"timezone,omitempty"`
+	ReleaseID        *string    `json:"release_id,omitempty"` // omitted keeps the stored release; "" uses the plan's
 	RunNameTemplate  string     `json:"run_name_template,omitempty"`
 	Enabled          *bool      `json:"enabled,omitempty"`
 	MissedRunPolicy  string     `json:"missed_run_policy,omitempty"`
@@ -192,6 +193,26 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 	if runNameTemplate == "" {
 		runNameTemplate = plan.Name
 	}
+	releaseID := ""
+	if existing != nil {
+		releaseID = existing.ReleaseID
+	}
+	if req.ReleaseID != nil {
+		releaseID = strings.TrimSpace(*req.ReleaseID)
+	}
+	if releaseID != "" && (existing == nil || req.ReleaseID != nil) {
+		// A schedule chooses another release of the plan's application.
+		applicationID := strings.TrimSpace(plan.ApplicationID)
+		if applicationID == "" {
+			return nil, errors.New("choose the plan's application and release before giving a schedule its own release")
+		}
+		if err := normalizeExecutionPlanRelease(tr.execPlanScheduleStore, plan.ProjectID, &applicationID, &releaseID); err != nil {
+			if errors.Is(err, errExecutionPlanReleaseOutsideApplication) {
+				return nil, fmt.Errorf("release %q is not a release of the plan's application", releaseID)
+			}
+			return nil, err
+		}
+	}
 	actor := systemTestCreationActor("controller:execution-plan-schedule")
 	if existing != nil {
 		actor = executionPlanScheduleCreationActor(existing)
@@ -207,6 +228,7 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 		Name:             name,
 		CronExpr:         cronExpr,
 		Timezone:         tz,
+		ReleaseID:        releaseID,
 		RunNameTemplate:  runNameTemplate,
 		Enabled:          enabled,
 		MissedRunPolicy:  normalizeScenarioScheduleMissedRunPolicy(req.MissedRunPolicy),
@@ -240,6 +262,10 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 			// same; cron/timezone/pause changes intentionally recompute it.
 			if existing != nil && existing.NextRunAt != nil && executionPlanScheduleTimingEquivalent(existing, schedule) {
 				schedule.NextRunAt = cloneTimePtr(existing.NextRunAt)
+				// A run held at that time stays held, so the schedule keeps saying so.
+				if existing.NextRequiredAction == "approval_required" || existing.NextRequiredAction == executionPlanWaitingForPreviousRun {
+					schedule.NextRequiredAction, schedule.LastError = existing.NextRequiredAction, existing.LastError
+				}
 			}
 		}
 	}
@@ -251,7 +277,34 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 	if err := tr.persistExecutionPlanScheduleWithTerm(schedule, create, expectedRevision, leaseTerm); err != nil {
 		return nil, err
 	}
+	tr.skipQueuedOccurrenceLeftBySchedule(existing, schedule, now, leaseTerm)
 	return schedule, nil
+}
+
+// skipQueuedOccurrenceLeftBySchedule skips the run a schedule held queued
+// behind the plan's previous run once an edit moves the schedule off it (new
+// timing, or disabled): nothing would start it, and its row would read as
+// queued for good.
+func (tr *TestRunner) skipQueuedOccurrenceLeftBySchedule(existing, updated *storage.ExecutionPlanSchedule, now time.Time, leaseTerm executionLeaseTerm) {
+	if existing == nil || updated == nil || existing.NextRunAt == nil {
+		return
+	}
+	if updated.Enabled && updated.NextRunAt != nil && updated.NextRunAt.Equal(*existing.NextRunAt) {
+		return
+	}
+	occurrence, err := tr.execPlanScheduleStore.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(existing.ID, existing.NextRunAt.UTC())
+	if err != nil || occurrence == nil || !strings.EqualFold(occurrence.Status, "blocked") || occurrence.ReasonCode != executionPlanWaitingForPreviousRun {
+		return
+	}
+	expectedRevision := occurrence.Revision
+	occurrence.Status = "skipped"
+	occurrence.ReasonCode = "schedule_changed"
+	occurrence.ConflictSummary = "Skipped: the schedule was changed while this run waited for the plan's previous run."
+	occurrence.UpdatedAt = now
+	occurrence.TransitionToken = uuid.NewString()
+	if err := tr.persistExecutionPlanScheduleOccurrenceTransitionWithTerm(occurrence, expectedRevision, leaseTerm); err != nil {
+		slog.Warn("could not skip a queued plan run its schedule no longer holds", "schedule_id", existing.ID, "occurrence_id", occurrence.ID, "error", err)
+	}
 }
 
 func executionPlanScheduleCreationActor(schedule *storage.ExecutionPlanSchedule) testCreationActor {
@@ -699,6 +752,9 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnceWithTerm(schedule *storage.
 		if status == "blocked" && existing.ReasonCode == "approval_required" {
 			return tr.reconcileExecutionPlanScheduleApprovalOccurrence(schedule, existing, now, leaseTerm)
 		}
+		if status == "blocked" && existing.ReasonCode == executionPlanWaitingForPreviousRun {
+			return tr.reconcileQueuedExecutionPlanScheduleOccurrence(schedule, existing, now, leaseTerm)
+		}
 		// Operator-decision occurrences are durable gates. Do not reinterpret a
 		// blocked row as terminal and advance past it; only the resolution API may
 		// transition this exact CAS anchor to materializing or skipped.
@@ -745,7 +801,59 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnceWithTerm(schedule *storage.
 		if strings.EqualFold(strings.TrimSpace(existing.Status), "blocked") && existing.ReasonCode == "approval_required" {
 			return tr.reconcileExecutionPlanScheduleApprovalOccurrence(schedule, existing, now, leaseTerm)
 		}
+		if strings.EqualFold(strings.TrimSpace(existing.Status), "blocked") && existing.ReasonCode == executionPlanWaitingForPreviousRun {
+			return tr.reconcileQueuedExecutionPlanScheduleOccurrence(schedule, existing, now, leaseTerm)
+		}
 		return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, existing, plannedAt, now, schedule.LastError, leaseTerm)
+	}
+	return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now, leaseTerm)
+}
+
+// executionPlanHoldSummary is the schedule's note while it holds at an
+// occurrence.
+func executionPlanHoldSummary(reasonCode string) string {
+	if reasonCode == executionPlanWaitingForPreviousRun {
+		return "waiting for the plan's previous run to finish"
+	}
+	return "plan run requires approval"
+}
+
+// reconcileQueuedExecutionPlanScheduleOccurrence starts an occurrence queued
+// behind the plan's earlier run once that run has finished. While it is still
+// running the occurrence keeps waiting, without a write per sweep.
+func (tr *TestRunner) reconcileQueuedExecutionPlanScheduleOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time, leaseTerm executionLeaseTerm) error {
+	if schedule == nil || occurrence == nil {
+		return fmt.Errorf("execution-plan schedule and occurrence are required")
+	}
+	plan, err := tr.execPlanScheduleStore.GetExecutionPlan(schedule.PlanID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("load execution plan %s while reconciling a queued occurrence: %w", schedule.PlanID, err)
+	}
+	if plan != nil && effectiveExecutionPlanOverlapPolicy(plan) == storage.ExecutionPlanOverlapQueue {
+		active, err := tr.activeExecutionPlanRuns(plan.ID, occurrence.RunID)
+		if err != nil {
+			return fmt.Errorf("check the plan's runs in progress for a queued occurrence: %w", err)
+		}
+		if len(active) > 0 {
+			holdError := firstNonEmpty(occurrence.ConflictSummary, executionPlanHoldSummary(executionPlanWaitingForPreviousRun))
+			if schedule.NextRunAt != nil && schedule.NextRunAt.Equal(occurrence.PlannedAt) &&
+				schedule.NextRequiredAction == executionPlanWaitingForPreviousRun && schedule.LastError == holdError {
+				return nil
+			}
+			return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, occurrence, occurrence.PlannedAt, now, holdError, leaseTerm)
+		}
+	}
+	// The earlier run has finished (or the plan no longer queues): resume this
+	// occurrence under its own run ID. Materialization rechecks the policy.
+	expectedRevision := occurrence.Revision
+	occurrence.Status = "materializing"
+	occurrence.ReasonCode = "previous_run_finished"
+	occurrence.ConflictSummary = ""
+	occurrence.MaterializedAt = nil
+	occurrence.UpdatedAt = now
+	occurrence.TransitionToken = uuid.NewString()
+	if err := tr.persistExecutionPlanScheduleOccurrenceTransitionWithTerm(occurrence, expectedRevision, leaseTerm); err != nil {
+		return fmt.Errorf("resume queued scheduled execution-plan occurrence: %w", err)
 	}
 	return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now, leaseTerm)
 }
@@ -900,6 +1008,12 @@ func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule
 		return archiveErr
 	}
 	runName := renderExecutionPlanScheduleRunName(schedule, plan, occurrence.PlannedAt)
+	if releaseID := strings.TrimSpace(schedule.ReleaseID); releaseID != "" {
+		// The schedule files its runs under its own release.
+		scheduled := *plan
+		scheduled.ApplicationID, scheduled.ReleaseID = "", releaseID
+		plan = &scheduled
+	}
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
 		// Keep the correlated claim materializing. The next leader can safely
 		// inspect/resume it; declaring it blocked here would discard recoverable
@@ -924,6 +1038,15 @@ func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule
 			return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "skipped", "object_archived", persistedRunID, err.Error(), leaseTerm)
 		}
 		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "materialize_failed", persistedRunID, err.Error(), leaseTerm)
+	}
+	if result.Overlap != nil {
+		started := result.Overlap.StartedAt.UTC().Format("Jan 2 15:04")
+		if result.Overlap.Policy == storage.ExecutionPlanOverlapQueue {
+			occurrence.ConflictSummary = fmt.Sprintf("Waiting for the plan's run in progress (started %s UTC) to finish.", started)
+			return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", executionPlanWaitingForPreviousRun, occurrence.RunID, occurrence.ConflictSummary, leaseTerm)
+		}
+		occurrence.ConflictSummary = fmt.Sprintf("Skipped: the plan's previous run (started %s UTC) was still running.", started)
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "skipped", "previous_run_active", "", occurrence.ConflictSummary, leaseTerm)
 	}
 	if result.Blocked {
 		if result.Approval == nil || strings.TrimSpace(result.Approval.ID) == "" {
@@ -1041,15 +1164,20 @@ func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *stor
 		return fmt.Errorf("execution-plan schedule storage is not configured")
 	}
 	previous := *schedule
-	if occurrence != nil && strings.EqualFold(strings.TrimSpace(occurrence.Status), "blocked") && occurrence.ReasonCode == "approval_required" {
+	if occurrence != nil && strings.EqualFold(strings.TrimSpace(occurrence.Status), "blocked") &&
+		(occurrence.ReasonCode == "approval_required" || occurrence.ReasonCode == executionPlanWaitingForPreviousRun) {
+		// The schedule holds at this occurrence until it is approved (or
+		// rejected), or until the plan's earlier run finishes; it then runs or
+		// is skipped, and the schedule moves on from it.
 		holdAt := plannedAt.UTC()
-		holdError := firstNonEmpty(strings.TrimSpace(occurrence.ConflictSummary), strings.TrimSpace(lastErr), "plan run requires approval")
+		holdAction := occurrence.ReasonCode
+		holdError := firstNonEmpty(strings.TrimSpace(occurrence.ConflictSummary), strings.TrimSpace(lastErr), executionPlanHoldSummary(holdAction))
 		if schedule.NextRunAt != nil && schedule.NextRunAt.Equal(holdAt) &&
-			schedule.NextRequiredAction == "approval_required" && schedule.LastError == holdError {
+			schedule.NextRequiredAction == holdAction && schedule.LastError == holdError {
 			return nil
 		}
 		schedule.NextRunAt = &holdAt
-		schedule.NextRequiredAction = "approval_required"
+		schedule.NextRequiredAction = holdAction
 		schedule.LastError = holdError
 		schedule.UpdatedAt = now
 		expectedRevision := schedule.Revision
@@ -1057,7 +1185,7 @@ func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *stor
 			return tr.persistExecutionPlanScheduleWithTerm(schedule, false, expectedRevision, leaseTerm)
 		}); err != nil {
 			*schedule = previous
-			return fmt.Errorf("persist execution-plan schedule approval hold: %w", err)
+			return fmt.Errorf("persist execution-plan schedule hold: %w", err)
 		}
 		return nil
 	}
@@ -1192,4 +1320,55 @@ func (tr *TestRunner) enqueueExecutionPlanScheduleOccurrenceFinalizeRetry(occurr
 			delay = min(delay*2, executionPlanRetryMaxDelay)
 		}
 	}()
+}
+
+// PreviewExecutionPlanScheduleRuns computes a candidate plan schedule's next
+// count fire times without persisting anything, with the same evaluator and
+// pause handling the sweep uses, so the editor shows what will actually run.
+func (tr *TestRunner) PreviewExecutionPlanScheduleRuns(planID string, req CreateExecutionPlanScheduleRequest, count int) (*ScenarioSchedulePreview, error) {
+	if tr.execPlanScheduleStore == nil {
+		return nil, fmt.Errorf("storage is not configured")
+	}
+	plan, err := tr.execPlanScheduleStore.GetExecutionPlan(planID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errExecutionPlanNotFound, planID)
+		}
+		return nil, executionPlanSchedulePersistenceError("load execution plan", err)
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("%w: %s", errExecutionPlanNotFound, planID)
+	}
+	cronExpr := strings.TrimSpace(req.CronExpr)
+	if err := validateCronExpr(cronExpr); err != nil {
+		return nil, err
+	}
+	tz := strings.TrimSpace(req.Timezone)
+	if tz == "" {
+		tz = "UTC"
+	}
+	if err := validateScheduleTimezone(tz); err != nil {
+		return nil, err
+	}
+	count = min(max(count, 1), 50)
+	disabledFrom := normalizeSchedulePauseBound(req.DisabledFrom)
+	disabledUntil := normalizeSchedulePauseBound(req.DisabledUntil)
+	if disabledFrom != nil && disabledUntil != nil && !disabledFrom.Before(*disabledUntil) {
+		return nil, fmt.Errorf("disabled_from must be before disabled_until")
+	}
+	preview := &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: make([]time.Time, 0, count)}
+	cursor := time.Now().UTC()
+	if !executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, cursor) {
+		allows := executionPlanScheduleAllows(disabledFrom, disabledUntil)
+		for len(preview.Occurrences) < count {
+			next, err := nextCronRun(cronExpr, tz, cursor, allows)
+			if err != nil || next == nil {
+				break
+			}
+			preview.Occurrences = append(preview.Occurrences, next.UTC())
+			cursor = *next
+		}
+	}
+	preview.Count = len(preview.Occurrences)
+	return preview, nil
 }

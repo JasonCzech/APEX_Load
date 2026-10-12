@@ -36,13 +36,10 @@ import {
   formatLaunchWindow,
   formatNextBlockingEvent,
   formatReservationWindow,
-  formatScheduleTimestampInZone,
   formatScheduleInstant,
   formatScheduleToken,
   formatScheduleWindow,
   formatTimeslotLabel,
-  formatTimeZoneOptionLabel,
-  formatUtcScheduleClock,
   reservationStartISO,
   scheduleStatusTone,
 } from './newTestScheduleFormat'
@@ -50,6 +47,7 @@ import ErrorDiagnostic from './ErrorDiagnostic'
 import PageViewToggle from './PageViewToggle'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { CronBuilder } from './ScheduleCronBuilder'
+import { ScheduleCurrentUtc, ScheduleNextRuns, ScheduleTimezoneSelect } from './ScheduleCadenceFields'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
   applyGroupErrorHandlingDraftEdit,
@@ -3011,39 +3009,16 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <CronBuilder value={scheduleDraft.cron_expr} disabled={!canManageSchedules} onChange={(expr) => setScheduleDraft(prev => ({ ...prev, cron_expr: expr }))} />
 <details><summary>Advanced cron expression</summary>                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageSchedules} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" aria-invalid={Boolean(currentSchedulePreview?.error) || !scheduleDraft.cron_expr.trim()} aria-describedby={currentSchedulePreview?.error || !scheduleDraft.cron_expr.trim() ? "new-test-cron-error" : undefined} /></details>
                     {!scheduleDraft.cron_expr.trim() && <p id="new-test-cron-error" role="alert">Enter a schedule frequency or cron expression.</p>}
-                    {schedulePreviewPending && <p role="status">Refreshing next runs…</p>}
-                    {currentSchedulePreview && (
-                      currentSchedulePreview.error ? (
-                        <span id="new-test-cron-error" className="setting-desc cron-preview-error" role="alert">{currentSchedulePreview.error}</span>
-                      ) : currentSchedulePreview.occurrences.length > 0 ? (
-                        <div className="cron-next-runs">
-                          <span className="setting-desc">Next runs ({scheduleDraft.timezone || 'UTC'}):</span>
-                          <ul>
-                            {currentSchedulePreview.occurrences.map((iso, idx) => (
-                              <li key={idx}>{formatScheduleTimestampInZone(iso, scheduleDraft.timezone)}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : (
-                        <span className="setting-desc">No upcoming runs match this schedule within the next year.</span>
-                      )
-                    )}
-                    {currentSchedulePreview && !currentSchedulePreview.error && currentSchedulePreview.conflictSummary && (
-                      <span className="setting-desc cron-preview-error" role="alert">
-                        ⚠ This schedule will be blocked until resolved: {currentSchedulePreview.conflictSummary}
-                      </span>
-                    )}
+                    <ScheduleNextRuns preview={currentSchedulePreview} pending={schedulePreviewPending} timezone={scheduleDraft.timezone} errorId="new-test-cron-error" />
                   </div>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="schedule-timezone-label">Timezone</span>
                     <span className="setting-desc">IANA timezone used for cron evaluation</span>
-                    <span className="setting-desc schedule-current-utc">Current UTC: {formatUtcScheduleClock(scheduleClock)} UTC</span>
+                    <ScheduleCurrentUtc now={scheduleClock} />
                   </div>
-                  <select className="settings-input" aria-labelledby="schedule-timezone-label" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))}>
-                    {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{formatTimeZoneOptionLabel(tz, scheduleClock)}</option>)}
-                  </select>
+                  <ScheduleTimezoneSelect className="settings-input" labelledBy="schedule-timezone-label" value={scheduleDraft.timezone} now={scheduleClock} onChange={timezone => setScheduleDraft(prev => ({ ...prev, timezone }))} />
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">

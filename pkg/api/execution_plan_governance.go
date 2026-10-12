@@ -145,15 +145,22 @@ func (tr *TestRunner) executionPlanRunGateWithTerm(plan *storage.ExecutionPlan, 
 	if maxVUsers <= 0 {
 		return nil, false, nil
 	}
-	peak := tr.executionPlanAggregatePeak(plan)
-	if peak <= maxVUsers {
-		return nil, false, nil
-	}
-	contentHash := tr.executionPlanApprovalContentHash(plan)
 	desiredRunID := ""
 	if len(recoveryRunID) > 0 {
 		desiredRunID = strings.TrimSpace(recoveryRunID[0])
 	}
+	peak := tr.executionPlanAggregatePeak(plan)
+	// A run started alongside one of the same plan still in progress (overlap
+	// policy allow) adds to that run's load, so the quota is judged on both.
+	activeVUsers, activeRuns, err := tr.executionPlanActiveVUsers(plan.ID, desiredRunID)
+	if err != nil {
+		return nil, false, fmt.Errorf("could not read the plan's runs in progress for governance: %w", err)
+	}
+	combined := saturatingAddNonNegative(peak, activeVUsers)
+	if combined <= maxVUsers {
+		return nil, false, nil
+	}
+	contentHash := tr.executionPlanApprovalContentHash(plan)
 	approvals, err := tr.execPlanScheduleStore.ListExecutionPlanApprovals(plan.ID)
 	if err != nil {
 		return nil, false, err
@@ -187,7 +194,7 @@ func (tr *TestRunner) executionPlanRunGateWithTerm(plan *storage.ExecutionPlan, 
 		RequestedAt:     now,
 		RequiredRole:    RoleProjectAdmin,
 		PlanContentHash: contentHash,
-		DecisionReason:  fmt.Sprintf("Aggregate peak %d VUsers exceeds project limit %d; project-admin approval required.", peak, maxVUsers),
+		DecisionReason:  executionPlanQuotaReason(peak, activeVUsers, activeRuns, maxVUsers),
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -480,4 +487,18 @@ func canonicalJSONValue(value any) any {
 		return string(data)
 	}
 	return decoded
+}
+
+// executionPlanQuotaReason states why a plan run needs approval, naming the
+// load of the plan's runs already in progress when they push it over.
+func executionPlanQuotaReason(peak, activeVUsers, activeRuns, maxVUsers int) string {
+	if activeVUsers <= 0 || activeRuns <= 0 {
+		return fmt.Sprintf("Aggregate peak %d VUsers exceeds project limit %d; project-admin approval required.", peak, maxVUsers)
+	}
+	runs := "1 run"
+	if activeRuns > 1 {
+		runs = fmt.Sprintf("%d runs", activeRuns)
+	}
+	return fmt.Sprintf("Peak %d VUsers plus %d VUsers from %s of this plan already in progress makes %d together, over the project limit of %d; project-admin approval required.",
+		peak, activeVUsers, runs, saturatingAddNonNegative(peak, activeVUsers), maxVUsers)
 }

@@ -806,6 +806,40 @@ typical release-qualification plan runs sequentially:
 Plans can carry governance approvals, so a gated plan waits for sign-off before it
 proceeds.
 
+### Where A Plan Files Its Runs
+
+Choose the plan's **Application** and **Release** in the plan editor. Every run the
+plan starts is filed there, so it appears in that workspace's Command Center, Results
+and release trend. A plan without a release files its runs under **Imported Legacy**,
+outside your workspace. A schedule can file its runs under a different release of the
+plan's application; it uses the plan's release unless you pick one. While a schedule
+uses a release of its own, the plan keeps its application.
+
+Each run a plan starts names its plan on the run's page ("Plan: Nightly regression,
+entry 2 of 3"), linked to **Scenarios › Execution plans**.
+
+### When A Plan Is Already Running
+
+**If it is started while a run of it is still running** sets what happens when the
+plan is started again before its previous run has finished:
+
+- **Skip the new run** (the default for new plans): the new run does not start, and
+  **Run** is unavailable while a run is in progress. A scheduled run is recorded as
+  skipped.
+- **Wait for the running one to finish**: a scheduled run is queued and starts when
+  the previous run finishes. **Run** is unavailable while a run is in progress.
+- **Start alongside it**: both runs send load at once, and the quota approval counts
+  them together.
+
+### Following And Stopping A Plan Run
+
+The plan's card shows what it is doing: the running entry, with time elapsed and an
+estimate of the time left; a scheduled run held for a project admin's approval or
+queued behind the previous run; or how its last run ended. **View progress** shows each
+entry's state with a link to its run. **Stop plan** stops the runs the plan started
+and skips the entries that have not started yet; a sequential plan does not start
+another entry.
+
 ## Reading Results And Reports
 
 Completed runs live under **Results**. Open one to reach its **Run Report** — the

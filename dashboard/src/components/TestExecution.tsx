@@ -3,6 +3,7 @@ import MessagingDiagnostics from './MessagingDiagnostics'
 import RunAnnotations from './RunAnnotations'
 import NativeAnalyticsPanel, { NativePanelAuthoring, NativeProjectPanels } from './NativeAnalyticsPanel'
 import ObjectHistory from './ObjectHistory'
+import ExecutionPlanRunLink from './ExecutionPlanRunLink'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -1054,6 +1055,7 @@ export default function TestExecution({
   return (
     <div className="execution">
       <OrchestrationReturn testId={testId} />
+      <ExecutionPlanRunLink link={test.execution_plan} projectId={test.project_id} />
       {Boolean(test.monitor_warnings?.length) && <section className="tx-section" aria-label="Run monitoring warnings"><h3>Run monitoring warnings</h3><ul>{test.monitor_warnings?.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
       <PreparationControls canEdit={canManageTests} key={`preparation-${testId}`} testId={testId} projectId={test.project_id} status={test.status} />
 

@@ -5,15 +5,16 @@ import type {
   ExecutionPlanApproval,
   ExecutionPlanApprovalListResponse,
   ExecutionPlanListResponse,
-  ExecutionPlanRun,
   ExecutionPlanRunListResponse,
   ExecutionPlanRunResponse,
+  ExecutionPlanRunView,
   ExecutionPlanSchedule,
   ExecutionPlanScheduleListResponse,
   ExecutionPlanScheduleOccurrenceListResponse,
   ExecutionPlanScheduleRequest,
   ScheduleOccurrenceResolutionRequest,
 } from '../../types/executionPlans'
+import type { SchedulePreviewResponse } from '../../types/executionPlans'
 import { request } from '../apiClient'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
@@ -30,7 +31,7 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 
 export function useExecutionPlansApi() {
   const listExecutionPlans = useCallback(
-    (params?: { project_id?: string; limit?: number; offset?: number }, options?: ApiCallOptions) =>
+    (params?: { project_id?: string; limit?: number; offset?: number; include_activity?: 'true' }, options?: ApiCallOptions) =>
       request<ExecutionPlanListResponse>(`/execution-plans${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
@@ -70,7 +71,14 @@ export function useExecutionPlansApi() {
 
   const getExecutionPlanRun = useCallback(
     (id: string, runId: string, options?: ApiCallOptions) =>
-      request<ExecutionPlanRun>(`/execution-plans/${id}/runs/${runId}`, withCallOptions(undefined, options)),
+      request<ExecutionPlanRunView>(`/execution-plans/${id}/runs/${runId}`, withCallOptions(undefined, options)),
+    [],
+  )
+
+  const stopExecutionPlanRun = useCallback(
+    (id: string, runId: string, options?: ApiCallOptions) =>
+      request<{ run?: ExecutionPlanRunView; stop_requested: boolean; error?: string }>(
+        `/execution-plans/${id}/runs/${runId}/stop`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
@@ -78,6 +86,15 @@ export function useExecutionPlansApi() {
   const listExecutionPlanSchedules = useCallback(
     (planId: string, options?: ApiCallOptions) =>
       request<ExecutionPlanScheduleListResponse>(`/execution-plans/${planId}/schedules`, withCallOptions(undefined, options)),
+    [],
+  )
+
+  const previewExecutionPlanSchedule = useCallback(
+    (planId: string, body: ExecutionPlanScheduleRequest, count = 5, options?: ApiCallOptions) =>
+      request<SchedulePreviewResponse>(`/execution-plans/${planId}/schedules/preview?count=${count}`, withCallOptions({
+        method: 'POST',
+        body: JSON.stringify(body),
+      }, options)),
     [],
   )
 
@@ -152,7 +169,9 @@ export function useExecutionPlansApi() {
       runExecutionPlan,
       listExecutionPlanRuns,
       getExecutionPlanRun,
+      stopExecutionPlanRun,
       listExecutionPlanSchedules,
+      previewExecutionPlanSchedule,
       createExecutionPlanSchedule,
       updateExecutionPlanSchedule,
       deleteExecutionPlanSchedule,
@@ -171,7 +190,9 @@ export function useExecutionPlansApi() {
       runExecutionPlan,
       listExecutionPlanRuns,
       getExecutionPlanRun,
+      stopExecutionPlanRun,
       listExecutionPlanSchedules,
+      previewExecutionPlanSchedule,
       createExecutionPlanSchedule,
       updateExecutionPlanSchedule,
       deleteExecutionPlanSchedule,

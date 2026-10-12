@@ -34,8 +34,14 @@ type executionPlanService interface {
 	MaterializeAndRun(*storage.ExecutionPlan, string, string, testCreationActor) (*ExecutionPlanMaterializeResult, error)
 	ListRuns(string, int, int) ([]*storage.ExecutionPlanRun, error)
 	GetRun(string) (*storage.ExecutionPlanRun, error)
+	RunView(*storage.ExecutionPlanRun) *ExecutionPlanRunView
+	RunViews([]*storage.ExecutionPlanRun) []*ExecutionPlanRunView
+	StopRun(string, string, testCreationActor) (*ExecutionPlanRunView, error)
+	Activity(*storage.ExecutionPlan) (*ExecutionPlanActivity, error)
+	Activities([]*storage.ExecutionPlan) ([]*ExecutionPlanActivity, []error)
 	CreateSchedule(string, CreateExecutionPlanScheduleRequest, testCreationActor) (*storage.ExecutionPlanSchedule, error)
 	ListSchedules(string) ([]*storage.ExecutionPlanSchedule, error)
+	PreviewSchedule(string, CreateExecutionPlanScheduleRequest, int) (*ScenarioSchedulePreview, error)
 	UpdateSchedule(string, string, CreateExecutionPlanScheduleRequest, testCreationActor) (*storage.ExecutionPlanSchedule, bool, error)
 	DeleteSchedule(string, string) (bool, error)
 	ListScheduleOccurrences(string, string, int, int) ([]*storage.ExecutionPlanScheduleOccurrence, bool, error)
@@ -85,6 +91,21 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 			return http.StatusBadRequest, err.Error()
 		}
 	}
+	if err := normalizeExecutionPlanRelease(service.store, planProject, &plan.ApplicationID, &plan.ReleaseID); err != nil {
+		return http.StatusBadRequest, err.Error()
+	}
+	if outside, err := executionPlanScheduleReleasesOutside(service.store, plan); err != nil {
+		return http.StatusServiceUnavailable, "could not check the releases of the plan's schedules"
+	} else if len(outside) == 1 {
+		return http.StatusConflict, fmt.Sprintf("schedule %s files its runs under a release of another application; set it to use the plan's release first", outside[0])
+	} else if len(outside) > 1 {
+		return http.StatusConflict, fmt.Sprintf("schedules %s file their runs under releases of another application; set them to use the plan's release first", strings.Join(outside, ", "))
+	}
+	overlapPolicy, err := normalizeExecutionPlanOverlapPolicy(plan.OverlapPolicy)
+	if err != nil {
+		return http.StatusBadRequest, err.Error()
+	}
+	plan.OverlapPolicy = overlapPolicy
 	for entryIndex := range plan.Entries {
 		entry := &plan.Entries[entryIndex]
 		if strings.TrimSpace(entry.ScenarioID) == "" {
@@ -211,6 +232,10 @@ func (service *testRunnerExecutionPlanService) Delete(id string, fence execution
 		projectID = plan.ProjectID
 	}
 	result, err := service.runner.deleteExecutionPlanWithTerm(id, fence.leaseTerm)
+	if err == nil && result == storage.ExecutionPlanDeleteDeleted {
+		// A deleted plan starts no more runs; drop its start lock.
+		service.runner.executionPlanStarts.Delete(strings.TrimSpace(id))
+	}
 	return result, projectID, err
 }
 
@@ -226,12 +251,36 @@ func (service *testRunnerExecutionPlanService) GetRun(runID string) (*storage.Ex
 	return service.store.GetExecutionPlanRun(runID)
 }
 
+func (service *testRunnerExecutionPlanService) RunView(run *storage.ExecutionPlanRun) *ExecutionPlanRunView {
+	return service.runner.ExecutionPlanRunViewFor(run)
+}
+
+func (service *testRunnerExecutionPlanService) RunViews(runs []*storage.ExecutionPlanRun) []*ExecutionPlanRunView {
+	return service.runner.ExecutionPlanRunViewsFor(runs)
+}
+
+func (service *testRunnerExecutionPlanService) StopRun(planID, runID string, actor testCreationActor) (*ExecutionPlanRunView, error) {
+	return service.runner.StopExecutionPlanRun(planID, runID, actor)
+}
+
+func (service *testRunnerExecutionPlanService) Activity(plan *storage.ExecutionPlan) (*ExecutionPlanActivity, error) {
+	return service.runner.ExecutionPlanActivityFor(plan)
+}
+
+func (service *testRunnerExecutionPlanService) Activities(plans []*storage.ExecutionPlan) ([]*ExecutionPlanActivity, []error) {
+	return service.runner.ExecutionPlanActivitiesFor(plans)
+}
+
 func (service *testRunnerExecutionPlanService) CreateSchedule(planID string, request CreateExecutionPlanScheduleRequest, actor testCreationActor) (*storage.ExecutionPlanSchedule, error) {
 	return service.runner.CreateExecutionPlanSchedule(planID, request, actor)
 }
 
 func (service *testRunnerExecutionPlanService) ListSchedules(planID string) ([]*storage.ExecutionPlanSchedule, error) {
 	return service.runner.ListExecutionPlanSchedulesForPlan(planID)
+}
+
+func (service *testRunnerExecutionPlanService) PreviewSchedule(planID string, request CreateExecutionPlanScheduleRequest, count int) (*ScenarioSchedulePreview, error) {
+	return service.runner.PreviewExecutionPlanScheduleRuns(planID, request, count)
 }
 
 func (service *testRunnerExecutionPlanService) UpdateSchedule(planID, scheduleID string, request CreateExecutionPlanScheduleRequest, actor testCreationActor) (*storage.ExecutionPlanSchedule, bool, error) {

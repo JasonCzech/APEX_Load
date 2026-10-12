@@ -108,6 +108,14 @@ func (service *testRunnerSchedulingService) Health(now time.Time) ScenarioSchedu
 				if schedule.Enabled {
 					health.ExecutionPlanEnabled++
 				}
+				switch schedule.NextRequiredAction {
+				case "approval_required":
+					health.ExecutionPlanAwaitingApproval++
+					continue
+				case executionPlanWaitingForPreviousRun:
+					health.ExecutionPlanWaitingPreviousRun++
+					continue
+				}
 				if schedule.NextRunAt != nil && !schedule.NextRunAt.After(now) {
 					health.ExecutionPlanDue++
 				}

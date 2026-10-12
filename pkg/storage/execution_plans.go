@@ -39,6 +39,7 @@ type ExecutionPlanSchedule struct {
 	Name               string     `json:"name"`
 	CronExpr           string     `json:"cron_expr"`
 	Timezone           string     `json:"timezone,omitempty"`
+	ReleaseID          string     `json:"release_id,omitempty"` // empty = the plan's release
 	RunNameTemplate    string     `json:"run_name_template,omitempty"`
 	Enabled            bool       `json:"enabled"`
 	MissedRunPolicy    string     `json:"missed_run_policy,omitempty"`
@@ -106,10 +107,26 @@ type ExecutionPlan struct {
 	Entries     []ExecutionPlanEntry `json:"entries"`
 	RunMode     string               `json:"run_mode"` // parallel | sequential
 	TimeslotID  *string              `json:"timeslot_id,omitempty"`
-	Status      string               `json:"status,omitempty"` // draft | ...
-	CreatedAt   time.Time            `json:"created_at"`
-	UpdatedAt   time.Time            `json:"updated_at"`
+	// ApplicationID and ReleaseID file every run the plan starts under that
+	// release, as New run does. Empty files them under the project's legacy
+	// release, as before plans carried one.
+	ApplicationID string `json:"application_id,omitempty"`
+	ReleaseID     string `json:"release_id,omitempty"`
+	// OverlapPolicy decides what happens when the plan is started while an
+	// earlier run of it is still running: skip, queue or allow. Empty is
+	// allow, the behaviour of plans saved before the policy existed.
+	OverlapPolicy string    `json:"overlap_policy,omitempty"`
+	Status        string    `json:"status,omitempty"` // draft | ...
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
+
+// Execution-plan overlap policies.
+const (
+	ExecutionPlanOverlapSkip  = "skip"
+	ExecutionPlanOverlapQueue = "queue"
+	ExecutionPlanOverlapAllow = "allow"
+)
 
 type ExecutionPlanDeleteResult string
 
@@ -191,4 +208,13 @@ type ExecutionPlanRunEntry struct {
 	ActivityInitiatedBy string                    `json:"activity_initiated_by,omitempty"`
 	ApprovalID          string                    `json:"approval_id,omitempty"`
 	MaterializationKey  string                    `json:"materialization_key,omitempty"`
+	// PlanName, ApplicationID and ReleaseID snapshot the plan's name and where
+	// the entry's run is filed, so a resumed sequence files and names later
+	// entries as the run began.
+	PlanName      string `json:"plan_name,omitempty"`
+	ApplicationID string `json:"application_id,omitempty"`
+	ReleaseID     string `json:"release_id,omitempty"`
+	// Stopped marks the entries Stop plan ended or skipped; Detail says who
+	// stopped the plan.
+	Stopped bool `json:"stopped,omitempty"`
 }

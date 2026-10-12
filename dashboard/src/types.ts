@@ -853,12 +853,25 @@ export interface TestSummary {
   goal_config?: GoalConfig
   /** A traffic-profile run's replayed profile: its per-group TPS (or VUser) points by offset. */
   traffic_profile?: import('./types/trafficProfiles').TrafficProfile
+  /** The execution-plan run that started this run. */
+  execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord
   archive_failure?: RunArchiveFailure
   archive_recovery?: RunArchiveRecovery
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+/** The execution-plan run that started a run, and the run's place in it. */
+export interface TestExecutionPlanLink {
+  plan_id: string
+  plan_name?: string
+  plan_run_id: string
+  entry_order: number
+  /** 1-based position among the plan run's enabled entries. */
+  entry_number?: number
+  entry_count?: number
 }
 
 /** Durable recovery bookkeeping. Verified sources are historical collection receipts. */

@@ -316,6 +316,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		EndedAt:                      cloneTimePtr(test.EndedAt),
 		StartAuthorization:           cloneQueuedStartAuthorization(test.StartAuthorization),
 		ExecutionPlanApproval:        cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval),
+		ExecutionPlan:                cloneTestExecutionPlanLink(test.ExecutionPlan),
 		ScenarioMode:                 test.ScenarioMode,
 	}
 }
@@ -1520,6 +1521,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 			)
 		}
 	}
+	test.ExecutionPlan = cloneTestExecutionPlanLink(req.ExecutionPlan)
 	if req.ExecutionPlanApproval != nil {
 		test.ExecutionPlanApproval = runArchiveExecutionPlanApprovalSnapshot(req.ExecutionPlanApproval)
 		if test.ExecutionPlanApproval != nil {

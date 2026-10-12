@@ -57,6 +57,11 @@ func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Reques
 	if plan.RunMode == "" {
 		plan.RunMode = "parallel"
 	}
+	if plan.OverlapPolicy == "" {
+		// A new plan does not start a second run over one still running unless
+		// it asks to. Plans saved before the policy existed keep allowing it.
+		plan.OverlapPolicy = storage.ExecutionPlanOverlapSkip
+	}
 	plan.Status = "draft"
 	if err := service.Create(&plan, fence); err != nil {
 		if errors.Is(err, errNotExecutionLeader) {
@@ -88,7 +93,20 @@ func (s *Server) handleListExecutionPlans(w http.ResponseWriter, r *http.Request
 	if plans == nil {
 		plans = []*storage.ExecutionPlan{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"execution_plans": plans, "count": len(plans), "limit": limit, "offset": offset})
+	if !strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_activity")), "true") {
+		writeJSON(w, http.StatusOK, map[string]any{"execution_plans": plans, "count": len(plans), "limit": limit, "offset": offset})
+		return
+	}
+	// The plan cards show each plan's running, waiting and last-run state.
+	activities, errs := service.Activities(plans)
+	withActivity := make([]executionPlanWithActivity, 0, len(plans))
+	for i, plan := range plans {
+		if errs[i] != nil {
+			slog.Warn("execution plan activity unavailable", "plan_id", plan.ID, "error", errs[i])
+		}
+		withActivity = append(withActivity, executionPlanWithActivity{ExecutionPlan: plan, Activity: activities[i]})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"execution_plans": withActivity, "count": len(withActivity), "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleGetExecutionPlan(w http.ResponseWriter, r *http.Request) {
@@ -118,9 +136,24 @@ func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	var req storage.ExecutionPlan
-	if !decodeJSONBody(w, r, &req) {
+	var body executionPlanUpdateRequest
+	if !decodeJSONBody(w, r, &body) {
 		return
+	}
+	req := body.ExecutionPlan
+	// A client that predates the release and overlap fields leaves them out;
+	// keep the stored values rather than clearing them.
+	req.ApplicationID, req.ReleaseID = existing.ApplicationID, existing.ReleaseID
+	if body.ReleaseID != nil {
+		req.ReleaseID = *body.ReleaseID
+		req.ApplicationID = ""
+		if body.ApplicationID != nil {
+			req.ApplicationID = *body.ApplicationID
+		}
+	}
+	req.OverlapPolicy = existing.OverlapPolicy
+	if body.OverlapPolicy != nil {
+		req.OverlapPolicy = *body.OverlapPolicy
 	}
 	expectedRevision := req.Revision
 	if expectedRevision <= 0 {
@@ -196,6 +229,15 @@ func (s *Server) handleDeleteExecutionPlan(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
+// executionPlanUpdateRequest is a plan replacement whose release and overlap
+// fields are optional: an omitted field keeps the stored value.
+type executionPlanUpdateRequest struct {
+	storage.ExecutionPlan
+	ApplicationID *string `json:"application_id,omitempty"`
+	ReleaseID     *string `json:"release_id,omitempty"`
+	OverlapPolicy *string `json:"overlap_policy,omitempty"`
+}
+
 type executionPlanRunResult struct {
 	Order      int    `json:"order"`
 	ScenarioID string `json:"scenario_id"`
@@ -215,6 +257,9 @@ type ExecutionPlanMaterializeResult struct {
 	Results  []executionPlanRunResult
 	Blocked  bool
 	Approval *storage.ExecutionPlanApproval
+	// Overlap is set when the plan's overlap policy kept this run from
+	// starting alongside one already in progress.
+	Overlap *ExecutionPlanOverlap
 }
 
 // MaterializeAndRunExecutionPlan runs a plan once: sequential plans kick off the
@@ -280,6 +325,17 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 	}
 	if err := tr.checkArchivedExecutionPlan(plan); err != nil {
 		return nil, err
+	}
+	// One start of this plan at a time: the overlap check below must see the
+	// run anchored by any start that passed it first.
+	unlockStart := tr.lockExecutionPlanStart(plan.ID)
+	defer unlockStart()
+	overlap, err := tr.executionPlanOverlap(plan, runIDOverride)
+	if err != nil {
+		return nil, err
+	}
+	if overlap != nil {
+		return &ExecutionPlanMaterializeResult{Status: "plan_running", RunMode: plan.RunMode, Overlap: overlap}, nil
 	}
 	runName := strings.TrimSpace(runNameOverride)
 	if runName == "" {
@@ -350,6 +406,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 
 	now := time.Now().UTC()
 	runID := runIDOverride
+	applicationID, releaseID := executionPlanReleaseContext(plan, nil)
 	initialEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
 	anchorTimeslotUsed := false
 	for entryIndex, entry := range entries {
@@ -371,6 +428,8 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 		snapshot.Status = status
 		snapshot.Detail = detail
 		snapshot.MaterializationKey = executionPlanEntryMaterializationKey(runID, entryIndex, entry.Order)
+		snapshot.PlanName = strings.TrimSpace(plan.Name)
+		snapshot.ApplicationID, snapshot.ReleaseID = applicationID, releaseID
 		initialEntries = append(initialEntries, snapshot)
 	}
 	// Anchor the parallel materialization before creating any tests. If storage is
@@ -421,6 +480,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 			if err == nil {
 				createRequest.MaterializationKey = runEntry.MaterializationKey
 				createRequest.ExecutionPlanApproval = gateApproval
+				executionPlanRunEntryContext(anchor, plan.Name, entryIndex).apply(&createRequest, entry.Order)
 			}
 		}
 		var test *ManagedTest
@@ -788,6 +848,19 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if result.Overlap != nil {
+		s.recordAuditEvent(r, "execution_plan.run", "blocked", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
+			"reason": "plan_running", "active_run_id": result.Overlap.ActiveRunID, "overlap_policy": result.Overlap.Policy, "actor": actorDisplayName,
+		})
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"execution_plan_id": plan.ID,
+			"status":            "plan_running",
+			"reason":            "plan_running",
+			"error":             result.Overlap.Message,
+			"overlap":           result.Overlap,
+		})
+		return
+	}
 	if result.Blocked {
 		s.recordAuditEvent(r, "execution_plan.run", "blocked", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
 			"reason": "approval_required", "approval_id": approvalID(result.Approval), "actor": actorDisplayName,
@@ -830,10 +903,55 @@ func (s *Server) handleListExecutionPlanRuns(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if runs == nil {
-		runs = []*storage.ExecutionPlanRun{}
+	views := service.RunViews(runs)
+	writeJSON(w, http.StatusOK, map[string]any{"runs": views, "count": len(views), "limit": limit, "offset": offset})
+}
+
+// handleStopExecutionPlanRun stops a plan run: entries not started yet are
+// skipped and the runs it started are stopped.
+func (s *Server) handleStopExecutionPlanRun(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "count": len(runs), "limit": limit, "offset": offset})
+	service := s.executionPlanDomainService()
+	if !service.StorageConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	plan, ok := s.loadExecutionPlan(w, r)
+	if !ok {
+		return
+	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	runID := r.PathValue("runId")
+	view, err := service.StopRun(plan.ID, runID, testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName})
+	switch {
+	case errors.Is(err, errNotExecutionLeader):
+		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+		return
+	case errors.Is(err, errExecutionPlanRunNotFound), errors.Is(err, sql.ErrNoRows):
+		writeError(w, http.StatusNotFound, "execution plan run not found")
+		return
+	case errors.Is(err, errExecutionPlanRunNotActive):
+		writeError(w, http.StatusConflict, "this plan run has already finished")
+		return
+	case errors.Is(err, errExecutionPlanRunPersistence):
+		writeError(w, http.StatusServiceUnavailable, "execution-plan run persistence is temporarily unavailable")
+		return
+	case err != nil && view == nil:
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	outcome := "success"
+	if err != nil {
+		outcome = "partial"
+	}
+	s.recordAuditEvent(r, "execution_plan.run.stop", outcome, "execution_plan", plan.ID, plan.ProjectID, map[string]any{"run_id": runID, "actor": actorDisplayName})
+	response := map[string]any{"run": view, "stop_requested": true}
+	if err != nil {
+		response["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleGetExecutionPlanRun(w http.ResponseWriter, r *http.Request) {
@@ -857,8 +975,8 @@ func (s *Server) handleGetExecutionPlanRun(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	// Keep the historical operation-specific OpenAPI response placeholder for
-	// this storage-owned transport while preserving the exact runtime JSON.
-	writeJSON(w, http.StatusOK, any(run))
+	// this storage-owned transport; the view adds each entry's live state.
+	writeJSON(w, http.StatusOK, any(service.RunView(run)))
 }
 
 func executionEntryLabel(entry storage.ExecutionPlanEntry) string {

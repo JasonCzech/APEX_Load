@@ -33119,6 +33119,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "created_at"?: string;
           "description"?: string;
           "entries"?: Array<{
@@ -33143,7 +33144,9 @@ export interface operations {
           }>;
           "id"?: string;
           "name": string;
+          "overlap_policy"?: string;
           "project_id"?: string;
+          "release_id"?: string;
           "revision"?: number;
           "run_mode"?: string;
           "status"?: string;
@@ -33156,6 +33159,7 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
+            "application_id"?: string;
             "created_at": string;
             "description"?: string;
             "entries": Array<{
@@ -33180,7 +33184,9 @@ export interface operations {
             }>;
             "id": string;
             "name": string;
+            "overlap_policy"?: string;
             "project_id"?: string;
+            "release_id"?: string;
             "revision": number;
             "run_mode": string;
             "status"?: string;
@@ -33235,6 +33241,7 @@ export interface operations {
           "expected_revision"?: (number) | null;
           "missed_run_policy"?: string;
           "name"?: string;
+          "release_id"?: (string) | null;
           "run_name_template"?: string;
           "timezone"?: string;
         };
@@ -33263,6 +33270,7 @@ export interface operations {
             "next_run_at"?: (string) | null;
             "plan_id": string;
             "project_id"?: string;
+            "release_id"?: string;
             "revision"?: number;
             "run_name_template"?: string;
             "timezone"?: string;
@@ -35932,6 +35940,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -43638,6 +43654,14 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "execution_plan"?: ({
+              "entry_count"?: number;
+              "entry_number"?: number;
+              "entry_order": number;
+              "plan_id": string;
+              "plan_name"?: string;
+              "plan_run_id": string;
+            }) | null;
             "execution_plan_approval"?: ({
               "approved_peak_vusers"?: number;
               "decision_reason"?: string;
@@ -60957,6 +60981,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": ({
+            "application_id"?: string;
             "created_at": string;
             "description"?: string;
             "entries": Array<{
@@ -60981,7 +61006,9 @@ export interface operations {
             }>;
             "id": string;
             "name": string;
+            "overlap_policy"?: string;
             "project_id"?: string;
+            "release_id"?: string;
             "revision": number;
             "run_mode": string;
             "status"?: string;
@@ -66118,6 +66145,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -75663,6 +75698,8 @@ export interface operations {
               "id": string;
               "occurrence_status"?: string;
               "plan_id"?: string;
+              "plan_name"?: string;
+              "plan_run_id"?: string;
               "project_id"?: string;
               "projected"?: boolean;
               "reason_code"?: string;
@@ -81620,6 +81657,14 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "execution_plan"?: ({
+              "entry_count"?: number;
+              "entry_number"?: number;
+              "entry_order": number;
+              "plan_id": string;
+              "plan_name"?: string;
+              "plan_run_id": string;
+            }) | null;
             "execution_plan_approval"?: ({
               "approved_peak_vusers"?: number;
               "decision_reason"?: string;
@@ -92248,6 +92293,7 @@ export interface operations {
                   "elk_capture"?: (Record<string, unknown>) | null;
                   "ended_at"?: (string) | null;
                   "error"?: string;
+                  "execution_plan"?: (Record<string, unknown>) | null;
                   "execution_plan_approval"?: (Record<string, unknown>) | null;
                   "folder_id"?: (string) | null;
                   "generator_shards"?: Array<Record<string, unknown>>;
@@ -94328,6 +94374,7 @@ export interface operations {
   "handleListExecutionPlans": {
     parameters: {
       "query"?: {
+        "include_activity"?: string;
         "limit"?: number;
         "offset"?: number;
         "project_id"?: string;
@@ -102947,6 +102994,14 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "execution_plan"?: ({
+              "entry_count"?: number;
+              "entry_number"?: number;
+              "entry_order": number;
+              "plan_id": string;
+              "plan_name"?: string;
+              "plan_run_id": string;
+            }) | null;
             "execution_plan_approval"?: ({
               "approved_peak_vusers"?: number;
               "decision_reason"?: string;
@@ -112113,6 +112168,68 @@ export interface operations {
       };
     };
   };
+  "handlePreviewExecutionPlanSchedule": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "count"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "cron_expr"?: string;
+          "disabled_from"?: (string) | null;
+          "disabled_until"?: (string) | null;
+          "enabled"?: (boolean) | null;
+          "expected_revision"?: (number) | null;
+          "missed_run_policy"?: string;
+          "name"?: string;
+          "release_id"?: (string) | null;
+          "run_name_template"?: string;
+          "timezone"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "conflict_summary"?: string;
+            "count": number;
+            "cron_expr": string;
+            "occurrences": Array<string>;
+            "timezone": string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handlePreviewGrafanaDashboardImport": {
     parameters?: never;
     requestBody: {
@@ -119206,6 +119323,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -121268,6 +121393,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -123330,6 +123463,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -125392,6 +125533,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -127454,6 +127603,14 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "execution_plan"?: ({
+                "entry_count"?: number;
+                "entry_number"?: number;
+                "entry_order": number;
+                "plan_id": string;
+                "plan_name"?: string;
+                "plan_run_id": string;
+              }) | null;
               "execution_plan_approval"?: ({
                 "approved_peak_vusers"?: number;
                 "decision_reason"?: string;
@@ -131636,6 +131793,14 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "execution_plan"?: ({
+              "entry_count"?: number;
+              "entry_number"?: number;
+              "entry_order": number;
+              "plan_id": string;
+              "plan_name"?: string;
+              "plan_run_id": string;
+            }) | null;
             "execution_plan_approval"?: ({
               "approved_peak_vusers"?: number;
               "decision_reason"?: string;
@@ -141510,10 +141675,12 @@ export interface operations {
             "completed": number;
             "due": number;
             "enabled": number;
+            "execution_plan_awaiting_approval": number;
             "execution_plan_blocked": number;
             "execution_plan_due": number;
             "execution_plan_enabled": number;
             "execution_plan_total": number;
+            "execution_plan_waiting_previous_run": number;
             "failed": number;
             "is_leader": boolean;
             "materialized": number;
@@ -154101,6 +154268,55 @@ export interface operations {
       };
     };
   };
+  "handleStopExecutionPlanRun": {
+    parameters: {
+      "path": {
+        "id": string;
+        "runId": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleStopRecording": {
     parameters: {
       "path": {
@@ -156952,6 +157168,14 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "execution_plan"?: ({
+              "entry_count"?: number;
+              "entry_number"?: number;
+              "entry_order": number;
+              "plan_id": string;
+              "plan_name"?: string;
+              "plan_run_id": string;
+            }) | null;
             "execution_plan_approval"?: ({
               "approved_peak_vusers"?: number;
               "decision_reason"?: string;
@@ -163490,20 +163714,11 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: (string) | null;
           "created_at"?: string;
           "description"?: string;
           "entries"?: Array<{
-            "data_pools"?: Array<{
-              "access_mode"?: string;
-              "alias"?: string;
-              "created_at"?: string;
-              "id"?: string;
-              "pool_id"?: string;
-              "pool_name"?: string;
-              "scenario_id"?: string;
-              "selection_strategy"?: string;
-              "updated_at"?: string;
-            }>;
+            "data_pools"?: Array<Record<string, unknown>>;
             "enabled"?: (boolean) | null;
             "failure_policy"?: string;
             "order"?: number;
@@ -163514,7 +163729,9 @@ export interface operations {
           }>;
           "id"?: string;
           "name": string;
+          "overlap_policy"?: (string) | null;
           "project_id"?: string;
+          "release_id"?: (string) | null;
           "revision": number;
           "run_mode"?: string;
           "status"?: string;
@@ -163526,38 +163743,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": {
-            "created_at": string;
-            "description"?: string;
-            "entries": Array<{
-              "data_pools"?: Array<{
-                "access_mode": string;
-                "alias": string;
-                "created_at"?: string;
-                "id": string;
-                "pool_id": string;
-                "pool_name"?: string;
-                "scenario_id"?: string;
-                "selection_strategy": string;
-                "updated_at"?: string;
-              }>;
-              "enabled"?: (boolean) | null;
-              "failure_policy"?: string;
-              "order": number;
-              "runtime_overrides"?: unknown;
-              "scenario_id": string;
-              "scenario_name"?: string;
-              "timeslot_id"?: (string) | null;
-            }>;
-            "id": string;
-            "name": string;
-            "project_id"?: string;
-            "revision": number;
-            "run_mode": string;
-            "status"?: string;
-            "timeslot_id"?: (string) | null;
-            "updated_at": string;
-          };
+          "application/json": unknown;
         };
       };
       "400": {
@@ -163615,6 +163801,7 @@ export interface operations {
           "expected_revision"?: (number) | null;
           "missed_run_policy"?: string;
           "name"?: string;
+          "release_id"?: (string) | null;
           "run_name_template"?: string;
           "timezone"?: string;
         };
@@ -163643,6 +163830,7 @@ export interface operations {
             "next_run_at"?: (string) | null;
             "plan_id": string;
             "project_id"?: string;
+            "release_id"?: string;
             "revision"?: number;
             "run_name_template"?: string;
             "timezone"?: string;
@@ -177519,9 +177707,15 @@ export interface paths {
   "/api/v1/execution-plans/{id}/runs/{runId}": {
     "get": operations["handleGetExecutionPlanRun"];
   };
+  "/api/v1/execution-plans/{id}/runs/{runId}/stop": {
+    "post": operations["handleStopExecutionPlanRun"];
+  };
   "/api/v1/execution-plans/{id}/schedules": {
     "get": operations["handleListExecutionPlanSchedules"];
     "post": operations["handleCreateExecutionPlanSchedule"];
+  };
+  "/api/v1/execution-plans/{id}/schedules/preview": {
+    "post": operations["handlePreviewExecutionPlanSchedule"];
   };
   "/api/v1/execution-plans/{id}/schedules/{schedule_id}": {
     "put": operations["handleUpdateExecutionPlanSchedule"];

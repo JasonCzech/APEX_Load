@@ -32,6 +32,12 @@ var executionPlanAPIRouteCatalog = apiRouteCatalog{
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/execution-plans/{id}/runs/{runId}", "handleGetExecutionPlanRun", viewerProjectAccess(resolveExecutionPlanProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetExecutionPlanRun)
 		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/execution-plans/{id}/runs/{runId}/stop", "handleStopExecutionPlanRun", editorProjectAccess(resolveExecutionPlanProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleStopExecutionPlanRun)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/execution-plans/{id}/schedules/preview", "handlePreviewExecutionPlanSchedule", editorProjectAccess(resolveExecutionPlanProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handlePreviewExecutionPlanSchedule)
+		}),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/execution-plans/{id}/schedules", "handleCreateExecutionPlanSchedule", editorProjectAccess(resolveExecutionPlanProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleCreateExecutionPlanSchedule)
 		}),

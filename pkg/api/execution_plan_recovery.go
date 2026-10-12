@@ -65,6 +65,7 @@ func (tr *TestRunner) recoverSequentialExecutionPlanRunsWithTerm(leaseTerm execu
 	if err != nil {
 		return executionPlanPersistenceError("load running execution-plan runs for recovery", err)
 	}
+	tr.prunePendingPlanStops(runs)
 	var recoveryErr error
 	for _, run := range runs {
 		if run == nil || run.RunMode != "parallel" || run.Status != "running" {
@@ -191,6 +192,7 @@ func (tr *TestRunner) failInterruptedParallelExecutionPlanRun(run *storage.Execu
 			if err == nil {
 				req.MaterializationKey = entry.MaterializationKey
 				req.ExecutionPlanApproval = approval
+				executionPlanRunEntryContext(&recovered, entry.PlanName, i).apply(&req, entry.Order)
 				test, err = tr.createTestWithIDAndTerm(req, false, entry.TestID, leaseTerm)
 			}
 			if err != nil {
@@ -329,6 +331,7 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 		leaseTerm:  leaseTerm,
 		rehydrated: true,
 		recovering: true,
+		stopDetail: executionPlanRunStopDetailOf(statuses),
 	}
 	if st.createdAt.IsZero() {
 		st.createdAt = run.UpdatedAt
@@ -367,6 +370,10 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 	}
 	if tr.seqPlanByTest == nil {
 		tr.seqPlanByTest = make(map[string]string)
+	}
+	if detail, stopped := tr.pendingPlanStops[run.ID]; stopped {
+		st.stopDetail = detail
+		delete(tr.pendingPlanStops, run.ID)
 	}
 	tr.seqPlanRuns[run.ID] = st
 	if activeIdx >= 0 && strings.TrimSpace(statuses[activeIdx].TestID) != "" {
@@ -505,6 +512,35 @@ func (tr *TestRunner) resumeRecoveredSequentialPlanRun(action sequentialPlanReco
 		}
 		return nil
 	}
+	tr.seqMu.Lock()
+	stopped := false
+	if state := tr.seqPlanRuns[action.runID]; state != nil && state.stopDetail != "" {
+		stopped = true
+	}
+	tr.seqMu.Unlock()
+	if stopped && (action.test == nil || (action.start && testexec.IsStartableTestStatus(action.test.Status))) {
+		// Stop plan was asked for before this entry's run started: it never
+		// starts, and the plan run ends.
+		if action.testID != "" {
+			tr.seqMu.Lock()
+			if tr.seqPlanByTest[action.testID] == action.runID {
+				delete(tr.seqPlanByTest, action.testID)
+			}
+			tr.seqMu.Unlock()
+		}
+		var cleanupErr error
+		if action.test != nil {
+			cleanupErr = tr.endExecutionPlanStagedTestWithTerm(action.test.ID, "ABORTED", "execution plan stopped before this run started", action.leaseTerm, action.snapshot.MaterializationKey)
+		}
+		if err := tr.skipStoppedPlanEntryWithTerm(action.runID, action.idx, action.leaseTerm); err != nil {
+			return errors.Join(err, cleanupErr)
+		}
+		if err := tr.launchNextPlanEntryWithTerm(action.runID, action.leaseTerm); err != nil {
+			tr.enqueueExecutionPlanRunAdvanceRetryWithTerm(action.runID, action.leaseTerm)
+			return errors.Join(err, cleanupErr)
+		}
+		return cleanupErr
+	}
 	if action.test == nil {
 		test, err := tr.materializeRecoveredSequentialTest(action)
 		if err != nil {
@@ -568,6 +604,7 @@ func (tr *TestRunner) materializeRecoveredSequentialTest(action sequentialPlanRe
 	planID := st.planID
 	projectID := st.projectID
 	approval := st.approval
+	entryContext := executionPlanRunEntryContext(st.toStorageRun(), snapshot.PlanName, action.idx)
 	tr.seqMu.Unlock()
 	if err := tr.validateExecutionPlanApprovalMaterialization(planID, action.runID, approval); err != nil {
 		return nil, err
@@ -578,6 +615,7 @@ func (tr *TestRunner) materializeRecoveredSequentialTest(action sequentialPlanRe
 	}
 	req.MaterializationKey = snapshot.MaterializationKey
 	req.ExecutionPlanApproval = approval
+	entryContext.apply(&req, snapshot.Order)
 	test, err := tr.createTestWithIDAndTerm(req, false, action.testID, action.leaseTerm)
 	if err != nil {
 		return nil, err
@@ -730,4 +768,23 @@ func (tr *TestRunner) enqueueSequentialExecutionPlanRecoveryRetryWithTerm(leaseT
 			delay = min(delay*2, time.Second)
 		}
 	}()
+}
+
+// prunePendingPlanStops forgets Stop plan requests for runs that are no longer
+// running sequentially, so a stop waiting for a run recovery will never
+// restore does not linger.
+func (tr *TestRunner) prunePendingPlanStops(running []*storage.ExecutionPlanRun) {
+	live := make(map[string]struct{}, len(running))
+	for _, run := range running {
+		if run != nil && run.RunMode == "sequential" && run.Status == "running" {
+			live[run.ID] = struct{}{}
+		}
+	}
+	tr.seqMu.Lock()
+	defer tr.seqMu.Unlock()
+	for runID := range tr.pendingPlanStops {
+		if _, ok := live[runID]; !ok {
+			delete(tr.pendingPlanStops, runID)
+		}
+	}
 }

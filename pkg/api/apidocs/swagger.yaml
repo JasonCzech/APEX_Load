@@ -52958,6 +52958,12 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
+        - name: include_activity
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: limit
           in: query
           description: Handler-defined query parameter.
@@ -52992,6 +52998,8 @@ paths:
             schema:
               type: object
               properties:
+                application_id:
+                  type: string
                 created_at:
                   type: string
                   format: date-time
@@ -53047,7 +53055,11 @@ paths:
                   type: string
                 name:
                   type: string
+                overlap_policy:
+                  type: string
                 project_id:
+                  type: string
+                release_id:
                   type: string
                 revision:
                   type: integer
@@ -53072,6 +53084,8 @@ paths:
               schema:
                 type: object
                 properties:
+                  application_id:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -53136,7 +53150,11 @@ paths:
                     type: string
                   name:
                     type: string
+                  overlap_policy:
+                    type: string
                   project_id:
+                    type: string
+                  release_id:
                     type: string
                   revision:
                     type: integer
@@ -53275,6 +53293,8 @@ paths:
               schema:
                 type: object
                 properties:
+                  application_id:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -53339,7 +53359,11 @@ paths:
                     type: string
                   name:
                     type: string
+                  overlap_policy:
+                    type: string
                   project_id:
+                    type: string
+                  release_id:
                     type: string
                   revision:
                     type: integer
@@ -53404,6 +53428,9 @@ paths:
             schema:
               type: object
               properties:
+                application_id:
+                  type: string
+                  nullable: true
                 created_at:
                   type: string
                   format: date-time
@@ -53418,27 +53445,7 @@ paths:
                         type: array
                         items:
                           type: object
-                          properties:
-                            access_mode:
-                              type: string
-                            alias:
-                              type: string
-                            created_at:
-                              type: string
-                              format: date-time
-                            id:
-                              type: string
-                            pool_id:
-                              type: string
-                            pool_name:
-                              type: string
-                            scenario_id:
-                              type: string
-                            selection_strategy:
-                              type: string
-                            updated_at:
-                              type: string
-                              format: date-time
+                          additionalProperties: true
                       enabled:
                         type: boolean
                         nullable: true
@@ -53459,8 +53466,14 @@ paths:
                   type: string
                 name:
                   type: string
+                overlap_policy:
+                  type: string
+                  nullable: true
                 project_id:
                   type: string
+                release_id:
+                  type: string
+                  nullable: true
                 revision:
                   type: integer
                   format: int64
@@ -53483,95 +53496,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  description:
-                    type: string
-                  entries:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        data_pools:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              access_mode:
-                                type: string
-                              alias:
-                                type: string
-                              created_at:
-                                type: string
-                                format: date-time
-                              id:
-                                type: string
-                              pool_id:
-                                type: string
-                              pool_name:
-                                type: string
-                              scenario_id:
-                                type: string
-                              selection_strategy:
-                                type: string
-                              updated_at:
-                                type: string
-                                format: date-time
-                            required:
-                              - access_mode
-                              - alias
-                              - id
-                              - pool_id
-                              - selection_strategy
-                        enabled:
-                          type: boolean
-                          nullable: true
-                        failure_policy:
-                          type: string
-                        order:
-                          type: integer
-                          format: int64
-                        runtime_overrides: {}
-                        scenario_id:
-                          type: string
-                        scenario_name:
-                          type: string
-                        timeslot_id:
-                          type: string
-                          nullable: true
-                      required:
-                        - order
-                        - scenario_id
-                  id:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                  run_mode:
-                    type: string
-                  status:
-                    type: string
-                  timeslot_id:
-                    type: string
-                    nullable: true
-                  updated_at:
-                    type: string
-                    format: date-time
-                required:
-                  - created_at
-                  - entries
-                  - id
-                  - name
-                  - revision
-                  - run_mode
-                  - updated_at
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -53901,6 +53826,72 @@ paths:
       tags:
         - Execution Plans
       x-handler: handleGetExecutionPlanRun
+  /api/v1/execution-plans/{id}/runs/{runId}/stop:
+    post:
+      summary: Stop Execution Plan Run
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleStopExecutionPlanRun
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+      x-handler: handleStopExecutionPlanRun
   /api/v1/execution-plans/{id}/schedules:
     get:
       summary: List Execution Plan Schedules
@@ -53976,6 +53967,9 @@ paths:
                   type: string
                 name:
                   type: string
+                release_id:
+                  type: string
+                  nullable: true
                 run_name_template:
                   type: string
                 timezone:
@@ -54036,6 +54030,8 @@ paths:
                   plan_id:
                     type: string
                   project_id:
+                    type: string
+                  release_id:
                     type: string
                   revision:
                     type: integer
@@ -54173,6 +54169,9 @@ paths:
                   type: string
                 name:
                   type: string
+                release_id:
+                  type: string
+                  nullable: true
                 run_name_template:
                   type: string
                 timezone:
@@ -54233,6 +54232,8 @@ paths:
                   plan_id:
                     type: string
                   project_id:
+                    type: string
+                  release_id:
                     type: string
                   revision:
                     type: integer
@@ -54468,6 +54469,116 @@ paths:
       tags:
         - Execution Plans
       x-handler: handleResolveExecutionPlanScheduleOccurrence
+  /api/v1/execution-plans/{id}/schedules/preview:
+    post:
+      summary: Preview Execution Plan Schedule
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handlePreviewExecutionPlanSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cron_expr:
+                  type: string
+                disabled_from:
+                  type: string
+                  format: date-time
+                  nullable: true
+                disabled_until:
+                  type: string
+                  format: date-time
+                  nullable: true
+                enabled:
+                  type: boolean
+                  nullable: true
+                expected_revision:
+                  type: integer
+                  format: int64
+                  nullable: true
+                missed_run_policy:
+                  type: string
+                name:
+                  type: string
+                release_id:
+                  type: string
+                  nullable: true
+                run_name_template:
+                  type: string
+                timezone:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conflict_summary:
+                    type: string
+                  count:
+                    type: integer
+                    format: int64
+                  cron_expr:
+                    type: string
+                  occurrences:
+                    type: array
+                    items:
+                      type: string
+                      format: date-time
+                  timezone:
+                    type: string
+                required:
+                  - count
+                  - cron_expr
+                  - occurrences
+                  - timezone
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: count
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+      x-handler: handlePreviewExecutionPlanSchedule
   /api/v1/fleet/alerts:
     get:
       summary: Get Fleet Alerts
@@ -58878,6 +58989,11 @@ paths:
                                   nullable: true
                                 error:
                                   type: string
+                                execution_plan:
+                                  type: object
+                                  description: 'Go type: TestExecutionPlanLink'
+                                  additionalProperties: true
+                                  nullable: true
                                 execution_plan_approval:
                                   type: object
                                   description: 'Go type: RunArchiveExecutionPlanApprovalSnapshot'
@@ -86984,6 +87100,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -93384,6 +93523,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -99785,6 +99947,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -106198,6 +106383,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -112611,6 +112819,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -119024,6 +119255,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -125437,6 +125691,29 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      execution_plan:
+                        type: object
+                        properties:
+                          entry_count:
+                            type: integer
+                            format: int64
+                          entry_number:
+                            type: integer
+                            format: int64
+                          entry_order:
+                            type: integer
+                            format: int64
+                          plan_id:
+                            type: string
+                          plan_name:
+                            type: string
+                          plan_run_id:
+                            type: string
+                        required:
+                          - entry_order
+                          - plan_id
+                          - plan_run_id
+                        nullable: true
                       execution_plan_approval:
                         type: object
                         properties:
@@ -145763,6 +146040,10 @@ paths:
                         occurrence_status:
                           type: string
                         plan_id:
+                          type: string
+                        plan_name:
+                          type: string
+                        plan_run_id:
                           type: string
                         project_id:
                           type: string
@@ -183653,6 +183934,9 @@ paths:
                   enabled:
                     type: integer
                     format: int64
+                  execution_plan_awaiting_approval:
+                    type: integer
+                    format: int64
                   execution_plan_blocked:
                     type: integer
                     format: int64
@@ -183663,6 +183947,9 @@ paths:
                     type: integer
                     format: int64
                   execution_plan_total:
+                    type: integer
+                    format: int64
+                  execution_plan_waiting_previous_run:
                     type: integer
                     format: int64
                   failed:
@@ -183718,10 +184005,12 @@ paths:
                   - completed
                   - due
                   - enabled
+                  - execution_plan_awaiting_approval
                   - execution_plan_blocked
                   - execution_plan_due
                   - execution_plan_enabled
                   - execution_plan_total
+                  - execution_plan_waiting_previous_run
                   - failed
                   - is_leader
                   - materialized
@@ -339468,6 +339757,29 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  execution_plan:
+                    type: object
+                    properties:
+                      entry_count:
+                        type: integer
+                        format: int64
+                      entry_number:
+                        type: integer
+                        format: int64
+                      entry_order:
+                        type: integer
+                        format: int64
+                      plan_id:
+                        type: string
+                      plan_name:
+                        type: string
+                      plan_run_id:
+                        type: string
+                    required:
+                      - entry_order
+                      - plan_id
+                      - plan_run_id
+                    nullable: true
                   execution_plan_approval:
                     type: object
                     properties:
@@ -353026,6 +353338,29 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  execution_plan:
+                    type: object
+                    properties:
+                      entry_count:
+                        type: integer
+                        format: int64
+                      entry_number:
+                        type: integer
+                        format: int64
+                      entry_order:
+                        type: integer
+                        format: int64
+                      plan_id:
+                        type: string
+                      plan_name:
+                        type: string
+                      plan_run_id:
+                        type: string
+                    required:
+                      - entry_order
+                      - plan_id
+                      - plan_run_id
+                    nullable: true
                   execution_plan_approval:
                     type: object
                     properties:
@@ -397576,6 +397911,29 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  execution_plan:
+                    type: object
+                    properties:
+                      entry_count:
+                        type: integer
+                        format: int64
+                      entry_number:
+                        type: integer
+                        format: int64
+                      entry_order:
+                        type: integer
+                        format: int64
+                      plan_id:
+                        type: string
+                      plan_name:
+                        type: string
+                      plan_run_id:
+                        type: string
+                    required:
+                      - entry_order
+                      - plan_id
+                      - plan_run_id
+                    nullable: true
                   execution_plan_approval:
                     type: object
                     properties:
@@ -411078,6 +411436,29 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  execution_plan:
+                    type: object
+                    properties:
+                      entry_count:
+                        type: integer
+                        format: int64
+                      entry_number:
+                        type: integer
+                        format: int64
+                      entry_order:
+                        type: integer
+                        format: int64
+                      plan_id:
+                        type: string
+                      plan_name:
+                        type: string
+                      plan_run_id:
+                        type: string
+                    required:
+                      - entry_order
+                      - plan_id
+                      - plan_run_id
+                    nullable: true
                   execution_plan_approval:
                     type: object
                     properties:
@@ -430461,6 +430842,29 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  execution_plan:
+                    type: object
+                    properties:
+                      entry_count:
+                        type: integer
+                        format: int64
+                      entry_number:
+                        type: integer
+                        format: int64
+                      entry_order:
+                        type: integer
+                        format: int64
+                      plan_id:
+                        type: string
+                      plan_name:
+                        type: string
+                      plan_run_id:
+                        type: string
+                    required:
+                      - entry_order
+                      - plan_id
+                      - plan_run_id
+                    nullable: true
                   execution_plan_approval:
                     type: object
                     properties:

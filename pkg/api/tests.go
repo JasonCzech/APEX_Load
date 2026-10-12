@@ -741,6 +741,8 @@ func cloneOperationalTestProjectionLocked(test *ManagedTest) *ManagedTest {
 	if test.CapacityAdvisory != nil {
 		projection.CapacityAdvisory = &CapacityAdvisory{RequiresOverride: test.CapacityAdvisory.RequiresOverride}
 	}
+	// The run calendar files a run a plan started under that plan.
+	projection.ExecutionPlan = cloneTestExecutionPlanLink(test.ExecutionPlan)
 	if test.LiveMetrics != nil {
 		projection.LiveMetrics = &LiveMetrics{
 			Timestamp:    test.LiveMetrics.Timestamp,
@@ -1033,6 +1035,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.EndedAt = cloneTimePtr(test.EndedAt)
 	cloned.StartAuthorization = cloneQueuedStartAuthorization(test.StartAuthorization)
 	cloned.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval)
+	cloned.ExecutionPlan = cloneTestExecutionPlanLink(test.ExecutionPlan)
 	cloned.VUserRamps = cloneVUserRampStatusMap(test.VUserRamps)
 	cloned.LiveMetrics = cloneRunLiveMetrics(test)
 	cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)

@@ -12,6 +12,9 @@ export interface ExecutionPlanEntry {
   timeslot_id?: string
 }
 
+/** What a plan does when started while an earlier run of it is still running. */
+export type ExecutionPlanOverlapPolicy = 'skip' | 'queue' | 'allow'
+
 export interface ExecutionPlan {
   id: string
   project_id?: string
@@ -21,13 +24,75 @@ export interface ExecutionPlan {
   entries: ExecutionPlanEntry[]
   run_mode: string
   timeslot_id?: string
+  /** Where the plan's runs are filed. Empty files them under the project's legacy release. */
+  application_id?: string
+  release_id?: string
+  /** Empty on plans saved before the policy existed; they behave as allow. */
+  overlap_policy?: ExecutionPlanOverlapPolicy | ''
   status?: string
   created_at: string
   updated_at: string
 }
 
+/** A plan as listed with include_activity=true. */
+export interface ExecutionPlanListItem extends ExecutionPlan {
+  activity?: ExecutionPlanActivity
+}
+
+/** A plan run's entry with the live state of the run it started. */
+export interface ExecutionPlanRunEntryView extends ExecutionPlanRunEntry {
+  test_status?: string
+  test_ref_key?: string
+  started_at?: string
+  ended_at?: string
+  planned_seconds?: number
+  vusers?: number
+}
+
+export type ExecutionPlanRunOutcome = 'running' | 'completed' | 'failed' | 'stopped'
+
+/** A plan run with its entries' live state, outcome and timing. */
+export interface ExecutionPlanRunView extends Omit<ExecutionPlanRun, 'entries'> {
+  entries: ExecutionPlanRunEntryView[]
+  active: boolean
+  outcome: ExecutionPlanRunOutcome
+  started_at?: string
+  ended_at?: string
+  /** Absent when a running or remaining entry has no fixed duration. */
+  estimated_end_at?: string
+  active_vusers?: number
+}
+
+/** A scheduled run of the plan held before it started. */
+export interface ExecutionPlanWaitingOccurrence {
+  schedule_id: string
+  schedule_name?: string
+  occurrence_id?: string
+  planned_at: string
+  reason_code: 'approval_required' | 'waiting_for_previous_run' | 'missed_run_requires_decision' | string
+  approval_id?: string
+  summary?: string
+}
+
+export interface ExecutionPlanActivity {
+  active_run?: ExecutionPlanRunView
+  active_runs?: number
+  last_run?: ExecutionPlanRunView
+  pending_approval?: ExecutionPlanApproval
+  waiting?: ExecutionPlanWaitingOccurrence[]
+}
+
+/** The run already in progress when the overlap policy kept another from starting. */
+export interface ExecutionPlanOverlap {
+  overlap_policy: ExecutionPlanOverlapPolicy
+  active_run_id: string
+  started_at: string
+  active_vusers?: number
+  message: string
+}
+
 export interface ExecutionPlanListResponse {
-  execution_plans: ExecutionPlan[]
+  execution_plans: ExecutionPlanListItem[]
   count: number
   limit?: number
   offset?: number
@@ -59,6 +124,11 @@ export interface ExecutionPlanRunEntry {
   test_id?: string
   status: string
   detail?: string
+  plan_name?: string
+  application_id?: string
+  release_id?: string
+  /** Stop plan ended or skipped this entry. */
+  stopped?: boolean
 }
 
 export interface ExecutionPlanRun {
@@ -74,7 +144,7 @@ export interface ExecutionPlanRun {
 }
 
 export interface ExecutionPlanRunListResponse {
-  runs: ExecutionPlanRun[]
+  runs: ExecutionPlanRunView[]
   count: number
   limit?: number
   offset?: number
@@ -88,6 +158,8 @@ export interface ExecutionPlanSchedule {
   name: string
   cron_expr: string
   timezone?: string
+  /** Empty files the schedule's runs under the plan's release. */
+  release_id?: string
   run_name_template?: string
   enabled: boolean
   missed_run_policy?: string
@@ -107,12 +179,23 @@ export interface ExecutionPlanScheduleRequest {
   name: string
   cron_expr: string
   timezone?: string
+  /** Omitted keeps the stored release; empty uses the plan's. */
+  release_id?: string
   run_name_template?: string
   enabled?: boolean
   missed_run_policy?: string
   disabled_from?: string
   disabled_until?: string
   expected_revision?: number
+}
+
+/** A candidate schedule's next runs, from the server's own evaluator. */
+export interface SchedulePreviewResponse {
+  cron_expr: string
+  timezone: string
+  occurrences: string[]
+  count: number
+  conflict_summary?: string
 }
 
 export interface ExecutionPlanScheduleListResponse {

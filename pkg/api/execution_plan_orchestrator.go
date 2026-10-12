@@ -87,6 +87,9 @@ type seqPlanRunState struct {
 	leaseTerm     executionLeaseTerm
 	rehydrated    bool // restored from durable storage rather than materialized in this process
 	recovering    bool // one recovery/resume action is currently claimed
+	// stopDetail is set once Stop plan has been asked for: no further entry
+	// starts, and the run ends halted when its running entry ends.
+	stopDetail string
 }
 
 func (st *seqPlanRunState) toStorageRun() *storage.ExecutionPlanRun {
@@ -320,6 +323,7 @@ func (tr *TestRunner) startExecutionPlanRunWithIDAndTermActor(plan *storage.Exec
 		runApproval = approval[0]
 	}
 	planTimeslotUsed := false
+	applicationID, releaseID := executionPlanReleaseContext(plan, nil)
 	for i, e := range enabled {
 		effectiveTimeslot := e.TimeslotID
 		if trimPtr(effectiveTimeslot) == "" && !planTimeslotUsed && trimPtr(plan.TimeslotID) != "" {
@@ -327,6 +331,8 @@ func (tr *TestRunner) startExecutionPlanRunWithIDAndTermActor(plan *storage.Exec
 			planTimeslotUsed = true
 		}
 		statuses[i] = executionPlanRunEntrySnapshot(e, runName, attribSubject, attribName, effectiveTimeslot, runApproval, actor)
+		statuses[i].PlanName = strings.TrimSpace(plan.Name)
+		statuses[i].ApplicationID, statuses[i].ReleaseID = applicationID, releaseID
 	}
 	runID := strings.TrimSpace(runIDOverride)
 	if runID == "" {
@@ -603,9 +609,27 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 		previousCursor := st.cursor
 		previousTimeslotUsed := st.timeslotUsed
 		st.cursor++
+		// Entries a Stop plan request skipped are never launched, nor is any
+		// entry once the plan was stopped (one rewound by recovery included).
+		for st.cursor < len(st.entries) && st.statuses[st.cursor].Status == "skipped" {
+			st.cursor++
+		}
+		if st.stopDetail != "" {
+			for i := st.cursor; i < len(st.statuses); i++ {
+				if st.statuses[i].Status == "pending" {
+					st.statuses[i].Status = "skipped"
+					st.statuses[i].Detail = st.stopDetail
+					st.statuses[i].Stopped = true
+				}
+			}
+			st.cursor = len(st.entries)
+		}
 		if st.cursor >= len(st.entries) {
 			previousStatus := st.status
 			st.status = "completed"
+			if st.stopDetail != "" || executionPlanRunStopped(st.statuses) {
+				st.status = "halted"
+			}
 			run := st.toStorageRun()
 			if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
 				st.cursor = previousCursor
@@ -646,7 +670,11 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 			return executionPlanPersistenceError("claim execution-plan entry before materialization", err)
 		}
 		st.revision = claimRun.Revision
+		entryContext := executionPlanRunEntryContext(claimRun, claimRun.Entries[idx].PlanName, idx)
 		tr.seqMu.Unlock()
+		if tr.afterExecutionPlanEntryClaim != nil {
+			tr.afterExecutionPlanEntryClaim()
+		}
 
 		err := tr.validateExecutionPlanApprovalMaterialization(planID, runID, approval)
 		var req CreateTestRequest
@@ -655,6 +683,7 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 			if err == nil {
 				req.MaterializationKey = materializationKey
 				req.ExecutionPlanApproval = approval
+				entryContext.apply(&req, entry.Order)
 			}
 		}
 		var test *ManagedTest
@@ -710,6 +739,19 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 		if st.leaseTerm != leaseTerm || st.statuses[idx].TestID != test.ID || !tr.executionLeaseTermCurrent(leaseTerm) {
 			tr.seqMu.Unlock()
 			return errNotExecutionLeader
+		}
+		if st.stopDetail != "" {
+			// Stop plan arrived while this entry's run was being created: cancel
+			// it before it starts, and end the plan run.
+			tr.seqMu.Unlock()
+			cleanupErr := tr.endExecutionPlanStagedTestWithTerm(test.ID, "ABORTED", "execution plan stopped before this run started", leaseTerm, test.MaterializationKey)
+			if err := tr.skipStoppedPlanEntryWithTerm(runID, idx, leaseTerm); err != nil {
+				return errors.Join(err, cleanupErr)
+			}
+			if cleanupErr != nil {
+				return cleanupErr
+			}
+			continue
 		}
 		tr.seqPlanByTest[test.ID] = runID
 		run := st.toStorageRun()
@@ -784,7 +826,7 @@ func (tr *TestRunner) recordPlanEntryFailureWithTerm(runID string, idx int, entr
 	halted := entry.FailurePolicy != "skip"
 	if halted {
 		st.status = "halted"
-		markRemainingSkipped(st, idx+1)
+		markRemainingHalted(st, idx+1)
 	}
 	run := st.toStorageRun()
 	if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
@@ -890,9 +932,22 @@ func (tr *TestRunner) advanceExecutionPlanForTestWithTerm(test *ManagedTest, ter
 	failed := terminalStatus == "FAILED" || terminalStatus == "ABORTED"
 	entry := st.entries[idx]
 	halted := failed && entry.FailurePolicy != "skip"
+	if st.stopDetail != "" {
+		// Stop plan: the run ends with its running entry, whatever the policy.
+		// A run that failed on its own keeps its error.
+		halted = true
+		st.statuses[idx].Stopped = true
+		switch {
+		case terminalStatus != "FAILED":
+			st.statuses[idx].Detail = st.stopDetail
+		case strings.TrimSpace(test.Error) == "":
+			// It failed on its own before the stop took effect.
+			st.statuses[idx].Detail = "run failed before the plan stop took effect"
+		}
+	}
 	if halted {
 		st.status = "halted"
-		markRemainingSkipped(st, idx+1)
+		markRemainingHalted(st, idx+1)
 	}
 	run := st.toStorageRun()
 	if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
@@ -1127,6 +1182,23 @@ func markRemainingSkipped(st *seqPlanRunState, from int) {
 		if st.statuses[i].Status == "pending" {
 			st.statuses[i].Status = "skipped"
 			st.statuses[i].Detail = "skipped after a prior failure halted the plan"
+		}
+	}
+}
+
+// markRemainingHalted skips the entries a halted run will not start: those
+// Stop plan kept from starting carry the stop, others the failure that halted
+// the plan.
+func markRemainingHalted(st *seqPlanRunState, from int) {
+	if st.stopDetail == "" {
+		markRemainingSkipped(st, from)
+		return
+	}
+	for i := from; i < len(st.statuses); i++ {
+		if st.statuses[i].Status == "pending" {
+			st.statuses[i].Status = "skipped"
+			st.statuses[i].Detail = st.stopDetail
+			st.statuses[i].Stopped = true
 		}
 	}
 }
@@ -1390,4 +1462,29 @@ func (tr *TestRunner) broadcastExecutionPlanEvent(eventType string, run *storage
 		}
 	}
 	tr.hub.BroadcastJSON(msg)
+}
+
+// skipStoppedPlanEntryWithTerm records an entry Stop plan cancelled before its
+// run started.
+func (tr *TestRunner) skipStoppedPlanEntryWithTerm(runID string, idx int, leaseTerm executionLeaseTerm) error {
+	tr.seqMu.Lock()
+	defer tr.seqMu.Unlock()
+	st := tr.seqPlanRuns[runID]
+	if st == nil || idx < 0 || idx >= len(st.statuses) {
+		return nil
+	}
+	if st.leaseTerm != leaseTerm || !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	previous := st.statuses[idx]
+	st.statuses[idx].Status = "skipped"
+	st.statuses[idx].Detail = st.stopDetail
+	st.statuses[idx].Stopped = true
+	run := st.toStorageRun()
+	if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
+		st.statuses[idx] = previous
+		return executionPlanPersistenceError("persist an entry stopped before it started", err)
+	}
+	st.revision = run.Revision
+	return nil
 }

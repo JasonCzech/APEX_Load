@@ -355,7 +355,7 @@ func TestGoalAttainmentLeavesObserverTrafficOut(t *testing.T) {
 
 func TestUntargetedGoalGroupsCoverObserversAndUnmappedProfileGroups(t *testing.T) {
 	provenance := RunArchiveProvenance{
-		Groups: []TestGroup{{Name: "Store_Browse"}, {Name: "Store_Inventory"}, {Name: "Canary", Role: GroupRoleObserver}},
+		Groups:         []TestGroup{{Name: "Store_Browse"}, {Name: "Store_Inventory"}, {Name: "Canary", Role: GroupRoleObserver}},
 		TrafficProfile: &TrafficProfile{RuntimeTarget: "tps", Mappings: []TrafficProfileMapping{{GroupName: "Store_Browse"}}},
 	}
 	got := untargetedGoalGroups(provenance)

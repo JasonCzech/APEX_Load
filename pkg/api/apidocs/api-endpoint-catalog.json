@@ -2036,6 +2036,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/runs/{runId}/stop",
+      "operationId": "handleStopExecutionPlanRun",
+      "summary": "Stop Execution Plan Run",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/execution-plans/{id}/schedules",
       "operationId": "handleListExecutionPlanSchedules",
@@ -2050,6 +2060,16 @@
       "path": "/api/v1/execution-plans/{id}/schedules",
       "operationId": "handleCreateExecutionPlanSchedule",
       "summary": "Create Execution Plan Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/schedules/preview",
+      "operationId": "handlePreviewExecutionPlanSchedule",
+      "summary": "Preview Execution Plan Schedule",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,

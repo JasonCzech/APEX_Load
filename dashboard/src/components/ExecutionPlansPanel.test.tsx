@@ -8,6 +8,8 @@ import ExecutionPlansPanel from './ExecutionPlansPanel'
 import { ApiError } from '../hooks/apiClient'
 import { ExecutionPlan } from '../types'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { ApplicationContext, type ApplicationContextValue } from '../hooks/applicationContext'
+import type { ExecutionPlanRunView } from '../types/executionPlans'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -20,7 +22,9 @@ const plansApiMock = {
   runExecutionPlan: vi.fn(),
   listExecutionPlanRuns: vi.fn(),
   getExecutionPlanRun: vi.fn(),
+  stopExecutionPlanRun: vi.fn(),
   listExecutionPlanSchedules: vi.fn(),
+  previewExecutionPlanSchedule: vi.fn(async () => ({ cron_expr: '', timezone: 'UTC', occurrences: [], count: 0 })),
   createExecutionPlanSchedule: vi.fn(),
   updateExecutionPlanSchedule: vi.fn(),
   deleteExecutionPlanSchedule: vi.fn(),
@@ -35,6 +39,17 @@ vi.mock('./ux/confirmAction', () => ({ confirmAction: confirmActionMock }))
 
 vi.mock('../hooks/api/useExecutionPlansApi', () => ({
   useExecutionPlansApi: () => plansApiMock,
+}))
+
+const applicationApiMock = vi.hoisted(() => ({
+  listApplications: vi.fn(async () => ({ applications: [{ id: 'app-1', project_id: 'proj-a', name: 'Storefront', created_at: '', updated_at: '' }], count: 1 })),
+  listReleases: vi.fn(async (applicationId: string) => ({
+    releases: applicationId === 'app-1' ? [{ id: 'rel-1', application_id: 'app-1', name: 'R2026.11', created_at: '', updated_at: '' }] : [],
+    count: 1,
+  })),
+}))
+vi.mock('../hooks/api/useApplicationApi', () => ({
+  useApplicationApi: () => applicationApiMock,
 }))
 
 let container: HTMLElement
@@ -93,7 +108,7 @@ describe('ExecutionPlansPanel', () => {
       root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
     })
     await flush()
-    expect(plansApiMock.listExecutionPlans).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
+    expect(plansApiMock.listExecutionPlans).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0, include_activity: 'true' })
     expect(container.textContent).toContain('No execution plans yet')
     expect(container.textContent).toContain('New Execution Plan')
   })
@@ -149,6 +164,26 @@ describe('ExecutionPlansPanel', () => {
     expect(plansApiMock.updateExecutionPlan).toHaveBeenCalledWith('p1', expect.objectContaining({ revision: 7, name: 'renamed' }))
   })
 
+  it('shows a refused save inside the open editor', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ revision: 7 })], count: 1 })
+    plansApiMock.updateExecutionPlan.mockRejectedValue(new ApiError('schedule "nightly" files its runs under a release of another application', 409))
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click()
+    })
+    await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'renamed'))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-modal-actions button')).find(button => button.textContent === 'Save')?.click()
+    })
+    await flush()
+    const editor = document.querySelector('[aria-labelledby="execution-plan-editor-title"]')
+    expect(editor?.querySelector('[role="alert"]')?.textContent).toContain('files its runs under a release of another application')
+    expect(document.querySelectorAll('.pp-error')).toHaveLength(1)
+  })
+
   it('hides management actions without permission', async () => {
     plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
     await act(async () => {
@@ -156,7 +191,7 @@ describe('ExecutionPlansPanel', () => {
     })
     await flush()
     expect(container.textContent).not.toContain('New Execution Plan')
-    expect(container.textContent).not.toContain('Run')
+    expect([...container.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Run')).toBe(false)
   })
 
   it('prompts to select a project when none is active', async () => {
@@ -526,4 +561,294 @@ describe('ExecutionPlansPanel', () => {
 		expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
 		expect(container.querySelector('input[placeholder="e.g. nightly regression"]')).toBeNull()
 	})
+  it('files a new plan under the workspace release and saves its overlap policy', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [], count: 0 })
+    plansApiMock.createExecutionPlan.mockResolvedValue(plan({}))
+    const workspace = {
+      activeApplication: { id: 'app-1', project_id: 'proj-a', name: 'Storefront', created_at: '', updated_at: '' },
+      activeRelease: { id: 'rel-1', application_id: 'app-1', name: 'R2026.11', created_at: '', updated_at: '' },
+    } as unknown as ApplicationContextValue
+    await act(async () => {
+      root.render(<ApplicationContext.Provider value={workspace}><ExecutionPlansPanel projectId="proj-a" canManage /></ApplicationContext.Provider>)
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'New Execution Plan') as HTMLElement).click()
+    })
+    await flush()
+    await flush()
+    const application = container.querySelector<HTMLSelectElement>('select[aria-label="Application the plan\'s runs are filed under"]')
+    const release = container.querySelector<HTMLSelectElement>('select[aria-label="Release the plan\'s runs are filed under"]')
+    expect(application?.value).toBe('app-1')
+    expect(release?.value).toBe('rel-1')
+    expect(release?.textContent).toContain('R2026.11')
+    expect(container.textContent).toContain('is filed under this release and shows in its workspace')
+    const overlap = container.querySelector<HTMLSelectElement>('select[aria-label="If the plan is started while a run of it is still running"]')
+    expect(overlap?.value).toBe('skip')
+    await act(async () => {
+      setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'workspace plan')
+      setValue(container.querySelector('input[placeholder="scenario id"]'), 's1')
+      overlap!.value = 'queue'
+      overlap!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('A scheduled run waits and starts when the previous run finishes')
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Create') as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.createExecutionPlan).toHaveBeenCalledWith(expect.objectContaining({ application_id: 'app-1', release_id: 'rel-1', overlap_policy: 'queue' }))
+  })
+
+  function activeRun(overrides: Partial<ExecutionPlanRunView> = {}): ExecutionPlanRunView {
+    const started = new Date(Date.now() - 5 * 60_000).toISOString()
+    return {
+      id: 'run-1', plan_id: 'p1', run_mode: 'parallel', status: 'completed', created_at: started, updated_at: started,
+      active: true, outcome: 'running', started_at: started, estimated_end_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+      entries: [{ order: 0, scenario_id: 's1', scenario_name: 'Checkout', status: 'created', test_id: 't1', test_status: 'RUNNING' }],
+      ...overrides,
+    }
+  }
+
+  it('shows a running plan with its progress, a way back to it and Stop plan', async () => {
+    const onOpenTest = vi.fn()
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [{ ...plan({ run_mode: 'parallel', overlap_policy: 'skip' }), activity: { active_run: activeRun(), active_runs: 1 } }], count: 1 })
+    plansApiMock.getExecutionPlanRun.mockResolvedValue(activeRun())
+    plansApiMock.stopExecutionPlanRun.mockResolvedValue({ run: activeRun({ active: false, outcome: 'stopped', ended_at: new Date().toISOString() }), stop_requested: true })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage onOpenTest={onOpenTest} />)
+    })
+    await flush()
+    expect(container.textContent).toContain('Running')
+    expect(container.textContent).toContain('1 of 1 run active')
+    expect(container.textContent).toMatch(/5 min elapsed · about 10 min left/)
+    const run = [...container.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Run') as HTMLButtonElement
+    expect(run.disabled).toBe(true)
+    expect(run.title).toContain('does not start another alongside it')
+    expect(document.getElementById(run.getAttribute('aria-describedby') || '')?.textContent).toBe('Run is unavailable until this run ends.')
+
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'View progress') as HTMLElement).click()
+    })
+    await flush()
+    const dialog = document.querySelector('[aria-labelledby="execution-plan-progress-title"]') as HTMLElement
+    expect(dialog.textContent).toContain('Running')
+    expect(dialog.textContent).toContain('elapsed')
+    expect(dialog.textContent).not.toContain('updating…')
+    await act(async () => {
+      ;([...dialog.querySelectorAll('button')].find(b => b.textContent === 'Open run') as HTMLElement).click()
+    })
+    expect(onOpenTest).toHaveBeenCalledWith('t1')
+
+    await act(async () => {
+      ;([...dialog.querySelectorAll('button')].find(b => b.textContent === 'Stop plan') as HTMLElement).click()
+    })
+    await flush()
+    expect(confirmActionMock).toHaveBeenCalledWith(expect.stringContaining('Stop “nightly”?'), expect.objectContaining({ confirmLabel: 'Stop plan' }))
+    expect(plansApiMock.stopExecutionPlanRun).toHaveBeenCalledWith('p1', 'run-1')
+    expect(dialog.textContent).toContain('Stopped')
+  })
+
+  it('shows a run held for approval on the card with a way to review it', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [{
+      ...plan({}),
+      activity: {
+        pending_approval: { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', requested_at: '', created_at: '', updated_at: '' },
+        waiting: [{ schedule_id: 'sch-1', schedule_name: 'Nightly', planned_at: '2026-10-12T06:30:00Z', reason_code: 'approval_required', approval_id: 'appr-1' }],
+      },
+    }], count: 1 })
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({ approvals: [], count: 0 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
+    })
+    await flush()
+    expect(container.textContent).toContain('Waiting for approval')
+    expect(container.textContent).toContain('held until a project admin approves it')
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Review approval') as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.listExecutionPlanApprovals).toHaveBeenCalledWith('p1')
+  })
+
+  it('explains a run the overlap policy kept from starting', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ overlap_policy: 'queue' })], count: 1 })
+    plansApiMock.runExecutionPlan.mockRejectedValue(new ApiError('plan running', 409, {
+      status: 'plan_running',
+      overlap: { overlap_policy: 'queue', active_run_id: 'run-0', started_at: '', message: '"nightly" is already running (started Oct 12 06:27 UTC).' },
+    }))
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Run') as HTMLElement).click()
+    })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('is already running (started Oct 12 06:27 UTC)')
+    // The editor opened next starts without that refusal.
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Edit') as HTMLElement).click()
+    })
+    expect(document.querySelector('[aria-labelledby="execution-plan-editor-title"] [role="alert"]')).toBeNull()
+  })
+
+  it('names how the last run ended and reopens it', async () => {
+    const ended = new Date().toISOString()
+    const last = activeRun({ active: false, outcome: 'failed', ended_at: ended, estimated_end_at: undefined })
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [{ ...plan({}), activity: { last_run: last } }], count: 1 })
+    plansApiMock.getExecutionPlanRun.mockResolvedValue(last)
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    expect(container.textContent).toContain('Last run: Failed')
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'View last run') as HTMLElement).click()
+    })
+    await flush()
+    const dialog = document.querySelector('[aria-labelledby="execution-plan-progress-title"]') as HTMLElement
+    expect(dialog.textContent).toContain('Failed')
+    expect(dialog.textContent).toContain('Finished')
+    expect([...dialog.querySelectorAll('button')].some(b => b.textContent === 'Stop plan')).toBe(false)
+  })
+  it('shows a scheduled run held for approval under the run in progress, without a live region', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [{
+      ...plan({}),
+      activity: {
+        active_run: activeRun(),
+        active_runs: 1,
+        waiting: [{ schedule_id: 'sch-1', schedule_name: 'Nightly', planned_at: '2026-10-12T06:30:00Z', reason_code: 'approval_required', approval_id: 'appr-1' }],
+      },
+    }], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
+    })
+    await flush()
+    expect(container.textContent).toContain('Running')
+    expect(container.textContent).toContain('Waiting for approval')
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === 'Review approval')).toBe(true)
+    // The elapsed time changes on every refresh; it must not be re-announced.
+    expect(container.querySelector('.pp-plan-state[role="status"]')).toBeNull()
+  })
+
+  it('does not leave the list loading when a refresh overtakes a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const running = { ...plan({ overlap_policy: 'allow' }), activity: { active_run: activeRun(), active_runs: 1 } }
+      let releaseReload: (value: unknown) => void = () => {}
+      plansApiMock.listExecutionPlans.mockReset()
+      plansApiMock.listExecutionPlans
+        .mockResolvedValueOnce({ execution_plans: [running], count: 1 })
+        .mockImplementationOnce(() => new Promise(resolve => { releaseReload = resolve }))
+        .mockResolvedValue({ execution_plans: [running], count: 1 })
+      plansApiMock.updateExecutionPlan.mockResolvedValue(running)
+      await act(async () => {
+        root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+      })
+      await flush()
+      // Saving reloads the list; the reload is slow.
+      await act(async () => {
+        ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Edit') as HTMLElement).click()
+      })
+      await flush()
+      await act(async () => {
+        ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Save') as HTMLElement).click()
+      })
+      await flush()
+      expect(plansApiMock.updateExecutionPlan).toHaveBeenCalled()
+      expect(container.textContent).toContain('Loading execution plans')
+      // The activity refresh fires and finishes first, then the reload.
+      await act(async () => { vi.advanceTimersByTime(5100) })
+      await flush()
+      await act(async () => { releaseReload({ execution_plans: [running], count: 1 }) })
+      await flush()
+      expect(container.textContent).not.toContain('Loading execution plans')
+      expect(container.textContent).toContain('nightly')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes slowly while a run only waits', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      plansApiMock.listExecutionPlans.mockReset()
+      plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [{
+        ...plan({}),
+        activity: { pending_approval: { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', requested_at: '', created_at: '', updated_at: '' } },
+      }], count: 1 })
+      await act(async () => {
+        root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+      })
+      await flush()
+      expect(plansApiMock.listExecutionPlans).toHaveBeenCalledTimes(1)
+      await act(async () => { vi.advanceTimersByTime(6000) })
+      await flush()
+      expect(plansApiMock.listExecutionPlans).toHaveBeenCalledTimes(1)
+      await act(async () => { vi.advanceTimersByTime(25000) })
+      await flush()
+      expect(plansApiMock.listExecutionPlans).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes often while a run is in progress', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      plansApiMock.listExecutionPlans.mockReset()
+      plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [{ ...plan({}), activity: { active_run: activeRun(), active_runs: 1 } }], count: 1 })
+      await act(async () => {
+        root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+      })
+      await flush()
+      expect(plansApiMock.listExecutionPlans).toHaveBeenCalledTimes(1)
+      await act(async () => { vi.advanceTimersByTime(5100) })
+      await flush()
+      expect(plansApiMock.listExecutionPlans).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("keeps the plan's application while the editor re-reads the lists", async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ application_id: 'app-1', release_id: 'rel-1' })], count: 1 })
+    let resolveApplications: (value: unknown) => void = () => {}
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    applicationApiMock.listApplications.mockImplementationOnce(() => new Promise(resolve => { resolveApplications = resolve }) as never)
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Edit') as HTMLElement).click()
+    })
+    await flush()
+    const application = container.querySelector<HTMLSelectElement>('select[aria-label="Application the plan\'s runs are filed under"]')
+    expect(application?.value).toBe('app-1')
+    expect(application?.selectedOptions[0]?.textContent).toBe('Storefront')
+    expect(container.textContent).toContain('Runs are filed under Storefront › R2026.11')
+    await act(async () => { resolveApplications({ applications: [{ id: 'app-1', name: 'Storefront', created_at: '', updated_at: '' }], count: 1 }) })
+    await flush()
+  })
+
+  it('re-reads releases each time the editor opens', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ application_id: 'app-1', release_id: 'rel-1' })], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const before = applicationApiMock.listReleases.mock.calls.length
+    for (let open = 0; open < 2; open++) {
+      await act(async () => {
+        ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Edit') as HTMLElement).click()
+      })
+      await flush()
+      await act(async () => {
+        ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Cancel') as HTMLElement).click()
+      })
+      await flush()
+    }
+    expect(applicationApiMock.listReleases.mock.calls.length - before).toBeGreaterThanOrEqual(2)
+  })
 })

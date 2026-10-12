@@ -752,8 +752,10 @@ func (s *SQLiteStore) DeleteApplication(id string) error {
 		(SELECT COUNT(*) FROM tests WHERE application_id = ? OR release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
 		(SELECT COUNT(*) FROM external_result_imports WHERE application_id = ? OR release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
 		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
+		(SELECT COUNT(*) FROM execution_plans WHERE application_id = ? OR release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
+		(SELECT COUNT(*) FROM execution_plan_schedules WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
 		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?))`,
-		id, id, id, id, id, id).Scan(&dependentCount); err != nil {
+		id, id, id, id, id, id, id, id, id).Scan(&dependentCount); err != nil {
 		return err
 	}
 	var assignments int
@@ -1236,8 +1238,10 @@ func (s *SQLiteStore) ArchiveRelease(id string) error {
 	if err := tx.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM tests WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
 		(SELECT COUNT(*) FROM external_result_imports WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
-		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?))`,
-		projectID, groupID, projectID, groupID, projectID, groupID).Scan(&count); err != nil {
+		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM execution_plans WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM execution_plan_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?))`,
+		projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
@@ -1298,8 +1302,10 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 		(SELECT COUNT(*) FROM tests WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
 		(SELECT COUNT(*) FROM external_result_imports WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
 		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM execution_plans WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM execution_plan_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
 		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?))`,
-		projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID).Scan(&dependentCount); err != nil {
+		projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID).Scan(&dependentCount); err != nil {
 		return err
 	}
 	var assignments int

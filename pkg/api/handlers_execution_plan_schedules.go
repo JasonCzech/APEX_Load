@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -32,6 +34,34 @@ func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	}
 	s.recordAuditEvent(r, "execution_plan.schedule.create", "success", "execution_plan_schedule", schedule.ID, schedule.ProjectID, map[string]any{"plan_id": planID, "cron_expr": schedule.CronExpr})
 	writeJSON(w, http.StatusCreated, schedule)
+}
+
+// handlePreviewExecutionPlanSchedule lists a candidate plan schedule's next
+// runs without saving it.
+func (s *Server) handlePreviewExecutionPlanSchedule(w http.ResponseWriter, r *http.Request) {
+	var req CreateExecutionPlanScheduleRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	count := 5
+	if raw := strings.TrimSpace(r.URL.Query().Get("count")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			count = n
+		}
+	}
+	var preview *ScenarioSchedulePreview
+	preview, err := s.executionPlanDomainService().PreviewSchedule(r.PathValue("id"), req, count)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errExecutionPlanNotFound) {
+			status = http.StatusNotFound
+		} else if errors.Is(err, errExecutionPlanSchedulePersistence) {
+			status = http.StatusInternalServerError
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
 }
 
 func (s *Server) handleListExecutionPlanSchedules(w http.ResponseWriter, r *http.Request) {

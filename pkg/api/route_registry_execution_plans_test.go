@@ -19,7 +19,7 @@ func TestExecutionPlanAPIRoutesUseModularCatalog(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 17; got != want {
+	if got, want := len(modular), 19; got != want {
 		t.Fatalf("modular execution-plan route count = %d, want %d", got, want)
 	}
 

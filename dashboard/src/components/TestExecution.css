@@ -4329,3 +4329,10 @@
 .browser-ux-qualification summary {
   cursor: pointer;
 }
+
+/* The execution plan that started this run. */
+.execution-plan-run-link {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}

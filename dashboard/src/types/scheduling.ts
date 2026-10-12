@@ -122,6 +122,10 @@ export interface ScenarioScheduleHealth {
   execution_plan_enabled?: number
   execution_plan_due?: number
   execution_plan_blocked?: number
+  /** Plan schedules holding a run that waits for approval. */
+  execution_plan_awaiting_approval?: number
+  /** Plan schedules holding a run until the plan's previous run finishes. */
+  execution_plan_waiting_previous_run?: number
   one_time_scheduled?: number
   one_time_due?: number
 }
@@ -186,6 +190,9 @@ export interface RunCalendarEvent {
   scenario_id?: string
   scenario_name?: string
   plan_id?: string
+  plan_name?: string
+  /** The plan run that started this run, or that this occurrence started. */
+  plan_run_id?: string
   application_id?: string
   release_id?: string
   project_id?: string

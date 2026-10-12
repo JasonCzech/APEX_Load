@@ -661,3 +661,11 @@
   color: var(--text-muted, var(--text-secondary));
 }
 .script-picker .pp-field-error { margin: 0; }
+
+/* A plan card's running, waiting or last-run line. */
+.pp-plan-state {
+  align-items: center;
+}
+.pp-field-help {
+  margin: -4px 0 4px;
+}
