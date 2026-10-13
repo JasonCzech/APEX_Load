@@ -1,1 +1,0 @@
-function e(e,t){return e.toLocaleString(void 0,{minimumFractionDigits:t,maximumFractionDigits:t})}function t(t,n=2){return t>0&&t<10**-n?`<${e(10**-n,n)}%`:`${e(t,n)}%`}export{t as n,e as t};
