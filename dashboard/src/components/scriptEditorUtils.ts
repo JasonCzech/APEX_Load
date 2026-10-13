@@ -520,7 +520,8 @@ export function buildParameterizeSelectionRequest(
   return { start: resolved.innerFrom, end: resolved.innerTo, selectedText: resolved.selectedText }
 }
 
-function formatJsonPathKey(key: string): string {
+/** A key in a JSON path, as findJsonStringOccurrences writes paths: `.name`, or `["x-y"]`. */
+export function formatJsonPathKey(key: string): string {
   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
 }
 

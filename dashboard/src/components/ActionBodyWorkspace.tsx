@@ -3,6 +3,8 @@ import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
 import { bodyLanguage, bodyTemplateReferences, extractedBodyReferences } from './actionBodyModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
+import { ReferenceSearch, ReferenceWarnings } from './ReferenceField'
+import { useReferenceFieldContext } from './referenceFieldContext'
 import { json } from '@codemirror/lang-json'
 import { xml } from '@codemirror/lang-xml'
 import { autocompletion } from '@codemirror/autocomplete'
@@ -36,13 +38,27 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
     return () => { document.removeEventListener('mousedown', dismiss); document.removeEventListener('keydown', escape) }
   }, [menu])
   const references = bodyTemplateReferences(action.body || '')
-  const completions = useMemo(() => Array.from(new Set([
-    ...parameters.map(p => `param.${p.name}`),
-    ...(script?.data_sources || []).flatMap(source => (source.columns || []).map(column => `data.${source.name}.${column}`)),
-    ...extractedBodyReferences(script ? [...(script.init || []), ...script.actions, ...(script.teardown || [])] : [action]),
-    ...bodyTemplateReferences(JSON.stringify(script || action)),
-    ...['fn.uuid()', 'fn.timestamp.iso8601()', 'fake.email()'],
-  ])).map(label => ({ label, type: 'variable', apply: `${label}}}` })), [action, parameters, script])
+  const { scope } = useReferenceFieldContext()
+  const [picking, setPicking] = useState(false)
+  // What exists before this step, when the editor knows the step; else every name the script uses.
+  const completions = useMemo(() => (scope
+    ? scope.items.map(item => ({ label: item.expression, detail: item.mayBeUnset ? 'may be unset here' : undefined, info: item.detail, type: 'variable', apply: `${item.expression}}}` }))
+    : Array.from(new Set([
+      ...parameters.map(p => `param.${p.name}`),
+      ...(script?.data_sources || []).flatMap(source => (source.columns || []).map(column => `data.${source.name}.${column}`)),
+      ...extractedBodyReferences(script ? [...(script.init || []), ...script.actions, ...(script.teardown || [])] : [action]),
+      ...bodyTemplateReferences(JSON.stringify(script || action)),
+      ...['fn.uuid()', 'fn.timestamp.iso8601()', 'fake.email()'],
+    ])).map(label => ({ label, type: 'variable', apply: `${label}}}` }))), [action, parameters, scope, script])
+  const insertReference = (expression: string) => {
+    setPicking(false)
+    const view = viewRef.current
+    const text = `{{${expression}}}`
+    if (!view) { onUpdate('body', `${action.body || ''}${text}`); return }
+    const { from, to } = view.state.selection.main
+    view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } })
+    view.focus()
+  }
   const extensions = useMemo(() => [apexCodeMirrorTheme, EditorView.contentAttributes.of({ 'aria-label': 'Request body' }), EditorView.lineWrapping, ...(syntax === 'json' ? [json()] : syntax === 'xml' ? [xml()] : []), autocompletion({ override: [context => {
     const match = context.matchBefore(/{{[\w.()]*/)
     return match ? { from: match.from + 2, options: completions } : null
@@ -90,6 +106,10 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
       <button className="btn btn-sm btn-secondary" type="button" onClick={validate}>Check syntax</button>
       <button className="btn btn-sm btn-secondary" type="button" onClick={format} disabled={syntax === 'text'}>Format body</button>
       <button className="btn btn-sm btn-secondary" type="button" onClick={() => parameterize()} disabled={selection.from === selection.to}>Parameterize selection</button>
+      {scope && <span className="author-body-reference">
+        <button className="btn btn-sm btn-secondary" type="button" aria-haspopup="listbox" aria-expanded={picking} onClick={() => setPicking(open => !open)}>Insert reference</button>
+        {picking && <ReferenceSearch label="the request body" onPick={insertReference} onClose={() => { setPicking(false); viewRef.current?.focus() }} />}
+      </span>}
     </div>
     <p>Editor language changes highlighting only. Formatting is explicit and can change whitespace. Content-Type remains in request headers.</p>
     <div onContextMenu={event => {
@@ -100,6 +120,7 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
       setMenu({ start: range.from, end: range.to, selectedText, x: event.clientX, y: event.clientY, existingName: /^{{\s*param\.([\w]+)\s*}}$/.exec(selectedText)?.[1] || null })
     }}><CodeMirror theme="none" aria-label="Request body" value={action.body || ''} extensions={extensions} onCreateEditor={view => { viewRef.current = view }} onUpdate={update => { if (update.selectionSet) setSelection({ from: update.state.selection.main.from, to: update.state.selection.main.to }) }} onChange={value => { onUpdate('body', value); setIssue('') }} basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }} /></div>
     <ActionParameterMenu selectionState={menu} onOpenParameterEditor={parameterize} />
+    <ReferenceWarnings value={action.body || ''} onReplace={(from, to, text) => { const body = action.body || ''; onUpdate('body', `${body.slice(0, from)}${text}${body.slice(to)}`) }} />
     {issue && <p role="status">{issue}</p>}
     <details><summary>Template references ({references.length})</summary>{references.map(ref => <button className="btn btn-sm btn-secondary" type="button" key={ref} onClick={() => onInspectReference?.(ref)} disabled={!onInspectReference}>{`{{${ref}}}`}</button>)}<p>Type {'{{'} to complete references found in this script, parameters, and built-in functions. Environment and extracted variables are resolved at runtime.</p></details>
     <button className="btn btn-sm btn-secondary" type="button" aria-expanded={preview} onClick={() => setPreview(value => !value)}>Masked template preview</button>

@@ -18,8 +18,8 @@ describe('summarizeActionContext', () => {
   it('lists what an action reads, what it extracts and who reads that', () => {
     const login = summarizeActionContext(script, 'init', 0)!
     expect(login.uses).toEqual(['param.user'])
-    expect(login.produces).toEqual(['token'])
-    expect(login.usedBy.map(location => `${location.phase}:${location.actionIndex}:${location.name}`)).toEqual(['action:0:Cart', 'action:1:Pay'])
+    expect(login.outputs.map(output => output.expression)).toEqual(['var.token'])
+    expect(login.outputs[0].usedBy.map(location => `${location.phase}:${location.actionIndex}:${location.name}`)).toEqual(['action:0:Cart', 'action:1:Pay'])
   })
 
   it('ignores imported evidence in metadata', () => {
@@ -40,12 +40,23 @@ describe('summarizeActionContext', () => {
   it('counts a request nested in a block as a reader, and describes a selected nested step by itself', () => {
     const nestedReader = { name: 'Poll', type: 'request', method: 'GET', target: '/poll', headers: { Authorization: 'Bearer {{var.token}}' } }
     const withBlock = { ...script, actions: [...script.actions, { name: 'Loop', type: 'control_loop', target: '', control: { count: 2, steps: [nestedReader] } }] } as unknown as ScriptDefinition
-    expect(summarizeActionContext(withBlock, 'init', 0)!.usedBy.map(location => location.name)).toContain('Loop')
+    expect(summarizeActionContext(withBlock, 'init', 0)!.outputs[0].usedBy.map(location => location.name)).toContain('Loop')
     const step = summarizeActionContext(withBlock, 'action', 3, [event({ action_index: 3, status_code: 200 })], nestedReader as never)!
     expect(step.uses).toEqual(['var.token'])
-    expect(step.produces).toEqual([])
+    expect(step.outputs).toEqual([])
     expect(step.debugOfEnclosingAction).toBe(true)
     expect(step.lastDebug?.statusCode).toBe(200)
+  })
+
+  it('lists a live-table step’s results and who reads them', () => {
+    const tables = { ...script, actions: [
+      { name: 'Read', type: 'live_table', target: '', params: { alias: 'orders', operation: 'read', position: 1, result_prefix: 'row', columns: ['status'] } },
+      { name: 'Use', type: 'request', method: 'GET', target: '/orders/{{var.row.record_id}}?s={{var.row.values.status}}' },
+    ] } as unknown as ScriptDefinition
+    const read = summarizeActionContext(tables, 'action', 0)!
+    expect(read.outputs.map(output => `${output.expression}:${output.usedBy.map(location => location.name).join(',')}`)).toEqual([
+      'var.row.status:', 'var.row.revision:', 'var.row.record_id:Use', 'var.row.record_version:', 'var.row.values.status:Use',
+    ])
   })
 
   it('returns nothing for an action that no longer exists', () => {

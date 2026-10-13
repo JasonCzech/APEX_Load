@@ -18,6 +18,7 @@ import {
   type LiveTableFormContext,
 } from './catalogActionFormModel'
 import DataRowGrid from './ux/DataRowGrid'
+import ReferenceField from './ReferenceField'
 import './CatalogActionForm.css'
 
 type Action = ScriptActionDefinition
@@ -217,12 +218,14 @@ function CatalogField({ field, action, required, count, context, onChange }: Fie
   // A top-level field (target, value) stays a string when cleared; a nested one goes.
   const write = (next: string) => onChange(next === '' && field.name.includes('.') ? undefined : next)
   // A message body keeps its line breaks.
+  // Every text field takes references (the engine resolves templates in them).
+  const path = field.name.split('.')
   if (field.name === 'body' || text.includes('\n')) {
     return <label className="full-width"><span>{caption}</span>
-      <textarea rows={4} spellCheck={false} value={text} placeholder={field.placeholder} aria-describedby={describedBy} onChange={event => write(event.target.value)} />{hint}</label>
+      <ReferenceField multiline rows={4} value={text} onChange={write} field={path} label={label} inputProps={{ placeholder: field.placeholder, spellCheck: false, 'aria-describedby': describedBy, 'aria-required': required || undefined }} />{hint}</label>
   }
   return <label className={widget === 'output-ref' || field.name === 'target' ? 'full-width' : undefined}><span>{caption}</span>
-    <input type="text" value={text} placeholder={field.placeholder} list={suggestions.length ? `${id}-suggestions` : undefined} aria-describedby={describedBy} onChange={event => write(event.target.value)} />
+    <ReferenceField value={text} onChange={write} field={path} label={label} inputProps={{ placeholder: field.placeholder, list: suggestions.length ? `${id}-suggestions` : undefined, 'aria-describedby': describedBy, 'aria-required': required || undefined }} />
     {suggestions.length > 0 && <datalist id={`${id}-suggestions`}>{suggestions.map(item => <option key={item} value={item}>{item}</option>)}</datalist>}
     {widget === 'output-ref' && suggestions.length === 0 && field.output_kind ? <small>No earlier step saves a {field.output_kind === 'lease' ? 'lease' : field.output_kind.replace('_', ' ')} yet; give one a “Save results as” name.</small> : null}
     {hint}</label>

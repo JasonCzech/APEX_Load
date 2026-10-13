@@ -16,6 +16,7 @@ import { type AuthoringIssue } from './scriptAuthoringAssist'
 import { httpSequenceExecutionSettings, setHTTPSequenceExecutionMode, setHTTPSequenceMaxConcurrency, type HTTPSequenceExecutionMode } from './httpSequenceExecutionModel'
 import { describeHTMLStep, htmlStepOf } from './htmlSteps'
 import CatalogActionForm from './CatalogActionForm'
+import ReferenceField from './ReferenceField'
 import { HTTP_RUNTIME_ACTION_TYPES, NO_RESPONSE_ACTION_TYPES, hasHandBuiltEditor, type LiveTableFormContext } from './catalogActionFormModel'
 
 type Action = ScriptActionDefinition
@@ -960,7 +961,7 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
       ) : htmlStepOf(action.params) ? (
         <div className="form-hint full-width" aria-label="HTML-mode step">HTML-mode step: {describeHTMLStep(htmlStepOf(action.params)!)}</div>
       ) : (
-        <label className="full-width"><span>{targetLabel}</span><input data-author-field="target" value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
+        <label className="full-width"><span>{targetLabel}</span><ReferenceField value={action.target || ''} onChange={value => onUpdate(index, 'target', value)} field={['target']} label={targetLabel} inputProps={{ 'data-author-field': 'target', placeholder: targetPlaceholder }} /></label>
       )}
       {showSelector && (
         <label className="full-width"><span>Selector Override</span><small>Overrides Target Selector for element lookup. An Object Repository Ref takes precedence when it resolves.</small><input data-author-field="selector" value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
@@ -973,7 +974,7 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
         </label>
       )}
       {showValue && (
-        <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder={action.type === 'browser_set_files' ? 'governed asset path or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}'} /></label>
+        <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><ReferenceField value={action.value || ''} onChange={value => onUpdate(index, 'value', value)} field={['value']} label={action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'} inputProps={{ placeholder: action.type === 'browser_set_files' ? 'governed asset path or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}' }} /></label>
       )}
     </div>
   )

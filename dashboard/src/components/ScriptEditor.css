@@ -8302,6 +8302,13 @@ button.debugger-problem-row:hover {
 .outline-measure-card p { margin: 0 0 8px; overflow-wrap: anywhere; }
 .outline-measure-card form, .outline-measure-card label { display: grid; gap: 6px; }
 .outline-measure-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* What the selected step produces: each output, Insert and Copy, and who reads it. */
+.action-context-card .action-context-outputs { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.action-context-outputs > li { display: grid; gap: 2px; }
+.action-context-outputs code { overflow-wrap: anywhere; }
+.action-context-outputs small { color: var(--text-secondary); }
+.action-context-output-actions { display: flex; gap: 4px; }
+.action-context-output-actions .btn { min-height: 22px; padding: 0 6px; }
 /* Source's own actions sit at the end of the scope bar, after the scope toggle. */
 .script-json-scope-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .script-json-scope-bar:has(> .script-json-scope-actions) { justify-content: flex-start; }

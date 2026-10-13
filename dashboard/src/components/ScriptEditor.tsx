@@ -7,7 +7,9 @@ import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
 import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
-import { liveTableFormContext } from './catalogActionFormModel'
+import { NO_RESPONSE_ACTION_TYPES, HTTP_RUNTIME_ACTION_TYPES, liveTableFormContext } from './catalogActionFormModel'
+import { buildReferenceScope } from './referenceScopeModel'
+import { ReferenceFieldContext, type FieldPath, type ReferenceFieldContextValue } from './referenceFieldContext'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
 import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
@@ -125,6 +127,7 @@ import {
   downloadTextFile,
   ensureUniqueParameterName,
   findJsonStringOccurrences,
+  formatJsonPathKey,
   fillEmptyHeaders,
   getErrorIssues,
   getErrorMessage,
@@ -165,7 +168,7 @@ import {
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
-import { actionRequestCount, actionExtractorCount, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount, actionTypeSummary, actionRowLabel, headerListToCompatibilityMap } from './scriptActionHelpers'
+import { actionRequestCount, actionExtractorCount, isControlAction, isSourceFunctionAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount, actionTypeSummary, actionRowLabel, headerListToCompatibilityMap } from './scriptActionHelpers'
 import { authoringSessionIdempotencyKey, scriptRequiresJavaVuserAuthoringApproval } from './javaVuserApprovalGate'
 import { ActionEditor, ValidationEvidencePanel } from './ScriptEditorActionEditor'
 import { setHTTPActionVersion } from './httpActionVersionModel'
@@ -190,6 +193,7 @@ import {
   findCandidateLiteralRangeInJson,
   formatParameterCandidateOccurrence,
   formatScriptJson,
+  jsonPathForActionStepPath,
   normalizeOccurrenceIndex,
   parseScriptJsonDraft,
   phaseActionsForScript,
@@ -5706,9 +5710,68 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const inspectorLiveTableContext = useMemo(() => activeInspectorScope?.action.type === 'live_table'
     ? liveTableFormContext(script, activeInspectorScope.phase, activeInspectorScope.actionIndex)
     : undefined, [activeInspectorScope?.action.type, activeInspectorScope?.actionIndex, activeInspectorScope?.phase, script])
+  // What the selected step can reference (slice: references you pick, not type).
+  const inspectorStepPath = activeInspectorScope?.subAction ? authorCodeFocus?.stepPath : undefined
+  const inspectorStepPathKey = (inspectorStepPath || []).join('/')
+  const referenceScope = useMemo(() => {
+    if (!activeInspectorScope) return null
+    const tables = liveTableFormContext(script, activeInspectorScope.phase, activeInspectorScope.actionIndex)
+    return buildReferenceScope(script, { phase: activeInspectorScope.phase, actionIndex: activeInspectorScope.actionIndex, stepPath: inspectorStepPathKey ? inspectorStepPathKey.split('/') : undefined }, { dataAliases: tables.columnsByAlias })
+  }, [activeInspectorScope?.actionIndex, activeInspectorScope?.phase, inspectorStepPathKey, script]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The reference field last focused, for "This step produces" › Insert.
+  const referenceInsertTarget = useRef<((expression: string) => void) | null>(null)
+  useEffect(() => { referenceInsertTarget.current = null }, [activeInspectorScope?.path])
+  // "Make this a parameter" on any field: the field's value in the script JSON,
+  // through the occurrence review that offers the same text elsewhere.
+  const makeFieldParameter = (request: { field: FieldPath; value: string; from: number; to: number }) => {
+    if (!activeInspectorScope) return
+    if (jsonDirty || jsonParseMessage) {
+      setError('Apply or reset your Source changes first, then make the parameter.')
+      return
+    }
+    const { phase, actionIndex } = activeInspectorScope
+    const collection = phase === 'action' ? 'actions' : phase
+    const path = `$.script.${collection}[${actionIndex}]${jsonPathForActionStepPath(inspectorStepPath)}${request.field.map(segment => typeof segment === 'number' ? `[${segment}]` : formatJsonPathKey(segment)).join('')}`
+    const occurrence = findJsonStringOccurrences(jsonText, request.value).find(item => item.path === path)
+    if (!occurrence) {
+      setError('That value could not be found in the script JSON; select it in Source to make it a parameter.')
+      return
+    }
+    // A value written with JSON escapes is taken whole; the offsets of a part would not match.
+    const plain = occurrence.rawText === request.value
+    const start = plain ? occurrence.from + request.from : occurrence.from
+    const end = plain ? occurrence.from + request.to : occurrence.to
+    const selected = plain ? request.value.slice(request.from, request.to) : request.value
+    openJsonOccurrenceReview({ source: 'json', phase, stepPath: inspectorStepPath, actionIndex, start, end, selectedText: jsonText.slice(start, end), existingName: null, requestedName: sanitizeVarName(selected), seedValue: selected })
+  }
+  // "Add an extractor" for a variable nothing sets: on the nearest earlier step with a response.
+  const addExtractorForReference = (name: string) => {
+    if (!activeInspectorScope) return
+    const { phase, actionIndex } = activeInspectorScope
+    const actions = phaseActionsForScript(script, phase)
+    for (let index = actionIndex - 1; index >= 0; index -= 1) {
+      const candidate = actions[index]
+      if (!candidate || isSourceFunctionAction(candidate) || isControlAction(candidate) || NO_RESPONSE_ACTION_TYPES.has(candidate.type) || HTTP_RUNTIME_ACTION_TYPES.has(candidate.type) || candidate.type === 'native_javascript' || candidate.type.startsWith('browser_')) continue
+      updatePhaseActionList(phase, list => list.map((action, at) => at === index ? { ...action, extractors: [...(action.extractors || []), { ...defaultExtractorForProtocol(script.protocol), name }] } : action))
+      setInspectorFocusSection('checks')
+      selectAuthorPhaseIndex(phase, index)
+      setSuccess(`Added extractor ${name} to ${candidate.name || `step ${index + 1}`}; set what it captures.`)
+      setError('')
+      return
+    }
+    setError(`No earlier step in this phase has a response to extract ${name} from.`)
+  }
+  const referenceFieldContext: ReferenceFieldContextValue = {
+    scope: referenceScope,
+    onMakeParameter: makeFieldParameter,
+    onAddExtractor: addExtractorForReference,
+    onCreateParameter: name => upsertParameterFromActionEditor({ selectedText: '', requestedName: name, existingName: null }),
+    registerInsertTarget: insert => { referenceInsertTarget.current = insert },
+    releaseInsertTarget: insert => { if (referenceInsertTarget.current === insert) referenceInsertTarget.current = null },
+  }
   const renderActionInspectorContent = (): ReactNode => (
     activeInspectorScope ? (
-      <>
+      <ReferenceFieldContext.Provider value={referenceFieldContext}>
         <p className="inspector-selection-path" title={`${actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)} (${activeInspectorScope.path})`}>{actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)}<small>{activeInspectorScope.path}</small></p>
         <ActionEditor inspector initialSection={inspectorFocusSection} key={`${activeInspectorScope.path}:${inspectorFocusSection}`}
           onOpenBody={() => { openCenterTab('request-body'); setNarrowAuthorPane('editor') }}
@@ -5740,7 +5803,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           catalogContext={inspectorLiveTableContext}
           onOpenSource={() => { setShowFullScriptJson(false); openCenterTab(SCRIPT_JSON_TAB_ID) }}
         />
-      </>
+      </ReferenceFieldContext.Provider>
     ) : null
   )
   const renderActionLibrary = () => <details className="action-library"><summary>Add action from a block</summary><div className="action-library-body">
@@ -6270,7 +6333,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         />
       )
     }
-    if (tabId === 'request-body') return renderStructuredCenterDocument('Request body', activeInspectorScope ? <ActionBodyWorkspace key={activeInspectorScope.path} action={activeInspectorScope.action} index={activeInspectorScope.actionIndex} path={activeInspectorScope.path} parameters={script.parameters || []} script={script} onInspectReference={reference => { if (reference.startsWith('param.') || reference.startsWith('data.')) openCenterTab('parameter-data'); else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) } }} onUpdate={(field, value) => updatePhaseAction(activeInspectorScope.phase, activeInspectorScope.actionIndex, field, value)} onParameterize={draft => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })} /> : <p>Select an action to edit its request body.</p>)
+    if (tabId === 'request-body') return renderStructuredCenterDocument('Request body', activeInspectorScope ? <ReferenceFieldContext.Provider value={referenceFieldContext}><ActionBodyWorkspace key={activeInspectorScope.path} action={activeInspectorScope.action} index={activeInspectorScope.actionIndex} path={activeInspectorScope.path} parameters={script.parameters || []} script={script} onInspectReference={reference => { if (reference.startsWith('param.') || reference.startsWith('data.')) openCenterTab('parameter-data'); else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) } }} onUpdate={(field, value) => updatePhaseAction(activeInspectorScope.phase, activeInspectorScope.actionIndex, field, value)} onParameterize={draft => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })} /></ReferenceFieldContext.Provider> : <p>Select an action to edit its request body.</p>)
     if (tabId === ACTION_LIST_TAB_ID) return workspaceTab === 'debug' ? null : renderActionListCenterDocument()
     if (tabId !== SCRIPT_JSON_TAB_ID) return null
     return (
@@ -6374,15 +6437,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         <dl>
           <dt>Reads</dt>
           <dd>{references(context.uses, 'No parameters or variables')}</dd>
-          <dt>Extracts</dt>
-          <dd>{references(context.produces, 'Nothing')}</dd>
-          {context.produces.length > 0 && <>
-            <dt>Read by</dt>
-            <dd>{context.usedBy.length ? <ul className="action-context-links">{context.usedBy.map(location => {
-              const row = scriptPhaseActionRows.find(item => item.phase === location.phase && item.actionIndex === location.actionIndex)
-              return <li key={`${location.phase}:${location.actionIndex}`}>{row ? <button type="button" className="link-button" onClick={() => selectAuthorPhaseAction(row)}>{location.name || `${row.phaseLabel} ${location.actionIndex + 1}`}</button> : location.name}</li>
-            })}</ul> : <p className="action-context-empty">No other action reads these yet</p>}</dd>
-          </>}
+          <dt>This step produces</dt>
+          <dd>{context.outputs.length ? <ul className="action-context-outputs">{context.outputs.map(output => (
+            <li key={output.expression}>
+              <code>{`{{${output.expression}}}`}</code>
+              <small>{output.detail}</small>
+              <span className="action-context-output-actions">
+                <button type="button" className="btn btn-ghost btn-sm" title="Insert into the field you last edited" onClick={() => {
+                  if (referenceInsertTarget.current) referenceInsertTarget.current(output.expression)
+                  else setError('Click into a field of a step first, then Insert.')
+                }}>Insert</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void navigator.clipboard?.writeText(`{{${output.expression}}}`)}>Copy</button>
+              </span>
+              {output.usedBy.length ? <span className="action-context-links">Used by {output.usedBy.map((location, at) => {
+                const row = scriptPhaseActionRows.find(item => item.phase === location.phase && item.actionIndex === location.actionIndex)
+                return <span key={`${location.phase}:${location.actionIndex}`}>{at > 0 ? ', ' : ''}{row ? <button type="button" className="link-button" onClick={() => selectAuthorPhaseAction(row)}>{location.name || `${row.phaseLabel} ${location.actionIndex + 1}`}</button> : location.name}</span>
+              })}</span> : <span className="action-context-empty">Not used yet</span>}
+            </li>
+          ))}</ul> : <p className="action-context-empty">Nothing</p>}</dd>
           <dt>{context.debugOfEnclosingAction ? 'Last debug of its block' : 'Last debug'}</dt>
           <dd>{debug
             ? <p className={`action-context-debug ${debug.success ? 'passed' : 'failed'}`}>{debug.success ? 'Passed' : 'Failed'}{debug.statusCode ? ` · HTTP ${debug.statusCode}` : ''} · {Math.round(debug.durationMs)} ms{!replayEvidenceMatchesCurrentDraft ? ' · before your latest edits' : ''}{!debug.success && debug.error ? <span>{debug.error}</span> : null}</p>

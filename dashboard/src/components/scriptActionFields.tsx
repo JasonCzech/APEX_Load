@@ -1,3 +1,4 @@
+import ReferenceField from './ReferenceField'
 import { bodyLanguage } from './actionBodyModel'
 import { HTTPActionVersionFields } from './HTTPActionVersionFields'
 import type { HTTP3ScriptContext } from './httpQUICModel'
@@ -998,14 +999,14 @@ export function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHea
                 )))}
                 placeholder="Key"
               />
-              <input
-                aria-label={`Header ${headerIndex + 1} value`}
-                className="kv-val"
+              <ReferenceField
                 value={header.value}
-                onChange={event => updateOrderedHeaders(orderedHeaders.map((entry, entryIndex) => (
-                  entryIndex === headerIndex ? { ...entry, value: event.target.value } : entry
+                onChange={value => updateOrderedHeaders(orderedHeaders.map((entry, entryIndex) => (
+                  entryIndex === headerIndex ? { ...entry, value } : entry
                 )))}
-                placeholder="Value"
+                field={['header_list', headerIndex, 'value']}
+                label={`header ${header.name || headerIndex + 1}`}
+                inputProps={{ 'aria-label': `Header ${headerIndex + 1} value`, className: 'kv-val', placeholder: 'Value' }}
               />
               <button
                 type="button"
@@ -1020,7 +1021,7 @@ export function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHea
           {Object.entries(compatibilityOnlyHeaders).map(([key, value]) => (
             <div key={`compatibility-${key}`} className="kv-row">
               <input aria-label={`Header ${key} name`} className="kv-key" value={key} onChange={e => renameCompatibilityOnlyHeader(key, e.target.value, value)} placeholder="Key" />
-              <input aria-label={`Header ${key} value`} className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
+              <ReferenceField value={value} onChange={next => onUpdateHeader(index, key, key, next)} field={['headers', key]} label={`header ${key}`} inputProps={{ 'aria-label': `Header ${key} value`, className: 'kv-val', placeholder: 'Value' }} />
               <button type="button" aria-label={`Remove header ${key}`} className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
             </div>
           ))}
@@ -1028,7 +1029,7 @@ export function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHea
         : Object.entries(action.headers || {}).map(([key, value]) => (
             <div key={key} className="kv-row">
               <input aria-label={`Header ${key} name`} className="kv-key" value={key} onChange={e => onUpdateHeader(index, key, e.target.value, value)} placeholder="Key" />
-              <input aria-label={`Header ${key} value`} className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
+              <ReferenceField value={value} onChange={next => onUpdateHeader(index, key, key, next)} field={['headers', key]} label={`header ${key}`} inputProps={{ 'aria-label': `Header ${key} value`, className: 'kv-val', placeholder: 'Value' }} />
               <button type="button" aria-label={`Remove header ${key}`} className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
             </div>
           ))}

@@ -1,5 +1,6 @@
 import type { ScriptActionDefinition, ScriptDefinition, ScriptReplayActionEvent } from '../types/scripts'
 import type { ScriptActionPhase } from './scriptEditorWorkbench'
+import { stepOutputs, type StepOutput } from './referenceScopeModel'
 
 // What the side rail says about the selected action: the values it reads, the
 // variables it extracts, the actions that read those, and how its last debug
@@ -10,10 +11,8 @@ export interface ActionLocation { phase: ScriptActionPhase; actionIndex: number;
 export interface ActionContextSummary {
   /** Template references the action reads, as written: "param.user", "var.token". */
   uses: string[]
-  /** Variables the action's extractors set. */
-  produces: string[]
-  /** Other top-level actions that read a variable this action sets. */
-  usedBy: ActionLocation[]
+  /** What the action sets (extractor names, a table step's results), each with the other top-level actions that read it. */
+  outputs: Array<StepOutput & { usedBy: ActionLocation[] }>
   lastDebug: { success: boolean; statusCode?: number; durationMs: number; error?: string } | null
   /** Debug results are kept per top-level action; a nested step shows its block's. */
   debugOfEnclosingAction: boolean
@@ -52,24 +51,22 @@ export function summarizeActionContext(
   const topLevel = steps(phases.find(([name]) => name === phase)![1])[actionIndex]
   if (!topLevel) return null
   const action = nested || topLevel
-  const produces = [...new Set((action.extractors || []).map(extractor => extractor.name.trim()).filter(Boolean))]
-  const usedBy: ActionLocation[] = []
-  if (produces.length > 0) {
-    const produced = new Set(produces.map(name => `var.${name}`))
+  const readers = (expression: string) => {
+    const usedBy: ActionLocation[] = []
     for (const [otherPhase, key] of phases) {
       steps(key).forEach((other, otherIndex) => {
-        // A nested step's own block can read what the step extracts.
+        // A nested step's own block can read what the step sets.
         if (!nested && otherPhase === phase && otherIndex === actionIndex) return
-        if (actionReferences(other).some(reference => produced.has(reference))) usedBy.push({ phase: otherPhase, actionIndex: otherIndex, name: other.name })
+        if (actionReferences(other).includes(expression)) usedBy.push({ phase: otherPhase, actionIndex: otherIndex, name: other.name })
       })
     }
+    return usedBy
   }
   // The action's own event, not one of its sub-requests or nested steps.
   const event = [...replayEvents].reverse().find(item => item.phase === phase && item.action_index === actionIndex && item.request_index == null && !item.step_path?.length)
   return {
     uses: actionReferences(action),
-    produces,
-    usedBy,
+    outputs: stepOutputs(action).map(output => ({ ...output, usedBy: readers(output.expression) })),
     lastDebug: event ? { success: event.success, statusCode: event.status_code, durationMs: event.duration_ms, error: event.error_message } : null,
     debugOfEnclosingAction: Boolean(nested),
   }

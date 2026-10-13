@@ -2111,6 +2111,65 @@ describe('ScriptEditor', () => {
     }
   })
 
+  it('builds a request from a parameter, a data column and an earlier extractor without typed braces, and flags a misspelling', async () => {
+    const referenceScript = {
+      ...initialScript,
+      parameters: [{ name: 'user', type: 'list', values: ['alice'] }],
+      data_sources: [{ name: 'cards', type: 'csv', columns: ['number'] }],
+      actions: [
+        { ...initialScript.actions[0], name: 'Search', target: '/search', extractors: [{ name: 'order_id', type: 'jsonpath', source: 'body', expression: '$.id' }] },
+        { ...initialScript.actions[0], name: 'Pay', target: '/pay/', headers: {} },
+      ],
+    } as unknown as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={referenceScript} />) })
+    await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Pay"]')!.click() })
+    await flushReact()
+    const target = () => container.querySelector<HTMLInputElement>('.action-editor-panel input[data-author-field="target"]')!
+    const insert = async (query: string) => {
+      await act(async () => { target().focus(); target().setSelectionRange(target().value.length, target().value.length); target().dispatchEvent(new KeyboardEvent('keyup', { key: 'End', bubbles: true })) })
+      await act(async () => { container.querySelector<HTMLButtonElement>('.action-editor-panel button[aria-label^="Insert a reference into Target"]')!.click() })
+      const search = container.querySelector<HTMLInputElement>('input[aria-label="Find a reference"]')!
+      await act(async () => { changeInputValue(search, query) })
+      await act(async () => { search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+      await flushReact()
+    }
+    await insert('param.user')
+    await insert('data.cards')
+    await insert('order_id')
+    expect(target().value).toBe('/pay/{{param.user}}{{data.cards.number}}{{var.order_id}}')
+    expect(container.querySelector('.action-editor-panel .reference-warning')).toBeNull()
+
+    // A misspelling is flagged before any replay, with the name meant.
+    await act(async () => { changeInputValue(target(), '/pay/{{var.ordr_id}}') })
+    const warning = container.querySelector<HTMLElement>('.action-editor-panel .reference-warning')!
+    expect(warning.textContent).toContain('{{var.ordr_id}} is not set by an earlier step')
+    await act(async () => { Array.from(warning.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Use {{var.order_id}}')!.click() })
+    await flushReact()
+    expect(target().value).toBe('/pay/{{var.order_id}}')
+
+    // The earlier step says what it produces and who reads it.
+    await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Search"]')!.click() })
+    await flushReact()
+    const produces = container.querySelector<HTMLElement>('.action-context-outputs')!
+    expect(produces.textContent).toContain('{{var.order_id}}')
+    expect(produces.textContent).toContain('Used by Pay')
+  })
+
+  it('makes any field a parameter through the occurrence review', async () => {
+    const literalScript = { ...initialScript, actions: [{ ...initialScript.actions[0], name: 'Pay', target: '/pay/12345' }, { ...initialScript.actions[0], name: 'Refund', target: '/pay/12345' }] } as unknown as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={literalScript} />) })
+    await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Pay"]')!.click() })
+    await flushReact()
+    const target = container.querySelector<HTMLInputElement>('.action-editor-panel input[data-author-field="target"]')!
+    await act(async () => { target.focus(); target.setSelectionRange(5, 10); target.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', bubbles: true })) })
+    await act(async () => { container.querySelector<HTMLButtonElement>('.action-editor-panel button[aria-label^="Insert a reference into Target"]')!.click() })
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Make the selected text a parameter')!.click() })
+    await flushReact()
+    const review = document.body.querySelector<HTMLElement>('[aria-label="Review Matching Occurrences"]')!
+    expect(review).not.toBeNull()
+    expect(review.textContent).toContain('12345')
+  })
+
   it('expands and collapses every transaction at once', async () => {
     const transaction = (name: string) => [
       { name, type: 'source_transaction', params: { function: 'lr_start_transaction' } },

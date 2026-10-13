@@ -1,0 +1,25 @@
+/* A text field that takes references: the field, its Insert reference button,
+   the picker under it, and warnings for references nothing defines. */
+.reference-field { position: relative; display: grid; gap: 4px; min-width: 0; }
+.reference-field-control { position: relative; display: flex; align-items: stretch; gap: 4px; min-width: 0; }
+.reference-field-control > input, .reference-field-control > textarea { flex: 1 1 auto; min-width: 0; }
+.reference-insert { flex: 0 0 auto; align-self: flex-start; min-height: 30px; padding: 0 8px; font-family: var(--font-mono, monospace); }
+.reference-picker { position: absolute; top: 100%; right: 0; left: 0; z-index: 40; display: grid; gap: 6px; max-height: 320px; margin-top: 2px; padding: 6px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
+.reference-picker-search { width: 100%; box-sizing: border-box; }
+.reference-picker-options { margin: 0; padding: 0; list-style: none; }
+.reference-picker-options > [role="option"] { display: grid; gap: 1px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.reference-picker-options > [role="option"].active { background: var(--bg-hover); box-shadow: inset 3px 0 var(--accent); }
+.reference-picker-options code { overflow-wrap: anywhere; }
+.reference-picker-options small, .reference-picker-empty { color: var(--text-secondary); font-size: 11px; }
+.reference-picker-group { margin: 6px 0 2px; padding: 0 6px; color: var(--text-secondary); font-size: 11px; font-weight: 700; }
+.reference-picker-empty { margin: 4px 6px; }
+.reference-make-parameter { justify-self: start; }
+.reference-warnings { display: grid; gap: 2px; }
+.reference-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--warning-text, var(--text-primary)); font-size: 12px; }
+.reference-warning > span { overflow-wrap: anywhere; }
+.reference-warning::before { content: ''; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 999px; background: var(--warning); }
+/* The body editor's Insert reference opens the picker under its button. */
+.author-body-reference { position: relative; display: inline-flex; }
+.reference-picker.standalone { top: calc(100% + 2px); right: auto; left: 0; width: min(360px, 80vw); }
+/* In a key/value row the field takes the value's share of the row. */
+.kv-row > .reference-field { flex: 1; }
