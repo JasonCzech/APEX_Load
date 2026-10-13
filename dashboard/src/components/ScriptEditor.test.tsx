@@ -1924,33 +1924,175 @@ describe('ScriptEditor', () => {
       marker('lr_end_transaction'),
     ] }
     await act(async () => { root.render(<ScriptEditor initialScript={transactionScript} />) })
-    const outline = container.querySelector('nav[aria-label="Script outline"]')!
-    const group = outline.querySelector('[role="group"][aria-label="Transaction Checkout"]')!
-    expect(group.querySelector('.script-outline-group-head')?.textContent).toContain('2 steps')
-    const steps = () => Array.from(group.querySelectorAll('.script-outline-row:not(.script-outline-group-head) [data-outline-select]')).map(button => button.getAttribute('data-tooltip'))
-    expect(steps()).toEqual(['Cart', 'Pay', 'End Checkout'])
-    // The step before the transaction stays at the top level, one line each.
-    expect(outline.querySelector(':scope > section > .script-outline-row [data-outline-select]')?.getAttribute('data-tooltip')).toBe('Home')
+    const tree = container.querySelector('nav[aria-label="Script outline"] [role="tree"]')!
+    const items = () => Array.from(tree.querySelectorAll('[role="treeitem"]')).map(item => `${item.getAttribute('aria-level')}:${item.getAttribute('data-tooltip')}`)
+    // The end marker is not a row; the start marker heads the group.
+    expect(items()).toEqual(['1:Actions', '2:Home', '2:Checkout', '3:Cart', '3:Pay'])
+    const group = tree.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Checkout"]')!
+    expect(group.textContent).toContain('2 steps')
+    expect(group.getAttribute('aria-expanded')).toBe('true')
 
-    const toggle = group.querySelector<HTMLButtonElement>('button[aria-label="Collapse transaction Checkout"]')!
-    await act(async () => { toggle.click() })
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(steps()).toEqual([])
+    await act(async () => { group.querySelector<HTMLElement>('.script-outline-toggle')!.click() })
+    expect(group.getAttribute('aria-expanded')).toBe('false')
+    expect(items()).toEqual(['1:Actions', '2:Home', '2:Checkout'])
 
     // A search shows its matches inside a collapsed transaction.
     const filter = container.querySelector<HTMLInputElement>('.actions-sidebar input[aria-label="Find action"]')!
     await act(async () => { changeInputValue(filter, 'Pay') })
-    const filteredGroup = outline.querySelector('[role="group"][aria-label="Transaction Checkout"]')
-    expect(Array.from(filteredGroup?.querySelectorAll('.script-outline-row:not(.script-outline-group-head) [data-outline-select]') || []).map(button => button.getAttribute('data-tooltip'))).toEqual(['Pay'])
+    expect(items()).toEqual(['1:Actions', '2:Checkout', '3:Pay'])
+    // A search that matches nothing leaves no empty tree behind.
+    await act(async () => { changeInputValue(filter, 'nothing like this') })
+    expect(container.querySelector('nav[aria-label="Script outline"] [role="tree"]')).toBeNull()
+    expect(container.querySelector('nav[aria-label="Script outline"]')?.textContent).toContain('No matching steps')
     await act(async () => { changeInputValue(filter, '') })
-    expect(steps()).toEqual([])
+    expect(items()).toEqual(['1:Actions', '2:Home', '2:Checkout'])
 
-    // Selecting a step inside, from anywhere, opens its transaction.
+    // Selecting a step inside, from anywhere, opens its transaction and brings the step into view.
+    const scrolled = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    scrolled.mockClear()
     const payRow = Array.from(container.querySelectorAll<HTMLElement>('.action-item')).find(row => row.textContent?.includes('Pay'))
     await act(async () => { payRow?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flushReact()
-    expect(steps()).toEqual(['Cart', 'Pay', 'End Checkout'])
-    expect(group.querySelector('[data-outline-select][aria-current="true"]')?.getAttribute('data-tooltip')).toBe('Pay')
+    expect(items()).toEqual(['1:Actions', '2:Home', '2:Checkout', '3:Cart', '3:Pay'])
+    expect(tree.querySelector('[aria-selected="true"]')?.getAttribute('data-tooltip')).toBe('Pay')
+    expect(scrolled.mock.contexts).toContain(tree.querySelector('[role="treeitem"][data-tooltip="Pay"]'))
+
+    // Closed again, it stays closed while the selected step is edited.
+    await act(async () => { tree.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Checkout"] .script-outline-toggle')!.click() })
+    const nameField = container.querySelector<HTMLInputElement>('input[data-author-field="name"]')!
+    await act(async () => { changeInputValue(nameField, 'Pay now') })
+    await flushReact()
+    expect(items()).toEqual(['1:Actions', '2:Home', '2:Checkout'])
+  })
+
+  it('moves through the outline with arrow keys and selects with Enter', async () => {
+    const marker = (fn: string) => ({ name: 'Checkout', type: 'source_transaction', params: { function: fn } }) as unknown as ScriptDefinition['actions'][number]
+    const transactionScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Home', target: '/home' },
+      marker('lr_start_transaction'),
+      { ...initialScript.actions[0], name: 'Pay', method: 'POST', target: '/pay' },
+      marker('lr_end_transaction'),
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={transactionScript} />) })
+    const tree = container.querySelector<HTMLElement>('[role="tree"]')!
+    const row = (name: string) => tree.querySelector<HTMLElement>(`[role="treeitem"][data-tooltip="${name}"]`)!
+    const press = async (key: string) => {
+      await act(async () => { (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })) })
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    }
+    // One row is in the tab order.
+    expect(tree.querySelectorAll('[role="treeitem"][tabindex="0"]')).toHaveLength(1)
+    await act(async () => { row('Home').focus() })
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(row('Checkout'))
+    await press('ArrowLeft')
+    expect(row('Checkout').getAttribute('aria-expanded')).toBe('false')
+    await press('ArrowRight')
+    expect(row('Checkout').getAttribute('aria-expanded')).toBe('true')
+    await press('ArrowRight')
+    expect(document.activeElement).toBe(row('Pay'))
+    await press('ArrowLeft')
+    expect(document.activeElement).toBe(row('Checkout'))
+    await press('End')
+    expect(document.activeElement).toBe(row('Pay'))
+    await press('Enter')
+    expect(row('Pay').getAttribute('aria-selected')).toBe('true')
+    await press('Home')
+    expect(document.activeElement?.getAttribute('data-tooltip')).toBe('Actions')
+  })
+
+  it('folds a sub-transaction into the request it measures, and renames or removes it from the inspector', async () => {
+    const marker = (role: 'start' | 'end', name: string, sub = false) => ({
+      name: `${role === 'start' ? 'Start' : 'End'}_${name}_transaction`,
+      type: 'source_transaction',
+      params: { function: `lr_${role}_${sub ? 'sub_' : ''}transaction`, args: [name, role === 'end' ? 'LR_AUTO' : 'T02_Login'] },
+    }) as unknown as ScriptDefinition['actions'][number]
+    const auraScript: ScriptDefinition = { ...initialScript, actions: [
+      marker('start', 'T02_Login'),
+      marker('start', 'T02_Login||HostConfigController/ACTION$getConfigData', true),
+      { ...initialScript.actions[0], name: 'T02_Login_aura_2', method: 'POST', target: '/aura' },
+      marker('end', 'T02_Login||HostConfigController/ACTION$getConfigData', true),
+      marker('end', 'T02_Login'),
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={auraScript} />) })
+    const tree = container.querySelector<HTMLElement>('[role="tree"]')!
+    const labels = () => Array.from(tree.querySelectorAll('[role="treeitem"] .script-outline-name')).map(name => name.textContent)
+    expect(labels()).toEqual(['Actions', 'T02_Login', 'HostConfigController.getConfigData'])
+    const folded = tree.querySelector<HTMLElement>('.script-outline-row.measured')!
+    expect(folded.getAttribute('data-tooltip')).toBe('HostConfigController/ACTION$getConfigData — T02_Login_aura_2')
+    expect(folded.textContent).toContain('POST')
+    // The name read out is the whole one, whatever fits on screen.
+    expect(folded.getAttribute('aria-label')).toBe('HostConfigController.getConfigData POST')
+
+    // The action list finds a step by the name the outline shows, as the outline does.
+    const filter = container.querySelector<HTMLInputElement>('.actions-sidebar input[aria-label="Find action"]')!
+    await act(async () => { changeInputValue(filter, 'HostConfigController.get') })
+    expect(Array.from(container.querySelectorAll('.action-item')).map(row => row.textContent?.includes('T02_Login_aura_2'))).toEqual([true])
+    expect(labels()).toEqual(['Actions', 'T02_Login', 'HostConfigController.getConfigData'])
+    await act(async () => { changeInputValue(filter, '') })
+
+    await act(async () => { folded.click() })
+    await flushReact()
+    const card = () => container.querySelector<HTMLElement>('.outline-measure-card')
+    expect(card()?.textContent).toContain('Measured as a sub-transaction')
+    const nameInput = card()!.querySelector<HTMLInputElement>('input')!
+    expect(nameInput.value).toBe('HostConfigController/ACTION$getConfigData')
+    await act(async () => { changeInputValue(nameInput, 'Load config') })
+    await act(async () => { Array.from(card()!.querySelectorAll('button')).find(button => button.textContent === 'Rename')!.click() })
+    expect(labels()).toEqual(['Actions', 'T02_Login', 'Load config'])
+    expect(container.textContent).toContain('Renamed the sub-transaction to Load config')
+
+    // Shown, the markers carry the new name.
+    const markers = container.querySelector<HTMLInputElement>('.script-outline-markers input')!
+    await act(async () => { markers.click() })
+    expect(labels()).toEqual(['Actions', 'T02_Login', 'Load config', 'aura_2', 'End Load config', 'End T02_Login'])
+    await act(async () => { markers.click() })
+
+    await act(async () => { Array.from(card()!.querySelectorAll('button')).find(button => button.textContent === 'Remove sub-transaction')!.click() })
+    await flushReact()
+    expect(labels()).toEqual(['Actions', 'T02_Login', 'aura_2'])
+    expect(tree.querySelector('.script-outline-row.measured')).toBeNull()
+    expect(card()).toBeNull()
+    await act(async () => { markers.click() })
+    expect(labels()).toEqual(['Actions', 'T02_Login', 'aura_2', 'End T02_Login'])
+  })
+
+  it('keeps keyboard focus on a transaction it closes, though the list stops rendering only the rows in view', async () => {
+    const steps = Array.from({ length: 125 }, (_, index) => ({ ...initialScript.actions[0], name: `Step ${index + 1}`, target: `/s${index}` }))
+    const marker = (fn: string) => ({ name: 'Browse', type: 'source_transaction', params: { function: fn } }) as unknown as ScriptDefinition['actions'][number]
+    // The list needs a height to render the rows in view.
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get(this: HTMLElement) { return this.classList.contains('script-outline-treeview') ? 600 : height.get!.call(this) } })
+    try {
+      await act(async () => { root.render(<ScriptEditor initialScript={{ ...initialScript, actions: [marker('lr_start_transaction'), ...steps, marker('lr_end_transaction')] }} />) })
+      const tree = container.querySelector<HTMLElement>('[role="tree"]')!
+      expect(tree.querySelector('.script-outline-virtual')).not.toBeNull()
+      const group = () => tree.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Browse"]')!
+      await act(async () => { group().focus() })
+      await act(async () => { group().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      expect(tree.querySelector('.script-outline-virtual')).toBeNull()
+      expect(group().getAttribute('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(group())
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height)
+    }
+  })
+
+  it('expands and collapses every transaction at once', async () => {
+    const transaction = (name: string) => [
+      { name, type: 'source_transaction', params: { function: 'lr_start_transaction' } },
+      { ...initialScript.actions[0], name: `${name} step`, target: '/x' },
+      { name, type: 'source_transaction', params: { function: 'lr_end_transaction' } },
+    ] as unknown as ScriptDefinition['actions']
+    await act(async () => { root.render(<ScriptEditor initialScript={{ ...initialScript, actions: [...transaction('Browse'), ...transaction('Buy')] }} />) })
+    const expanded = () => Array.from(container.querySelectorAll('[role="treeitem"][aria-level="2"]')).map(item => item.getAttribute('aria-expanded'))
+    const tool = (name: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('.script-outline-tools button')).find(button => button.textContent === name)!
+    expect(expanded()).toEqual(['true', 'true'])
+    await act(async () => { tool('Collapse all').click() })
+    expect(expanded()).toEqual(['false', 'false'])
+    await act(async () => { tool('Expand all').click() })
+    expect(expanded()).toEqual(['true', 'true'])
   })
 
   it('opens on the first problem rather than an empty selection', async () => {
@@ -2394,6 +2536,39 @@ describe('ScriptEditor', () => {
     // (sub-request breakpoints, no whole-sequence breakpoint) state.
     expect((container.querySelector('.debugger-action-row.child .debugger-gutter') as HTMLElement).className).toContain('active')
     expect((container.querySelector('.debugger-action-row.container .debugger-gutter') as HTMLElement).className).toContain('partial')
+  })
+
+  it('folds sub-transactions in the debug rail as the outline does, with breakpoints on the step', async () => {
+    const marker = (role: 'start' | 'end', name: string, sub = false) => ({
+      name: `${role === 'start' ? 'Start' : 'End'}_${name}_transaction`,
+      type: 'source_transaction',
+      params: { function: `lr_${role}_${sub ? 'sub_' : ''}transaction`, args: [name, role === 'end' ? 'LR_AUTO' : 'T02_Login'] },
+    }) as unknown as ScriptDefinition['actions'][number]
+    const auraScript: ScriptDefinition = { ...initialScript, actions: [
+      marker('start', 'T02_Login'),
+      marker('start', 'T02_Login||HostConfigController/ACTION$getConfigData', true),
+      { ...initialScript.actions[0], name: 'T02_Login_aura_2', method: 'POST', target: '/aura' },
+      marker('end', 'T02_Login||HostConfigController/ACTION$getConfigData', true),
+      marker('end', 'T02_Login'),
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={auraScript} />) })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const list = container.querySelector('.debugger-rail-list')!
+    // The transaction heads its step; the four markers are not rows.
+    expect(list.querySelector('.debugger-rail-group')?.textContent).toBe('T02_Login1 step')
+    const rows = Array.from(list.querySelectorAll('.debugger-action-row'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].querySelector('strong')?.textContent).toBe('HostConfigController.getConfigData')
+    expect(rows[0].querySelector('strong')?.getAttribute('title')).toBe('HostConfigController/ACTION$getConfigData — T02_Login_aura_2')
+    // Its breakpoint is the step's own.
+    const gutter = rows[0].querySelector<HTMLButtonElement>('button.debugger-gutter')!
+    expect(gutter.getAttribute('aria-label')).toBe('Add breakpoint on T02_Login_aura_2')
+    await act(async () => { gutter.click() })
+    await flushReact()
+    expect(list.querySelector('button.debugger-gutter')?.className).toContain('active')
   })
 
   it('adds collapsible action and parameter lists to the debug rail', async () => {
@@ -8610,6 +8785,8 @@ describe('ScriptEditor', () => {
       'Run headless',
       'Force touch mode',
       'Capture client metrics',
+      'Capture page timings and Web Vitals',
+      'Capture interaction evidence',
       'Allow reviewed JavaScript',
       'Allow review-required actions',
       'Simulate browser cache',

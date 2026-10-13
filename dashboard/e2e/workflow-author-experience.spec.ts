@@ -25,9 +25,9 @@ async function preserveRapidInspectorEdit(page: Page, testInfo: TestInfo) {
     window.cancelAnimationFrame = frame => { if (!state.frames.delete(frame)) state.cancel.call(window, frame) }
   })
   try {
-    const selected = page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /Create order.*POST/ })
+    const selected = page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name: /Create order.*POST/ })
     await selected.click()
-    await expect(selected).toHaveAttribute('aria-current', 'true')
+    await expect(selected).toHaveAttribute('aria-selected', 'true')
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Create order')
     await expect(editor.locator('.inspector-selection-path')).toContainText('script.actions[0]')
     await expect(target).toHaveValue('/orders')
@@ -63,7 +63,7 @@ async function preserveRapidInspectorEdit(page: Page, testInfo: TestInfo) {
     await page.keyboard.press('Delete')
     await expect(target).toHaveValue('')
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Create order')
-    await expect(selected).toHaveAttribute('aria-current', 'true')
+    await expect(selected).toHaveAttribute('aria-selected', 'true')
   } finally {
     await page.evaluate(() => {
       const fixture = window as FocusFixtureWindow
@@ -88,7 +88,7 @@ test('Author creates, reverses, validates, edits source and saves without losing
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await expect(page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Author', exact: true })).toHaveAttribute('aria-pressed', 'true')
   const outline = page.getByRole('navigation', { name: 'Script outline' })
-  await outline.getByRole('button', { name: /Poll order.*Loop/ }).click()
+  await outline.getByRole('treeitem', { name: /Poll order.*Loop/ }).click()
   const editor = page.locator('.author-main-action')
   await expect(editor.getByRole('tab', { name: 'Control flow', exact: true })).toBeVisible()
   await expect(editor.getByLabel('Target (URL or path)', { exact: true })).toHaveCount(0)
@@ -106,7 +106,7 @@ test('Author creates, reverses, validates, edits source and saves without losing
   await insertion.getByRole('button', { name: 'Insert action', exact: true }).click()
   await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Health check')
   await expect(editor.locator('.inspector-selection-path')).toContainText('Actions › Poll order › Health check')
-  await expect(outline.getByRole('button', { name: /Health check.*GET/ })).toHaveAttribute('aria-current', 'true')
+  await expect(outline.getByRole('treeitem', { name: /Health check.*GET/ })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Undo document change', exact: true }).click()
   await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Poll order')
   await page.getByRole('button', { name: 'Redo document change', exact: true }).click()

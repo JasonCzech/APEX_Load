@@ -52,7 +52,7 @@ test('a starter template opens an independent draft that saves, reopens and leav
   await expect(outline).toContainText('Business Transaction')
 
   // Editing the saved copy changes only that copy.
-  await outline.getByRole('button', { name: /Business Transaction/ }).click()
+  await outline.getByRole('treeitem', { name: /Business Transaction/ }).click()
   await page.locator('.author-main-action').getByLabel('Name', { exact: true }).fill('Renamed Transaction')
   const edited = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
   await page.getByRole('button', { name: 'Save script', exact: true }).click()

@@ -5,7 +5,7 @@ import { DEFAULT_REPLAY_OPTIONS, type ReplayOptionsState } from './scriptEditorS
 
 export function handleOutlineKeys(event: KeyboardEvent<HTMLElement>) {
   if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key) || (event.target instanceof HTMLElement && event.target.matches('input, textarea, select'))) return
-  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-outline-select], .debugger-action-row-main')).filter(row => row.getClientRects().length > 0 && !row.disabled)
+  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('.debugger-action-row-main')).filter(row => row.getClientRects().length > 0 && !row.disabled)
   if (!rows.length) return
   event.preventDefault()
   const current = rows.indexOf(event.target as HTMLButtonElement)

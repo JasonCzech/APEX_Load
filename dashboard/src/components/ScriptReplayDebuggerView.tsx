@@ -9,6 +9,7 @@ import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { httpReplayVersionEvidence } from './httpActionVersionModel'
 import { httpResponseContentEvidence } from './httpResponseContentEvidenceModel'
 import { debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError, handleOutlineKeys, toggleFocusedRowBreakpoint } from './scriptSidebarModel'
+import type { OutlineModel } from './scriptOutlineModel'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
 import { currentRuntimeLookup, currentRuntimeParameter, type RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugParameterInspector } from './DebugParameterInspector'
@@ -59,6 +60,7 @@ import {
   DEBUGGER_LAYOUT_LIMITS,
   buildDebugRailRenderRows,
   type DebugRailRenderRow,
+  debugSequenceKey,
   debugStepPathKey,
   formatDebugPhaseLabel,
   formatProtocolEvidenceSummary,
@@ -154,6 +156,8 @@ export interface ScriptReplayDebuggerViewProps {
   controller: ReplayDebuggerController
   copiedReplaySnapshotSection: string | null
   debugActionRows: ScriptPhaseActionRow[]
+  /** The Author outline's tree: the rail folds sub-transactions and names steps as it does. */
+  debugOutline?: OutlineModel
   debugBreakpointKeys: Set<string>
   debugDetailHost?: HTMLDivElement | null
   debuggerWorkbench: ReactNode
@@ -237,6 +241,7 @@ export function ScriptReplayDebuggerView({
   controller,
   copiedReplaySnapshotSection,
   debugActionRows,
+  debugOutline,
   debugBreakpointKeys,
   debugDetailHost,
   debuggerWorkbench,
@@ -637,8 +642,12 @@ export function ScriptReplayDebuggerView({
                               childBreakpointsByAction.set(key, (childBreakpointsByAction.get(key) || 0) + 1)
                             }
                             const out: React.ReactNode[] = []
+                            // How deep the outline nests a step's action (its transactions), for the indent.
+                            const outlineDepth = (key: string) => Math.max(0, (debugOutline?.ancestorsByKey.get(debugOutline.rowKeyByAction.get(key) ?? key)?.length ?? 1) - 1)
                             for (const item of renderRows) {
                               const { phase, actionIndex, action } = item.row
+                              const actionKey = debugSequenceKey(phase, actionIndex)
+                              const nesting = outlineDepth(actionKey)
                               if (item.kind === 'container') {
                                 const containerKey = item.key
                                 const isTopLevel = item.stepPath.length === 0
@@ -666,7 +675,7 @@ export function ScriptReplayDebuggerView({
                                   if (!parentVisible) continue
                                 }
                                 out.push(
-                                  <div key={containerKey} className={`debugger-action-row container ${rollup} ${isCurrent ? 'current' : ''}`} style={indentStyle(item.depth)}>
+                                  <div key={containerKey} className={`debugger-action-row container ${rollup} ${isCurrent ? 'current' : ''}`} style={indentStyle(item.depth + nesting)}>
                                     {isTopLevel ? (
                                       <TooltipButton
                                         type="button"
@@ -732,7 +741,7 @@ export function ScriptReplayDebuggerView({
                                   if (!debugRailFailuresOnly && !matchesFilter(`${item.name} ${item.target}`)) continue
                                   const groupExpanded = effectiveExpandedDebugSequences.has(stepKey)
                                   out.push(
-                                    <div key={stepKey} className={`debugger-action-row child ${groupStatus} ${isCurrentGroup ? 'current' : ''}`} style={indentStyle(item.depth)}>
+                                    <div key={stepKey} className={`debugger-action-row child ${groupStatus} ${isCurrentGroup ? 'current' : ''}`} style={indentStyle(item.depth + nesting)}>
                                       <TooltipButton
                                         type="button"
                                         aria-keyshortcuts="F9"
@@ -772,7 +781,7 @@ export function ScriptReplayDebuggerView({
                                         <div
                                           key={`${stepKey}#iter${k}`}
                                           className={`debugger-action-row child iteration ${iterFail ? 'fail' : 'pass'} ${isSelectedIter ? 'selected' : ''} ${isCurrentIter ? 'current' : ''}`}
-                                          style={indentStyle(item.depth + 1)}
+                                          style={indentStyle(item.depth + 1 + nesting)}
                                           ref={node => { replayEventRefs.current[evIdx] = node }}
                                         >
                                           <span className="debugger-gutter debugger-gutter-spacer" aria-hidden="true" />
@@ -815,7 +824,7 @@ export function ScriptReplayDebuggerView({
                                   <div
                                     key={item.key}
                                     className={`debugger-action-row child ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
-                                    style={indentStyle(item.depth)}
+                                    style={indentStyle(item.depth + nesting)}
                                     ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
                                   >
                                     <TooltipButton
@@ -861,14 +870,32 @@ export function ScriptReplayDebuggerView({
                               const breakpointActive = debugBreakpointKeys.has(rowKey)
                               const isCurrentRow = currentDebugActionKey === rowKey
                               const isSelectedRow = selectedReplayEventIndex != null ? selectedReplayEventIndex === eventIndex : selectedActionKey === item.key
+                              // A marker the outline draws elsewhere (a transaction's header, or folded into
+                              // the step it measures) is not a row of its own, unless it holds a breakpoint,
+                              // the session is paused on it, or its replay failed.
+                              const outlineKey = debugOutline?.rowKeyByAction.get(rowKey)
+                              if (debugOutline && outlineKey && outlineKey !== rowKey) {
+                                const group = debugOutline.groupsByKey.get(outlineKey)
+                                if (group?.start && group.start.phase === phase && group.start.actionIndex === actionIndex && !debugRailFailuresOnly && matchesFilter(`${group.label} ${group.name}`)) {
+                                  out.push(
+                                    <div key={`group:${outlineKey}`} className="debugger-rail-group" style={indentStyle(nesting)} title={group.name}>
+                                      <strong>{group.label}</strong>
+                                      <small>{group.stepCount} step{group.stepCount === 1 ? '' : 's'}</small>
+                                    </div>
+                                  )
+                                }
+                                if (!breakpointActive && !isCurrentRow && !(rowEvent && !rowEvent.success)) continue
+                              }
+                              const outlineStep = debugOutline?.stepsByKey.get(rowKey)
                               const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : replayTerminal ? 'not-run' : 'pending'
-                              const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`
+                              const haystack = `${outlineStep?.label || ''} ${outlineStep?.measuredAs?.name || ''} ${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`
                               if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) continue
                               if (!debugRailFailuresOnly && !matchesFilter(haystack)) continue
                               out.push(
                                 <div
                                   key={rowKey}
                                   className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
+                                  style={indentStyle(nesting)}
                                   ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
                                 >
                                   <TooltipButton
@@ -903,7 +930,7 @@ export function ScriptReplayDebuggerView({
                                       <span className="replay-event-phase">{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
                                       <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
                                     </span>
-                                    <strong>{action.name || rowEvent?.action_name || 'Unnamed action'}</strong>
+                                    <strong title={outlineStep?.title}>{outlineStep ? <>{outlineStep.label}{outlineStep.occurrence ? <span className="script-outline-occurrence"> #{outlineStep.occurrence}</span> : null}</> : action.name || rowEvent?.action_name || 'Unnamed action'}</strong>
                                     <small>{(rowEvent?.method || action.method || rowEvent?.action_type || action.type || 'action')} {rowEvent?.target || action.target || action.selector || ''}</small><span className="debug-action-status-text">{rowStatus === 'pass' ? 'Passed' : rowStatus === 'fail' ? 'Failed' : rowStatus === 'not-run' ? 'Not run' : rowStatus === 'current' ? 'Current' : 'Pending'}</span>
                                   </button>
                                 </div>

@@ -5,13 +5,15 @@ import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/stored
 import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
+import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
+import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
-import { actionBreadcrumb, dedupeAuthorIssues, humanActionType, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
+import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
 import { preserveMappingBindings, withMappingReviewState } from './sourceMappingReviewState'
 import { ActionBodyWorkspace } from './ActionBodyWorkspace'
-import { debugContinuesAfterFailure, debugRunIdError, handleOutlineKeys, parameterUsageLabel } from './scriptSidebarModel'
+import { debugContinuesAfterFailure, debugRunIdError, parameterUsageLabel } from './scriptSidebarModel'
 import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
 import { parameterUsages, renameScriptParameter, renameDatasetColumn, validateDatasetReplacement } from './parameterIntegrity'
 import TabList from './ux/TabList'
@@ -149,8 +151,6 @@ import {
   actionTransactionName,
   actionTransactionMarker,
   computeTransactionBands,
-  groupOutlineByTransaction,
-  outlineNameTail,
   tagActionsTransaction,
   uniqueTransactionName,
   wrapActionsInTransactionMarkers,
@@ -161,7 +161,6 @@ import {
   scriptActionsForPhase,
   type CenterTabsState,
   type CenterWorkbenchTabId,
-  type OutlineTreeEntry,
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
@@ -369,6 +368,7 @@ const BROWSER_REPLAY_TAB_ID: CenterWorkbenchTabId = 'browser-replay'
  * actions/mappings) switch to windowed rendering so only visible rows hit the DOM.
  */
 const LIST_VIRTUALIZE_THRESHOLD = 100
+const OUTLINE_MARKERS_STORAGE_KEY = 'scriptEditorOutlineMarkers'
 
 interface CenterTabbedPaneProps {
   activeTabId: CenterWorkbenchTabId
@@ -1062,13 +1062,32 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     historyContext.current.set(key, structuredClone({ focus: authorCodeFocus, active: activeAction, breakpoints: debugBreakpoints }))
     if (historyContext.current.size > 100) historyContext.current.delete(historyContext.current.keys().next().value!)
   }
-  // The outline filter narrows the rendered rows by name/type/target without
-  // mutating the script; rows keep their original actionIndex so every row
-  // handler (select/move/breakpoint) stays correct over the filtered view.
-  const filteredActionRows = useMemo(
-    () => filterScriptPhaseActionRows(scriptPhaseActionRows, outlineActionFilter),
-    [scriptPhaseActionRows, outlineActionFilter],
-  )
+  // The outline tree: phases, transactions and the steps they measure, with
+  // a sub-transaction around one step folded into that step's row.
+  const [outlineShowMarkers, setOutlineShowMarkers] = useState(() => {
+    try { return window.localStorage.getItem(OUTLINE_MARKERS_STORAGE_KEY) === 'shown' } catch { return false }
+  })
+  const changeOutlineShowMarkers = (show: boolean) => {
+    setOutlineShowMarkers(show)
+    try { window.localStorage.setItem(OUTLINE_MARKERS_STORAGE_KEY, show ? 'shown' : 'folded') } catch { /* a viewer convenience only */ }
+  }
+  const outlineModel = useMemo(() => buildOutlineModel(scriptPhaseActionRows, { showMarkers: outlineShowMarkers }), [outlineShowMarkers, scriptPhaseActionRows])
+  const outlineNaturalWidthRef = useRef<(() => number) | null>(null)
+  // The outline filter narrows the rendered rows by name/type/target, and by the
+  // names the outline shows (Class.method, a folded sub-transaction's name), so
+  // the action list and the outline find the same steps. It does not mutate the
+  // script; rows keep their original actionIndex so every row handler
+  // (select/move/breakpoint) stays correct over the filtered view.
+  const filteredActionRows = useMemo(() => {
+    const needle = outlineActionFilter.trim().toLowerCase()
+    if (!needle) return scriptPhaseActionRows
+    const byFields = new Set(filterScriptPhaseActionRows(scriptPhaseActionRows, outlineActionFilter))
+    return scriptPhaseActionRows.filter(row => {
+      if (byFields.has(row)) return true
+      const step = outlineModel.stepsByKey.get(debugSequenceKey(row.phase, row.actionIndex))
+      return Boolean(step && [step.label, step.measuredAs?.name].some(text => text?.toLowerCase().includes(needle)))
+    })
+  }, [outlineActionFilter, outlineModel, scriptPhaseActionRows])
   // Per-row transaction band membership (left rail bracketing a transaction's rows).
   const transactionBands = useMemo(() => computeTransactionBands(filteredActionRows), [filteredActionRows])
   // Container actions (http_sequence / control_*) the operator has expanded in the
@@ -1110,40 +1129,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     () => buildDebugRailRenderRows(filteredActionRows, expandedAuthorContainers),
     [filteredActionRows, expandedAuthorContainers],
   )
-  // The outline tree: each phase's steps, with transactions as collapsible
-  // groups. Membership comes from every row, so a search that hides a
-  // transaction's markers still shows its matches inside the transaction.
-  const outlineTransactionBands = useMemo(() => computeTransactionBands(scriptPhaseActionRows), [scriptPhaseActionRows])
-  const outlineTreeByPhase = useMemo(() => {
-    const byPhase: Record<ScriptActionPhase, OutlineTreeEntry[]> = { init: [], action: [], teardown: [] }
-    for (const entry of groupOutlineByTransaction(authorRenderRows, outlineTransactionBands)) {
-      const row = entry.kind === 'step' ? entry.item.row : (entry.start || entry.items[0]).row
-      byPhase[row.phase as ScriptActionPhase].push(entry)
-    }
-    return byPhase
-  }, [authorRenderRows, outlineTransactionBands])
-  const [collapsedOutlineTransactions, setCollapsedOutlineTransactions] = useState<ReadonlySet<string>>(() => new Set())
-  const toggleOutlineTransaction = (key: string) => setCollapsedOutlineTransactions(prev => {
-    const next = new Set(prev)
-    if (!next.delete(key)) next.add(key)
-    return next
-  })
-  // Selecting a step inside a collapsed transaction (from Author Problems, the
-  // debugger or the center list) opens the transaction so the step shows.
-  const outlineTreeRef = useRef(outlineTreeByPhase)
-  outlineTreeRef.current = outlineTreeByPhase
-  useEffect(() => {
-    if (!authorCodeFocus) return
-    const holder = outlineTreeRef.current[authorCodeFocus.phase].find(entry => entry.kind === 'transaction'
-      && (entry.start?.row.actionIndex === authorCodeFocus.actionIndex || entry.items.some(item => item.row.actionIndex === authorCodeFocus.actionIndex)))
-    if (holder?.kind !== 'transaction') return
-    setCollapsedOutlineTransactions(prev => {
-      if (!prev.has(holder.key)) return prev
-      const next = new Set(prev)
-      next.delete(holder.key)
-      return next
-    })
-  }, [authorCodeFocus])
   const selectedBlockScopes = useMemo(
     () => Array.from(blockSelection)
       .map(key => resolveAuthorJsonScopeByKey(script, key))
@@ -2670,6 +2655,29 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     remapSelectionAfterRemove(phase, idx)
   }
 
+  // A folded step's sub-transaction: both markers carry its name.
+  const renameSubTransaction = (measure: OutlineMeasure, fullName: string) => {
+    const phase = measure.start.phase
+    updatePhaseActionList(phase, actions => actions.map((action, index) => index === measure.start.actionIndex || index === measure.end.actionIndex
+      ? renameTransactionMarker(action, measure.name, fullName) : action))
+    setSuccess(`Renamed the sub-transaction to ${splitMeasureName(fullName).child}. Changes are not saved yet.`)
+    setError('')
+  }
+  // Removing the markers leaves the step, no longer measured on its own.
+  const removeSubTransaction = (measure: OutlineMeasure) => {
+    const phase = measure.start.phase
+    const removed = [measure.start.actionIndex, measure.end.actionIndex]
+    const shift = (index: number) => index - removed.filter(at => at < index).length
+    updatePhaseActionList(phase, actions => actions.filter((_, index) => !removed.includes(index)))
+    setDebugBreakpoints(previous => previous
+      .filter(bp => bp.phase !== phase || !removed.includes(bp.action_index))
+      .map(bp => bp.phase === phase ? { ...bp, action_index: shift(bp.action_index) } : bp))
+    if (phase === 'action') setActiveAction(previous => previous === null || removed.includes(previous) ? null : shift(previous))
+    setAuthorCodeFocus(previous => !previous || previous.phase !== phase ? previous : removed.includes(previous.actionIndex) ? null : { ...previous, actionIndex: shift(previous.actionIndex) })
+    setSuccess(`Removed the sub-transaction ${splitMeasureName(measure.name).child}; its step is no longer measured on its own. Undo restores it.`)
+    setError('')
+  }
+
   const movePhaseAction = (phase: ScriptActionPhase, idx: number, dir: -1 | 1) => {
     const newIdx = idx + dir
     const phaseActions = phaseActionsForScript(script, phase)
@@ -4003,8 +4011,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const el = authorRailRef.current
     const grid = el?.closest('.actions-content-grid') as HTMLElement | null
     if (!el || !grid) return
+    // The outline fits names to the column and renders only the rows in view, so
+    // it says how wide its whole names need it; the rest of the column is chrome.
+    const tree = el.querySelector<HTMLElement>('.script-outline-treeview')
+    const treeNeeds = outlineNaturalWidthRef.current?.() || 0
+    const treeStyle = tree ? getComputedStyle(tree) : null
+    const treeChrome = tree && treeStyle ? el.getBoundingClientRect().width - (tree.clientWidth - (parseFloat(treeStyle.paddingLeft) || 0) - (parseFloat(treeStyle.paddingRight) || 0)) : 0
     grid.style.setProperty('--author-rail-width', 'max-content')
-    const natural = Math.ceil(el.getBoundingClientRect().width)
+    const natural = Math.max(Math.ceil(el.getBoundingClientRect().width), treeNeeds ? Math.ceil(treeNeeds + treeChrome) : 0)
     if (authorRailWidth != null) grid.style.setProperty('--author-rail-width', `${authorRailWidth}px`)
     else grid.style.removeProperty('--author-rail-width')
     // Reserve room for the center + utility columns at their widest minimums.
@@ -6309,37 +6323,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       {duplicateScriptName && <small id="script-name-duplicate" className="script-name-duplicate">{duplicateScriptNameNotice}</small>}
     </div>
   )
-  // One line per step: the name (a long one keeps its last part, where VuGen
-  // names differ), its type, and marks for a breakpoint or a problem.
-  const renderOutlineSelect = (item: DebugRailRenderRow, label?: string, meta?: string) => {
-    const phase = item.row.phase
-    const action = item.kind === 'leaf' ? item.childAction : item.row.action
-    const name = (item.kind === 'leaf' || item.kind === 'container' ? item.name || action.name : action.name) || `${item.row.phaseLabel} ${item.row.actionIndex + 1}`
-    const marker = item.kind === 'action' ? actionTransactionMarker(item.row.action) : null
-    // VuGen names a sub-transaction "Parent||child"; inside its parent the child part says it.
-    const markerName = marker?.sub ? marker.name.split('||').pop() || marker.name : marker?.name
-    const text = label || (marker ? (marker.role === 'end' ? `End ${markerName}` : markerName || '') : name)
-    // Imported LoadRunner calls are all "source_*" types; the prefix says nothing here.
-    const type = meta ?? (marker ? (marker.role === 'start' ? 'Sub-transaction' : '') : humanActionType(item.kind === 'container' ? item.containerType : action.method || action.type).replace(/^Source /, ''))
-    const selected = !selectedOutlineParameterName && authorCodeFocus?.phase === phase && authorCodeFocus.actionIndex === item.row.actionIndex && (authorCodeFocus.stepPath || []).join('/') === ('stepPath' in item ? item.stepPath || [] : []).join('/')
-    const tail = outlineNameTail(text)
-    return (
-      <TooltipButton type="button" data-outline-select aria-current={selected ? 'true' : undefined} title={text} onClick={() => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}>
-        <span className="script-outline-name"><span>{tail ? text.slice(0, -tail.length) : text}</span>{tail && <span>{tail}</span>}</span>
-        {type && <>{' '}<small>{type}</small></>}
-        {debugBreakpointKeys.has(item.key) && <span className="script-outline-flag breakpoint"><span className="sr-only">Breakpoint</span></span>}
-        {(actionIssueBuckets[phase]?.[item.row.actionIndex] || []).length > 0 && <span className="script-outline-flag attention"><span className="sr-only">Needs attention</span></span>}
-      </TooltipButton>
-    )
-  }
-  const renderOutlineItem = (item: DebugRailRenderRow) => (
-    <div key={item.key} className="script-outline-row" style={{ paddingLeft: `${Math.min(item.depth, 8) * 12}px` }}>
-      {item.kind === 'container'
-        ? <button type="button" className="script-outline-toggle" aria-label={`${expandedAuthorContainers.has(item.key) ? 'Collapse' : 'Expand'} ${item.name}`} aria-expanded={expandedAuthorContainers.has(item.key)} onClick={() => toggleAuthorContainer(item.key)}>{expandedAuthorContainers.has(item.key) ? '▾' : '▸'}</button>
-        : <span className="script-outline-toggle" aria-hidden="true" />}
-      {renderOutlineSelect(item)}
-    </div>
-  )
   const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
     const workbenchTabs = mode === 'debug'
       ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
@@ -6369,7 +6352,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       ? <ul className="action-context-tokens">{items.map(item => <li key={item}><code>{item}</code></li>)}</ul>
       : <p className="action-context-empty">{empty}</p>
     const debug = context.lastDebug
+    const stepKey = debugSequenceKey(activeInspectorScope.phase, activeInspectorScope.actionIndex)
+    const measure = activeInspectorScope.subAction ? undefined : outlineModel.measureByAction.get(stepKey)
     return (
+      <>
+      {measure && <OutlineMeasureCard
+        measure={measure}
+        label={outlineModel.stepsByKey.get(stepKey)?.label || activeInspectorScope.label}
+        onRename={fullName => renameSubTransaction(measure, fullName)}
+        onRemove={() => removeSubTransaction(measure)}
+      />}
       <div className="utility-card action-context-card">
         <h3>{activeInspectorScope.label}</h3>
         <dl>
@@ -6390,6 +6382,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             : <p className="action-context-empty">Not debugged yet</p>}</dd>
         </dl>
       </div>
+      </>
     )
   }
   const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
@@ -7016,6 +7009,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             controller={replayDebuggerController}
             copiedReplaySnapshotSection={copiedReplaySnapshotSection}
             debugActionRows={debugActionRows}
+            debugOutline={outlineModel}
             debugBreakpointKeys={debugBreakpointKeys}
             debugDetailHost={!isBrowserScript && centerTabsState.activeTabId === ACTION_LIST_TAB_ID ? centerTabPanelElements[ACTION_LIST_TAB_ID] : null}
             debuggerWorkbench={renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
@@ -7334,31 +7328,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 </div>
                 {!hasTopbarContributionProvider && scriptNameField}
                 <input className="script-outline-filter" type="search" aria-label="Find action" placeholder="Find action" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} />
-                <nav className="script-action-navigator script-outline-tree" aria-label="Script outline" onKeyDown={handleOutlineKeys}>
-                  {(['init', 'action', 'teardown'] as const).map(phase => {
-                    const entries = outlineTreeByPhase[phase]
-                    // An empty Init or Teardown takes no room; Actions always shows.
-                    if (!entries.length && phase !== 'action') return null
-                    const label = phase === 'action' ? 'Actions' : phase === 'init' ? 'Init' : 'Teardown'
-                    return <section key={phase} aria-label={label}>
-                      <h4>{label} <span>{scriptPhaseActionRows.filter(row => row.phase === phase).length}<span className="sr-only"> steps</span></span></h4>
-                      {entries.map(entry => {
-                        if (entry.kind === 'step') return renderOutlineItem(entry.item)
-                        // A search shows its matches inside collapsed transactions too.
-                        const collapsed = !outlineActionFilter.trim() && collapsedOutlineTransactions.has(entry.key)
-                        return <div key={entry.key} className="script-outline-group" role="group" aria-label={`Transaction ${entry.name}`}>
-                          <div className="script-outline-row script-outline-group-head">
-                            <button type="button" className="script-outline-toggle" aria-label={`${collapsed ? 'Expand' : 'Collapse'} transaction ${entry.name}`} aria-expanded={!collapsed} onClick={() => toggleOutlineTransaction(entry.key)}>{collapsed ? '▸' : '▾'}</button>
-                            {entry.start
-                              ? renderOutlineSelect(entry.start, entry.name, `${entry.stepCount} step${entry.stepCount === 1 ? '' : 's'}`)
-                              : <span className="script-outline-group-label" title={entry.name}><span className="script-outline-name"><span>{entry.name}</span></span> <small>{entry.stepCount} step{entry.stepCount === 1 ? '' : 's'}</small></span>}
-                          </div>
-                          {!collapsed && entry.items.map(renderOutlineItem)}
-                        </div>
-                      })}
-                      {!entries.length && <small>{outlineActionFilter ? 'No matching actions' : 'No actions'}</small>}
-                    </section>
-                  })}
+                <nav className="script-action-navigator script-outline-tree" aria-label="Script outline">
+                  <ScriptOutlineTree
+                    model={outlineModel}
+                    resetKey={scriptId || 'draft'}
+                    query={outlineActionFilter}
+                    expandedContainers={expandedAuthorContainers}
+                    onToggleContainer={toggleAuthorContainer}
+                    selection={selectedOutlineParameterName ? null : authorCodeFocus}
+                    onSelect={item => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}
+                    hasBreakpoint={key => debugBreakpointKeys.has(key)}
+                    hasIssue={row => (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).length > 0}
+                    showMarkers={outlineShowMarkers}
+                    onShowMarkersChange={changeOutlineShowMarkers}
+                    naturalWidthRef={outlineNaturalWidthRef}
+                  />
                 </nav>
                 </>
                 )}

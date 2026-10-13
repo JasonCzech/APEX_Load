@@ -119,8 +119,8 @@ async function openEditor(page: Page, workspace: Workspace, id: string) {
 async function selectLeaf(page: Page, name: string) {
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Author', exact: true }).click()
   const outline = page.getByRole('navigation', { name: 'Script outline' })
-  const leaf = outline.locator('button[data-outline-select]').filter({ hasText: name }).first()
-  if (!(await leaf.isVisible())) await outline.getByRole('button', { name: 'Expand Mixed versions', exact: true }).click()
+  const leaf = outline.getByRole('treeitem', { name }).first()
+  if (!(await leaf.isVisible())) await outline.getByRole('treeitem', { name: /Mixed versions/ }).press('ArrowRight')
   await leaf.click()
   await expect(page.getByLabel('Request HTTP version', { exact: true })).toBeVisible()
 }

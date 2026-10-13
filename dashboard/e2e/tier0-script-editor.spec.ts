@@ -89,7 +89,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
   const workbench = page.getByRole('region', { name: 'Author center workbench' })
   const actionListTab = workbench.getByRole('tab', { name: 'Action editor' })
   await expect(actionListTab, 'the primary editor surface must be the action editor').toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /listOrders.*GET/ }).click()
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name: /listOrders.*GET/ }).click()
   await expect(workbench.getByLabel('Name', { exact: true })).toHaveValue('listOrders')
 
   const sourceMappingTab = workbench.getByRole('tab', { name: 'Source Mapping' })
@@ -135,7 +135,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
   await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible({ timeout: 15_000 })
   const reopenedWorkbench = page.getByRole('region', { name: 'Author center workbench' })
   await expect(reopenedWorkbench.getByRole('tab', { name: 'Action editor' })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /listOrders.*GET/ }).click()
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name: /listOrders.*GET/ }).click()
   await expect(reopenedWorkbench.getByLabel('Name', { exact: true })).toHaveValue('listOrders')
   await reopenedWorkbench.getByRole('tab', { name: 'Runtime Settings' }).click()
   await expect(reopenedWorkbench.getByRole('textbox', { name: 'Base URL' })).toHaveValue(editedBaseURL)

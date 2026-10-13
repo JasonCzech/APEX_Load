@@ -155,7 +155,10 @@ open an existing one in the **Script Editor**, clone one, or import from an exte
 format.
 
 In **Author**, select a step in the outline to edit its properties in the main
-**Action editor**. The editor opens on the first problem, or on the first action when
+**Action editor**. The outline is a tree of transactions and steps: a
+sub-transaction around one request folds into that request's row, under the name
+of what it measures (Salesforce Aura calls read as `Class.method`), and a script
+with more than 200 steps opens with its transactions collapsed. The editor opens on the first problem, or on the first action when
 there is none. Rename the script in place in the top bar. **Source**, **Runtime
 Settings**, **Parameters**, and, for imports, **Source Mapping** are always available
 as tabs above the editor. **Overview & bulk** exposes multi-step selection and reusable

@@ -17,8 +17,6 @@ import {
   actionTransactionMarker,
   actionTransactionName,
   computeTransactionBands,
-  groupOutlineByTransaction,
-  outlineNameTail,
   defaultCenterTabsState,
   duplicateActionInList,
   filterScriptPhaseActionRows,
@@ -517,72 +515,6 @@ describe('filterScriptPhaseActionRows', () => {
       // wrap [1..2]: start at 1 (1,2 -> +1), end after 2 (>2 -> +2)
       expect([0, 1, 2].map(i => remapIndexAfterMarkerWrap(i, 1, 2))).toEqual([0, 2, 3])
       expect(remapIndexAfterMarkerWrap(3, 1, 2)).toBe(5)
-    })
-  })
-
-  describe('outlineNameTail', () => {
-    it('keeps the last name segments of a long VuGen name', () => {
-      expect(outlineNameTail('iPadTest_LrgeBANs_ViewServProm_T01_Launch||authorize')).toBe('_Launch||authorize')
-      expect(outlineNameTail('web_custom_request_checkout_submit_final')).toBe('_submit_final')
-    })
-    it('falls back to the last characters, and keeps short names whole', () => {
-      expect(outlineNameTail('averyveryverylongnamewithoutanyseparators')).toBe('separators')
-      expect(outlineNameTail('web_set_sockets_option_15')).toBe('')
-    })
-  })
-
-  describe('groupOutlineByTransaction', () => {
-    const outline = (actions: Record<string, unknown>[]) => {
-      const rows = buildScriptPhaseActionRows(script({ actions: actions as unknown as ScriptActionDefinition[] }))
-      return groupOutlineByTransaction(buildDebugRailRenderRows(rows, new Set()), computeTransactionBands(rows))
-    }
-    const marker = (name: string, fn: string) => ({ name, type: 'source_transaction', params: { function: fn } })
-    const shape = (entries: ReturnType<typeof groupOutlineByTransaction>) => entries.map(entry => entry.kind === 'step'
-      ? entry.item.row.action.name
-      : { name: entry.name, start: entry.start?.row.actionIndex, steps: entry.stepCount, items: entry.items.map(item => item.row.action.name) })
-
-    it('heads a marker transaction with its start marker and keeps the end marker inside', () => {
-      expect(shape(outline([
-        { name: 'home', type: 'GET' },
-        marker('Login', 'lr_start_transaction'),
-        { name: 'form', type: 'GET' },
-        { name: 'submit', type: 'POST' },
-        marker('Login', 'lr_end_transaction'),
-        { name: 'logout', type: 'GET' },
-      ]))).toEqual(['home', { name: 'Login', start: 1, steps: 2, items: ['form', 'submit', 'Login'] }, 'logout'])
-    })
-
-    it('pairs imported markers by their call argument and keeps sub-transactions inside the parent', () => {
-      const imported = (role: 'start' | 'end', name: string, sub = false) => ({
-        name: `${role === 'start' ? 'Start' : 'End'}_${name}_transaction`,
-        type: 'source_transaction',
-        params: { function: `lr_${role}_${sub ? 'sub_' : ''}transaction`, args: sub ? [name, 'T01'] : [name, ...(role === 'end' ? ['LR_AUTO'] : [])] },
-      })
-      expect(shape(outline([
-        imported('start', 'T01'),
-        imported('start', 'T01||authorize', true),
-        { name: 'authorize', type: 'GET' },
-        imported('end', 'T01||authorize', true),
-        { name: 'home', type: 'GET' },
-        imported('end', 'T01'),
-        { name: 'after', type: 'GET' },
-      ]))).toEqual([
-        { name: 'T01', start: 0, steps: 2, items: ['Start_T01||authorize_transaction', 'authorize', 'End_T01||authorize_transaction', 'home', 'End_T01_transaction'] },
-        'after',
-      ])
-    })
-
-    it('groups a run of steps tagged with one transaction, and separates different ones', () => {
-      const tagged = (name: string, transaction: string) => ({ name, type: 'GET', metadata: { source_transaction: transaction } })
-      expect(shape(outline([tagged('a', 'Browse'), tagged('b', 'Browse'), tagged('c', 'Buy'), { name: 'd', type: 'GET' }]))).toEqual([
-        { name: 'Browse', start: undefined, steps: 2, items: ['a', 'b'] },
-        { name: 'Buy', start: undefined, steps: 1, items: ['c'] },
-        'd',
-      ])
-    })
-
-    it('keeps a step without a transaction at the top level', () => {
-      expect(shape(outline([{ name: 'only', type: 'GET' }]))).toEqual(['only'])
     })
   })
 

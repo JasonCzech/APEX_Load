@@ -84,7 +84,7 @@ async function editor(page: Page, workspace: Workspace, id: string) {
 }
 async function selectGroup(page: Page, name: string) {
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Author', exact: true }).click()
-  await page.getByRole('navigation', { name: 'Script outline' }).locator('button[data-outline-select]').filter({ hasText: name }).first().click()
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name }).first().click()
   const panel = page.getByRole('region', { name: 'HTTP sequence execution', exact: true })
   await expect(panel).toBeVisible()
   return panel

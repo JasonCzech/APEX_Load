@@ -174,12 +174,12 @@ test('native service declarations, literal JavaScript and distributed rendezvous
   await expect(services.getByLabel('Java conditional update example', { exact: true })).toHaveValue(/table\.update\(row\.id\(\), row\.version\(\),/)
   await workbench.getByRole('tab', { name: 'Action editor', exact: true }).click()
 
-  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /Native producer/ }).click()
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name: /Native producer/ }).click()
   const native = page.getByRole('region', { name: 'Native JavaScript settings' })
   const literal = "const result = apex.data.table('work').push({id: input.id});\nreturn {status: result.status, literal: '{{var.literal}}'};"
   await native.getByRole('textbox', { name: 'JavaScript source', exact: true }).fill(literal)
   await native.getByRole('textbox', { name: 'Inputs (JSON object)', exact: true }).fill('{"id":"{{var.id}}"}')
-  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /Coordinate checkout/ }).click()
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name: /Coordinate checkout/ }).click()
   const rendezvous = page.getByRole('region', { name: 'Rendezvous settings' })
   await rendezvous.getByRole('combobox', { name: 'Scope', exact: true }).selectOption('distributed_group')
   await rendezvous.getByLabel('Barrier key', { exact: true }).fill('checkout-ready')
@@ -193,7 +193,7 @@ test('native service declarations, literal JavaScript and distributed rendezvous
   expect(canonical).toMatchObject({ script: { config: { native_services: { live_tables: [{ alias: 'work', operations: ['push'] }] } }, actions: [{ params: { source: literal, inputs: { id: '{{var.id}}' } } }, { params: { scope: 'distributed_group', key: 'checkout-ready', percent: 80, timeout_ms: 25000, on_timeout: 'fail' } }] } })
   await open()
   await workbench.getByRole('tab', { name: 'Action editor', exact: true }).click()
-  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /Native producer/ }).click()
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('treeitem', { name: /Native producer/ }).click()
   await expect(native.getByRole('textbox', { name: 'JavaScript source', exact: true })).toHaveValue(literal)
   await page.screenshot({ path: testInfo.outputPath('native-script-authoring.png'), fullPage: true })
   await workbench.getByRole('tab', { name: 'Runtime Settings', exact: true }).click()
