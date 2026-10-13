@@ -2141,9 +2141,19 @@ describe("RecordingStudio", () => {
     await act(async () => {
       editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(onEdit).toHaveBeenCalledWith(
-      expect.objectContaining({ actions: nestedScript.actions }),
-    );
+    await flushPromises();
+    // Already in the library: it opens as that script, never as a new draft
+    // whose save would make a second copy.
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [
+        expect.objectContaining({
+          id: "stored-recorder-script",
+          script: expect.objectContaining({ actions: nestedScript.actions }),
+        }),
+      ],
+    });
+    onImported.mockClear();
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Save to script library",

@@ -5,7 +5,7 @@ import { lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import { type ImportKind } from './ProtocolAssetImport'
-import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import { RECORDING_STUDIO_RETURN_TARGET, type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 import LazyLoadBoundary from './LazyLoadBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID } from './enterpriseArchiveReviewOutcome'
 import ImportDestinationFolder from './ImportDestinationFolder'
@@ -50,7 +50,7 @@ export interface ScriptsAuthoringSurfaceProps {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
-  onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
+  onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
   onReturnToDraftSource: () => void
 }
 
@@ -221,7 +221,7 @@ function ScriptsAuthoringContent({
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
       // History opens from the editor's More menu; an archived script has no editor, so it keeps the panel.
-      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={onOpenLibrary} activity={editingActivity} /></>}</div>
+      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} /></>}</div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">
@@ -240,7 +240,9 @@ function ScriptsAuthoringContent({
       )
     case 'recorder':
       return createOptionsSurface(
-        <RecordingStudio destinationControl={destinationFolderControl} activeProject={activeProject} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        // A recording opened in the editor, saved or not, closes back to the
+        // studio; one not in the library yet asks before it is discarded.
+        <RecordingStudio destinationControl={destinationFolderControl} activeProject={activeProject} folderId={destinationFolderValue} onImported={result => onImported({ ...result, returnTarget: RECORDING_STUDIO_RETURN_TARGET })} onEdit={script => onEditDraft(script, undefined, RECORDING_STUDIO_RETURN_TARGET, { initiallyDirty: true })} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
         false, null, destinationOperationBusy,
       )
     case 'sample':

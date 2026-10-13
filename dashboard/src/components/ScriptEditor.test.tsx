@@ -8337,8 +8337,10 @@ describe('ScriptEditor', () => {
     if (!saveButton) {
       return
     }
-    expect(saveButton.disabled).toBe(true)
-    expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('No unsaved changes to save')
+    // A script not yet in the library saves as it stands, and never reads as saved.
+    expect(saveButton.disabled).toBe(false)
+    expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('Save script')
+    expect(container.querySelector('.script-status-chip')?.textContent).toContain('Not saved')
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
     expect(nameInput).toBeTruthy()
@@ -8364,6 +8366,9 @@ describe('ScriptEditor', () => {
       name: 'Saved Callback Flow',
     }), { retainedDraft: expect.objectContaining({ name: 'Saved Callback Flow', actions: initialScript.actions }) })
     expect(container.textContent).toContain('Script saved successfully!')
+    // While the page opens the script just created it reads as saved, not new.
+    expect(container.querySelector('.script-status-chip')?.textContent).toContain('Saved')
+    expect(container.querySelector('.script-status-chip')?.textContent).not.toContain('Not saved')
   })
 
   it('queues a new runner-backed Java Vuser script for approval instead of creating it', async () => {

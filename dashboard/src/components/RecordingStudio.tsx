@@ -2128,9 +2128,14 @@ export default function RecordingStudio({
     setConvertedCredentialActionInProgress(true);
     try {
       const result = convertTask.value;
+      // A conversion that is already a stored script opens as that script; as
+      // a draft, saving it would make a second copy.
+      if (recorderImportStoredScript(result)) {
+        await handleSaveConvertedScript();
+        return;
+      }
       const reviewedScript = buildReviewedScript();
       if (
-        !recorderImportStoredScript(result) &&
         credentialPreservingImportDraftRequiresSave(
           result,
           reviewedScript,

@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { type Project, type StoredScript } from '../types'
-import ScriptCreateOptions, { type CreateWorkflow } from './ScriptCreateOptions'
+import ScriptCreateOptions, { type CreateWorkflow, type StartNewCategory } from './ScriptCreateOptions'
 import type { ScriptsAuthoringSurfaceProps } from './ScriptsAuthoringSurface'
 import { type AuthoringState, type ImportedSaveResult, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
 import LazyLoadBoundary from './LazyLoadBoundary'
@@ -49,6 +49,8 @@ export default function ScriptsAuthoringShell({
   children,
 }: Props) {
   const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>(initialCreateWorkflow || 'start-new')
+  // Kept here, outside the builder, so closing a draft returns to the tab it came from.
+  const [createOptionsCategory, setCreateOptionsCategory] = useState<StartNewCategory>('editors')
   const workflowChosenByUserRef = useRef(false)
 
   useEffect(() => {
@@ -91,6 +93,8 @@ export default function ScriptsAuthoringShell({
         canMigrateSecrets={canMigrateSecrets}
         workflow={createOptionsWorkflow}
         onWorkflowChange={changeCreateOptionsWorkflow}
+        category={createOptionsCategory}
+        onCategoryChange={setCreateOptionsCategory}
       />
     )
   }

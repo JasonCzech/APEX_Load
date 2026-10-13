@@ -35,11 +35,14 @@ interface Props {
   canMigrateSecrets?: boolean
   workflow?: CreateWorkflow
   onWorkflowChange?: (workflow: CreateWorkflow) => void
+  /** The Start new tab; held by the caller so it survives a draft opened and closed. */
+  category?: StartNewCategory
+  onCategoryChange?: (category: StartNewCategory) => void
 }
 
 type ExistingScriptSortKey = 'name' | 'health' | 'usage' | 'associated_releases' | 'created_at' | 'last_run'
 type ExistingScriptSortDirection = 'asc' | 'desc'
-type StartNewCategory = 'templates' | 'editors' | 'blocks'
+export type StartNewCategory = 'templates' | 'editors' | 'blocks'
 export type CreateWorkflow = 'existing' | 'start-new' | 'source'
 
 function formatScriptStatus(status?: string) {
@@ -382,6 +385,8 @@ export default function ScriptCreateOptions({
   canMigrateSecrets = false,
   workflow,
   onWorkflowChange,
+  category,
+  onCategoryChange,
 }: Props) {
   const api = useApi()
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
@@ -398,7 +403,15 @@ export default function ScriptCreateOptions({
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
   const [existingScriptSort, setExistingScriptSort] = useState<{ key: ExistingScriptSortKey; direction: ExistingScriptSortDirection }>({ key: 'name', direction: 'asc' })
-  const [startNewCategory, setStartNewCategory] = useState<StartNewCategory>('editors')
+  const [internalCategory, setInternalCategory] = useState<StartNewCategory>('editors')
+  const startNewCategory = category ?? internalCategory
+  const setStartNewCategory = useCallback((nextCategory: StartNewCategory) => {
+    if (onCategoryChange) {
+      onCategoryChange(nextCategory)
+      return
+    }
+    setInternalCategory(nextCategory)
+  }, [onCategoryChange])
   const [sourceSecretMigrationAllowed, setSourceSecretMigrationAllowed] = useState(false)
   const [migrateExistingSecrets, setMigrateExistingSecrets] = useState(false)
   const activeWorkflow = workflow ?? internalWorkflow
@@ -574,7 +587,7 @@ export default function ScriptCreateOptions({
     if (!startNewCategoryTabs.some(tab => tab.id === startNewCategory) && startNewCategoryTabs[0]) {
       setStartNewCategory(startNewCategoryTabs[0].id)
     }
-  }, [activeWorkflow, featureEnabled, featurePolicy, projectId, setActiveWorkflow, startNewCategory, startNewCategoryTabs])
+  }, [activeWorkflow, featureEnabled, featurePolicy, projectId, setActiveWorkflow, setStartNewCategory, startNewCategory, startNewCategoryTabs])
 
   useEffect(() => {
     let cancelled = false

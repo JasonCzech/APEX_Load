@@ -960,7 +960,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     void refreshAuthoringSessions()
     if (result.stayInImportReview) return
     if (result.scripts[0]) {
-      handleSavedScript(result.scripts[0], buildImportedSaveNotice(result))
+      handleSavedScript(result.scripts[0], buildImportedSaveNotice(result), undefined, undefined, result.returnTarget)
       return
     }
     openLibrary()

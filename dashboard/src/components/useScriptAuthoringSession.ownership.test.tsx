@@ -208,6 +208,13 @@ describe('scriptSaveAvailability', () => {
   it('lets an unsaved script save with no baseline to wait for', () => {
     expect(scriptSaveAvailability({ ...ready, stored: false, revisionState: 'loading', hasBaseline: false })).toEqual({ disabled: false, title: 'Save script' })
   })
+  it('saves a script not yet in the library as it stands, with or without edits', () => {
+    // A template, a composed block or a recording is content worth saving
+    // before any edit; only a stored script has nothing to save until it changes.
+    const unstored = { ...ready, stored: false, hasBaseline: false, dirty: false }
+    expect(scriptSaveAvailability(unstored)).toEqual({ disabled: false, title: 'Save script' })
+    expect(scriptSaveAvailability({ ...unstored, hasName: false })).toEqual({ disabled: true, title: 'Enter a script name before saving' })
+  })
 })
 
 describe('useScriptAuthoringSession without a baseline', () => {

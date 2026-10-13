@@ -44,6 +44,7 @@ function AuthoringStateHarness({ api, initialMode, initialImport, initialEditId 
       <span data-testid="draft-target-runtime-area">{model.authoringState.draftEditorFocus?.targetRuntimeArea || 'none'}</span>
       <span data-testid="draft-return-label">{model.authoringState.draftReturnTarget?.label || 'none'}</span>
       <span data-testid="draft-return-subview">{model.authoringState.draftReturnTarget?.subView || 'none'}</span>
+      <span data-testid="draft-dirty">{String(model.authoringState.draftInitiallyDirty)}</span>
       <span data-testid="authoring-notice">{model.authoringState.authoringNotice || 'none'}</span>
       <button data-testid="open-library" onClick={model.openLibrary}>open-library</button>
       <button data-testid="open-create-options" onClick={model.openCreateOptions}>open-create-options</button>
@@ -222,6 +223,62 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-return-label')).toBe('none')
     expect(readTestId('draft-return-subview')).toBe('none')
     expect(readTestId('authoring-notice')).toBe('none')
+  })
+
+  it('starts builder drafts that return to the builder, and asks before discarding chosen content', async () => {
+    const api = { getScript: vi.fn() }
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="create-options" />)
+    })
+    // A blank editor holds nothing yet: closing it untouched asks nothing.
+    await click('start-java-http')
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-dirty')).toBe('false')
+    expect(readTestId('draft-return-label')).toBe('Back to Script builder')
+    expect(readTestId('draft-return-subview')).toBe('create-options')
+    await click('return-draft-source')
+    expect(readTestId('subview')).toBe('create-options')
+    expect(readTestId('draft-name')).toBe('none')
+
+    // A template or a composed block is content: it opens unsaved.
+    for (const start of ['start-template', 'compose-component']) {
+      await click(start)
+      expect(readTestId('draft-dirty'), start).toBe('true')
+      expect(readTestId('draft-return-subview'), start).toBe('create-options')
+      await click('return-draft-source')
+      expect(readTestId('subview'), start).toBe('create-options')
+    }
+
+    // Saved, it is a library script whose editor still closes to the builder,
+    // however many times it is saved again.
+    await click('start-template')
+    await click('save-script-with-payload')
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('draft-return-subview')).toBe('create-options')
+    await click('save-script-with-payload')
+    expect(readTestId('draft-return-subview')).toBe('create-options')
+    await click('return-draft-source')
+    expect(readTestId('subview')).toBe('create-options')
+
+    // An importer's return is not carried past its save.
+    await click('draft-edit-with-return')
+    await click('save-script-with-payload')
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('draft-return-subview')).toBe('none')
+  })
+
+  it('keeps the return when a saved builder draft reopens by id', async () => {
+    const api = { getScript: vi.fn().mockResolvedValue({ script: { id: 'saved-script-1', name: 'Saved Draft', protocol: 'http' } }) }
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="create-options" />)
+    })
+    await click('start-template')
+    // The response has no projection: the script reopens by id.
+    await click('save-script')
+    await flushPromises()
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('editing-id')).toBe('saved-script-1')
+    expect(readTestId('draft-return-subview')).toBe('create-options')
   })
 
   it('loads the requested script into edit mode and resets when switching subviews', async () => {

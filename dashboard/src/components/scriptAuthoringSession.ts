@@ -99,8 +99,11 @@ export interface ScriptSaveInputs {
 // scriptSaveAvailability is the editor's save state: whether Save is
 // disabled, and the reason it shows.
 export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boolean; title: string } {
+  // A script not yet in the library saves as it stands (a template, a block,
+  // a recording); a stored one has nothing to save until it changes.
+  const nothingToSave = input.stored && !input.dirty
   const disabled = Boolean(input.opening) || (input.stored && (input.revisionState !== 'ready' || !input.hasBaseline)) || input.saving || input.secretBindingsOpen || input.validating
-    || !input.dirty || !input.hasName || Boolean(input.jsonParseMessage) || Boolean(input.baseURLError)
+    || nothingToSave || !input.hasName || Boolean(input.jsonParseMessage) || Boolean(input.baseURLError)
   const title = input.opening
     ? 'The saved script is opening'
     : input.stored && input.revisionState !== 'ready'
@@ -111,7 +114,7 @@ export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boo
         ? 'Wait for validation to finish before saving'
         : input.jsonParseMessage
           ? 'Fix invalid Script JSON before saving'
-          : !input.dirty
+          : nothingToSave
             ? 'No unsaved changes to save'
             : !input.hasName
               ? 'Enter a script name before saving'

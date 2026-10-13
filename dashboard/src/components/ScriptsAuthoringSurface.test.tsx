@@ -36,6 +36,15 @@ vi.mock('./JMeterImport', () => ({
   ),
 }))
 
+vi.mock('./RecordingStudio', () => ({
+  default: (props: { onEdit?: (script: { name: string }) => void; onImported?: (result: { scripts: { id: string }[] }) => void }) => (
+    <>
+      <button onClick={() => props.onEdit?.({ name: 'Recorded checkout' })}>Open recording in editor</button>
+      <button onClick={() => props.onImported?.({ scripts: [{ id: 'saved-recording' }] })}>Save recording</button>
+    </>
+  ),
+}))
+
 describe('ScriptsAuthoringSurface Bruno destination integration', () => {
   let container: HTMLDivElement
   let root: Root
@@ -175,5 +184,49 @@ describe('ScriptsAuthoringSurface Bruno destination integration', () => {
     await act(async () => finishFolderCreate.click())
     expect(startSave.closest('fieldset')?.disabled).toBe(false)
     expect(startSave.matches(':disabled')).toBe(false)
+  })
+
+  it('opens a recording in the editor unsaved, returning to Recording Studio', async () => {
+    await import('./RecordingStudio')
+    const onEditDraft = vi.fn()
+    const onImported = vi.fn()
+    await act(async () => {
+      root.render(
+        <Suspense fallback={<div>Loading recorder</div>}>
+          <ScriptsAuthoringSurface
+            subView="recorder"
+            draftScript={null}
+            draftInitiallyDirty={false}
+            draftEditorFocus={null}
+            draftReturnTarget={null}
+            authoringNotice={null}
+            editingId={null}
+            editingScript={null}
+            projectId="project-1"
+            activeProject={null}
+            onSaved={vi.fn()}
+            onOpenLibrary={vi.fn()}
+            onOpenCreateOptions={vi.fn()}
+            onImported={onImported}
+            onEditDraft={onEditDraft}
+            onReturnToDraftSource={vi.fn()}
+          />
+        </Suspense>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const open = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Open recording in editor')
+    await act(async () => open?.click())
+    expect(onEditDraft).toHaveBeenCalledWith(
+      { name: 'Recorded checkout' },
+      undefined,
+      { subView: 'recorder', label: 'Back to Recording Studio' },
+      { initiallyDirty: true },
+    )
+    // Saved instead, its editor still closes back to the studio.
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save recording')
+    await act(async () => save?.click())
+    expect(onImported).toHaveBeenCalledWith({ scripts: [{ id: 'saved-recording' }], returnTarget: { subView: 'recorder', label: 'Back to Recording Studio' } })
   })
 })

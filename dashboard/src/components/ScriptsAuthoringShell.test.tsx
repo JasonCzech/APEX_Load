@@ -482,6 +482,38 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).not.toContain('Copy an Existing Script')
   })
 
+  it('returns from a draft to the Start new tab it was opened from', async () => {
+    function Harness() {
+      const [authoringState, setAuthoringState] = useState<AuthoringState>(createState('create-options'))
+      return renderShell({
+        authoringState,
+        createOptionActions: createActions({
+          composeComponentScript: () => setAuthoringState(createState('create')),
+        }),
+        onOpenCreateOptions: () => setAuthoringState(createState('create-options')),
+      })
+    }
+    apiMock.listAuthoringComponents.mockResolvedValue({
+      components: [{ id: 'block-1', kind: 'request_group', name: 'Login Flow', protocols: ['http'], summary: 'Sign in.', tags: [] }],
+    })
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await flushPromises()
+    const blocksTab = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(tab => tab.textContent?.startsWith('Reusable Blocks'))!
+    await act(async () => blocksTab().click())
+    expect(blocksTab().getAttribute('aria-selected')).toBe('true')
+
+    await clickButton('Compose Login Flow')
+    expect(container.textContent).toContain('subview:create')
+    await clickButton('surface-create-options')
+    await flushPromises()
+
+    expect(blocksTab().getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Compose Login Flow')
+  })
+
   it('renders backend starter templates and delegates template drafts', async () => {
     const actions = createActions()
     apiMock.listAuthoringTemplates.mockResolvedValueOnce({

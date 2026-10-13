@@ -5354,7 +5354,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // the full sentence in its tooltip and for screen readers. In Debug the
   // session bar owns the run's status, so the debug chip steps aside there.
   const scriptStatusChips: Array<{ key: string; tone: 'ok' | 'warn' | 'bad' | 'none'; word: string; detail: string }> = [
-    { key: 'saved', tone: scriptEditorDirty ? 'warn' : 'ok', word: scriptEditorDirty ? 'Unsaved' : 'Saved', detail: scriptEditorDirty ? 'This draft has unsaved changes.' : 'All changes are saved.' },
+    // A draft not yet in the library is never "Saved", however few edits it has.
+    !scriptId && !savedScriptOpening
+      ? { key: 'saved', tone: 'warn', word: 'Not saved', detail: 'This new script is not in the script library yet. Save adds it.' }
+      : { key: 'saved', tone: scriptEditorDirty ? 'warn' : 'ok', word: scriptEditorDirty ? 'Unsaved' : 'Saved', detail: scriptEditorDirty ? 'This draft has unsaved changes.' : 'All changes are saved.' },
     {
       key: 'checked',
       tone: !validationEvidence ? 'none' : !validationEvidenceMatchesCurrentDraft ? 'warn' : validationPassed ? 'ok' : 'bad',
