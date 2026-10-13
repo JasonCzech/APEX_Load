@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -914,6 +915,167 @@ func TestPreflightLaunchQueuesWhenCurrentControllerCapacityUnavailable(t *testin
 	}
 	if len(preflight.BlockingConflicts) != 0 || len(preflight.Warnings) == 0 {
 		t.Fatalf("preflight conflicts = blocking %#v warnings %#v, want queue warning only", preflight.BlockingConflicts, preflight.Warnings)
+	}
+}
+
+// A distributed run is RUNNING while its StartedAt is still the coordinated
+// barrier a couple of seconds ahead (persistFreshDistributedScheduledStart).
+// It already holds its capacity, so a start made during that lead must queue
+// behind it like any other current run, not fail with a launch-window conflict
+// that treats the run as starting later in the window.
+func TestPreflightLaunchQueuesBehindRunAwaitingCoordinatedStart(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	storePreflightScript(runner, "script-preflight-barrier", "")
+
+	active, err := runner.CreateTest(CreateTestRequest{Name: "Active", Duration: "30m", ScriptID: "script-preflight-barrier", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(active) returned error: %v", err)
+	}
+	barrier := time.Now().Add(distributedCommitStartLead(10 * time.Second))
+	runner.mu.Lock()
+	runner.tests[active.ID].Status = "RUNNING"
+	runner.tests[active.ID].StartedAt = &barrier
+	runner.mu.Unlock()
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Queued",
+			Duration: "5m",
+			ScriptID: "script-preflight-barrier",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.StartNowAllowed || !preflight.QueueAllowed || preflight.Decision != "queue" {
+		t.Fatalf("preflight = %#v, want queue decision", preflight)
+	}
+	if len(preflight.BlockingConflicts) != 0 {
+		t.Fatalf("blocking conflicts = %#v, want none: the active run holds current capacity", preflight.BlockingConflicts)
+	}
+}
+
+// The current generator overage is the baseline an immediate launch ignores.
+// When an earlier run ends inside the new run's window the overage only
+// shrinks; that is not a new conflict and must not block the start.
+func TestPreflightLaunchIgnoresShrinkingGeneratorOverage(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightScript(runner, "script-preflight-shrinking", "")
+	now := time.Now()
+	for index, age := range []time.Duration{2 * time.Minute, time.Minute} {
+		active, err := runner.CreateTest(CreateTestRequest{Name: fmt.Sprintf("Active %d", index), Duration: "30m", ScriptID: "script-preflight-shrinking", VUsers: 1})
+		if err != nil {
+			t.Fatalf("CreateTest(active %d) returned error: %v", index, err)
+		}
+		started := now.Add(-age)
+		runner.mu.Lock()
+		runner.tests[active.ID].Status = "RUNNING"
+		runner.tests[active.ID].StartedAt = &started
+		runner.mu.Unlock()
+	}
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Outlasts the others",
+			Duration: "30m",
+			ScriptID: "script-preflight-shrinking",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if len(preflight.BlockingConflicts) != 0 {
+		t.Fatalf("blocking conflicts = %#v, want none: the overage only shrinks as earlier runs end", preflight.BlockingConflicts)
+	}
+	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
+		t.Fatalf("preflight = %#v, want start-now decision", preflight)
+	}
+}
+
+// A launch over its project's concurrency limit now is queued by the
+// current-capacity gate. The same limit later in its window must not turn
+// into a launch-window conflict merely because another project's run ends in
+// between and changes the window's generator totals.
+func TestPreflightLaunchQueuesAtProjectLimitWhenAnotherProjectsRunEndsFirst(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-a": {ID: "project-a", Name: "Alpha", Settings: storage.ProjectSettings{MaxConcurrentTests: 1}},
+		"project-b": {ID: "project-b", Name: "Bravo"},
+	}}
+	runner := NewTestRunner(10, NewHub(), store)
+	storePreflightScript(runner, "script-limit-a", "project-a")
+	storePreflightScript(runner, "script-limit-b", "project-b")
+	now := time.Now()
+	// Bravo's run started first, so its window ends first: inside the new run's.
+	for _, active := range []struct {
+		script string
+		age    time.Duration
+	}{{"script-limit-b", 2 * time.Minute}, {"script-limit-a", time.Minute}} {
+		created, err := runner.CreateTest(CreateTestRequest{Name: active.script, Duration: "30m", ScriptID: active.script, VUsers: 1})
+		if err != nil {
+			t.Fatalf("CreateTest(%s) returned error: %v", active.script, err)
+		}
+		started := now.Add(-active.age)
+		runner.mu.Lock()
+		runner.tests[created.ID].Status = "RUNNING"
+		runner.tests[created.ID].StartedAt = &started
+		runner.mu.Unlock()
+	}
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{Name: "Second alpha", Duration: "30m", ScriptID: "script-limit-a", VUsers: 1},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if len(preflight.BlockingConflicts) != 0 {
+		t.Fatalf("blocking conflicts = %#v, want none: the project limit already queues this launch", preflight.BlockingConflicts)
+	}
+	if preflight.StartNowAllowed || !preflight.QueueAllowed || preflight.Decision != "queue" {
+		t.Fatalf("preflight = %#v, want queue decision", preflight)
+	}
+}
+
+// A runtime adjustment of a started run has no start-or-queue gate behind it,
+// so it keeps the exact-projection match: a project limit still breached after
+// another project's run ends later in the window is reported, as before.
+func TestRuntimeAdjustmentWindowStillReportsLaterLimitBreach(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-a": {ID: "project-a", Name: "Alpha", Settings: storage.ProjectSettings{MaxConcurrentTests: 1}},
+		"project-b": {ID: "project-b", Name: "Bravo"},
+	}}
+	runner := NewTestRunner(10, NewHub(), store)
+	storePreflightScript(runner, "script-adjust-a", "project-a")
+	storePreflightScript(runner, "script-adjust-b", "project-b")
+	now := time.Now()
+	ids := map[string]string{}
+	for _, active := range []struct {
+		name, script string
+		age          time.Duration
+	}{{"b", "script-adjust-b", 3 * time.Minute}, {"a2", "script-adjust-a", 2 * time.Minute}, {"a1", "script-adjust-a", time.Minute}} {
+		created, err := runner.CreateTest(CreateTestRequest{Name: active.name, Duration: "30m", ScriptID: active.script, VUsers: 1})
+		if err != nil {
+			t.Fatalf("CreateTest(%s) returned error: %v", active.name, err)
+		}
+		started := now.Add(-active.age)
+		runner.mu.Lock()
+		runner.tests[created.ID].Status = "RUNNING"
+		runner.tests[created.ID].StartedAt = &started
+		runner.mu.Unlock()
+		ids[active.name] = created.ID
+	}
+
+	runner.mu.RLock()
+	proposal := cloneManagedTestForReadLocked(runner.tests[ids["a1"]])
+	runner.mu.RUnlock()
+	window := launchWindowForTest(proposal, now)
+	evidence := runner.loadLaunchWindowEvidenceForProject(window, "project-a", "")
+	runner.mu.Lock()
+	conflicts := runner.launchWindowConflictsWithEvidenceLocked(proposal, window, now, proposal.ID, "", evidence)
+	runner.mu.Unlock()
+	if len(conflicts) == 0 || conflicts[0].Code != "project_concurrency_window" {
+		t.Fatalf("conflicts = %#v, want the project limit breach after bravo's run ends", conflicts)
 	}
 }
 

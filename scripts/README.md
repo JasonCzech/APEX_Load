@@ -11,6 +11,7 @@ other scripts in this directory carry usage in their own headers.
 | `check-docs.py` | Documentation link/structure checks |
 | `render-aks-manifests.sh`, `render-eks-manifests.sh` | Render AKS/EKS Kustomize manifests from Terraform outputs (see `deployments/README.md`) |
 | `run-optin-suites.sh` | Opt-in test suites (see `docs/qa/TEST_PROGRAM.md`) |
+| `multiproject/` | Multi-project concurrency suite: a black-box Go test plus a disposable production-posture Docker stack (2 HA controllers, 3 mTLS generators, PostgreSQL, Redis, S3); also runs against an existing deployment such as AKS (see its README) |
 | `ha-failover-harness.sh` | Local-process HA failover harness (2 controllers, 2 generators, throwaway Postgres): leader kill/suspend, double failover, stop, stage shapes, mixed fleet; records load continuity at the target (see `docs/HA_RUN_CONTINUITY_PLAN.md` §9, §12) |
 | `coverage-baseline.sh`, `coverage-ratchet.py`, `diff-coverage.py` | Coverage baseline, ratchet and diff-coverage tooling |
 

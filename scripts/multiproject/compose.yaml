@@ -1,0 +1,335 @@
+# Disposable stack for the multi-project concurrency suite. stack.py is the
+# only supported entry point: it generates every credential and certificate
+# into a private work directory, passes them through --env-file, starts the
+# services in phases, and removes the stack with its volumes afterwards.
+#
+# Topology mirrors the AKS HA deployment as closely as one host allows:
+#   router        HAProxy with the AKS ingress split. Execution paths reach only
+#                 the controller whose /system/execution-readiness passes (the
+#                 role of the apexload-controller-active EndpointSlice); the
+#                 rest balance across both replicas.
+#   controller-*  two HA replicas, production posture, trusted-header auth,
+#                 shared PostgreSQL, Redis and S3 archives
+#   generator-*   three generators behind one DNS name (the headless Service),
+#                 gRPC over mutual TLS with a bearer token
+#   target        apexfault-target: counts requests per run ID independently
+#
+# Differences from AKS are listed in README.md.
+
+x-hardened: &hardened
+  init: true
+  read_only: true
+  user: "65532:65532"
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp
+
+x-generator-env: &generator-env
+  APEXLOAD_ENV: production
+  APEXLOAD_GENERATOR_LISTEN_ADDR: ":9090"
+  APEXLOAD_GENERATOR_MAX_VUSERS: ${MP_GENERATOR_MAX_VUSERS:-200}
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: "60s"
+  APEXLOAD_GENERATOR_ABANDON_DRAIN: "5s"
+  APEXLOAD_GENERATOR_STATE_DIR: /data/state
+  APEXLOAD_ARCHIVE_DIR: /data/archives
+  APEXLOAD_GRPC_TLS_CERT: /run/apexload/generator.crt
+  APEXLOAD_GRPC_TLS_KEY: /run/apexload/generator.key
+  APEXLOAD_GRPC_TLS_CA: /run/apexload/ca.crt
+  APEXLOAD_GRPC_AUTH_TOKEN: ${MP_GRPC_TOKEN:?}
+  APEXLOAD_WRAPPING_MASTER_KEY: ${MP_WRAPPING_KEY:?}
+  APEXLOAD_JAVA_VUSER_RUNNER_ENABLED: "false"
+
+x-generator: &generator
+  <<: *hardened
+  image: ${MP_GENERATOR_IMAGE:?}
+  restart: unless-stopped
+  networks:
+    default:
+      # One name for every generator, like the AKS headless Service that
+      # dns:// discovery re-resolves.
+      aliases:
+        - apexload-generator
+
+x-controller-env: &controller-env
+  APEXLOAD_ENV: production
+  APEXLOAD_ADDR: "0.0.0.0:8080"
+  APEXLOAD_METRICS_ADDR: ":9091"
+  APEXLOAD_CONTROLLER_HA: "true"
+  APEXLOAD_FLEET_ID: mp-${MP_RUN_ID:?}
+  APEXLOAD_PUBLIC_URL: http://127.0.0.1
+  APEXLOAD_STORE: postgres
+  APEXLOAD_DATABASE_URL: postgres://apexload:${MP_POSTGRES_PASSWORD:?}@postgres:5432/apexload?sslmode=disable
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: "10"
+  APEXLOAD_CACHE_BACKEND: redis
+  APEXLOAD_REDIS_URL: redis://:${MP_REDIS_PASSWORD:?}@redis:6379/0
+  APEXLOAD_REDIS_KEY_PREFIX: apexload:mp:${MP_RUN_ID:?}
+  APEXLOAD_REDIS_TIMEOUT: 2s
+  APEXLOAD_REDIS_FANOUT_CHANNEL: telemetry:fanout
+  APEXLOAD_ARCHIVE_BACKEND: s3
+  APEXLOAD_ARCHIVE_BUCKET: apexload-archives
+  APEXLOAD_ARCHIVE_ENDPOINT: http://s3:8333
+  APEXLOAD_ARCHIVE_REGION: us-east-1
+  APEXLOAD_ARCHIVE_PREFIX: mp/${MP_RUN_ID:?}
+  AWS_ACCESS_KEY_ID: ${MP_S3_ACCESS_KEY:?}
+  AWS_SECRET_ACCESS_KEY: ${MP_S3_SECRET_KEY:?}
+  AWS_REGION: us-east-1
+  APEXLOAD_ARCHIVE_DIR: /data/archives
+  APEXLOAD_EXPORT_DIR: /data/exports
+  APEXLOAD_IMPORT_ASSET_DIR: /data/import-assets
+  APEXLOAD_BRUNO_ARTIFACT_ROOT: /data/bruno
+  APEXLOAD_GENERATORS: dns://apexload-generator:9090
+  APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 5s
+  APEXLOAD_GENERATOR_TIMEOUT: 10s
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: "60s"
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL: "10s"
+  APEXLOAD_GRPC_TLS_CERT: /run/apexload/controller.crt
+  APEXLOAD_GRPC_TLS_KEY: /run/apexload/controller.key
+  APEXLOAD_GRPC_TLS_CA: /run/apexload/ca.crt
+  APEXLOAD_GRPC_TLS_SERVER_NAME: apexload-generator
+  APEXLOAD_GRPC_AUTH_TOKEN: ${MP_GRPC_TOKEN:?}
+  APEXLOAD_WRAPPING_MASTER_KEY: ${MP_WRAPPING_KEY:?}
+  APEXLOAD_AUTH_SESSION_SECRET: ${MP_AUTH_SESSION_SECRET:?}
+  # Named by auth.trusted_proxy_secret_env_var in the seeded settings.
+  APEXLOAD_MP_PROXY_SECRET: ${MP_PROXY_SECRET:?}
+  APEXLOAD_ALLOW_BOOTSTRAP_ADMIN: "true"
+  APEXLOAD_BOOTSTRAP_SUBJECT: ${MP_ADMIN_SUBJECT:?}
+
+x-controller: &controller
+  <<: *hardened
+  image: ${MP_CONTROLLER_IMAGE:?}
+  restart: unless-stopped
+  environment: *controller-env
+  ports:
+    - "127.0.0.1::8080"
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/v1/system/health >/dev/null || exit 1"]
+    interval: 5s
+    timeout: 3s
+    retries: 36
+    start_period: 20s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    s3:
+      condition: service_healthy
+    generator-1:
+      condition: service_started
+    generator-2:
+      condition: service_started
+    generator-3:
+      condition: service_started
+
+services:
+  # One-shot: copies the private certificates and configs into a volume owned
+  # by the service user, the way Kubernetes mounts a Secret.
+  bundle-init:
+    image: ${MP_INIT_IMAGE:?}
+    profiles: ["setup"]
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        cp -R /in/. /bundle/
+        # Docker copies an image's mount-point ownership onto an EMPTY volume
+        # when it is first mounted; a marker keeps s3-data owned by 65532.
+        touch /s3-data/.apexload-mp
+        chown -R 65532:65532 /bundle /s3-data
+        find /bundle -type d -exec chmod 0755 {} +
+        find /bundle -type f -exec chmod 0444 {} +
+        chmod 0400 /bundle/controller.key /bundle/generator.key /bundle/target.json /bundle/s3.json
+    volumes:
+      - ${MP_PRIVATE_DIR:?}/bundle:/in:ro
+      - bundle:/bundle
+      - s3-data:/s3-data
+
+  postgres:
+    image: ${MP_POSTGRES_IMAGE:?}
+    init: true
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      POSTGRES_DB: apexload
+      POSTGRES_USER: apexload
+      POSTGRES_PASSWORD: ${MP_POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Use the service hostname so the check exercises password auth, as the
+      # controllers do; the image trusts loopback connections.
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql -h postgres -U apexload -d apexload -tAc 'SELECT 1' | grep -qx 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # One-shot: seeds trusted-header auth before any controller starts, because a
+  # production controller refuses to boot in the default bypass auth mode.
+  db-bootstrap:
+    image: ${MP_POSTGRES_IMAGE:?}
+    profiles: ["setup"]
+    environment:
+      PGPASSWORD: ${MP_POSTGRES_PASSWORD:?}
+    command: ["psql", "--no-psqlrc", "-v", "ON_ERROR_STOP=1", "-h", "postgres", "-U", "apexload", "-d", "apexload", "-f", "/bootstrap-auth.sql"]
+    volumes:
+      - ${MP_PRIVATE_DIR:?}/bootstrap-auth.sql:/bootstrap-auth.sql:ro
+
+  redis:
+    image: ${MP_REDIS_IMAGE:?}
+    init: true
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${MP_REDIS_PASSWORD:?}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --save "" --appendonly no --requirepass "$$REDIS_PASSWORD"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h redis --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  # Shared S3 archive store (AKS uses Azure Blob). Internal SeaweedFS components
+  # stay on loopback; only the S3 API is reachable from the network.
+  s3:
+    <<: *hardened
+    image: ${MP_S3_IMAGE:?}
+    restart: unless-stopped
+    entrypoint: ["weed"]
+    command:
+      - -logtostderr=true
+      - -config_dir=/run/apexload/seaweedfs
+      - server
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -ip.bind=127.0.0.1
+      - -volume.max=8
+      - -master.volumeSizeLimitMB=256
+      - -s3
+      - -s3.ip.bind=0.0.0.0
+      - -s3.port=8333
+      - -s3.port.https=0
+      - -s3.port.iceberg=0
+      - -s3.config=/run/apexload/s3.json
+      - -s3.domainName=s3
+      - -s3.concurrentUploadLimitMB=32
+    environment:
+      HOME: /tmp
+    volumes:
+      - bundle:/run/apexload:ro
+      - s3-data:/data
+    networks:
+      default:
+        # The archive client addresses the bucket virtual-host style.
+        aliases:
+          - apexload-archives.s3
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -S -q -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -q HTTP/"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+
+  target:
+    image: ${MP_TARGET_IMAGE:?}
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command: ["-config", "/run/apexload/target.json", "-listen", "0.0.0.0:8090"]
+    volumes:
+      - bundle:/run/apexload:ro
+    ports:
+      - "127.0.0.1::8090"
+
+  generator-1:
+    <<: *generator
+    hostname: generator-1
+    environment:
+      <<: *generator-env
+      APEXLOAD_GENERATOR_ID: mp-generator-1
+    volumes:
+      - bundle:/run/apexload:ro
+      - generator-1-data:/data
+
+  generator-2:
+    <<: *generator
+    hostname: generator-2
+    environment:
+      <<: *generator-env
+      APEXLOAD_GENERATOR_ID: mp-generator-2
+    volumes:
+      - bundle:/run/apexload:ro
+      - generator-2-data:/data
+
+  generator-3:
+    <<: *generator
+    hostname: generator-3
+    environment:
+      <<: *generator-env
+      APEXLOAD_GENERATOR_ID: mp-generator-3
+    volumes:
+      - bundle:/run/apexload:ro
+      - generator-3-data:/data
+
+  controller-1:
+    <<: *controller
+    hostname: controller-1
+    volumes:
+      - bundle:/run/apexload:ro
+      - controller-1-data:/data
+
+  controller-2:
+    <<: *controller
+    hostname: controller-2
+    volumes:
+      - bundle:/run/apexload:ro
+      - controller-2-data:/data
+
+  router:
+    image: ${MP_ROUTER_IMAGE:?}
+    init: true
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command: ["haproxy", "-f", "/run/apexload/haproxy.cfg"]
+    volumes:
+      - bundle:/run/apexload:ro
+    ports:
+      - "127.0.0.1::8080"
+    depends_on:
+      controller-1:
+        condition: service_started
+      controller-2:
+        condition: service_started
+
+volumes:
+  bundle:
+  postgres-data:
+  s3-data:
+  controller-1-data:
+  controller-2-data:
+  generator-1-data:
+  generator-2-data:
+  generator-3-data:

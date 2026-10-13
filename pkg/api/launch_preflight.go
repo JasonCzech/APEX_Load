@@ -1073,9 +1073,17 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 	events := tr.launchCapacityEventsWithOccurrencesLocked(window, now, excludeTestID, excludeScheduleID, evidence.occurrenceKeys)
 	sampleTimes := launchSampleTimes(window, events, tr.settings.CapacityPlanning.Reservations, boundTimeslotBoundariesFromEvidence(evidence))
 	ignoredImmediateConflicts := map[string]struct{}{}
+	// Only a launch has a current-capacity gate behind it that queues an
+	// over-limit run; a runtime adjustment of a started run is rejected on
+	// conflict, so it keeps the exact-projection match alone.
+	baselineByScope := map[string]LaunchConflict{}
 	if excludeScheduleID == "" && !window.StartAt.After(now.Add(time.Second)) {
+		launch := !launchHasStarted(test)
 		for _, conflict := range tr.launchCapacityConflictsAtWithEvidenceLocked(proposal, overlappingLaunchEvents(events, window.StartAt), window.StartAt, evidence) {
 			ignoredImmediateConflicts[launchConflictProjectionKey(conflict)] = struct{}{}
+			if launch {
+				baselineByScope[launchConflictScopeKey(conflict)] = conflict
+			}
 		}
 	}
 	for _, sample := range sampleTimes {
@@ -1086,6 +1094,9 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 			// that baseline conflict; continue evaluating later checks so a new
 			// reservation or availability change is still surfaced.
 			if _, ignored := ignoredImmediateConflicts[launchConflictProjectionKey(conflict)]; ignored && conflict.Code != "project_quota_evidence_unavailable" {
+				continue
+			}
+			if baseline, ok := baselineByScope[launchConflictScopeKey(conflict)]; ok && launchBaselineCoversLaterConflict(baseline, conflict) {
 				continue
 			}
 			conflicts = append(conflicts, conflict)
@@ -1152,6 +1163,30 @@ func launchConflictProjectionKey(conflict LaunchConflict) string {
 	return fmt.Sprintf("%s|%s|%s|%d|%d", conflict.Code, conflict.Source, conflict.ResourceID, conflict.RequiredGenerators, conflict.AvailableGenerators)
 }
 
+func launchConflictScopeKey(conflict LaunchConflict) string {
+	return conflict.Code + "|" + conflict.Source + "|" + conflict.ResourceID
+}
+
+// launchBaselineCoversLaterConflict reports whether a conflict found later in
+// an immediate launch's window is the condition its baseline already has. The
+// projection key also carries the window's generator totals, which change
+// whenever another run ends inside the window, so matching it exactly would
+// turn an unchanged condition into a blocking conflict. It is consulted only
+// for launches, which the current-capacity gate starts or queues.
+func launchBaselineCoversLaterConflict(baseline, later LaunchConflict) bool {
+	switch later.Code {
+	case "global_concurrency_window", "project_concurrency_window", "project_vuser_window":
+		// Over these limits now, the current-capacity gate queues the launch;
+		// the same limit later in the window changes nothing.
+		return true
+	case "generator_capacity_window":
+		// An overage that has only shrunk is the same condition; growth or
+		// lost availability (a reservation starting) still surfaces.
+		return later.RequiredGenerators <= baseline.RequiredGenerators && later.AvailableGenerators >= baseline.AvailableGenerators
+	}
+	return false
+}
+
 func (tr *TestRunner) launchCapacityEventsWithOccurrencesLocked(window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string, occurrences map[string]struct{}) []launchCapacityEvent {
 	events := make([]launchCapacityEvent, 0)
 	for id, test := range tr.tests {
@@ -1203,6 +1238,14 @@ func (tr *TestRunner) launchCapacityEventsWithOccurrencesLocked(window LaunchWin
 	return events
 }
 
+// coordinatedStartLeadBound bounds how far ahead of the evaluation time a
+// RUNNING run's StartedAt can be because of its coordinated start barrier,
+// which is set distributedCommitStartLead (at most a few seconds) ahead when
+// the run commits. A larger gap means the evaluation time is not the present
+// (for example a scheduler catch-up evaluating a past instant), so the run is
+// projected from its recorded start as before.
+const coordinatedStartLeadBound = 10 * time.Second
+
 func launchTestStatusOccupiesCurrentCapacity(status string) bool {
 	return status == "RUNNING" || status == "INITIALIZING" || status == "PAUSED"
 }
@@ -1219,6 +1262,15 @@ func (tr *TestRunner) launchCapacityEventForTestLocked(test *ManagedTest, now ti
 		start = test.ScheduledStartAt.UTC()
 	} else if test.Status != "RUNNING" && test.Status != "INITIALIZING" && test.Status != "PAUSED" {
 		return launchCapacityEvent{}, false
+	}
+	// A distributed run is RUNNING while StartedAt is still its coordinated
+	// start barrier a moment ahead. It already holds its capacity, so it is
+	// current load. Projected from the barrier, it would look like an event
+	// beginning later in a concurrent start's window, and that start would
+	// get a launch-window conflict instead of the current-capacity
+	// start-or-queue decision.
+	if launchTestStatusOccupiesCurrentCapacity(test.Status) && start.After(now) && start.Sub(now) <= coordinatedStartLeadBound {
+		start = now
 	}
 	end := launchWindowForTestAt(test, start, now).EndAt
 	if launchTestStatusOccupiesCurrentCapacity(test.Status) && end.Before(now.Add(time.Minute)) {
