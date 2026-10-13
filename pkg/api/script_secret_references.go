@@ -180,7 +180,8 @@ func (s *Server) handleProjectSecretUsage(w http.ResponseWriter, r *http.Request
 	if end > len(usage.Consumers) {
 		end = len(usage.Consumers)
 	}
-	page := append([]projectSecretConsumer(nil), usage.Consumers[start:end]...)
+	// An empty page is [], never null: the dashboard reads its length.
+	page := append(make([]projectSecretConsumer, 0, end-start), usage.Consumers[start:end]...)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"project_id": projectID, "name": name, "usage_revision": usage.UsageRevision,
 		"consumer_count": usage.ConsumerCount, "reference_count": usage.ReferenceCount,

@@ -423,6 +423,8 @@ up as an unexpanded template in your request.
 
 A **data source** is declared inside the script; a **data pool** is a project-scoped,
 reusable set of rows managed under [Repository → Shared test data](#/repository?setting=test-data) and bound to a scenario.
+Editors and project admins create pools and change their rows there; viewers see and
+export them.
 Both are addressed the same way from a script: `{{data.name.column}}`.
 
 The `strategy` field decides how VUsers walk the rows:
@@ -507,7 +509,10 @@ An application value overrides a project value of the same name. Unassigned scri
 use project secrets. Rotating a secret changes its value for the next execution of
 each affected script; a running test keeps the value pinned at its start, including
 after continuity recovery. The UI shows metadata, status, and the effective scope,
-never the values. Secret writes require an authorized human action.
+never the values. Secret writes require an authorized human action: editors and
+project admins add project secrets (from Project secrets, the script editor's
+Configure secrets, or an import's credential setup), and project admins rotate them;
+viewers see the inventory and what uses each secret.
 Values resolved through `{{secret.NAME}}` are redacted from logs, snapshots, reports,
 and archives regardless of any other setting.
 

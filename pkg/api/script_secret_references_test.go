@@ -87,6 +87,24 @@ func TestScriptSecretStatusDetailsAndProjectUsageAreValueFree(t *testing.T) {
 	}
 }
 
+func TestUnusedProjectSecretUsageListsNoConsumersAsAnEmptyArray(t *testing.T) {
+	server, _, managed, projectID := newProjectSecretAPIServer(t)
+	if _, err := managed.Create(context.Background(), projectID, "UNUSED_TOKEN", "never-disclose-this", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	usage := secretAPIRequest(t, server, http.MethodGet, "/api/v1/projects/"+projectID+"/secrets/UNUSED_TOKEN/usage", nil)
+	if usage.Code != http.StatusOK {
+		t.Fatalf("usage status = %d body=%s", usage.Code, usage.Body.String())
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(usage.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if string(payload["consumers"]) != "[]" {
+		t.Fatalf("consumers = %s, want []", payload["consumers"])
+	}
+}
+
 func TestRebindScriptSecretReferenceTransformsExactExecutableOccurrences(t *testing.T) {
 	server, _, _, projectID := newProjectSecretAPIServer(t)
 	encoded := base64.StdEncoding.EncodeToString([]byte(`{"token":"{{ secret.OLD-TOKEN }}","keep":"{{secret.OLD_TOKEN_EXTRA}}"}`))

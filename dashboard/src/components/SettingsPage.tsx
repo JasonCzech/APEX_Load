@@ -1,13 +1,12 @@
 import AccessNavigation from './AccessNavigation'
 import RepositorySectionTabs from './RepositorySectionTabs'
-import DataRowGrid, { type DataGridRow } from './ux/DataRowGrid'
-import { orderedGridColumns, rowsToCSV } from './ux/dataRowGridModel'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import PrometheusConnectionsCard from './PrometheusConnectionsCard'
 import TabList from './ux/TabList'
+import SettingsConfirmDialog from './SettingsConfirmDialog'
+import DataPoolsManager, { type DataPoolsDraftController } from './DataPoolsManager'
 import FormField from './ux/FormField'
-import DialogLayer from './ux/DialogLayer'
 import { InfrastructureSetupGuide } from './InfrastructureSetupGuide'
 import { CapacityCommitments } from './CapacityCommitments'
 import { changedSettingsFields } from './settingsChangeSummary'
@@ -25,7 +24,7 @@ import ClustersCard from './ClustersCard'
 import FleetPoolsCard from './FleetPoolsCard'
 import PoolAllocationCard from './PoolAllocationCard'
 import FleetGeneratorsCard from './FleetGeneratorsCard'
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
@@ -34,7 +33,7 @@ import { useProject } from '../hooks/useProject'
 import type { DeleteEntityResponse } from '../hooks/api/useProjectApi'
 import type { ProjectMutation } from '../hooks/projectContext'
 import { useApi } from '../hooks/useApi'
-import { Application, ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, Release, SharedDataPool, SharedDataPoolRow, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { Application, ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, Release, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { readStoredString, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -127,7 +126,6 @@ import {
 } from './settingsPageModel'
 import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
-import { type DataPoolImportResult } from '../hooks/api/useScriptApi'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
@@ -136,7 +134,6 @@ import ConfluenceConnectionsCard from './ConfluenceConnectionsCard'
 import PersonalSettings from './PersonalSettings'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
-import { useModalDialog } from '../hooks/useModalDialog'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ApiError } from '../hooks/apiClient'
 import { useFleetApi } from '../hooks/api/useFleetApi'
@@ -194,11 +191,6 @@ const NOTIFICATION_EVENT_OPTIONS = NOTIFICATION_EVENTS.map((eventType) => ({
     .join(' '),
 }))
 
-const DATA_POOL_ROW_PAGE_SIZE = 100
-// The engine's per-data-source column cap, which the server enforces too.
-const DATA_POOL_MAX_COLUMNS = 4096
-// Row statuses that runs skip (isActiveDataPoolRowStatus on the server).
-const INACTIVE_DATA_POOL_ROW_STATUSES = new Set(['consumed', 'used', 'disabled', 'inactive', 'exhausted'])
 
 const TELEMETRY_BUDGET_ROWS: Array<{ key: TelemetryBudgetKey; label: string; desc: string }> = [
   { key: 'max_telemetry_sample_age_ms', label: 'Max Telemetry Sample Age (ms)', desc: 'End-to-end live telemetry budget from collection through controller publish. Always enforced; 0 disables this budget.' },
@@ -271,67 +263,6 @@ function reconcileManagedReleaseSnapshots(
   })
   return reconciled
 }
-
-interface SettingsConfirmDialogProps {
-  open: boolean
-  title: string
-  children: ReactNode
-  confirmLabel: string
-  confirmClassName?: string
-  confirmDisabled?: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}
-
-function SettingsConfirmDialog({
-  open,
-  title,
-  children,
-  confirmLabel,
-  confirmClassName = 'btn btn-danger',
-  confirmDisabled = false,
-  onCancel,
-  onConfirm,
-}: SettingsConfirmDialogProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null)
-  const titleId = useId()
-  const descriptionId = useId()
-  useModalDialog({ dialogRef, enabled: open, onClose: onCancel })
-
-  if (!open) return null
-
-  return (
-    <DialogLayer><div
-      className="modal-overlay"
-      role="presentation"
-      onPointerDown={event => {
-        if (event.target === event.currentTarget) onCancel()
-      }}
-    >
-      <div
-        ref={dialogRef}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-      >
-        <div className="modal-header">
-          <h3 id={titleId}>{title}</h3>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} aria-label="Close dialog">Close</button>
-        </div>
-        <div className="monitor-body" id={descriptionId}>
-          {children}
-          <div className="settings-inline-actions">
-            <button className="btn btn-secondary" type="button" onClick={onCancel}>Cancel</button>
-            <button className={confirmClassName} type="button" disabled={confirmDisabled} onClick={onConfirm}>{confirmLabel}</button>
-          </div>
-        </div>
-      </div>
-    </div></DialogLayer>
-  )
-}
-
 
 interface SettingsPageProps {
   destinationId?: string
@@ -515,8 +446,6 @@ export default function SettingsPage({
   const [confirmDeleteRelease, setConfirmDeleteRelease] = useState<{ id: string; name: string } | null>(null)
   const [confirmArchiveRelease, setConfirmArchiveRelease] = useState<{ id: string; name: string } | null>(null)
   const [confirmApplyRetention, setConfirmApplyRetention] = useState(false)
-  const [confirmDeletePool, setConfirmDeletePool] = useState<SharedDataPool | null>(null)
-  const [confirmDeleteRow, setConfirmDeleteRow] = useState<SharedDataPoolRow | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const settingsNavRef = useSectionListKeys()
   const [selectedProjectId, setSelectedProjectId] = useState('')
@@ -558,45 +487,13 @@ export default function SettingsPage({
   const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
   const [readinessActionError, setReadinessActionError] = useState('')
   const [readinessActionMessage, setReadinessActionMessage] = useState('')
-  const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
-  const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
-  const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
-  const [dataPoolName, setDataPoolName] = useState('')
-  const [dataPoolDescription, setDataPoolDescription] = useState('')
-  const [dataPoolProjectId, setDataPoolProjectId] = useState('')
-  const [dataPoolActionError, setDataPoolActionError] = useState('')
-  const [dataPoolActionNotice, setDataPoolActionNotice] = useState('')
-  const [dataPoolRowsTotal, setDataPoolRowsTotal] = useState(0)
-  const [dataPoolRowsNextCursor, setDataPoolRowsNextCursor] = useState<string | null>(null)
-  const [dataPoolRowsHasMore, setDataPoolRowsHasMore] = useState(false)
-  const [dataPoolRowsLoadBusy, setDataPoolRowsLoadBusy] = useState(false)
-  const [dataPoolCatalogMutationBusy, setDataPoolCatalogMutationBusy] = useState(false)
-  // The draft binds the uploaded file to the pool it was previewed against, so
-  // a pool switch during the dry-run upload can never commit into another pool.
-  const [dataPoolImportDraft, setDataPoolImportDraft] = useState<{ poolId: string; file: File; preview: DataPoolImportResult } | null>(null)
-  const [dataPoolImportMode, setDataPoolImportMode] = useState<'append' | 'replace'>('append')
-  const [dataPoolImportBusy, setDataPoolImportBusy] = useState(false)
-  const [dataPoolExportBusy, setDataPoolExportBusy] = useState(false)
-  // Concurrency token captured when the editor opens; looking it up at save
-  // time would silently refresh past another writer's change.
-  const [dataPoolRowDeleteBusy, setDataPoolRowDeleteBusy] = useState(false)
-  const dataPoolImportInputRef = useRef<HTMLInputElement | null>(null)
-  // Cell saves read the latest row version from here and run one at a time.
-  const dataPoolRowsRef = useRef<SharedDataPoolRow[]>([])
-  const dataPoolCellQueueRef = useRef<Promise<unknown>>(Promise.resolve())
-  const selectedDataPoolIdRef = useRef('')
   const settingsLoadGenerationRef = useRef(0)
   const settingsMutationBusyRef = useRef(false)
-  const dataPoolCatalogMutationBusyRef = useRef(false)
-  const dataPoolRowDeleteBusyRef = useRef(false)
   const applicationCreateBusyRef = useRef(false)
   // True while the application-create project pin was chosen in the select
   // rather than auto-seeded from the workspace: an explicit choice survives
   // clearing the name field, an auto-seed does not.
   const applicationProjectPinExplicitRef = useRef(false)
-  const dataPoolLoadGenerationRef = useRef(0)
-  const dataPoolRowsLoadGenerationRef = useRef(0)
-  const activeDataPoolProjectIdRef = useRef(activeProject?.id)
   const activeApplicationIdRef = useRef(activeApplication?.id)
   const poolQuotaDraftRef = useRef<ProjectPoolQuotasDraftController | null>(null)
   const featureAccessRef = useRef<FeatureAccessController | null>(null)
@@ -608,9 +505,11 @@ export default function SettingsPage({
   // the effect must not re-run on every selection.
   const selectedProjectIdRef = useRef('')
   const [poolQuotaDraftDirty, setPoolQuotaDraftDirty] = useState(false)
+  // The data-pool create form's draft and list error, reported by DataPoolsManager.
+  const dataPoolsRef = useRef<DataPoolsDraftController | null>(null)
+  const [dataPoolDraft, setDataPoolDraft] = useState({ dirty: false, ready: false })
+  const [dataPoolListError, setDataPoolListError] = useState('')
   const [featureAccessDirty, setFeatureAccessDirty] = useState(false)
-  activeDataPoolProjectIdRef.current = activeProject?.id
-  dataPoolRowsRef.current = dataPoolRows
   activeApplicationIdRef.current = activeApplication?.id
 
   const commitSettingsProject = useCallback((project: Project) => {
@@ -1105,7 +1004,6 @@ export default function SettingsPage({
   // catalog entry when a draft is guarded across a domain switch, so both rows
   // fall back to the raw id rather than claiming there is no target.
   const applicationCreateProjectId = newApplicationProjectId || activeProject?.id || ''
-  const dataPoolCreateProjectId = dataPoolProjectId || activeProject?.id || ''
   // The settings catalog can retain committed projects from other domains (a
   // deliberate reconciliation bridge). Creating an application must only offer
   // this domain's projects, or an "empty" domain would present a create row
@@ -1114,11 +1012,6 @@ export default function SettingsPage({
     const domainId = activeDomain?.id || 'default'
     return projects.filter(project => (project.domain_id || 'default') === domainId)
   }, [activeDomain?.id, projects])
-  const dataPoolCreateProject = useMemo(() => {
-    if (!dataPoolCreateProjectId) return null
-    return projects.find(candidate => candidate.id === dataPoolCreateProjectId)
-      || (activeProject?.id === dataPoolCreateProjectId ? activeProject : null)
-  }, [activeProject, dataPoolCreateProjectId, projects])
   const projectDraftValidationError = useMemo(
     () => {
       if (!selectedProject) return ''
@@ -1405,110 +1298,6 @@ export default function SettingsPage({
   useEffect(() => {
     writeStoredJSON('apexload.settings.integrationSubsection', activeIntegrationSubsection)
   }, [activeIntegrationSubsection])
-
-  const loadDataPools = useCallback(async (preferredId?: string): Promise<boolean> => {
-    const generation = ++dataPoolLoadGenerationRef.current
-    const projectId = activeProject?.id
-    try {
-      const response = await (preferredId ? api.listDataPools(projectId, true) : api.listDataPools(projectId))
-      if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
-      const pools: SharedDataPool[] = response.data_pools || []
-      setDataPools(pools)
-      // Only ids from this response are selectable: a project switch must not
-      // carry the previous project's selection into the new project's panel.
-      const isMember = (id?: string) => Boolean(id && pools.some(pool => pool.id === id))
-      const currentSelection = selectedDataPoolIdRef.current
-      const nextSelected = preferredId ? (isMember(preferredId) ? preferredId : '') : isMember(currentSelection) ? currentSelection : (pools[0]?.id || '')
-      // Row loading belongs to the selection effect, which carries the
-      // cancellation guard; fetching here as well raced it with stale results.
-      selectedDataPoolIdRef.current = nextSelected
-      setSelectedDataPoolId(nextSelected)
-      if (!nextSelected) {
-        setDataPoolRows([])
-        setDataPoolRowsTotal(0)
-        setDataPoolRowsNextCursor(null)
-        setDataPoolRowsHasMore(false)
-      }
-      setDataPoolActionError(preferredId && !isMember(preferredId) ? 'The requested data pool is not available in this project. Choose a pool below or return to the repository.' : '')
-      return true
-    } catch (error: unknown) {
-      if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
-      setDataPoolActionError(getErrorMessage(error, 'Unable to load data pools'))
-      return false
-    }
-  }, [activeProject?.id, api])
-
-  useEffect(() => {
-    // Never show or retain a selection from the previous project while the
-    // newly scoped request is in flight.
-    dataPoolLoadGenerationRef.current += 1
-    selectedDataPoolIdRef.current = ''
-    setDataPools([])
-    setSelectedDataPoolId('')
-    setDataPoolRows([])
-    setDataPoolRowsTotal(0)
-    setDataPoolRowsNextCursor(null)
-    setDataPoolRowsHasMore(false)
-    setDataPoolRowsLoadBusy(false)
-    // A create committed just before a scope switch leaves its confirmation as
-    // a breadcrumb, because the switch remounts this page (the route boundary
-    // is keyed on the hash) and destroys the live notice. Surface it once;
-    // otherwise start the newly scoped list with a clean slate.
-    const breadcrumb = readSettingsBreadcrumb<string>('apexload.settings.dataPoolNotice')
-    setDataPoolActionNotice(breadcrumb || '')
-    void loadDataPools(destinationId === 'test-data' ? resourceId : undefined)
-    return () => {
-      dataPoolLoadGenerationRef.current += 1
-    }
-  }, [loadDataPools, destinationId, resourceId])
-
-  useEffect(() => {
-    let cancelled = false
-    const generation = ++dataPoolRowsLoadGenerationRef.current
-    selectedDataPoolIdRef.current = selectedDataPoolId
-    setDataPoolImportDraft(null)
-    setDataPoolImportMode('append')
-    setDataPoolRows([])
-    setDataPoolRowsTotal(0)
-    setDataPoolRowsNextCursor(null)
-    setDataPoolRowsHasMore(false)
-    setDataPoolRowsLoadBusy(Boolean(selectedDataPoolId))
-    const loadRows = async () => {
-      if (!selectedDataPoolId) {
-        setDataPoolRows([])
-        setDataPoolRowsTotal(0)
-        setDataPoolRowsNextCursor(null)
-        setDataPoolRowsHasMore(false)
-        return
-      }
-      try {
-        const response = await api.getDataPool(selectedDataPoolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: '' })
-        if (!cancelled && generation === dataPoolRowsLoadGenerationRef.current) {
-          const rows = response.rows || []
-          setDataPoolRows(rows)
-          setDataPoolRowsTotal(response.total ?? rows.length)
-          setDataPoolRowsNextCursor(response.next_cursor || null)
-          setDataPoolRowsHasMore(Boolean(response.next_cursor) && (response.has_more ?? true))
-        }
-      } catch (error: unknown) {
-        if (
-          !cancelled
-          && selectedDataPoolIdRef.current === selectedDataPoolId
-          && generation === dataPoolRowsLoadGenerationRef.current
-        ) {
-          setDataPoolActionError(getErrorMessage(error, 'Unable to load data pool rows'))
-        }
-      } finally {
-        if (!cancelled && generation === dataPoolRowsLoadGenerationRef.current) {
-          setDataPoolRowsLoadBusy(false)
-        }
-      }
-    }
-    loadRows()
-    return () => {
-      cancelled = true
-    }
-  }, [api, selectedDataPoolId])
 
   const updateGeneral = (key: keyof DashboardSystemSettings['general'], value: string) => {
     setSettings((prev) => ({
@@ -2386,7 +2175,7 @@ export default function SettingsPage({
     && renamingReleaseOriginalName !== null
     && renamingReleaseName.trim() !== renamingReleaseOriginalName
   const projectCreateDraftDirty = Boolean(newProjectName.trim())
-  const dataPoolCreateDraftDirty = Boolean(dataPoolName.trim() || dataPoolDescription.trim())
+  const dataPoolCreateDraftDirty = dataPoolDraft.dirty
   const hasAnyUnsavedChanges = hasUnsavedChanges
     || domainHasUnsavedChanges
     || projectHasUnsavedChanges
@@ -2404,7 +2193,7 @@ export default function SettingsPage({
     && (!applicationRenameDraftDirty || Boolean(renamingApplicationName?.trim()))
     && (!releaseRenameDraftDirty || Boolean(renamingReleaseName.trim()))
     && (!projectCreateDraftDirty || canManageProjects)
-    && (!dataPoolCreateDraftDirty || (Boolean(dataPoolName.trim()) && Boolean(dataPoolCreateProjectId)))
+    && (!dataPoolCreateDraftDirty || dataPoolDraft.ready)
     && (!poolQuotaDraftDirty || canManageProjects)
     && (!featureAccessDirty || canManageSystem)
   const saveAllSettingsChanges = async (): Promise<boolean> => {
@@ -2421,7 +2210,7 @@ export default function SettingsPage({
     if (applicationRenameDraftDirty && !(await confirmRenameApplication())) return false
     if (releaseRenameDraftDirty && !(await confirmRenameRelease())) return false
     if (applicationCreateDraftDirty && !(await createApplication())) return false
-    if (dataPoolCreateDraftDirty && !(await createDataPool())) return false
+    if (dataPoolCreateDraftDirty && !(await dataPoolsRef.current?.save())) return false
     // Creating a project changes the global active-project scope, so commit it
     // after drafts bound to the previous project have been saved.
     if (projectCreateDraftDirty && !(await createProject())) return false
@@ -2447,9 +2236,7 @@ export default function SettingsPage({
     setRenamingReleaseUpdatedAt('')
     setNewProjectName('')
     setNewProjectDomainId('')
-    setDataPoolName('')
-    setDataPoolDescription('')
-    setDataPoolProjectId('')
+    dataPoolsRef.current?.discard()
   }
   const hasAnyUnsavedChangesRef = useRef(false)
   hasAnyUnsavedChangesRef.current = hasAnyUnsavedChanges
@@ -2690,397 +2477,6 @@ export default function SettingsPage({
     }
   }
 
-  const createDataPool = async (): Promise<boolean> => {
-    const name = dataPoolName.trim()
-    if (!name) return false
-    const projectId = dataPoolProjectId || activeProject?.id
-    // Without a project the server would file the pool under the installation's
-    // default project, which is not where the operator is looking.
-    if (!projectId) {
-      setDataPoolActionError('Select a project before creating a data pool.')
-      setDataPoolActionNotice('')
-      return false
-    }
-    if (dataPoolCatalogMutationBusyRef.current) return false
-    dataPoolCatalogMutationBusyRef.current = true
-    setDataPoolCatalogMutationBusy(true)
-    setDataPoolActionNotice('')
-    try {
-      const pool = await api.createDataPool({ name, description: dataPoolDescription.trim(), project_id: projectId })
-      // Commit is complete. Clear the bound draft and publish the authoritative
-      // row before attempting the best-effort list reconciliation.
-      setDataPoolName('')
-      setDataPoolDescription('')
-      setDataPoolProjectId('')
-      if (activeDataPoolProjectIdRef.current === projectId) {
-        setDataPools(previous => [pool, ...previous.filter(candidate => candidate.id !== pool.id)])
-        selectedDataPoolIdRef.current = pool.id
-        setSelectedDataPoolId(pool.id)
-      }
-      const targetName = projects.find(candidate => candidate.id === projectId)?.name
-        || (activeProject?.id === projectId ? activeProject.name : projectId)
-      const reloaded = await loadDataPools(pool.id)
-      const crossProject = activeDataPoolProjectIdRef.current !== projectId
-      // Name the project in every outcome: a guard-save commits here first and
-      // the workspace switch that follows remounts this page, so the message
-      // is also written as a breadcrumb for the next mount to surface — the
-      // pool list only shows the active project, and without this the pool
-      // would vanish silently.
-      const notice = crossProject
-        ? `Created data pool "${pool.name}" in project "${targetName}". Switch to that project to manage it.`
-        : reloaded
-          ? `Created data pool "${pool.name}" in project "${targetName}".`
-          : `Data pool "${pool.name}" was created in project "${targetName}", but the list could not be reloaded. The create succeeded—do not retry. Refresh the list to verify it.`
-      writeSettingsBreadcrumb('apexload.settings.dataPoolNotice', notice)
-      setDataPoolActionError('')
-      setDataPoolActionNotice(notice)
-      return true
-    } catch (error: unknown) {
-      if (activeDataPoolProjectIdRef.current === projectId) {
-        setDataPoolActionError(getErrorMessage(error, 'Unable to create data pool'))
-      }
-      return false
-    } finally {
-      dataPoolCatalogMutationBusyRef.current = false
-      setDataPoolCatalogMutationBusy(false)
-    }
-  }
-
-  const deleteDataPool = async (pool: SharedDataPool) => {
-    if (dataPoolCatalogMutationBusyRef.current) return
-    dataPoolCatalogMutationBusyRef.current = true
-    setDataPoolCatalogMutationBusy(true)
-    const projectId = activeProject?.id
-    setConfirmDeletePool(null)
-    setDataPoolActionNotice('')
-    // A delete supersedes any created-pool breadcrumb; without this a remount
-    // within the freshness window would announce a pool that no longer exists.
-    clearSettingsBreadcrumb('apexload.settings.dataPoolNotice')
-    try {
-      await api.deleteDataPool(pool.id)
-      const reloaded = await loadDataPools('')
-      if (activeDataPoolProjectIdRef.current !== projectId) return
-      setDataPoolActionError('')
-      setDataPoolActionNotice(reloaded
-        ? `Deleted data pool "${pool.name}".`
-        : `Data pool "${pool.name}" was deleted, but the list could not be reloaded. The delete succeeded—do not retry. Refresh the list to verify it.`)
-    } catch (error: unknown) {
-      if (activeDataPoolProjectIdRef.current === projectId) {
-        setDataPoolActionError(getErrorMessage(error, 'Unable to delete data pool'))
-      }
-    } finally {
-      dataPoolCatalogMutationBusyRef.current = false
-      setDataPoolCatalogMutationBusy(false)
-    }
-  }
-
-  const selectedDataPool = dataPools.find(pool => pool.id === selectedDataPoolId) || null
-  // The pool's stored order first, then columns only rows use; columns added
-  // in the grid stay visible before any row fills them.
-  const dataPoolGridColumns = orderedGridColumns(selectedDataPool?.columns, dataPoolRows.map(row => row.data || {}), true)
-  const dataPoolGridRows: DataGridRow[] = dataPoolRows.map(row => {
-    const status = (row.status || '').trim()
-    return {
-      id: row.id,
-      values: row.data || {},
-      status: INACTIVE_DATA_POOL_ROW_STATUSES.has(status.toLowerCase()) ? `${status}, skipped by runs` : undefined,
-      details: `${status || 'active'} · version ${row.version} · updated ${formatDateTime(row.updated_at)}`,
-    }
-  })
-
-  const replaceDataPoolRow = (updated: SharedDataPoolRow) => {
-    dataPoolRowsRef.current = dataPoolRowsRef.current.map(row => row.id === updated.id ? updated : row)
-    setDataPoolRows(current => current.map(row => row.id === updated.id ? updated : row))
-  }
-
-  // One cell is one row update carrying the version the row was loaded at.
-  // Saves are queued so a second edit to the same row sends the version the
-  // first one returned instead of conflicting with it.
-  // Resolves true when saved, or why it wasn't; the grid shows that reason at
-  // the cell, so a failed cell save doesn't also raise the page error.
-  const commitDataPoolCell = (gridRow: DataGridRow, column: string, value: string): Promise<boolean | string> => {
-    const poolId = selectedDataPoolId
-    const save = async (): Promise<boolean | string> => {
-      const row = dataPoolRowsRef.current.find(candidate => candidate.id === gridRow.id)
-      if (!poolId || !row || selectedDataPoolIdRef.current !== poolId) return false
-      setDataPoolActionNotice('')
-      try {
-        const updated = await api.updateDataPoolRow(poolId, row.id, { data: { ...(row.data || {}), [column]: value }, version: row.version })
-        if (selectedDataPoolIdRef.current === poolId) {
-          replaceDataPoolRow(updated)
-          setDataPoolActionError('')
-        }
-        return true
-      } catch (error: unknown) {
-        if (selectedDataPoolIdRef.current !== poolId) return false
-        const conflict = error instanceof ApiError && error.status === 409
-        const deleted = error instanceof ApiError && error.status === 404
-        if (conflict || deleted) {
-          try {
-            await refreshDataPoolRows(poolId)
-          } catch {
-            // The failed save stays the message; the list keeps its last state.
-          }
-        }
-        if (deleted) {
-          // The row and its cell are gone, so the page says what happened.
-          setDataPoolActionError('The row you were editing was deleted, and the list has been reloaded.')
-          return false
-        }
-        return conflict
-          ? 'The row changed while you were editing, and the list now shows its latest values; Enter saves your value over them.'
-          : getErrorMessage(error, 'The server refused the change.')
-      }
-    }
-    const result = dataPoolCellQueueRef.current.then(save, save)
-    dataPoolCellQueueRef.current = result.catch(() => undefined)
-    return result
-  }
-
-  const addDataPoolRows = async (added: Record<string, string>[]): Promise<boolean> => {
-    const poolId = selectedDataPoolId
-    if (!poolId || added.length === 0) return false
-    const single = added.length === 1
-    setDataPoolActionNotice('')
-    try {
-      if (single) {
-        await api.createDataPoolRow(poolId, { data: added[0] })
-      } else {
-        // Pasted rows go in as one append import: one request and one
-        // transaction rather than a request per row.
-        const columns = orderedGridColumns(dataPoolGridColumns, added)
-        const file = new File([rowsToCSV(columns, added)], 'pasted-rows.csv', { type: 'text/csv' })
-        await api.importDataPoolRows(poolId, file, { mode: 'append', delimiter: 'comma' })
-      }
-    } catch (error: unknown) {
-      if (selectedDataPoolIdRef.current === poolId) {
-        setDataPoolActionError(getErrorMessage(error, single ? 'Unable to add the row' : 'Unable to add the pasted rows'))
-      }
-      return false
-    }
-    // The rows are saved. A failed reload must not invite adding them again.
-    const outcome = single ? 'Row added' : `${added.length} rows added`
-    try {
-      const refreshed = await refreshDataPoolRows(poolId)
-      if (!refreshed) return true
-    } catch {
-      if (selectedDataPoolIdRef.current === poolId) {
-        setDataPoolActionError('')
-        setDataPoolActionNotice(`${outcome}, but the row list could not be reloaded. The save succeeded—do not add ${single ? 'it' : 'them'} again. Refresh the list to verify it.`)
-      }
-      return true
-    }
-    if (selectedDataPoolIdRef.current === poolId) {
-      setDataPoolActionError('')
-      setDataPoolActionNotice(`${outcome}.`)
-    }
-    return true
-  }
-
-  // Columns are the pool's stored order; adding or removing one replaces it.
-  const saveDataPoolColumns = async (columns: string[], done: string, failed: string): Promise<boolean> => {
-    const pool = selectedDataPool
-    if (!pool) return false
-    try {
-      const updated = await api.updateDataPool(pool.id, { name: pool.name, columns, updated_at: pool.updated_at })
-      setDataPools(current => current.map(candidate => candidate.id === updated.id ? updated : candidate))
-      setDataPoolActionError('')
-      setDataPoolActionNotice(done)
-      return true
-    } catch (error: unknown) {
-      if (selectedDataPoolIdRef.current !== pool.id) return false
-      if (error instanceof ApiError && error.status === 409) {
-        try {
-          await refreshDataPoolRows(pool.id)
-        } catch {
-          // Reported below either way.
-        }
-        setDataPoolActionError('This pool changed since it was loaded and has been reloaded. Try again.')
-      } else {
-        setDataPoolActionError(getErrorMessage(error, failed))
-      }
-      return false
-    }
-  }
-
-  const addDataPoolColumn = (name: string) => saveDataPoolColumns([...dataPoolGridColumns, name], `Column ${name} added. Rows leave it unset until you fill it in.`, 'Unable to add the column')
-  const removeDataPoolColumn = (name: string) => saveDataPoolColumns(dataPoolGridColumns.filter(column => column !== name), `Column ${name} removed.`, 'Unable to remove the column')
-
-  const refreshDataPoolRows = async (poolId: string): Promise<boolean> => {
-    // A late mutation from a pool the user has left must not invalidate the
-    // active pool's generation or take ownership of its busy state.
-    if (selectedDataPoolIdRef.current !== poolId) return false
-    const generation = ++dataPoolRowsLoadGenerationRef.current
-    // Reload as many rows as were showing, so a row the user reached through
-    // "Load more" (and any value kept in its cells) doesn't vanish.
-    const keep = Math.max(DATA_POOL_ROW_PAGE_SIZE, dataPoolRowsRef.current.length)
-    setDataPoolRowsLoadBusy(true)
-    try {
-      let details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: '' })
-      const stale = () => selectedDataPoolIdRef.current !== poolId || generation !== dataPoolRowsLoadGenerationRef.current
-      if (stale()) return false
-      const latest = details.data_pool
-      const rows = [...(details.rows || [])]
-      // Bounded: one extra page of slack, and stop when a page adds nothing.
-      for (let pages = 1; rows.length < keep && details.next_cursor && (details.has_more ?? true) && pages <= Math.ceil(keep / DATA_POOL_ROW_PAGE_SIZE); pages++) {
-        details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: details.next_cursor })
-        if (stale()) return false
-        const seen = new Set(rows.map(row => row.id))
-        const fresh = (details.rows || []).filter(row => !seen.has(row.id))
-        if (fresh.length === 0) break
-        rows.push(...fresh)
-      }
-      // An import can change the pool's column order; take the server's copy.
-      if (latest?.id === poolId) setDataPools(current => current.map(pool => pool.id === poolId ? latest : pool))
-      setDataPoolRows(rows)
-      setDataPoolRowsTotal(details.total ?? rows.length)
-      setDataPoolRowsNextCursor(details.next_cursor || null)
-      setDataPoolRowsHasMore(Boolean(details.next_cursor) && (details.has_more ?? true))
-      return true
-    } finally {
-      if (selectedDataPoolIdRef.current === poolId && generation === dataPoolRowsLoadGenerationRef.current) {
-        setDataPoolRowsLoadBusy(false)
-      }
-    }
-  }
-
-  const loadMoreDataPoolRows = async () => {
-    const poolId = selectedDataPoolId
-    if (!poolId || dataPoolRowsLoadBusy || !dataPoolRowsHasMore || !dataPoolRowsNextCursor) return
-    const generation = dataPoolRowsLoadGenerationRef.current
-    const cursor = dataPoolRowsNextCursor
-    setDataPoolRowsLoadBusy(true)
-    try {
-      const details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor })
-      if (selectedDataPoolIdRef.current !== poolId || generation !== dataPoolRowsLoadGenerationRef.current) return
-      const rows = details.rows || []
-      setDataPoolRows(current => {
-        const seen = new Set(current.map(row => row.id))
-        return [...current, ...rows.filter(row => !seen.has(row.id))]
-      })
-      setDataPoolRowsTotal(details.total ?? dataPoolRowsTotal)
-      setDataPoolRowsNextCursor(details.next_cursor || null)
-      setDataPoolRowsHasMore(Boolean(details.next_cursor) && (details.has_more ?? true))
-      setDataPoolActionError('')
-    } catch (error: unknown) {
-      if (selectedDataPoolIdRef.current === poolId && generation === dataPoolRowsLoadGenerationRef.current) {
-        if (error instanceof ApiError && error.status === 409) {
-          try {
-            await refreshDataPoolRows(poolId)
-            if (selectedDataPoolIdRef.current === poolId) {
-              setDataPoolActionError('')
-              setDataPoolActionNotice('Data pool rows changed while the next page was loading. The list was refreshed from the beginning.')
-            }
-          } catch {
-            if (selectedDataPoolIdRef.current === poolId) {
-              setDataPoolActionError('Data pool rows changed while the next page was loading, and the automatic refresh failed. Refresh the list before continuing.')
-            }
-          }
-          return
-        }
-        setDataPoolActionError(getErrorMessage(error, 'Unable to load more data pool rows'))
-      }
-    } finally {
-      if (selectedDataPoolIdRef.current === poolId && generation === dataPoolRowsLoadGenerationRef.current) {
-        setDataPoolRowsLoadBusy(false)
-      }
-    }
-  }
-
-  const beginDataPoolImport = async (file: File) => {
-    const poolId = selectedDataPoolId
-    if (!poolId) return
-    setDataPoolImportBusy(true)
-    setDataPoolActionNotice('')
-    try {
-      const preview = await api.importDataPoolRows(poolId, file, { dryRun: true })
-      if (selectedDataPoolIdRef.current !== poolId) return
-      setDataPoolImportDraft({ poolId, file, preview })
-      // append_warning means an append commit is known to be rejected. Start
-      // on the safe replacement path while keeping both choices visible.
-      setDataPoolImportMode(preview.mode === 'replace' || preview.append_warning ? 'replace' : 'append')
-      setDataPoolActionError('')
-    } catch (error: unknown) {
-      if (selectedDataPoolIdRef.current === poolId) {
-        setDataPoolImportDraft(null)
-        setDataPoolActionError(getErrorMessage(error, 'Unable to read the uploaded file'))
-      }
-    } finally {
-      setDataPoolImportBusy(false)
-    }
-  }
-
-  const cancelDataPoolImport = () => {
-    setDataPoolImportDraft(null)
-    setDataPoolImportMode('append')
-  }
-
-  const confirmDataPoolImport = async () => {
-    const draft = dataPoolImportDraft
-    if (!draft) return
-    const mode = dataPoolImportMode
-    const poolName = dataPools.find(candidate => candidate.id === draft.poolId)?.name || draft.poolId
-    setDataPoolImportBusy(true)
-    try {
-      let result: DataPoolImportResult
-      try {
-        result = await api.importDataPoolRows(draft.poolId, draft.file, { mode })
-      } catch (error: unknown) {
-        if (selectedDataPoolIdRef.current === draft.poolId) {
-          setDataPoolActionError(getErrorMessage(error, `Unable to import rows into "${poolName}"`))
-        }
-        return
-      }
-      if (selectedDataPoolIdRef.current === draft.poolId) {
-        setDataPoolImportDraft(null)
-        setDataPoolImportMode('append')
-      }
-      try {
-        const refreshed = await refreshDataPoolRows(draft.poolId)
-        if (!refreshed) return
-      } catch {
-        if (selectedDataPoolIdRef.current === draft.poolId) {
-          setDataPoolActionError('')
-          setDataPoolActionNotice(`Imported ${result.imported ?? 0} row(s) in ${mode} mode, but the row list could not be reloaded. The import succeeded—do not import the file again. Refresh the list to verify it.`)
-        }
-        return
-      }
-      // Only speak for the pool the user is still looking at; the import
-      // itself is done either way.
-      if (selectedDataPoolIdRef.current === draft.poolId) {
-        setDataPoolActionError('')
-        setDataPoolActionNotice(`Imported ${result.imported ?? 0} row(s) in ${mode} mode; the pool now holds ${result.total ?? 0} row(s).`)
-      }
-    } finally {
-      setDataPoolImportBusy(false)
-    }
-  }
-
-  const exportDataPool = async () => {
-    const poolId = selectedDataPoolId
-    if (!poolId) return
-    const pool = dataPools.find(candidate => candidate.id === poolId)
-    setDataPoolExportBusy(true)
-    try {
-      const { blob, filename } = await api.exportDataPoolRows(poolId)
-      const safeName = (pool?.name || 'data-pool').trim().replace(/[^A-Za-z0-9_-]+/g, '-') || 'data-pool'
-      const downloadName = filename || `${safeName}.apexload.csv`
-      const outcome = await downloadBlob(blob, downloadName)
-      if (selectedDataPoolIdRef.current === poolId) {
-        setDataPoolActionError('')
-        if (outcome !== 'cancelled') {
-          setDataPoolActionNotice(`Exported ${downloadName}.`)
-        }
-      }
-    } catch (error: unknown) {
-      if (selectedDataPoolIdRef.current === poolId) {
-        setDataPoolActionError(getErrorMessage(error, `Unable to export data pool "${pool?.name || poolId}"`))
-      }
-    } finally {
-      setDataPoolExportBusy(false)
-    }
-  }
-
   const addNotificationWebhook = () => {
     setSettings(current => ({
       ...current,
@@ -3191,41 +2587,6 @@ export default function SettingsPage({
     setRequestError('')
   }
 
-  const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
-    const poolId = row.pool_id
-    if (!poolId || dataPoolRowDeleteBusyRef.current) return
-    dataPoolRowDeleteBusyRef.current = true
-    setDataPoolRowDeleteBusy(true)
-    setConfirmDeleteRow(null)
-    setDataPoolActionNotice('')
-    try {
-      try {
-        await api.deleteDataPoolRow(poolId, row.id)
-      } catch (error: unknown) {
-        if (selectedDataPoolIdRef.current === poolId) {
-          setDataPoolActionError(getErrorMessage(error, 'Unable to delete data row'))
-        }
-        return
-      }
-      try {
-        const refreshed = await refreshDataPoolRows(poolId)
-        if (!refreshed) return
-      } catch {
-        if (selectedDataPoolIdRef.current === poolId) {
-          setDataPoolActionError('')
-          setDataPoolActionNotice('Row deleted, but the row list could not be reloaded. The delete succeeded—do not retry. Refresh the list to verify it.')
-        }
-        return
-      }
-      if (selectedDataPoolIdRef.current === poolId) {
-        setDataPoolActionError('')
-        setDataPoolActionNotice('Row deleted.')
-      }
-    } finally {
-      dataPoolRowDeleteBusyRef.current = false
-      setDataPoolRowDeleteBusy(false)
-    }
-  }
 
 
   const renderSettingsSubnav = <SubsectionId extends string,>(
@@ -3282,9 +2643,9 @@ export default function SettingsPage({
     if (projectActionMessage) msgs.projects.notices.push(projectActionMessage)
     if (projectActionError) msgs.projects.errors.push(projectActionError)
     // With a pool open, its row and import errors show beside those controls instead.
-    if (dataPoolActionError && !selectedDataPoolId) msgs['data-pools'].errors.push(dataPoolActionError)
+    if (dataPoolListError) msgs['data-pools'].errors.push(dataPoolListError)
     return msgs
-  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, selectedDataPoolId, activeSection])
+  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolListError, activeSection])
 
   const currentDestination = destination || SETTINGS_DESTINATIONS.find(item => item.section === activeSection && !item.resource && (!item.subsection || item.subsection === ({ general: activeGeneralSubsection, capacity: activeCapacitySubsection, projects: activeProjectSubsection, integrations: activeIntegrationSubsection } as Record<string, string>)[activeSection]) && (!item.governance || item.governance === activeGovernanceSubsection)) || SETTINGS_DESTINATIONS[0]
   // Shown in the top bar; pages start with their cards rather than a heading block.
@@ -3322,7 +2683,7 @@ export default function SettingsPage({
   const activeSectionMessages = sectionMessages[activeSection]
   const settingsTopbarContribution = useMemo(() => ({
     id: 'settings-page',
-    title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : settingsOwner(currentDestination.id) === 'repository' ? 'Test Data' : 'Settings',
+    title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : settingsOwner(currentDestination.id) === 'repository' ? 'Shared test data' : 'Settings',
     controls: <>
       {repositorySettings && <RepositorySectionTabs current="test-data" />}
       <span className="ux-save-status settings-scope-status">Applies to: {destinationScopeLabel}</span>
@@ -6130,258 +5491,34 @@ export default function SettingsPage({
           hidden={activeSection !== 'data-pools'}
           style={{ order: getSectionOrder('data-pools') }}
         >
-          <div className="settings-group">
-            <div className="settings-subsection">
-              <div className="settings-manager-summary">
-                <div>
-                  <span className="setting-label">Create a data pool</span>
-                  <span className="setting-desc">A data pool is a table of parameter values that scenarios bind by alias, so several scripts can share the same data.</span>
-                </div>
-              </div>
-              <div className="inline-create-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto' }}>
-                <input
-                  className="settings-input"
-                  value={dataPoolName}
-                  disabled={dataPoolCatalogMutationBusy}
-                  onChange={event => {
-                    const next = event.target.value
-                    if (!dataPoolName.trim() && !dataPoolDescription.trim() && next.trim()) setDataPoolProjectId(activeProject?.id || '')
-                    if (!next.trim() && !dataPoolDescription.trim()) setDataPoolProjectId('')
-                    setDataPoolName(next)
-                  }}
-                  placeholder="Pool name, e.g. Customer Accounts"
-                />
-                <input
-                  className="settings-input"
-                  value={dataPoolDescription}
-                  disabled={dataPoolCatalogMutationBusy}
-                  onChange={event => {
-                    const next = event.target.value
-                    if (!dataPoolName.trim() && !dataPoolDescription.trim() && next.trim()) setDataPoolProjectId(activeProject?.id || '')
-                    if (!next.trim() && !dataPoolName.trim()) setDataPoolProjectId('')
-                    setDataPoolDescription(next)
-                  }}
-                  placeholder="Optional description"
-                  aria-label="Pool description"
-                />
-                <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy || !dataPoolCreateProjectId}>
-                  Add pool
-                </button>
-              </div>
-              {dataPoolCreateProjectId ? (
-                <p className="new-test-inline-note">{`Creates in project "${dataPoolCreateProject?.name || dataPoolCreateProjectId}".`}</p>
-              ) : applicationCreateProjects.length === 0 ? (
-                <div className="settings-inline-actions">
-                  <span className="new-test-inline-note">
-                    {`No projects in ${selectedDomain?.name || 'this domain'} yet. Data pools belong to a project.`}
-                  </span>
-                  {canManageProjects && (
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      type="button"
-                      onClick={() => {
-                        selectDestination('projects')
-                      }}
-                    >
-                      Create a project
-                    </button>
-                  )}
-                </div>
-              ) : (
-                // Projects exist but none is active yet (catalog still
-                // loading after a scope change): don't offer to create a
-                // duplicate project.
-                <p className="new-test-inline-note">Select a project to create data pools.</p>
-              )}
-            </div>
-
-            <div className="settings-subsection">
-              <div className="settings-manager-summary">
-                <div>
-                  <span className="setting-label">Data pools</span>
-                  <span className="setting-desc">Select a pool to see and edit its rows.</span>
-                </div>
-                <strong>{`${dataPools.length} ${dataPools.length === 1 ? 'pool' : 'pools'}`}</strong>
-              </div>
-              {dataPools.length > 0 ? (
-                <div className="settings-release-list">
-                  {dataPools.map(pool => (
-                    <div key={pool.id} className={`settings-release-row ${selectedDataPoolId === pool.id ? 'active' : ''}`}>
-                      <button
-                        type="button"
-                        className="settings-release-main"
-                        onClick={() => {
-                          setDataPoolActionNotice('')
-                          clearSettingsBreadcrumb('apexload.settings.dataPoolNotice')
-                          selectedDataPoolIdRef.current = pool.id
-                          setSelectedDataPoolId(pool.id)
-                        }}
-                      >
-                        <span>{pool.name}</span>
-                        <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}</small>
-                      </button>
-                      <div className="settings-inline-actions">
-                        <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={dataPoolCatalogMutationBusy} onClick={() => setConfirmDeletePool(pool)}>
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="new-test-inline-note">No data pools have been created yet. Use the creation form above to name a pool, then add or import its rows.</p>
-              )}
-            </div>
-
-            {dataPoolActionNotice && <p className="settings-notice" role="status" aria-live="polite">{dataPoolActionNotice}</p>}
-
-            {selectedDataPoolId && (
-              <div className="settings-subsection">
-                <div className="settings-manager-summary">
-                  <div>
-                    <span className="setting-label">{selectedDataPool ? `Rows of ${selectedDataPool.name}` : 'Rows'}</span>
-                    <span className="setting-desc">Each column is a parameter that scripts read by name. Edit a cell and press Enter, or move to another cell, to save it.</span>
-                  </div>
-                  <strong>
-                    {dataPoolRowsTotal > dataPoolRows.length
-                      ? `Showing ${dataPoolRows.length} of ${dataPoolRowsTotal} rows`
-                      : `${dataPoolRowsTotal} ${dataPoolRowsTotal === 1 ? 'row' : 'rows'}`}
-                  </strong>
-                </div>
-                <div className="settings-inline-actions">
-                  <input
-                    ref={dataPoolImportInputRef}
-                    type="file"
-                    accept=".csv,.dat,.txt,.tsv"
-                    style={{ display: 'none' }}
-                    aria-label="Data pool CSV file"
-                    onChange={event => {
-                      const file = event.target.files?.[0]
-                      if (file) void beginDataPoolImport(file)
-                      event.target.value = ''
+          <DataPoolsManager
+            ref={dataPoolsRef}
+            activeProject={activeProject}
+            projects={projects}
+            preferredPoolId={destinationId === 'test-data' ? resourceId : undefined}
+            // Settings shows only to administrators, who manage pools.
+            canManage
+            onDraftChange={setDataPoolDraft}
+            onListError={setDataPoolListError}
+            noProjectHint={applicationCreateProjects.length === 0 ? (
+              <div className="settings-inline-actions">
+                <span className="new-test-inline-note">
+                  {`No projects in ${selectedDomain?.name || 'this domain'} yet. Data pools belong to a project.`}
+                </span>
+                {canManageProjects && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => {
+                      selectDestination('projects')
                     }}
-                  />
-                  <button className="btn btn-secondary" type="button" disabled={dataPoolImportBusy} onClick={() => dataPoolImportInputRef.current?.click()}>
-                    {dataPoolImportBusy && !dataPoolImportDraft ? 'Reading…' : 'Import CSV…'}
+                  >
+                    Create a project
                   </button>
-                  <button className="btn btn-secondary" type="button" disabled={dataPoolExportBusy || dataPoolRowsTotal === 0} onClick={() => { void exportDataPool() }}>
-                    {dataPoolExportBusy ? 'Exporting…' : 'Export CSV'}
-                  </button>
-                </div>
-                {dataPoolActionError && <p className="settings-error-inline" role="alert">{dataPoolActionError.charAt(0).toUpperCase() + dataPoolActionError.slice(1)}</p>}
-                {dataPoolImportDraft && dataPoolImportDraft.poolId === selectedDataPoolId && (
-                  <div className="settings-subsection" style={{ marginTop: 12 }}>
-                    <div className="settings-manager-summary">
-                      <div>
-                        <span className="setting-label">Import preview</span>
-                        <span className="setting-desc" role="status">
-                          {dataPoolImportDraft.file.name} — {dataPoolImportDraft.preview.row_count ?? 0} row(s), columns: {(dataPoolImportDraft.preview.columns || []).join(', ') || 'none'}
-                        </span>
-                      </div>
-                      <strong>Dry run</strong>
-                    </div>
-                    {(dataPoolImportDraft.preview.warnings || []).map(warning => (
-                      <p key={warning} className="new-test-inline-note">{warning}</p>
-                    ))}
-                    {dataPoolImportMode === 'replace' && dataPoolRowsTotal > 0 && (
-                      <p className="new-test-inline-note" role="alert">
-                        Replace will first delete the {dataPoolRowsTotal} existing row(s) in this pool.
-                      </p>
-                    )}
-                    {dataPoolImportDraft.preview.append_warning && (
-                      <p className="new-test-inline-note" role="alert">{dataPoolImportDraft.preview.append_warning}</p>
-                    )}
-                    {(dataPoolImportDraft.preview.sample_rows || []).length > 0 && (
-                      <div className="script-parameter-table-wrap">
-                        <table className="script-parameter-table">
-                          <thead>
-                            <tr>
-                              {(dataPoolImportDraft.preview.columns || []).map(column => <th key={column}>{column}</th>)}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(dataPoolImportDraft.preview.sample_rows || []).map((sample, index) => (
-                              <tr key={index}>
-                                {(dataPoolImportDraft.preview.columns || []).map(column => (
-                                  <td key={column} className="cell-mono">{sample[column]}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    <div className="settings-inline-actions" style={{ marginTop: 8 }}>
-                      <select
-                        className="settings-input"
-                        value={dataPoolImportMode}
-                        disabled={dataPoolImportBusy}
-                        onChange={event => setDataPoolImportMode(event.target.value === 'replace' ? 'replace' : 'append')}
-                        aria-label="Import mode"
-                      >
-                        <option value="append">Append to existing rows</option>
-                        <option value="replace">Replace all rows</option>
-                      </select>
-                      <button className="btn btn-primary" type="button" disabled={dataPoolImportBusy} onClick={() => { void confirmDataPoolImport() }}>
-                        {dataPoolImportBusy
-                          ? 'Importing…'
-                          : dataPoolImportMode === 'replace'
-                            ? `Replace with ${dataPoolImportDraft.preview.row_count ?? 0} row(s)`
-                            : `Append ${dataPoolImportDraft.preview.row_count ?? 0} row(s)`}
-                      </button>
-                      <button className="btn btn-secondary" type="button" disabled={dataPoolImportBusy} onClick={cancelDataPoolImport}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
                 )}
-
-                <div style={{ marginTop: 16 }}>
-                  <DataRowGrid
-                    key={selectedDataPoolId}
-                    label={selectedDataPool ? `Rows of ${selectedDataPool.name}` : 'Data pool rows'}
-                    columns={dataPoolGridColumns}
-                    rows={dataPoolGridRows}
-                    disabled={dataPoolRowDeleteBusy || dataPoolImportBusy}
-                    detailsLabel="Status, version and last update"
-                    maxColumns={DATA_POOL_MAX_COLUMNS}
-                    emptyMessage={dataPoolRowsLoadBusy ? 'Loading rows…' : 'This pool has no columns yet. Add a column for each parameter, or import a CSV file.'}
-                    onCellCommit={commitDataPoolCell}
-                    onAddRows={addDataPoolRows}
-                    onAddColumn={addDataPoolColumn}
-                    // An unused column can go only once every row is loaded.
-                    onRemoveColumn={dataPoolRowsHasMore ? undefined : removeDataPoolColumn}
-                    rowActions={(gridRow, rowNumber) => (
-                      <button
-                        className="btn btn-sm btn-ghost"
-                        style={{ color: 'var(--danger-text)' }}
-                        type="button"
-                        aria-label={`Delete row ${rowNumber}`}
-                        disabled={dataPoolRowDeleteBusy}
-                        onClick={() => setConfirmDeleteRow(dataPoolRows.find(row => row.id === gridRow.id) || null)}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  />
-                  {dataPoolRowsHasMore && dataPoolRowsNextCursor && (
-                    <div className="settings-inline-actions" style={{ marginTop: 12 }}>
-                      <button
-                        className="btn btn-secondary"
-                        type="button"
-                        disabled={dataPoolRowsLoadBusy}
-                        onClick={() => { void loadMoreDataPoolRows() }}
-                      >
-                        {dataPoolRowsLoadBusy
-                          ? 'Loading rows…'
-                          : `Load more rows (${Math.max(dataPoolRowsTotal - dataPoolRows.length, 0)} remaining)`}
-                      </button>
-                    </div>
-                  )}
-                </div>
               </div>
-            )}
-          </div>
+            ) : undefined}
+          />
         </div>
 
         <div
@@ -6863,32 +6000,6 @@ export default function SettingsPage({
         <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
       </SettingsConfirmDialog>
 
-      <SettingsConfirmDialog
-        open={Boolean(confirmDeletePool)}
-        title="Delete data pool"
-        confirmLabel="Delete data pool"
-        confirmDisabled={dataPoolCatalogMutationBusy}
-        onCancel={() => setConfirmDeletePool(null)}
-        onConfirm={() => {
-          if (confirmDeletePool) void deleteDataPool(confirmDeletePool)
-        }}
-      >
-        <p>Delete data pool <strong>{confirmDeletePool?.name}</strong>? Data pools bound to scenarios must be unbound first.</p>
-        <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
-      </SettingsConfirmDialog>
-
-      <SettingsConfirmDialog
-        open={Boolean(confirmDeleteRow)}
-        title="Delete row"
-        confirmLabel="Delete row"
-        confirmDisabled={dataPoolRowDeleteBusy}
-        onCancel={() => setConfirmDeleteRow(null)}
-        onConfirm={() => {
-          if (confirmDeleteRow) void deleteDataPoolRow(confirmDeleteRow)
-        }}
-      >
-        <p>Permanently delete this data row?</p>
-      </SettingsConfirmDialog>
 
       <SettingsConfirmDialog
         open={confirmingResetAll}

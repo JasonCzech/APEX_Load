@@ -124,7 +124,8 @@ export default function ProjectSecretsPanel({
         ? api.getApplicationSecretUsage(targetProjectId, secret.name, { limit: 50 })
         : api.getProjectSecretUsage(targetProjectId, secret.name, { limit: 50 })))
       if (!requestIsCurrent()) return null
-      setUsageByName(Object.fromEntries(usages.map(usage => [usage.name, usage])))
+      // An older controller sent an unused secret's consumers as null.
+      setUsageByName(Object.fromEntries(usages.map(usage => [usage.name, { ...usage, consumers: usage.consumers || [] }])))
       const next = [...listed]
       committedSecretsRef.current.forEach((secret, name) => {
         const listedSecret = listed.find(candidate => candidate.name === name)
@@ -207,10 +208,10 @@ export default function ProjectSecretsPanel({
         if (!latest || latest.usage_revision !== current.usage_revision) return previous
         const consumers = [...latest.consumers]
         const existing = new Set(consumers.map(secretConsumerKey))
-        next.consumers.forEach(consumer => {
+        for (const consumer of next.consumers || []) {
           const key = secretConsumerKey(consumer)
           if (!existing.has(key)) { consumers.push(consumer); existing.add(key) }
-        })
+        }
         return {
           ...previous,
           [name]: {

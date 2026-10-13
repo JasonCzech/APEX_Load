@@ -114,6 +114,18 @@ describe('ProjectSecretsPanel', () => {
     vi.clearAllMocks()
   })
 
+  it('shows a secret nothing uses when the usage lists its consumers as null', async () => {
+    apiMock.getProjectSecretUsage.mockImplementation(async (projectId: string, name: string) => ({
+      project_id: projectId, name, usage_revision: 'usage-1', consumer_count: 0, reference_count: 0,
+      consumers: null, limit: 50, offset: 0, has_more: false,
+    }))
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="Retail" canCreate canRotate={false} />))
+    await flushPromises()
+    await flushPromises()
+    expect(container.textContent).toContain('EXISTING_TOKEN')
+    expect(container.textContent).toContain('Unused vault entry')
+  })
+
   it('uses the selected application vault for a shared secret', async () => {
     await act(async () => root.render(
       <ProjectSecretsPanel projectId="project-1" projectName="Project" applicationId="app-1" applicationName="Checkout" canCreate canRotate />,

@@ -205,7 +205,8 @@ const ApplicationRepositoryPage = lazy(
 );
 const AccessPage = lazy(() => import("./components/AccessPage"));
 const UserSettingsPage = lazy(() => import("./components/UserSettingsPage"));
-const SharedTestDataReadOnly = lazy(() => import("./components/SharedTestDataReadOnly"));
+const SharedTestDataPage = lazy(() => import("./components/SharedTestDataPage"));
+const ProjectSecretsPage = lazy(() => import("./components/ProjectSecretsPage"));
 const ProjectLiveTablesPage = lazy(() => import("./components/ProjectLiveTablesPage"));
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRecorderControlPanel = lazy(
@@ -3774,9 +3775,17 @@ function AppShell({
                   onProjectUpdate={updateOuterProject}
                 /> : view.page === "repository" && view.setting === "test-data"
                   ? (isDevUserPreview || effectiveAccessLoaded || effectiveAccessError
-                    ? <SharedTestDataReadOnly projectId={activeProject?.id} projectName={activeProject?.name} />
+                    ? <SharedTestDataPage activeProject={activeProject} canManage={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_data_pools", false)} />
                     // Until access is known, do not tell an admin they lack the role.
                     : <p className="page" role="status">Checking access…</p>)
+                  : view.setting === "secrets"
+                    // Project secrets: editors add them and project admins rotate them, as the API allows.
+                    ? (isDevUserPreview || effectiveAccessLoaded || effectiveAccessError
+                      ? <ProjectSecretsPage
+                        activeProject={activeProject}
+                        canCreate={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_scripts", false)}
+                        canRotate={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_projects", false)} />
+                      : <p className="page" role="status">Checking access…</p>)
                   : <UserSettingsPage destinationId={view.setting} onDestinationChange={setting => setGuardedView({ page: "settings", setting })} theme={theme} onThemeChange={setTheme} authStatus={authStatus} />
               )}
             </Suspense>
