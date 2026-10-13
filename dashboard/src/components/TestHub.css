@@ -2583,6 +2583,18 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 }
 .csv-driven-panel .settings-grid, .scenario-data-editor .settings-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; }
 .scenario-data-editor fieldset { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; }
+.scenario-data-needs { margin: 12px 0; }
+.scenario-data-needs h4 { margin: 0 0 6px; }
+.scenario-data-needs ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.scenario-data-needs li { display: grid; gap: 2px; min-width: 0; }
+.scenario-data-needs small { color: var(--text-secondary); overflow-wrap: anywhere; }
+.scenario-data-need-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.scenario-data-editor .scenario-data-table-choice { display: grid; gap: 6px; border: 0; padding: 0; margin: 12px 0 0; }
+.scenario-data-table-choice legend { margin-bottom: 4px; padding: 0; }
+.scenario-data-editor .scenario-data-table-choice label { flex-direction: row; align-items: baseline; gap: 8px; }
+.scenario-data-editor .scenario-data-table-choice input { flex: 0 0 auto; width: auto; padding: 0; }
+.scenario-data-table-choice small { color: var(--text-secondary); }
+.scenario-data-mismatch { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 8%, transparent); }
 .scenario-builder-main :is(input, select, textarea, button, summary) { scroll-margin-block: 120px; }
 .scenario-review-details { overflow-wrap: anywhere; }
 .scenario-picker-filters { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; margin-bottom: 16px; }

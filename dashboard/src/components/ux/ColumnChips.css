@@ -1,0 +1,7 @@
+/* Ordered column names as chips: move, remove, and add one by name. */
+.column-chips-field { display: grid; gap: 6px; }
+.column-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.column-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; border: 1px solid var(--border); border-radius: 999px; }
+.column-chip .btn { min-height: 22px; padding: 0 6px; }
+.column-chips-add { display: flex; gap: 6px; }
+.column-chips-add input { flex: 1 1 auto; min-width: 0; }

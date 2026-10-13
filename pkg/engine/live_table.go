@@ -352,6 +352,30 @@ func (vu *VUser) clearLiveOutput(prefix string) {
 	}
 }
 
+// liveTableReplayOutputs is what a live_table step left under its result
+// prefix, so a replay can show the step's result. Every such variable was set by
+// the step: it clears the prefix before binding. Lease tokens never enter
+// variables, so none can appear here.
+func (vu *VUser) liveTableReplayOutputs(action dsl.Action) map[string]string {
+	if dsl.CanonicalActionType(action.Type) != "live_table" {
+		return nil
+	}
+	prefix, _ := action.Params["result_prefix"].(string)
+	if prefix == "" {
+		return nil
+	}
+	var outputs map[string]string
+	for key, value := range vu.Variables {
+		if key == prefix || strings.HasPrefix(key, prefix+".") {
+			if outputs == nil {
+				outputs = make(map[string]string)
+			}
+			outputs[key] = value
+		}
+	}
+	return outputs
+}
+
 func (vu *VUser) bindLiveResult(prefix string, result livetable.Result) error {
 	if prefix == "" {
 		return nil

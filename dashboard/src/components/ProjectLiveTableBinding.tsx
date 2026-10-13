@@ -1,19 +1,8 @@
-import { useEffect, useState } from 'react'
-import { useApi } from '../hooks/useApi'
 import type { ScenarioDataPoolBinding } from '../types/dataPools'
-import type { ProjectLiveTableView } from '../types/projectLiveTables'
-import { getErrorMessage } from '../utils/errorUtils'
+import type { ProjectLiveTablesState } from './useProjectLiveTables'
 
-export default function ProjectLiveTableBinding({ projectId, binding, onChange }: { projectId?: string; binding: ScenarioDataPoolBinding; onChange: (patch: Partial<ScenarioDataPoolBinding>) => void }) {
-  const api = useApi()
-  const [state, setState] = useState<{ projectId?: string; tables: ProjectLiveTableView[]; loading: boolean; error?: string }>({ tables: [], loading: true })
-  useEffect(() => {
-    const abort = new AbortController()
-    setState({ projectId, tables: [], loading: !!projectId })
-    if (projectId) void api.listProjectLiveTables(projectId, { signal: abort.signal }).then(response => { if (!abort.signal.aborted) setState({ projectId, tables: response.tables, loading: false }) }).catch(cause => { if (!abort.signal.aborted) setState({ projectId, tables: [], loading: false, error: getErrorMessage(cause, 'Unable to load project live tables.') }) })
-    return () => abort.abort()
-  }, [api, projectId])
-  const tables = state.projectId === projectId ? state.tables : []
+export default function ProjectLiveTableBinding({ projectId, binding, tablesState: state, onChange }: { projectId?: string; binding: ScenarioDataPoolBinding; tablesState: ProjectLiveTablesState; onChange: (patch: Partial<ScenarioDataPoolBinding>) => void }) {
+  const tables = state.tables
   const selected = tables.find(table => table.id === binding.project_table_id)
   const options = binding.live_options || {}
   return <section aria-label="Project live-table binding">

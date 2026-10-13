@@ -2111,6 +2111,66 @@ describe('ScriptEditor', () => {
     }
   })
 
+  it('inserts a linked table template with the step the user’s own go before selected, and gives a saved block’s table steps free result names', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [{ type: 'GET', protocols: ['http'], summary: 'GET', fields: [] }, { type: 'control_if', protocols: ['*'], summary: 'If', fields: [] }, LIVE_TABLE_SPEC] })
+    apiMock.listAuthoringComponents.mockResolvedValue({ count: 1, components: [{ id: 'block-1', kind: 'request_group', name: 'Take one job', protocols: ['http'], summary: 'Saved', actions: [
+      { name: 'Take a job', type: 'live_table', target: '', params: { alias: 'jobs', operation: 'pop', result_prefix: 'leased' } },
+      { name: 'Run the job', type: 'GET', target: '/jobs/{{var.leased.values.id}}' },
+    ] }] })
+    try {
+      await act(async () => { root.render(<ScriptEditor initialScript={initialScript} />) })
+      await flushReact()
+      await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')!.click() })
+      const type = document.querySelector<HTMLSelectElement>('[role="dialog"] select[aria-label="Action type"]')!
+      await act(async () => { type.value = 'template:lease_ack'; type.dispatchEvent(new Event('change', { bubbles: true })) })
+      const alias = document.querySelector<HTMLInputElement>('[role="dialog"] input[name="alias"]')!
+      await act(async () => { changeInputValue(alias, 'jobs') })
+      await act(async () => { Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Insert 3 steps')!.click() })
+      expect(container.textContent).toContain('Your own steps go before “Acknowledge the leased row”, which is selected: + Add Action puts them there.')
+      expect(container.querySelector('[role="treeitem"][aria-selected="true"]')?.getAttribute('data-tooltip')).toBe('Acknowledge the leased row')
+      // The next insert goes just before the acknowledgment, inside the block that guards it.
+      const addAction = async () => { await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')!.click() }) }
+      const placement = () => document.querySelector<HTMLSelectElement>('[role="dialog"] select[aria-label="Placement"]')!
+      await addAction()
+      expect(placement().value).toBe('before')
+      // Cancelling and opening the dialog again keeps it.
+      const cancel = async () => { await act(async () => { Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Cancel')!.click() }) }
+      await cancel()
+      await addAction()
+      expect(placement().value).toBe('before')
+      // The spot is that step as inserted: once the script is reshaped (a step added before Login), it is retired, so a
+      // step that later lands where the acknowledgment was never takes the user's steps before it by mistake.
+      await cancel()
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Login"]')!.click() })
+      await addAction()
+      await act(async () => { placement().value = 'before'; placement().dispatchEvent(new Event('change', { bubbles: true })) })
+      await act(async () => { changeInputValue(Array.from(document.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')).find(label => label.textContent?.startsWith('Action name'))!.querySelector('input')!, 'Warm up') })
+      await act(async () => { changeInputValue(document.querySelector<HTMLInputElement>('[role="dialog"] input[name="target"]')!, '/warm') })
+      await act(async () => { Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Insert action')!.click() })
+      const guard = container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="When a row was leased"]')!
+      await act(async () => { guard.click() })
+      await act(async () => { guard.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Acknowledge the leased row"]')!.click() })
+      await addAction()
+      expect(placement().value).toBe('after')
+      await act(async () => { placement().value = 'before'; placement().dispatchEvent(new Event('change', { bubbles: true })) })
+      // A saved block whose result name is taken now gets a free one, and its own reference follows.
+      await act(async () => { Array.from(document.querySelectorAll<HTMLButtonElement>('.reusable-blocks-panel .user-block-insert')).find(button => button.textContent?.includes('Take one job'))!.click() })
+      await act(async () => { findButtonByText(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { findButtonByText(container, 'Full Script JSON')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const source = JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value)
+      const actions = (source.script || source).actions as Array<{ name: string; target?: string; params?: Record<string, unknown>; control?: { steps?: Array<{ name: string; target?: string; params?: Record<string, unknown> }> } }>
+      const steps = [...actions, ...actions.flatMap(action => action.control?.steps || [])]
+      expect(steps.find(step => step.name === 'Lease a row from jobs')?.params).toMatchObject({ operation: 'lease', result_prefix: 'leased', on_empty: 'error' })
+      expect(steps.find(step => step.name === 'Acknowledge the leased row')?.params).toMatchObject({ operation: 'ack', lease_ref: 'leased' })
+      expect(steps.find(step => step.name === 'Take_a_job')?.params).toMatchObject({ result_prefix: 'leased_2' })
+      expect(steps.find(step => step.name === 'Run_the_job')?.target).toBe('/jobs/{{var.leased_2.values.id}}')
+    } finally {
+      setCachedDslActionCatalog(null)
+      apiMock.listAuthoringComponents.mockReset()
+    }
+  })
+
   it('builds a request from a parameter, a data column and an earlier extractor without typed braces, and flags a misspelling', async () => {
     const referenceScript = {
       ...initialScript,

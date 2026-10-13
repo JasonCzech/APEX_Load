@@ -57,3 +57,26 @@ it('authors a prior-run seed explicitly without requiring a current pool', async
  await change('Starting data', 'empty')
  expect(update).toHaveBeenCalledWith(expect.objectContaining({ live_options: expect.objectContaining({ seed_policy: 'empty', seed_run_id: undefined }) }))
 })
+
+it('edits the columns as ordered chips, refusing a repeat', async () => {
+  const update = vi.fn()
+  await act(async () => root.render(<LiveTableBindingOptions binding={{ ...binding, live_options: { columns: ['id', 'state'] } }} canManage knownColumns={['id', 'email']} onChange={update} />))
+  expect([...container.querySelectorAll('.column-chip code')].map(node => node.textContent)).toEqual(['id', 'state'])
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Move state earlier"]')!.click())
+  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ live_options: expect.objectContaining({ columns: ['state', 'id'] }) }))
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Add a column to Columns of work"]')!
+  expect([...container.querySelectorAll('datalist option')].map(option => option.textContent)).toEqual(['email'])
+  const type = async (value: string) => act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })) })
+  await type('id')
+  expect(container.querySelector('[role="alert"]')!.textContent).toBe('There is already a column named "id".')
+  await type('email')
+  await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ live_options: expect.objectContaining({ columns: ['id', 'state', 'email'] }) }))
+})
+
+it('removes one of two chips of the same name, not both', async () => {
+  const update = vi.fn()
+  await act(async () => root.render(<LiveTableBindingOptions binding={{ ...binding, live_options: { columns: ['id', 'id'] } }} canManage onChange={update} />))
+  await act(async () => container.querySelectorAll<HTMLButtonElement>('button[aria-label="Remove id"]')[1].click())
+  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ live_options: expect.objectContaining({ columns: ['id'] }) }))
+})

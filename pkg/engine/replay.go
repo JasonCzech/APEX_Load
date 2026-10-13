@@ -1593,6 +1593,7 @@ func runReplayAction(
 			CompletedAt:  now,
 			Success:      success,
 			ErrorMessage: errorMessage,
+			Extractions:  vu.liveTableReplayOutputs(action),
 		}
 		applyReplaySourceMetadata(&event, action.Metadata)
 		if !event.Success {

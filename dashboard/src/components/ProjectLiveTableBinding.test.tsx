@@ -2,16 +2,21 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { ComponentProps } from 'react'
 import ProjectLiveTableBinding from './ProjectLiveTableBinding'
+import { useProjectLiveTables } from './useProjectLiveTables'
 
 const { api } = vi.hoisted(() => ({ api: { listProjectLiveTables: vi.fn() } }))
 vi.mock('../hooks/useApi', () => ({ useApi: () => api }))
 let container: HTMLDivElement; let root: Root
+function Harness(props: Omit<ComponentProps<typeof ProjectLiveTableBinding>, 'tablesState'>) {
+  return <ProjectLiveTableBinding {...props} tablesState={useProjectLiveTables(props.projectId, true)} />
+}
 beforeEach(() => { api.listProjectLiveTables.mockResolvedValue({ tables: [{ id: 'shared', name: 'Shared work', profile: 'vts_columns', state: 'active', columns: ['id'], instance_id: 'instance', permissions: { can_view: true } }] }); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container) })
 afterEach(async () => { await act(async () => root.unmount()); container.remove() })
 it('offers project tables without run seeding or output policies and removes unsupported leases', async () => {
   const change = vi.fn()
-  await act(async () => root.render(<ProjectLiveTableBinding projectId="project" binding={{ alias: 'work', pool_id: '', access_mode: 'live', scope: 'project', selection_strategy: 'lease' }} onChange={change} />))
+  await act(async () => root.render(<Harness projectId="project" binding={{ alias: 'work', pool_id: '', access_mode: 'live', scope: 'project', selection_strategy: 'lease' }} onChange={change} />))
   const select = container.querySelector('select')!
   await act(async () => { select.value = 'shared'; select.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(change).toHaveBeenCalledWith({ project_table_id: 'shared', selection_strategy: 'manual' })

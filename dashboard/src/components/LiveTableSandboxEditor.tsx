@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { LiveTableSandboxSeed } from '../types/replay'
 import DataRowGrid from './ux/DataRowGrid'
-import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
+import { parseLiveTableSandboxSeeds, sandboxSeedsForScript } from './liveTableSandboxModel'
+import { usesTableSteps, type DataAliasUsage } from './scriptDataUsageModel'
 
 const SANDBOX_MAX_COLUMNS = 32
 const profileLabel = (profile?: string) => profile === 'vts_columns' ? 'Shared columns' : 'Native work queue'
@@ -11,8 +12,15 @@ function readSeeds(value: string | undefined): { seeds: LiveTableSandboxSeed[] |
   try { return { seeds: parseLiveTableSandboxSeeds(value), error: null } } catch (cause) { return { seeds: null, error: (cause as Error).message } }
 }
 
-export default function LiveTableSandboxEditor({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
+export default function LiveTableSandboxEditor({ value, onChange, usage = [] }: {
+  value?: string
+  onChange: (value: string) => void
+  /** The data the script uses; its table-step aliases can become tables here. */
+  usage?: DataAliasUsage[]
+}) {
   const { seeds, error } = readSeeds(value)
+  const [created, setCreated] = useState('')
+  const fromScript = seeds ? sandboxSeedsForScript(seeds, usage) : null
   // Tables once there are seeds to show; the view only changes on request,
   // so text being typed never turns into a table under the cursor.
   const [view, setView] = useState<'tables' | 'json'>(() => seeds?.length ? 'tables' : 'json')
@@ -29,8 +37,15 @@ export default function LiveTableSandboxEditor({ value, onChange }: { value?: st
     <p>Up to four tables and 64 KiB of seed data. Each table allows 32 columns, 256 rows and 256 KiB of runtime data. Leave a table without rows for producer scripts. Inspect action results through their result-prefix variables.</p>
     <div className="settings-inline-actions">
       <button type="button" className="btn btn-sm btn-secondary" disabled={!seeds?.length} onClick={() => setView(showJSON ? 'tables' : 'json')}>{showJSON ? 'Edit as tables' : 'Edit as JSON'}</button>
+      {usage.some(usesTableSteps) && <button type="button" className="btn btn-sm btn-secondary" disabled={!fromScript?.added.length} onClick={() => {
+        if (!fromScript) return
+        onChange(JSON.stringify(fromScript.seeds, null, 2))
+        setView('tables')
+        setCreated(`Added ${fromScript.added.join(', ')}, with the columns the script uses. Add starting rows for steps that read or take rows.${fromScript.left.length ? ` Replay takes at most four tables, so ${fromScript.left.join(', ')} ${fromScript.left.length === 1 ? 'was' : 'were'} left out.` : ''}`)
+      }}>Create tables from this script</button>}
       <button type="button" className="btn btn-sm btn-secondary" disabled={Boolean(value?.trim() && value.trim() !== '[]')} onClick={() => { onChange(JSON.stringify([{ alias: 'work', profile: 'native_queue', columns: ['id'], rows: [] }], null, 2)); setView('tables') }}>Add empty sandbox example</button>
     </div>
+    {created && <p role="status">{created}</p>}
     {showJSON ? <label><span>Sandbox seeds (JSON)</span><textarea aria-label="Sandbox seeds (JSON)" aria-invalid={Boolean(error)} value={value || ''} onChange={event => onChange(event.target.value)} rows={7} placeholder={'[{"alias":"work","profile":"native_queue","columns":["id"],"rows":[{"values":{"id":"sample-1"}}]}]'} /></label>
       : seeds.map((seed, index) => <section key={seed.alias} aria-label={`Sandbox table ${seed.alias}`}>
           <h4>{seed.alias} · {profileLabel(seed.profile)}</h4>

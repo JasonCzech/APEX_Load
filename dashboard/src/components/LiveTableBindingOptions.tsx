@@ -1,10 +1,13 @@
 import type { LiveTableOptions, ScenarioDataPoolBinding } from '../types/dataPools'
-import { DEFAULT_LIVE_TABLE_OPTIONS } from './scenarioDataBindingModel'
+import { bindingColumnProblem, DEFAULT_LIVE_TABLE_OPTIONS } from './scenarioDataBindingModel'
+import ColumnChips from './ux/ColumnChips'
 import './LiveTables.css'
 
-export default function LiveTableBindingOptions({ binding, canManage, onChange }: {
+export default function LiveTableBindingOptions({ binding, canManage, knownColumns = [], onChange }: {
   binding: ScenarioDataPoolBinding
   canManage: boolean
+  /** Columns the scripts use or the pool has, offered as suggestions. */
+  knownColumns?: string[]
   onChange: (patch: Partial<ScenarioDataPoolBinding>) => void
 }) {
   const options = { ...DEFAULT_LIVE_TABLE_OPTIONS, ...binding.live_options }
@@ -19,13 +22,13 @@ export default function LiveTableBindingOptions({ binding, canManage, onChange }
       })}><option value="native_queue">Native work queue</option><option value="vts_columns">Shared columns</option></select></label>
       <label><span>Starting data</span><select value={options.seed_policy} onChange={event => update({ seed_policy: event.target.value as LiveTableOptions['seed_policy'], seed_run_id: undefined, ...(event.target.value === 'empty' && options.end_mode === 'write_back' ? { end_mode: 'discard' } : {}) })}><option value="current_at_start">Current pool when the run starts</option><option value="empty">Empty table for producers</option><option value="original_seed">Original seed from a prior run</option></select></label>
       {options.seed_policy === 'original_seed' && <label><span>Source run ID</span><input value={options.seed_run_id || ''} maxLength={128} onChange={event => update({ seed_run_id: event.target.value.trim() })} /></label>}
-      <label><span>Columns</span><input value={(options.columns || []).join(',')} placeholder="customer_id,email" onChange={event => update({ columns: event.target.value.split(',').map(column => column.trim()) })} onBlur={() => update({ columns: (options.columns || []).filter(Boolean) })} /></label>
       <label><span>At each iteration</span><select value={binding.selection_strategy} onChange={event => onChange({ selection_strategy: event.target.value as ScenarioDataPoolBinding['selection_strategy'] })}><option value="manual">Use explicit script actions</option><option value="next">Read next row</option><option value="pop">Remove next row</option>{native && <option value="lease">Lease a work item</option>}</select></label>
       <label><span>When no row is available</span><select value={options.empty_policy} onChange={event => update({ empty_policy: event.target.value as LiveTableOptions['empty_policy'], ...(event.target.value === 'wait' ? { wait_ms: options.wait_ms || 10000, operation_timeout_ms: Math.max(options.operation_timeout_ms || (options.durability === 'durable' ? 120000 : 10000), options.wait_ms || 10000) } : { wait_ms: 0 }) })}><option value="error">End the VUser with an error</option><option value="wait">Wait for a row, then error on timeout</option><option value="skip">Skip the iteration</option></select></label>
       {options.empty_policy === 'wait' && <label><span>Maximum wait (ms)</span><input type="number" min={1} max={60000} value={options.wait_ms ?? 10000} onChange={event => update({ wait_ms: Number(event.target.value) })} /></label>}
       <label><span>When the run ends</span><select value={options.end_mode} onChange={event => update({ end_mode: event.target.value as LiveTableOptions['end_mode'], ...(event.target.value !== 'save_as_new' ? { output_pool_name: undefined } : {}) })}><option value="discard">Discard runtime changes</option><option value="save_as_new" disabled={!canManage}>Save as a new data pool</option>{native && <option value="write_back" disabled={!canManage || !binding.pool_id || options.seed_policy === 'empty'}>Write back if the source pool is unchanged</option>}</select></label>
       {options.end_mode === 'save_as_new' && <label><span>New pool name</span><input value={options.output_pool_name || ''} onChange={event => update({ output_pool_name: event.target.value })} /></label>}
     </div>
+    <ColumnChips label={`Columns of ${binding.alias || 'the table'}`} caption="Columns, in table order" columns={(options.columns || []).filter(Boolean)} known={knownColumns} problem={bindingColumnProblem} onChange={columns => update({ columns })} />
     {options.seed_policy === 'original_seed' && <p>Use the same alias as the prior run. Its retained encrypted seed is copied into a fresh table; final mutated rows are not reused. Start validation checks project access and seed availability.</p>}
     {options.seed_policy === 'empty' && <p>Declare the columns above. Producers can add rows after the run starts.</p>}
     {!native && <p>Shared columns use positional cells and preserve absent versus empty values. Native work-item leases are unavailable.</p>}

@@ -154,7 +154,7 @@
       "label": "When no row is found",
       "widget": "enum",
       "enum_labels": {
-        "error": "End the iteration with an error",
+        "error": "Fail the step",
         "skip": "Skip and continue"
       }
     },
@@ -170,7 +170,7 @@
       "label": "When the row does not match",
       "widget": "enum",
       "enum_labels": {
-        "error": "End the iteration with an error",
+        "error": "Fail the step",
         "skip": "Skip and continue"
       }
     }
@@ -398,7 +398,7 @@
       "value": "ack",
       "label": "Acknowledge a lease",
       "group": "Take work",
-      "summary": "Finishes the leased row's work; the row leaves the table.",
+      "summary": "Finishes the leased row's work; the row leaves the table. If the iteration fails before this step, the lease expires and the row is delivered again.",
       "mutates": true,
       "required": [
         "params.lease_ref"

@@ -6,7 +6,9 @@ const (
 	liveTableKindSharedColumns = "vts_columns"
 )
 
-var liveTableEmptyLabels = map[string]string{"error": "End the iteration with an error", "skip": "Skip and continue"}
+// A failed step ends the iteration only when the run does not continue on
+// errors, so the label names the step's outcome, not the iteration's.
+var liveTableEmptyLabels = map[string]string{"error": "Fail the step", "skip": "Skip and continue"}
 
 func liveTableActionSpecs() []ActionSpec {
 	return []ActionSpec{{
@@ -116,7 +118,7 @@ func liveTableVariants() []ActionVariant {
 		},
 		{
 			Value: "ack", Label: "Acknowledge a lease", Group: "Take work", Mutates: true,
-			Summary:   "Finishes the leased row's work; the row leaves the table.",
+			Summary:   "Finishes the leased row's work; the row leaves the table. If the iteration fails before this step, the lease expires and the row is delivered again.",
 			Required:  []string{"params.lease_ref"},
 			Allowed:   allowed("params.lease_ref"),
 			TableKind: liveTableKindWorkQueue,

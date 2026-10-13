@@ -148,7 +148,7 @@ describe('CatalogActionForm', () => {
   it('offers plain labels for an empty-table policy', async () => {
     await render({ type: 'live_table', params: { alias: 'orders', operation: 'pop' } })
     const policy = Array.from(container.querySelectorAll('fieldset')).find(item => item.querySelector('legend')?.textContent === 'When no row is found')!
-    expect(Array.from(policy.querySelectorAll('label')).map(item => item.textContent)).toEqual(['Default', 'End the iteration with an error', 'Skip and continue'])
+    expect(Array.from(policy.querySelectorAll('label')).map(item => item.textContent)).toEqual(['Default', 'Fail the step', 'Skip and continue'])
     await act(async () => { policy.querySelectorAll<HTMLInputElement>('input')[2].click() })
     expect(current.params).toEqual({ alias: 'orders', operation: 'pop', on_empty: 'skip' })
   })

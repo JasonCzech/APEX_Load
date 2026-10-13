@@ -357,6 +357,8 @@ type ReadinessVarContext = {
   secrets: Set<string>
   loopDepth: number
   foreachVars: Set<string>
+  // Live-table result prefixes: the step sets <prefix>.status, <prefix>.values.<column>….
+  resultPrefixes: Set<string>
 }
 
 // isReadinessVarAvailable reports whether a {{var.<name>}} reference resolves to a
@@ -367,7 +369,7 @@ function isReadinessVarAvailable(name: string, ctx: ReadinessVarContext): boolea
   if (ctx.available.has(name)) return true
   if (ctx.loopDepth > 0 && (name === 'loop_index' || name.startsWith('loop_index.'))) return true
   const prefix = name.includes('.') ? name.slice(0, name.indexOf('.')) : name
-  return ctx.foreachVars.has(prefix)
+  return ctx.foreachVars.has(prefix) || [...ctx.resultPrefixes].some(result => name.startsWith(`${result}.`))
 }
 
 // collectReadinessRefs walks the action tree in execution order, tracking which
@@ -402,6 +404,8 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
     ;(action.extractors || []).forEach(extractor => {
       if (extractor.name) ctx.available.add(extractor.name)
     })
+    const resultPrefix = type === 'live_table' && typeof action.params?.result_prefix === 'string' ? action.params.result_prefix.trim() : ''
+    if (resultPrefix) ctx.resultPrefixes.add(resultPrefix)
 	if ((isLoop || isIf || isSwitch) && action.control) {
       const childCtx: ReadinessVarContext = {
         available: ctx.available,
@@ -411,6 +415,7 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
         secrets: ctx.secrets,
         loopDepth: isLoop ? ctx.loopDepth + 1 : ctx.loopDepth,
         foreachVars: ctx.foreachVars,
+        resultPrefixes: ctx.resultPrefixes,
       }
       const foreachVar = isLoop ? action.control.for_each?.var?.trim() : ''
       if (foreachVar) {
@@ -500,6 +505,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     secrets: requiredSecrets,
     loopDepth: 0,
     foreachVars: new Set<string>(),
+    resultPrefixes: new Set<string>(),
   }, 0)
 
   const dataWarnings = buildDataWarnings(script)

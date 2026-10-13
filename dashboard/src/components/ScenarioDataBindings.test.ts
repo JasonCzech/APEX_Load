@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScenarioDataPoolBinding, StoredScript } from '../types'
-import { aliasForPool, dataBindingErrors, scenarioDataRequirements, touchedDataBindingErrors } from './scenarioDataBindingModel'
+import { aliasForPool, bindingColumns, bindingForNeed, dataBindingErrors, dataBindingMismatches, scenarioDataNeeds, scenarioDataRequirements, tableChoicePatch, touchedDataBindingErrors } from './scenarioDataBindingModel'
 const binding = (alias: string, pool_id = 'pool-1'): ScenarioDataPoolBinding => ({ alias, pool_id, access_mode: 'read_only', selection_strategy: 'sequential' })
 describe('scenario data bindings', () => {
   it('keeps project bindings explicit and rejects run-specific seed/output settings', () => {
@@ -57,3 +57,46 @@ describe('scenario data bindings', () => {
   })
 })
 
+describe('what the scripts need from bindings', () => {
+  const live = (name: string, params: Record<string, unknown>) => ({ name, type: 'live_table', target: '', params })
+  const scripts = [
+    { id: 'a', name: 'Producer', script: { actions: [live('Add', { alias: 'work', operation: 'push', values: { id: '1' } })] } },
+    { id: 'b', name: 'Worker', script: { data_sources: [{ name: 'cards', type: 'csv' }], actions: [live('Lease', { alias: 'work', operation: 'lease', result_prefix: 'l' }), { name: 'Use', type: 'GET', target: '/{{data.cards.n}}/{{data.users.email}}' }] } },
+  ] as unknown as StoredScript[]
+  const needs = scenarioDataNeeds(scripts)
+
+  it('merges an alias across scripts, leaving out what a script’s own source supplies', () => {
+    expect(needs.map(need => [need.alias, need.scripts, need.operations, need.kinds, need.readsEachIteration])).toEqual([
+      ['work', ['Producer', 'Worker'], ['push', 'lease'], ['native_queue'], false],
+      ['users', ['Worker'], [], [], true],
+    ])
+  })
+
+  it('binds a pool read as a snapshot, and an alias with table steps as a live table for this run', () => {
+    expect(bindingForNeed(needs[1])).toEqual({ pool_id: '', alias: 'users', access_mode: 'read_only', selection_strategy: 'sequential' })
+    // Leasing needs rows to start from: the table starts from a pool still to be chosen.
+    expect(bindingForNeed(needs[0])).toMatchObject({ alias: 'work', access_mode: 'live', scope: 'run', selection_strategy: 'manual', live_options: { profile: 'native_queue', seed_policy: 'current_at_start', columns: [] } })
+    // Scripts that only add rows get an empty table with the columns they write.
+    expect(bindingForNeed({ ...needs[0], operations: ['push'] })).toMatchObject({ live_options: { seed_policy: 'empty', columns: ['id'] } })
+    // A live table for per-iteration reads hands out the next row; one from a pool starts from it.
+    expect(tableChoicePatch({ ...binding('users'), pool_id: 'p' }, 'run', ['email'], needs[1])).toMatchObject({ selection_strategy: 'next', live_options: { seed_policy: 'current_at_start', columns: ['email'] } })
+    expect(tableChoicePatch(binding('users'), 'project', [], needs[1])).toMatchObject({ scope: 'project', pool_id: '', selection_strategy: 'next' })
+    // Scripts that read a row each iteration and also run table steps get both.
+    expect(bindingForNeed({ ...needs[0], readsEachIteration: true })).toMatchObject({ access_mode: 'live', selection_strategy: 'next' })
+  })
+
+  it('flags table steps on a snapshot, the wrong table kind, missing columns and no per-iteration row', () => {
+    const snapshot = binding('work')
+    expect(dataBindingMismatches(snapshot, needs[0], { columns: ['id'] })).toEqual(['Producer and Worker change rows in work with table steps, which a read-only snapshot cannot run. Choose a live table.'])
+    const shared = { ...snapshot, ...tableChoicePatch(snapshot, 'run', ['id'], needs[0]), live_options: { profile: 'vts_columns' as const, seed_policy: 'empty' as const, columns: ['key'] } }
+    // A table started from the pool has the pool's columns as well as those declared.
+    expect(bindingColumns({ ...shared, live_options: { ...shared.live_options, seed_policy: 'current_at_start' } }, ['id'])).toEqual(['key', 'id'])
+    expect(dataBindingMismatches(shared, needs[0], { columns: bindingColumns(shared, ['id']) })).toEqual([
+      'Producer and Worker lease rows from work, which needs a work queue table; this one is shared columns.',
+      'work has no column id, which Producer and Worker use.',
+    ])
+    const manual = { ...binding('users'), ...tableChoicePatch(binding('users'), 'project', [], undefined) }
+    expect(dataBindingMismatches(manual, needs[1], { columns: ['email'], kind: 'native_queue' })).toEqual(['Worker reads {{data.users.…}} every iteration, but this table hands out no row then. Under At each iteration, choose to read, remove or lease the next row.'])
+    expect(dataBindingMismatches(binding('users'), undefined, { columns: [] })).toEqual([])
+  })
+})

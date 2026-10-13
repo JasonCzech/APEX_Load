@@ -1,47 +1,146 @@
 import type { LiveTableOptions, SharedDataPool } from '../types/dataPools'
 import type { ScenarioDataPoolBinding, StoredScript } from '../types'
+import { LIVE_TABLE_KIND_LABELS, scriptDataUsage, usesTableSteps, type DataAliasUsage, type LiveTableKind } from './scriptDataUsageModel'
 
 export const DEFAULT_LIVE_TABLE_OPTIONS: LiveTableOptions = {
   profile: 'native_queue', seed_policy: 'current_at_start', durability: 'memory', end_mode: 'discard', empty_policy: 'error',
 }
 
+/** Each alias the scripts read or change, with the columns they name. */
 export function scenarioDataRequirements(scripts: StoredScript[]): Map<string, Set<string>> {
   const requirements = new Map<string, Set<string>>()
   for (const script of scripts) {
-    for (const declaration of script.script?.config?.native_services?.live_tables || []) requirements.set(declaration.alias, requirements.get(declaration.alias) || new Set<string>())
-    const literalSourceOwners = new WeakSet<object>()
-    // Traverse executable action locations only. Request parameters and data
-    // rows can contain action-shaped JSON without becoming executable DSL.
-    const pending = [...(script.script?.init || []), ...(script.script?.actions || []), ...(script.script?.teardown || [])]
-    while (pending.length > 0) {
-      const action = pending.pop()!
-      if (action.type === 'native_javascript' && action.params) {
-        literalSourceOwners.add(action.params)
-      }
-      if (action.type === 'live_table' && action.params) {
-        const params = action.params
-        if (typeof params.alias === 'string') {
-          const columns = requirements.get(params.alias) || new Set<string>()
-          if (Array.isArray(params.columns)) params.columns.forEach(column => { if (typeof column === 'string') columns.add(column) })
-          for (const field of ['values', 'expected']) if (params[field] && typeof params[field] === 'object') Object.keys(params[field] as object).forEach(column => columns.add(column))
-          requirements.set(params.alias, columns)
-        }
-      }
-      const control = action.control
-      if (control) pending.push(...(control.steps || []), ...(control.else || []), ...(control.default || []), ...(control.cases || []).flatMap(branch => branch.steps || []), ...(control.branches || []).flatMap(branch => branch.steps || []))
-    }
-    // Only the action's own source is literal. Nested input values still
-    // resolve templates, even if their JSON happens to resemble an action.
-    const text = JSON.stringify(script.script || {}, function (this: object, key: string, value: unknown) {
-      return key === 'source' && literalSourceOwners.has(this) ? undefined : value
-    })
-    for (const match of text.matchAll(/\{\{\s*data\.([\w-]+)\.([\w-]+)\s*\}\}/g)) {
-      const columns = requirements.get(match[1]) || new Set<string>()
-      columns.add(match[2]); requirements.set(match[1], columns)
+    if (!script.script) continue
+    for (const usage of scriptDataUsage(script.script)) {
+      const columns = requirements.get(usage.alias) || new Set<string>()
+      usage.columns.forEach(column => columns.add(column))
+      requirements.set(usage.alias, columns)
     }
   }
   return requirements
 }
+/** An alias the scenario's scripts need from a binding, across those scripts. */
+export interface ScenarioDataNeed extends Omit<DataAliasUsage, 'steps' | 'suppliedByScript'> {
+  /** The scripts that use it, by name. */
+  scripts: string[]
+}
+
+/**
+ * Each alias a binding must supply: every alias a script reads or changes,
+ * except a {{data.…}} read that the script's own data source answers.
+ */
+export function scenarioDataNeeds(scripts: StoredScript[]): ScenarioDataNeed[] {
+  const needs = new Map<string, ScenarioDataNeed>()
+  for (const script of scripts) {
+    if (!script.script) continue
+    for (const usage of scriptDataUsage(script.script)) {
+      if (usage.suppliedByScript && !usesTableSteps(usage)) continue
+      const need = needs.get(usage.alias)
+      if (!need) {
+        needs.set(usage.alias, { alias: usage.alias, columns: [...usage.columns], operations: [...usage.operations], nativeOperations: [...usage.nativeOperations], mutates: usage.mutates, kinds: [...usage.kinds], readsEachIteration: usage.readsEachIteration, scripts: [script.name] })
+        continue
+      }
+      const add = (list: string[], items: string[]) => items.forEach(item => { if (!list.includes(item)) list.push(item) })
+      add(need.columns, usage.columns); add(need.operations, usage.operations); add(need.nativeOperations, usage.nativeOperations); add(need.scripts, [script.name])
+      need.kinds = [...new Set([...need.kinds, ...usage.kinds])]
+      need.mutates ||= usage.mutates
+      need.readsEachIteration ||= usage.readsEachIteration
+    }
+  }
+  return [...needs.values()]
+}
+
+/** The three tables a binding can be. */
+export type DataTableChoice = 'snapshot' | 'run' | 'project'
+
+export const DATA_TABLE_CHOICES: { value: DataTableChoice; label: string; lifetime: string }[] = [
+  { value: 'snapshot', label: 'Read-only snapshot', lifetime: 'The pool’s rows are copied when the run starts; nothing the run does changes them.' },
+  { value: 'run', label: 'Live table for this run', lifetime: 'One table every group in this run shares; it is discarded or saved when the run ends.' },
+  { value: 'project', label: 'Project live table', lifetime: 'A table the project’s runs share; it keeps its rows after this run ends.' },
+]
+
+export function dataTableChoice(binding: ScenarioDataPoolBinding): DataTableChoice {
+  return binding.access_mode !== 'live' ? 'snapshot' : binding.scope === 'project' ? 'project' : 'run'
+}
+
+/** A run table's starting kind: shared columns only for column steps. */
+function profileFor(need?: Pick<ScenarioDataNeed, 'kinds'>): LiveTableKind {
+  return need?.kinds.includes('vts_columns') && !need.kinds.includes('native_queue') ? 'vts_columns' : 'native_queue'
+}
+
+/**
+ * The change that makes a binding the chosen table. A run table starts from
+ * the pool (with the pool's columns) unless the scripts only add rows and no
+ * pool is chosen: then it starts empty with the columns they name. A live
+ * table hands out the next row each iteration when the scripts read
+ * {{data.alias.column}}; table steps work beside that.
+ */
+export function tableChoicePatch(binding: ScenarioDataPoolBinding, choice: DataTableChoice, poolColumns: string[], need?: ScenarioDataNeed): Partial<ScenarioDataPoolBinding> {
+  if (choice === 'snapshot') return { access_mode: 'read_only', scope: undefined, project_table_id: undefined, selection_strategy: 'sequential', live_options: undefined }
+  const selection_strategy: ScenarioDataPoolBinding['selection_strategy'] = need?.readsEachIteration ? 'next' : 'manual'
+  if (choice === 'project') return { access_mode: 'live', scope: 'project', project_table_id: '', pool_id: '', selection_strategy, live_options: { empty_policy: 'error', operation_timeout_ms: 120000 } }
+  const producesOnly = Boolean(need && usesTableSteps(need) && [...need.operations, ...need.nativeOperations].every(operation => operation === 'push' || operation === 'create_column'))
+  const empty = !binding.pool_id && producesOnly
+  return {
+    access_mode: 'live', scope: 'run', project_table_id: undefined, selection_strategy,
+    live_options: { ...DEFAULT_LIVE_TABLE_OPTIONS, profile: profileFor(need), seed_policy: empty ? 'empty' : 'current_at_start', columns: empty ? [...need!.columns] : binding.pool_id ? poolColumns : [] },
+  }
+}
+
+/**
+ * A new binding for an alias the scripts need. Pools bind as read-only
+ * snapshots; an alias the scripts run table steps on gets a live table for
+ * this run, since a snapshot cannot run them.
+ */
+export function bindingForNeed(need: ScenarioDataNeed): ScenarioDataPoolBinding {
+  const binding: ScenarioDataPoolBinding = { pool_id: '', alias: need.alias, access_mode: 'read_only', selection_strategy: 'sequential' }
+  return usesTableSteps(need) ? { ...binding, ...tableChoicePatch(binding, 'run', [], need) } : binding
+}
+
+const listed = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+
+/**
+ * What the scripts need from a binding that it cannot give, found before
+ * launch. `available` is what the bound table has: its columns (unknown when
+ * empty) and, for a project table, its kind.
+ */
+export function dataBindingMismatches(binding: ScenarioDataPoolBinding, need: ScenarioDataNeed | undefined, available: { columns: string[]; kind?: LiveTableKind }): string[] {
+  if (!need) return []
+  const who = listed(need.scripts)
+  const verb = need.scripts.length === 1 ? 's' : ''
+  const problems: string[] = []
+  const choice = dataTableChoice(binding)
+  if (choice === 'snapshot' && usesTableSteps(need)) {
+    problems.push(`${who} ${need.mutates ? `change${verb} rows in` : `read${verb} rows of`} ${binding.alias} with table steps, which a read-only snapshot cannot run. Choose a live table.`)
+  }
+  const kind = choice === 'run' ? binding.live_options?.profile || 'native_queue' : choice === 'project' ? available.kind : undefined
+  for (const needed of need.kinds) {
+    if (!kind || needed === kind) continue
+    problems.push(`${who} ${needed === 'native_queue' ? `lease${verb} rows from` : `use${verb} column steps on`} ${binding.alias}, which needs a ${LIVE_TABLE_KIND_LABELS[needed]} table; this one is ${LIVE_TABLE_KIND_LABELS[kind]}.`)
+  }
+  const missing = available.columns.length ? need.columns.filter(column => !available.columns.includes(column)) : []
+  if (missing.length) problems.push(`${binding.alias} has no ${missing.length === 1 ? 'column' : 'columns'} ${listed(missing)}, which ${who} use${verb}.`)
+  if (choice !== 'snapshot' && binding.selection_strategy === 'manual' && need.readsEachIteration) {
+    problems.push(`${who} read${verb} {{data.${binding.alias}.…}} every iteration, but this table hands out no row then. Under At each iteration, choose to read, remove or lease the next row.`)
+  }
+  return problems
+}
+
+/**
+ * The columns a binding's table has, as far as the scenario can tell (empty
+ * when it cannot): a snapshot has the pool's; a run table its declared
+ * columns, plus the pool's when it starts from one; a project table its own.
+ */
+export function bindingColumns(binding: ScenarioDataPoolBinding, poolColumns: string[], projectTableColumns?: string[]): string[] {
+  const choice = dataTableChoice(binding)
+  if (choice === 'project') return projectTableColumns || []
+  if (choice === 'snapshot') return poolColumns
+  const options = { ...DEFAULT_LIVE_TABLE_OPTIONS, ...binding.live_options }
+  if (options.seed_policy === 'original_seed') return []
+  const declared = (options.columns || []).filter(Boolean)
+  return options.seed_policy === 'empty' ? declared : [...new Set([...declared, ...poolColumns])]
+}
+
 /** Each problem with the bindings, tagged with the binding it belongs to. */
 function dataBindingIssues(bindings: ScenarioDataPoolBinding[]): { index: number; message: string }[] {
   const issues: { index: number; message: string }[] = []
@@ -87,6 +186,15 @@ export function isUntouchedDataBinding(binding: ScenarioDataPoolBinding): boolea
 /** dataBindingErrors without the errors of untouched bindings. */
 export function touchedDataBindingErrors(bindings: ScenarioDataPoolBinding[]): string[] {
   return dataBindingIssues(bindings).filter(issue => !isUntouchedDataBinding(bindings[issue.index])).map(issue => issue.message)
+}
+
+/** Why a live binding cannot take a column of this name ('' when it can). */
+export function bindingColumnProblem(name: string, columns: readonly string[]): string {
+  if (!name) return 'Enter a column name.'
+  if (new TextEncoder().encode(name).length > 128 || /[\0\r\n]/.test(name)) return 'Use at most 128 bytes, without line breaks.'
+  if (columns.includes(name)) return `There is already a column named "${name}".`
+  if (columns.length >= 128) return 'A live table takes at most 128 columns.'
+  return ''
 }
 
 /** An alias from a pool's name ("Customer accounts" → customer_accounts), unique among taken. */

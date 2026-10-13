@@ -109,7 +109,7 @@ describe('liveTableFormContext', () => {
       ],
       teardown: [],
     } as unknown as ScriptDefinition
-    const context = liveTableFormContext(script, 'action', 2)
+    const context = liveTableFormContext(script, { phase: 'action', position: 'before', anchor: { phase: 'action', actionIndex: 2 } })
     expect(context.aliases).toEqual(['declared', 'orders', 'work'])
     expect(context.columnsByAlias.orders).toEqual(['status', 'owner'])
     expect(context.outputs).toEqual({
@@ -117,6 +117,18 @@ describe('liveTableFormContext', () => {
       record_version: ['{{var.job.record_version}}', '{{var.row.record_version}}', '{{var.added.record_version}}'],
       lease: ['job'],
     })
+  })
+})
+
+describe('liveTableFormContext inside a block', () => {
+  it('offers an earlier read in the same block, and not one in the other branch', () => {
+    const read = (prefix: string) => ({ name: prefix, type: 'live_table', params: { alias: 'orders', operation: 'read', position: 1, result_prefix: prefix } })
+    const script = {
+      name: 's', protocol: 'http', config: {},
+      actions: [{ name: 'guard', type: 'control_if', control: { steps: [read('inner'), { name: 'current', type: 'live_table', params: { alias: 'orders', operation: 'update' } }], else: [read('other')] } }],
+    } as unknown as ScriptDefinition
+    const context = liveTableFormContext(script, { phase: 'action', position: 'before', anchor: { phase: 'action', actionIndex: 0, stepPath: ['then[1]'] } })
+    expect(context.outputs.record_id).toEqual(['{{var.inner.record_id}}'])
   })
 })
 

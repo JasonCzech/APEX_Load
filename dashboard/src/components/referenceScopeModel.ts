@@ -82,7 +82,7 @@ export const BUILTIN_FUNCTIONS: Array<{ expression: string; detail: string }> = 
 ]
 
 /** A step's position in execution order: a segment per level (the branch list and the index in it). */
-interface Segment { branch: string; index: number; conditional: boolean; lane: boolean }
+export interface Segment { branch: string; index: number; conditional: boolean; lane: boolean }
 
 function isRecord(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -113,11 +113,11 @@ function childLists(action: Action): Array<{ branch: string; steps: Action[]; se
   return lists
 }
 
-interface Placed { action: Action; position: StepPosition; segments: Segment[] }
+export interface PlacedStep { action: Action; position: StepPosition; segments: Segment[] }
 
 /** Every step of a script in execution order, with its position. */
-function placeSteps(script: ScriptDefinition): Placed[] {
-  const placed: Placed[] = []
+export function placeSteps(script: ScriptDefinition): PlacedStep[] {
+  const placed: PlacedStep[] = []
   const visit = (action: Action, position: StepPosition, segments: Segment[]) => {
     placed.push({ action, position, segments })
     for (const list of childLists(action)) {
@@ -144,6 +144,36 @@ function precedes(producer: Segment[], step: Segment[]): 'before' | 'maybe' | nu
   if (producer[depth].index > step[depth].index) return null
   // Inside an earlier sibling: conditional nesting below this level makes it optional.
   return producer.slice(depth + 1).some(segment => segment.conditional) ? 'maybe' : 'before'
+}
+
+/** Where a new step goes: at the end of a phase, or before, after or inside an existing step. */
+export interface InsertionPoint { phase: ReferencePhase; position: 'end' | 'before' | 'after' | 'inside'; anchor?: StepPosition }
+
+const samePosition = (left: StepPosition, right: StepPosition) => left.phase === right.phase && left.actionIndex === right.actionIndex && (left.stepPath || []).join('/') === (right.stepPath || []).join('/')
+
+/**
+ * The steps that run before a step put at `point`, in execution order, on
+ * its path only: another branch of an if, a switch or a parallel block is
+ * left out, and one that runs only on some paths counts.
+ */
+export function stepsBefore(script: ScriptDefinition, point: InsertionPoint): PlacedStep[] {
+  const placed = placeSteps(script)
+  const find = (position: StepPosition) => placed.find(item => samePosition(item.position, position))
+  // A part that is not a step of its own (a sequence's request) stands for the step it is in.
+  const anchor = point.position === 'end' || !point.anchor ? undefined : find(point.anchor) || find({ phase: point.anchor.phase, actionIndex: point.anchor.actionIndex })
+  // Where the new step lands, as placeSteps would number it.
+  let at: Segment[]
+  if (!anchor) {
+    const phases: ReferencePhase[] = ['init', 'action', 'teardown']
+    at = [{ branch: 'phase', index: phases.indexOf(point.phase) * 1_000_000 + 999_999, conditional: false, lane: false }]
+  } else if (point.position === 'inside') {
+    // Inside a loop or an if: after its last step.
+    at = [...anchor.segments, { branch: `${anchor.segments.length}:${anchor.action.type === 'control_loop' ? 'loop' : 'then'}`, index: Number.MAX_SAFE_INTEGER, conditional: true, lane: false }]
+  } else {
+    const last = anchor.segments[anchor.segments.length - 1]
+    at = [...anchor.segments.slice(0, -1), { ...last, index: last.index + (point.position === 'after' ? 0.5 : -0.5) }]
+  }
+  return placed.filter(item => precedes(item.segments, at) !== null)
 }
 
 export interface StepOutput { expression: string; detail: string; kind?: 'record_id' | 'record_version' | 'lease' }
@@ -226,7 +256,7 @@ export function stepTemplateText(action: Action): string {
  * earlier steps set (an optional value set on some paths only says so),
  * environment and run values, secret names and built-in functions.
  */
-export function buildReferenceScope(script: ScriptDefinition, position: StepPosition, options: { secretNames?: string[]; dataAliases?: Record<string, string[]> } = {}): ReferenceScope {
+export function buildReferenceScope(script: ScriptDefinition, position: StepPosition, options: { secretNames?: string[]; dataAliases?: Record<string, string[]>; unboundAliases?: ReadonlySet<string> } = {}): ReferenceScope {
   const items: ReferenceItem[] = []
   const parameterNames = new Set((script.parameters || []).map(parameter => parameter.name).filter((name): name is string => Boolean(name)))
   for (const parameter of script.parameters || []) {
@@ -242,7 +272,8 @@ export function buildReferenceScope(script: ScriptDefinition, position: StepPosi
   }
   for (const [alias, columns] of Object.entries(options.dataAliases || {})) {
     if (dataSources.has(alias)) continue
-    for (const column of columns) items.push({ group: 'data', expression: `data.${alias}.${column}`, detail: `Column of ${alias}, bound by a scenario at run time` })
+    const binding = options.unboundAliases?.has(alias) ? 'no scenario binds it yet' : 'bound by a scenario at run time'
+    for (const column of columns) items.push({ group: 'data', expression: `data.${alias}.${column}`, detail: `Column of ${alias}, ${binding}` })
   }
   const placed = placeSteps(script)
   const current = placed.find(item => item.position.phase === position.phase && item.position.actionIndex === position.actionIndex && (item.position.stepPath || []).join('/') === (position.stepPath || []).join('/'))

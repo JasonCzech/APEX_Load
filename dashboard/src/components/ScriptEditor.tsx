@@ -8,9 +8,13 @@ import TooltipButton from './ux/TooltipButton'
 import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
 import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
 import { NO_RESPONSE_ACTION_TYPES, HTTP_RUNTIME_ACTION_TYPES, liveTableFormContext } from './catalogActionFormModel'
-import { buildReferenceScope } from './referenceScopeModel'
+import { buildReferenceScope, type InsertionPoint } from './referenceScopeModel'
 import { ReferenceFieldContext, type FieldPath, type ReferenceFieldContextValue } from './referenceFieldContext'
-import { AuthorInsertDialog } from './AuthorInsertDialog'
+import { AuthorInsertDialog, type InsertSharedData } from './AuthorInsertDialog'
+import ScriptDataUsagePanel from './ScriptDataUsagePanel'
+import { earlierVariables, scriptActionNames, scriptDataUsage, takenVariableNames, usesTableSteps, withUniqueResultPrefixes, type DataAliasStep } from './scriptDataUsageModel'
+import { useScriptScenarioBindings } from './useScriptScenarioBindings'
+import { templateStepNames, type TemplateSpot } from './sharedDataTemplates'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
 import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
@@ -189,6 +193,7 @@ import {
   type ParameterCandidate,
 } from './scriptEditorState'
 import {
+  authorFocusKey,
   codePathForAuthorFocus,
   findCandidateLiteralRangeInJson,
   formatParameterCandidateOccurrence,
@@ -719,6 +724,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
   const [insertPhase, setInsertPhase] = useState<ScriptActionPhase>('action')
   const [insertPosition, setInsertPosition] = useState<InsertPosition>('end')
+  // Where a linked template's user steps go, beside the step it left selected
+  // (that step object: an edit to it, or the script's JSON, retires the spot).
+  const [templateSpot, setTemplateSpot] = useState<{ action: Action; position: InsertPosition } | null>(null)
   const [showSavedDiff, setShowSavedDiff] = useState(false)
   const [showAuthorProblems, setShowAuthorProblems] = useState(false)
   const [datasetChange, setDatasetChange] = useState<DatasetChange | null>(null)
@@ -2075,28 +2083,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const selectAuthorPhaseActionRef = useRef(selectAuthorPhaseAction)
   selectAuthorPhaseActionRef.current = selectAuthorPhaseAction
 
-  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
+  const focusNestedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath: string[], key: string, label: string) => {
     setAuthorOverview(false)
     openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
     setNarrowAuthorPane('editor')
-    requestInspectorFocus({ phase: item.row.phase, actionIndex: item.row.actionIndex, stepPath: item.stepPath })
+    requestInspectorFocus({ phase, actionIndex, stepPath })
     setAuthorRightSidebarCollapsed(false)
     setSelectedOutlineParameterName(null)
     setScriptJsonSidebarTab('details')
-    const { row } = item
+    setActiveAction(null)
+    setAuthorCodeFocus({ phase, actionIndex, stepPath, key, label })
+    setShowFullScriptJson(false)
+  }
+  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
     const label = item.kind === 'leaf'
       ? item.childAction.name || item.name || humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
       : item.name
-    setActiveAction(null)
-    setAuthorCodeFocus({
-      phase: row.phase,
-      actionIndex: row.actionIndex,
-      stepPath: item.stepPath,
-      key: item.key,
-      label,
-    })
-    setShowFullScriptJson(false)
+    focusNestedStep(item.row.phase, item.row.actionIndex, item.stepPath, item.key, label)
   }
 
   const [followExecution, setFollowExecution] = useState(true)
@@ -2608,7 +2612,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       assertions: template.assertions || [],
     })) as Action
     setInsertPhase(phase)
-    setInsertPosition(authorCodeFocus?.phase === phase ? 'after' : 'end')
+    // A template's closing step takes the user's steps before it; an empty
+    // loop or if block selected is where the new step belongs.
+    const focused = authorCodeFocus?.phase === phase ? activeInspectorScope?.action : undefined
+    setInsertPosition(!focused ? 'end'
+      : templateSpot && templateSpot.action === focused ? templateSpot.position
+        : ['control_if', 'control_loop'].includes(focused.type) && !focused.control?.steps?.length ? 'inside' : 'after')
     setInsertSeed(a)
   }
 
@@ -2627,6 +2636,44 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setError('')
       requestInspectorFocus(result.focus, panel => panel.querySelector('input'), result.script)
     } catch (error) { setError(getErrorMessage(error, 'Could not insert action.')) }
+  }
+
+  // A linked template: its steps go in order at the chosen place, and the step
+  // the user's own steps go beside is selected, so + Add Action puts them there.
+  const insertPreparedActions = (actions: Action[], label: string, spot?: TemplateSpot) => {
+    try {
+      let next = script
+      let focus = authorCodeFocus
+      let breakpoints = debugBreakpoints
+      let spotFocus: typeof focus = null
+      for (const [index, action] of actions.entries()) {
+        const inserted = insertAuthorAction(next, action, insertPhase, index ? 'after' : insertPosition, focus)
+        next = inserted.script
+        focus = inserted.focus
+        breakpoints = remapInsertedBreakpoints(breakpoints, focus)
+        const within = (action.control?.steps || []).findIndex(step => step.name === spot?.name)
+        if (spot && action.name === spot.name) spotFocus = focus
+        else if (spot && within >= 0) {
+          const stepPath = [...(focus.stepPath || []), `then[${within}]`]
+          spotFocus = { phase: focus.phase, actionIndex: focus.actionIndex, stepPath, key: authorFocusKey({ ...focus, stepPath }), label: spot.name }
+        }
+      }
+      const selected = spotFocus || focus
+      replaceScriptWithHistory(next)
+      setDebugBreakpoints(breakpoints)
+      if (selected) {
+        setAuthorCodeFocus(selected)
+        setActiveAction(selected.phase === 'action' && !selected.stepPath?.length ? selected.actionIndex : null)
+      }
+      const spotAction = spot && spotFocus ? resolveAuthorJsonScopeByKey(next, authorFocusKey(spotFocus))?.action : undefined
+      setTemplateSpot(spotAction ? { action: spotAction, position: spot!.position } : null)
+      setInsertSeed(null)
+      setAuthorOverview(false)
+      setNarrowAuthorPane('editor')
+      openCenterTab(ACTION_LIST_TAB_ID)
+      setSuccess(`Inserted ${label}: ${templateStepNames(actions).join(', ')}.${spot ? ` Your own steps go ${spot.position} “${spot.name}”, which is selected: + Add Action puts them there.` : ''} Changes are not saved yet.`)
+      setError('')
+    } catch (error) { setError(getErrorMessage(error, 'Could not insert the steps.')) }
   }
 
   const addHTTPRuntimeAction = (type: HTTPRuntimeActionType) => {
@@ -5123,7 +5170,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     try {
       // A block keeps its declared init/teardown and data prerequisites. Main
       // actions follow the same explicit placement as individual insertions.
-      const result = applyAuthoringComponentToScript(script, component, null)
+      // A saved block's table steps get result prefixes this script does not use yet.
+      const lists = [component.init || [], component.actions || [], component.teardown || []]
+      const { actions: renamed } = withUniqueResultPrefixes(lists.flat(), takenVariableNames(script))
+      const unique = { ...component, init: renamed.slice(0, lists[0].length), actions: renamed.slice(lists[0].length, lists[0].length + lists[1].length), teardown: renamed.slice(lists[0].length + lists[1].length) }
+      const result = applyAuthoringComponentToScript(script, unique, null)
       const generated = result.script.actions.slice(script.actions.length)
       const initCount = component.init?.length || 0
       const mainCount = component.actions?.length || 0
@@ -5706,18 +5757,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const renderStructuredCenterDocument = (title: string, content: ReactNode) => {
     return jsonParseMessage ? renderBlockedCenterDocument(title) : content
   }
-  // Only a live-table step's form reads the script's aliases, columns and earlier outputs.
-  const inspectorLiveTableContext = useMemo(() => activeInspectorScope?.action.type === 'live_table'
-    ? liveTableFormContext(script, activeInspectorScope.phase, activeInspectorScope.actionIndex)
-    : undefined, [activeInspectorScope?.action.type, activeInspectorScope?.actionIndex, activeInspectorScope?.phase, script])
-  // What the selected step can reference (slice: references you pick, not type).
+  // The data aliases the script reads or changes, and how saved scenarios bind them.
+  const dataUsage = useMemo(() => scriptDataUsage(script), [script])
+  const scenarioDataUsage = useMemo(() => dataUsage.filter(usage => !usage.suppliedByScript || usesTableSteps(usage)), [dataUsage])
+  const scenarioBindings = useScriptScenarioBindings(scriptId || undefined, projectId || undefined, scenarioDataUsage.length > 0)
+  const unboundAliases = useMemo(() => !scriptId || scenarioBindings.status === 'ready'
+    ? new Set(scenarioDataUsage.filter(usage => !scenarioBindings.byAlias.has(usage.alias)).map(usage => usage.alias))
+    : undefined, [scenarioBindings.byAlias, scenarioBindings.status, scenarioDataUsage, scriptId])
   const inspectorStepPath = activeInspectorScope?.subAction ? authorCodeFocus?.stepPath : undefined
   const inspectorStepPathKey = (inspectorStepPath || []).join('/')
+  // Only a live-table step's form reads the script's aliases, columns and earlier outputs.
+  const inspectorLiveTableContext = useMemo(() => activeInspectorScope?.action.type === 'live_table'
+    ? liveTableFormContext(script, { phase: activeInspectorScope.phase, position: 'before', anchor: { phase: activeInspectorScope.phase, actionIndex: activeInspectorScope.actionIndex, stepPath: inspectorStepPathKey ? inspectorStepPathKey.split('/') : undefined } })
+    : undefined, [activeInspectorScope?.action.type, activeInspectorScope?.actionIndex, activeInspectorScope?.phase, inspectorStepPathKey, script])
+  // What the selected step can reference (slice: references you pick, not type).
   const referenceScope = useMemo(() => {
     if (!activeInspectorScope) return null
-    const tables = liveTableFormContext(script, activeInspectorScope.phase, activeInspectorScope.actionIndex)
-    return buildReferenceScope(script, { phase: activeInspectorScope.phase, actionIndex: activeInspectorScope.actionIndex, stepPath: inspectorStepPathKey ? inspectorStepPathKey.split('/') : undefined }, { dataAliases: tables.columnsByAlias })
-  }, [activeInspectorScope?.actionIndex, activeInspectorScope?.phase, inspectorStepPathKey, script]) // eslint-disable-line react-hooks/exhaustive-deps
+    const dataAliases = Object.fromEntries(scenarioDataUsage.map(usage => [usage.alias, usage.columns]))
+    return buildReferenceScope(script, { phase: activeInspectorScope.phase, actionIndex: activeInspectorScope.actionIndex, stepPath: inspectorStepPathKey ? inspectorStepPathKey.split('/') : undefined }, { dataAliases, unboundAliases })
+  }, [activeInspectorScope?.actionIndex, activeInspectorScope?.phase, inspectorStepPathKey, scenarioDataUsage, script, unboundAliases]) // eslint-disable-line react-hooks/exhaustive-deps
   // The reference field last focused, for "This step produces" › Insert.
   const referenceInsertTarget = useRef<((expression: string) => void) | null>(null)
   useEffect(() => { referenceInsertTarget.current = null }, [activeInspectorScope?.path])
@@ -5806,6 +5864,31 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       </ReferenceFieldContext.Provider>
     ) : null
   )
+  // A new table step at the insertion point: what is set before it, and the names in use.
+  const insertSharedData = useMemo((): InsertSharedData => ({
+    usage: dataUsage,
+    bindings: scenarioBindings.byAlias,
+    context: alias => {
+      const anchored = insertPosition !== 'end' && authorCodeFocus?.phase === insertPhase
+      const point: InsertionPoint = anchored ? { phase: insertPhase, position: insertPosition, anchor: { phase: insertPhase, actionIndex: authorCodeFocus!.actionIndex, stepPath: authorCodeFocus!.stepPath } } : { phase: insertPhase, position: 'end' }
+      return {
+        alias,
+        columns: dataUsage.find(usage => usage.alias === alias)?.columns || [],
+        taken: takenVariableNames(script),
+        names: scriptActionNames(script),
+        earlier: liveTableFormContext(script, point).outputs,
+        variables: earlierVariables(script, point),
+      }
+    },
+  }), [authorCodeFocus, dataUsage, insertPhase, insertPosition, scenarioBindings.byAlias, script])
+  // A step the data panel names: select it in the action list.
+  const focusDataStep = (step: DataAliasStep) => {
+    const { phase, actionIndex, stepPath } = step.position
+    const row = scriptPhaseActionRows.find(item => item.phase === phase && item.actionIndex === actionIndex)
+    if (!row) return
+    if (!stepPath?.length) { selectAuthorPhaseAction(row); return }
+    focusNestedStep(phase, actionIndex, stepPath, `${phase}:${actionIndex}#${stepPath.join('/')}`, step.name)
+  }
   const renderActionLibrary = () => <details className="action-library"><summary>Add action from a block</summary><div className="action-library-body">
                   <div className="starter-blocks-panel">
                     <div className="starter-blocks-header">
@@ -6755,7 +6838,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       event.preventDefault()
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
     }}>
-      {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onClose={() => setInsertSeed(null)} onOpenThinkTime={() => { setInsertSeed(null); openCenterTab('runtime-settings'); selectRuntimeSettingsSection('think') }} library={renderActionLibrary()} />}
+      {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onInsertMany={insertPreparedActions} sharedData={insertSharedData} onClose={() => setInsertSeed(null)} onOpenThinkTime={() => { setInsertSeed(null); openCenterTab('runtime-settings'); selectRuntimeSettingsSection('think') }} library={renderActionLibrary()} />}
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
       {showAuthorProblems && <IssueDetailsDialog title="Author Problems" issues={editorIssueDetails} onClose={() => setShowAuthorProblems(false)} />}
       {datasetChange && <DatasetChangeReview change={datasetChange} affected={(script.parameters || []).filter(parameter => parameter.data_source?.trim().toLowerCase() === datasetChange.before.name.trim().toLowerCase()).map(parameter => parameter.name)} error={datasetChangeError} onApply={applyDatasetChange} onCancel={() => setDatasetChange(null)} />}
@@ -7520,7 +7603,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
           {centerTabMountTarget('parameter-data') && createPortal(
             <ParameterDataCellDraftProvider onDraftChange={stageParameterDataCellEdit}>
-              {renderStructuredCenterDocument('Parameters', (
+              {renderStructuredCenterDocument('Parameters', (<>
+                {scenarioDataUsage.length > 0 && <ScriptDataUsagePanel usage={scenarioDataUsage} saved={Boolean(scriptId)} bindings={scenarioBindings} onSelectStep={focusDataStep} />}
                 <ParameterDataDialog
               onAddDataset={addParameterDataset}
               onShowUsesInSource={selectOutlineParameter}
@@ -7575,7 +7659,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               script={script}
                 variant="document"
               />
-              ))}
+              </>))}
             </ParameterDataCellDraftProvider>, centerTabMountTarget('parameter-data')!)}
 
           {replayScreenshotSelection && !runtimeVariablesUnavailable && (

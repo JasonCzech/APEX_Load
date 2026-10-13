@@ -39,3 +39,15 @@ it('keeps invalid seed text editable with an accessible validation message', asy
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '[]'); textarea.dispatchEvent(new Event('input', { bubbles: true })) })
   expect(change).toHaveBeenCalledWith('[]')
 })
+
+it('creates the script’s tables beside the seeds it already has', async () => {
+  const change = vi.fn()
+  const usage = [{ alias: 'jobs', columns: ['job_id'], operations: ['lease'], nativeOperations: [], mutates: true, kinds: ['native_queue' as const], readsEachIteration: false, suppliedByScript: false, steps: [] }]
+  const seeds = JSON.stringify([{ alias: 'work', columns: ['id'], rows: [] }])
+  await act(async () => root.render(<LiveTableSandboxEditor value={seeds} usage={usage} onChange={change} />))
+  await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Create tables from this script')!.click())
+  expect(JSON.parse(change.mock.lastCall![0]).map((seed: { alias: string }) => seed.alias)).toEqual(['work', 'jobs'])
+  expect(container.querySelector('[role="status"]')!.textContent).toContain('Added jobs, with the columns the script uses.')
+  await act(async () => root.render(<LiveTableSandboxEditor value={change.mock.lastCall![0]} usage={usage} onChange={change} />))
+  expect([...container.querySelectorAll('button')].find(button => button.textContent === 'Create tables from this script')!.hasAttribute('disabled')).toBe(true)
+})

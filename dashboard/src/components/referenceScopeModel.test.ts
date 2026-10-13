@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
-import { buildReferenceScope, stepOutputs, templateTokens, unresolvedReferences, type ReferenceScope } from './referenceScopeModel'
+import { buildReferenceScope, stepOutputs, stepsBefore, templateTokens, unresolvedReferences, type InsertionPoint, type ReferenceScope } from './referenceScopeModel'
 
 const step = (name: string, extra: Record<string, unknown> = {}) => ({ name, type: 'GET', target: '/', ...extra })
 const extract = (name: string) => ({ extractors: [{ name, type: 'json', expression: '$.id' }] })
@@ -70,7 +70,11 @@ describe('buildReferenceScope', () => {
   it('lists scenario-bound data aliases and project secrets it is given', () => {
     const scope = buildReferenceScope(script({ actions: [step('A')] }), { phase: 'action', actionIndex: 0 }, { secretNames: ['DB_PASS'], dataAliases: { work: ['id'] } })
     expect(expressions(scope, 'data')).toEqual(['data.work.id'])
+    expect(scope.byExpression.get('data.work.id')?.detail).toBe('Column of work, bound by a scenario at run time')
     expect(expressions(scope, 'secrets')).toEqual(['secret.DB_PASS'])
+    // An alias no saved scenario binds says so.
+    const unbound = buildReferenceScope(script({ actions: [step('A')] }), { phase: 'action', actionIndex: 0 }, { dataAliases: { work: ['id'] }, unboundAliases: new Set(['work']) })
+    expect(unbound.byExpression.get('data.work.id')?.detail).toBe('Column of work, no scenario binds it yet')
   })
 })
 
@@ -94,5 +98,27 @@ describe('unresolvedReferences', () => {
     expect(found[0].suggestions).toEqual(['var.order_id'])
     expect(found[0].name).toBe('ordr_id')
     expect(found[2].suggestions).toEqual(['param.user'])
+  })
+})
+
+describe('stepsBefore', () => {
+  const subject = script({
+    init: [step('I')],
+    actions: [step('A'), { name: 'If', type: 'control_if', target: '', control: { condition: { left: 'x', op: 'exists' }, steps: [step('T1'), step('T2')], else: [step('E1')] } }, step('B')],
+    teardown: [step('Z')],
+  })
+  const names = (point: InsertionPoint) => stepsBefore(subject, point).map(placed => placed.action.name)
+
+  it('counts the steps on the new step’s path, by where it goes', () => {
+    expect(names({ phase: 'action', position: 'end' })).toEqual(['I', 'A', 'If', 'T1', 'T2', 'E1', 'B'])
+    expect(names({ phase: 'init', position: 'end' })).toEqual(['I'])
+    expect(names({ phase: 'action', position: 'before', anchor: { phase: 'action', actionIndex: 1, stepPath: ['then[1]'] } })).toEqual(['I', 'A', 'T1'])
+    // After a step, that step and what is inside it count; another branch does not.
+    expect(names({ phase: 'action', position: 'after', anchor: { phase: 'action', actionIndex: 1, stepPath: ['then[0]'] } })).toEqual(['I', 'A', 'T1'])
+    expect(names({ phase: 'action', position: 'after', anchor: { phase: 'action', actionIndex: 1 } })).toEqual(['I', 'A', 'If', 'T1', 'T2', 'E1'])
+    expect(names({ phase: 'action', position: 'inside', anchor: { phase: 'action', actionIndex: 1 } })).toEqual(['I', 'A', 'T1', 'T2'])
+    expect(names({ phase: 'action', position: 'before', anchor: { phase: 'action', actionIndex: 0 } })).toEqual(['I'])
+    // A sequence's request is not a step: after it means after the step it is in.
+    expect(names({ phase: 'action', position: 'after', anchor: { phase: 'action', actionIndex: 0, stepPath: ['requests[1]'] } })).toEqual(['I', 'A'])
   })
 })

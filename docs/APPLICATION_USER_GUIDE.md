@@ -452,13 +452,46 @@ A dash marks a cell the row doesn't set. **Show row details** adds each row's st
 version and last update, and rows that runs skip (consumed, disabled and the like)
 say so beside their number. CSV export writes the columns in the same order.
 
-In a scenario's Data step, **Add data binding** adds a binding; picking its pool names
-the alias after the pool (`Customer accounts` becomes `customer_accounts`) unless you
-typed one. A binding with nothing chosen yet shows no errors until you choose or type
+In a scenario's Data step, **Data the scripts need** lists every alias the scenario's
+scripts read or change: its columns, its table steps, and whether a step reads a row
+each iteration (`{{data.alias.column}}`). An alias no binding supplies has **Bind**,
+which adds a binding with that alias: a read-only snapshot, or a live table for this
+run when the scripts run table steps on it. **Add data binding** adds an empty one;
+picking its pool names the alias after the pool (`Customer accounts` becomes
+`customer_accounts`) unless you typed one. Each binding's **Table** is a read-only
+snapshot (the default; the pool's rows are copied when the run starts), a live table
+for this run, or a project live table that keeps its rows after the run. A live
+table's columns are chips in table order: add one by name, move it, or remove it.
+Before launch the step flags what a binding cannot give its scripts: table steps on a
+snapshot, leases on a shared-columns table (or column steps on a work queue), a column
+the table lacks, and `{{data.…}}` reads on a live table that hands out no row each
+iteration. A binding with nothing chosen yet shows no errors until you choose or type
 something, but saving still requires every binding to be complete.
 
+Most scripts need no table steps: a binding can read, remove or lease a row every
+iteration. For producers, conditional updates and lease flows, the script editor's
+**Insert** dialog lists table operations by what they do (**Read the next row**,
+**Update a row**, **Lease a row**…), each with a result name no other step uses and
+safe defaults: a read takes the first row without changing it, and an empty table fails
+the step until you choose to skip. (Whether a failed step ends the iteration is the
+run's error setting: with continue on error, later steps still run.) An operation that needs a work
+queue or shared columns says so, and says when the alias is bound to the other kind.
+Four linked workflows insert steps already wired together and leave selected the step
+your own steps go beside, so **+ Add Action** puts them there: **Publish work**,
+**Read and update** (the update checks the version the read saw), **Remove and
+process**, and **Lease, process, acknowledge**. In **Read and update** and **Lease,
+process, acknowledge** the update or acknowledgment sits in a block that runs only when
+a row was got (**When the row was read**, **When a row was leased**), and your steps go
+in that block before it. A failed iteration leaves the lease to expire, and the row is
+delivered again. A block you save from selected steps keeps its links,
+and inserting it again gives its table steps new result names. The **Parameters** tab
+shows **Data this script uses**: each alias with its columns, table steps, whether it
+expects a row each iteration, and which saved scenarios bind it, or "Bind in a
+scenario before running".
+
 The replay debugger's isolated live tables can be edited as tables, one per alias, or
-as JSON; use JSON to rename a table or change its behavior.
+as JSON; use JSON to rename a table or change its behavior. **Create tables from this
+script** adds a table for each alias the script's table steps use, with their columns.
 
 ### Secrets
 

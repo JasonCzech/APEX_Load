@@ -17,6 +17,7 @@ import {
   switchOperation,
   type LiveTableFormContext,
 } from './catalogActionFormModel'
+import ColumnChips from './ux/ColumnChips'
 import DataRowGrid from './ux/DataRowGrid'
 import ReferenceField from './ReferenceField'
 import './CatalogActionForm.css'
@@ -180,7 +181,7 @@ function CatalogField({ field, action, required, count, context, onChange }: Fie
   const widget = field.widget || ''
   const alias = typeof fieldValue(action, 'params.alias') === 'string' ? String(fieldValue(action, 'params.alias')) : ''
 
-  if (widget === 'columns') return <ColumnsField label={label} caption={caption} hint={hint} columns={Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []} known={context?.columnsByAlias[alias] || []} count={count} onChange={next => onChange(next.length ? next : undefined)} />
+  if (widget === 'columns') return <ColumnChips className="full-width" label={label} caption={caption} hint={hint} columns={Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []} known={context?.columnsByAlias[alias] || []} count={count} problem={liveTableColumnProblem} onChange={next => onChange(next.length ? next : undefined)} />
   if (widget === 'values') return <ValuesField label={label} caption={caption} hint={hint} values={isStringRecord(value) ? value : {}} known={context?.columnsByAlias[alias] || []} onChange={next => onChange(Object.keys(next).length ? next : undefined)} />
   if (widget === 'enum' || (field.kind === 'enum' && field.enum_labels)) {
     return <fieldset className="catalog-enum full-width" aria-describedby={describedBy}>
@@ -270,46 +271,6 @@ function JsonField({ caption, hint, describedBy, value, kind, onChange }: { capt
     {problem && <small id={`${id}-problem`} role="alert">{problem}</small>}{hint}</label>
 }
 
-function ColumnsField({ label, caption, hint, columns, known, count, onChange }: { label: string; caption: ReactNode; hint: ReactNode; columns: string[]; known: string[]; count?: number; onChange: (columns: string[]) => void }) {
-  const id = useId()
-  const [draft, setDraft] = useState('')
-  const problem = draft.trim() ? liveTableColumnProblem(draft.trim(), columns) : ''
-  const full = count !== undefined && columns.length >= count
-  const add = () => {
-    const name = draft.trim()
-    if (!name || problem || full) return
-    onChange([...columns, name])
-    setDraft('')
-  }
-  const move = (at: number, by: number) => {
-    const next = [...columns]
-    ;[next[at], next[at + by]] = [next[at + by], next[at]]
-    onChange(next)
-  }
-  return <div className="catalog-columns full-width" role="group" aria-labelledby={`${id}-label`}>
-    <span id={`${id}-label`}>{caption}</span>
-    <ol className="catalog-column-chips" aria-label={label}>
-      {columns.map((column, at) => <li key={column} className="catalog-column-chip">
-        <code>{column}</code>
-        {columns.length > 1 && <>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={at === 0} aria-label={`Move ${column} earlier`} onClick={() => move(at, -1)}>←</button>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={at === columns.length - 1} aria-label={`Move ${column} later`} onClick={() => move(at, 1)}>→</button>
-        </>}
-        <button type="button" className="btn btn-ghost btn-sm" aria-label={`Remove ${column}`} onClick={() => onChange(columns.filter(item => item !== column))}>×</button>
-      </li>)}
-    </ol>
-    {!full && <div className="catalog-column-add">
-      <input type="text" value={draft} list={known.length ? `${id}-known` : undefined} aria-label={`Add a column to ${label}`} aria-invalid={Boolean(problem)} aria-describedby={problem ? `${id}-problem` : undefined} placeholder="column"
-        onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }} />
-      <button type="button" className="btn btn-secondary btn-sm" disabled={!draft.trim() || Boolean(problem)} onClick={add}>Add</button>
-      {known.length > 0 && <datalist id={`${id}-known`}>{known.filter(column => !columns.includes(column)).map(column => <option key={column} value={column}>{column}</option>)}</datalist>}
-    </div>}
-    {count !== undefined && <small>Takes {count === 1 ? 'one column' : `${count} columns`}.</small>}
-    {problem && <small id={`${id}-problem`} role="alert">{problem}</small>}
-    {hint}
-  </div>
-}
-
 function ValuesField({ label, caption, hint, values, known, onChange }: { label: string; caption: ReactNode; hint: ReactNode; values: Record<string, string>; known: string[]; onChange: (values: Record<string, string>) => void }) {
   // Columns offered without a value yet (added here, or used elsewhere in the
   // script) stay absent until typed into; one taken away is not offered again.
@@ -339,7 +300,7 @@ function ValuesField({ label, caption, hint, values, known, onChange }: { label:
     />
     {problem && <small role="alert">{problem}</small>}
     {present.length > 0 && <p className="catalog-values-set">
-      Set: {present.map(column => <span key={column} className="catalog-column-chip"><code>{column}</code><button type="button" className="btn btn-ghost btn-sm" aria-label={`Leave ${column} absent`} onClick={() => { const next = { ...values }; delete next[column]; onChange(next) }}>×</button></span>)}
+      Set: {present.map(column => <span key={column} className="column-chip"><code>{column}</code><button type="button" className="btn btn-ghost btn-sm" aria-label={`Leave ${column} absent`} onClick={() => { const next = { ...values }; delete next[column]; onChange(next) }}>×</button></span>)}
     </p>}
     {hint}
   </div>

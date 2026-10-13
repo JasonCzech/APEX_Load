@@ -6,6 +6,8 @@
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { DslCatalogAction, DslCatalogField, DslCatalogVariant } from './dslActionCatalog'
 import { isControlAction, isSourceFunctionAction } from './scriptActionHelpers'
+import { stepsBefore, type InsertionPoint } from './referenceScopeModel'
+import { scriptDataUsage, usesTableSteps } from './scriptDataUsageModel'
 
 type Action = ScriptActionDefinition
 type Json = Record<string, unknown>
@@ -191,58 +193,33 @@ export interface LiveTableFormContext {
 
 const ROW_OPERATIONS = new Set(['read', 'next', 'pop', 'lease', 'push', 'update', 'increment', 'rotate'])
 
-function phaseActions(script: ScriptDefinition, phase: string): Action[] {
-  return (phase === 'init' ? script.init : phase === 'teardown' ? script.teardown : script.actions) || []
-}
-
-function walkActions(actions: Action[], visit: (action: Action) => void) {
-  for (const action of actions) {
-    visit(action)
-    const control = action.control as Json | undefined
-    if (!control) continue
-    const branches: unknown[] = [control.steps, control.else, control.default, ...(Array.isArray(control.cases) ? control.cases.map(item => (item as Json).steps) : []), ...(Array.isArray(control.branches) ? control.branches.map(item => (item as Json).steps) : [])]
-    for (const branch of branches) if (Array.isArray(branch)) walkActions(branch as Action[], visit)
-  }
-}
-
 /**
  * The aliases and columns a script uses, and the outputs of the live-table
- * steps before `phase`/`actionIndex` (init, then actions, then teardown).
+ * steps that run before `point` (on its path: init, then actions, then teardown).
  */
-export function liveTableFormContext(script: ScriptDefinition, phase: string, actionIndex: number): LiveTableFormContext {
-  const aliases = new Set<string>()
-  const columns: Record<string, Set<string>> = {}
-  const outputs = { record_id: [] as string[], record_version: [] as string[], lease: [] as string[] }
+export function liveTableFormContext(script: ScriptDefinition, point: InsertionPoint): LiveTableFormContext {
+  const usage = scriptDataUsage(script)
+  const aliases = new Set(usage.filter(usesTableSteps).map(item => item.alias))
   const native = (script.config as unknown as Json | undefined)?.native_services as Json | undefined
   for (const table of Array.isArray(native?.live_tables) ? native.live_tables as Json[] : []) {
     if (typeof table.alias === 'string' && table.alias) aliases.add(table.alias)
   }
-  const phases = ['init', 'action', 'teardown']
-  const before = (candidatePhase: string, index: number) => phases.indexOf(candidatePhase) < phases.indexOf(phase) || (candidatePhase === phase && index < actionIndex)
-  for (const candidatePhase of phases) {
-    phaseActions(script, candidatePhase).forEach((root, index) => walkActions([root], action => {
-      if (action.type !== 'live_table') return
-      const params = paramsOf(action)
-      const alias = typeof params.alias === 'string' ? params.alias : ''
-      if (alias) {
-        aliases.add(alias)
-        const set = columns[alias] || (columns[alias] = new Set())
-        if (Array.isArray(params.columns)) for (const column of params.columns) if (typeof column === 'string') set.add(column)
-        for (const key of ['values', 'expected']) if (isRecord(params[key])) for (const column of Object.keys(params[key] as Json)) set.add(column)
-      }
-      const prefix = typeof params.result_prefix === 'string' ? params.result_prefix : ''
-      if (!prefix || !before(candidatePhase, index)) return
-      if (params.operation === 'lease') outputs.lease.push(prefix)
-      if (ROW_OPERATIONS.has(String(params.operation))) {
-        outputs.record_id.push(`{{var.${prefix}.record_id}}`)
-        outputs.record_version.push(`{{var.${prefix}.record_version}}`)
-      }
-    }))
+  const outputs = { record_id: [] as string[], record_version: [] as string[], lease: [] as string[] }
+  for (const { action } of stepsBefore(script, point)) {
+    if (action.type !== 'live_table') continue
+    const params = paramsOf(action)
+    const prefix = typeof params.result_prefix === 'string' ? params.result_prefix : ''
+    if (!prefix) continue
+    if (params.operation === 'lease') outputs.lease.push(prefix)
+    if (ROW_OPERATIONS.has(String(params.operation))) {
+      outputs.record_id.push(`{{var.${prefix}.record_id}}`)
+      outputs.record_version.push(`{{var.${prefix}.record_version}}`)
+    }
   }
   const unique = (values: string[]) => [...new Set(values)]
   return {
     aliases: [...aliases].sort(),
-    columnsByAlias: Object.fromEntries(Object.entries(columns).map(([alias, set]) => [alias, [...set]])),
+    columnsByAlias: Object.fromEntries(usage.filter(item => aliases.has(item.alias)).map(item => [item.alias, item.columns])),
     outputs: { record_id: unique(outputs.record_id), record_version: unique(outputs.record_version), lease: unique(outputs.lease) },
   }
 }

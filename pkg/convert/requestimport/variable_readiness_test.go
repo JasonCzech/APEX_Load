@@ -257,6 +257,33 @@ func TestAnalyzeVariableReadinessParametersExtractorsAndSaveAll(t *testing.T) {
 	}
 }
 
+func TestAnalyzeVariableReadinessCountsLiveTableResultsAfterTheirStep(t *testing.T) {
+	table := func(name, prefix string) dsl.Action {
+		return dsl.Action{Name: name, Type: "live_table", Params: map[string]any{"alias": "jobs", "operation": "lease", "result_prefix": prefix}}
+	}
+	use := func(name, ref string) dsl.Action { return dsl.Action{Name: name, Type: "http_request", Target: "/jobs/{{var." + ref + "}}"} }
+	script := &dsl.Script{Actions: []dsl.Action{
+		use("before", "job.values.id"),
+		table("lease", "job"),
+		use("after", "job.values.id"),
+		use("status", "job.status"),
+		{Name: "maybe", Type: "control_if", Control: &dsl.ControlFlow{Condition: &dsl.Condition{Left: "x", Op: "exists"}, Steps: []dsl.Action{table("inner", "maybe")}}},
+		use("unsure", "maybe.record_id"),
+		{Name: "twice", Type: "control_loop", Control: &dsl.ControlFlow{Count: 2, Steps: []dsl.Action{table("looped", "loop_row")}}},
+		use("looped_use", "loop_row.values.id"),
+		{Name: "lanes", Type: "control_parallel", Control: &dsl.ControlFlow{Branches: []dsl.ParallelBranch{{Name: "a", Steps: []dsl.Action{table("lane", "lane_row")}}, {Name: "b", Steps: []dsl.Action{use("noop", "job.status")}}}}},
+		use("lane_use", "parallel.a.lane_row.status"),
+		{Name: "either", Type: "control_if", Control: &dsl.ControlFlow{Condition: &dsl.Condition{Left: "x", Op: "exists"}, Steps: []dsl.Action{table("then", "both")}, Else: []dsl.Action{table("else", "both"), table("else_only", "one")}}},
+		use("both_use", "both.status"),
+		use("one_use", "one.status"),
+	}}
+	got := AnalyzeVariableReadiness(script, nil)
+	// Only the use before the step, and those after a step that may not run, lack a value.
+	if !reflect.DeepEqual(got.Missing, []string{"job.values.id", "maybe.record_id", "one.status"}) || len(got.ByAction["actions[0]"]) != 1 {
+		t.Fatalf("missing = %#v by action = %#v", got.Missing, got.ByAction)
+	}
+}
+
 func TestAnalyzeVariableReadinessMatchesRuntimeParameterCaseFolding(t *testing.T) {
 	script := &dsl.Script{
 		Parameters: []dsl.Parameter{{Name: "Token"}},

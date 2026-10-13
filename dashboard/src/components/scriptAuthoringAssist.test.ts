@@ -77,7 +77,7 @@ describe('scriptAuthoringAssist', () => {
     const grouped = groupIssuesByAction(issues, importedScript.actions.length)
 
     expect(issues.some((issue) => issue.message.includes('parameter "user_name"'))).toBe(true)
-    expect(issues.some((issue) => issue.message.includes('data source "users"'))).toBe(true)
+    expect(issues.some((issue) => issue.message.includes('"users" is not a data source of this script. Bind it in a scenario before running.'))).toBe(true)
     expect(issues.some((issue) => issue.message.includes('missing a name or expression'))).toBe(true)
     expect(grouped[1].some((issue) => issue.message.includes('target is required'))).toBe(true)
     expect(grouped[1].some((issue) => issue.message.includes('duplicated'))).toBe(true)
@@ -132,7 +132,7 @@ describe('scriptAuthoringAssist', () => {
     expect(grouped.init[0].some((issue) => issue.phase === 'init' && issue.message === 'Action name is required.')).toBe(true)
     expect(grouped.init[0].some((issue) => issue.phase === 'init' && issue.message.includes('target is required'))).toBe(true)
     expect(grouped.init[0].some((issue) => issue.phase === 'init' && issue.message.includes('parameter "setup_token"'))).toBe(true)
-    expect(grouped.teardown[0].some((issue) => issue.phase === 'teardown' && issue.message.includes('data source "cleanup"'))).toBe(true)
+    expect(grouped.teardown[0].some((issue) => issue.phase === 'teardown' && issue.message.includes('"cleanup" is not a data source of this script'))).toBe(true)
     expect(groupIssuesByAction(issues, script.actions.length)[0].some((issue) => issue.phase === 'init' || issue.phase === 'teardown')).toBe(false)
   })
 

@@ -79,6 +79,10 @@ type variableState struct {
 	parameterNames map[string]struct{}
 	rowPrefixes    map[string]struct{}
 	dataSources    map[string]struct{}
+	// resultPrefixes are live_table result prefixes: the step publishes
+	// <prefix>.status, <prefix>.record_id, <prefix>.values.<column> and so on.
+	// Unlike a for-each row prefix they outlive the block that sets them.
+	resultPrefixes map[string]struct{}
 }
 
 type configVariableRefs struct {
@@ -97,6 +101,7 @@ func newVariableState(script *dsl.Script, seeded map[string]string) *variableSta
 		parameterNames: make(map[string]struct{}, len(script.Parameters)),
 		rowPrefixes:    make(map[string]struct{}),
 		dataSources:    make(map[string]struct{}),
+		resultPrefixes: make(map[string]struct{}),
 	}
 	for _, source := range script.DataSources {
 		state.dataSources[source.Name] = struct{}{}
@@ -121,9 +126,13 @@ func (state *variableState) clone() *variableState {
 		parameterNames: state.parameterNames,
 		rowPrefixes:    make(map[string]struct{}, len(state.rowPrefixes)),
 		dataSources:    state.dataSources,
+		resultPrefixes: make(map[string]struct{}, len(state.resultPrefixes)),
 	}
 	for prefix := range state.rowPrefixes {
 		cloned.rowPrefixes[prefix] = struct{}{}
+	}
+	for prefix := range state.resultPrefixes {
+		cloned.resultPrefixes[prefix] = struct{}{}
 	}
 	for name := range state.available {
 		cloned.available[name] = struct{}{}
@@ -136,6 +145,11 @@ func (state *variableState) clone() *variableState {
 
 func (state *variableState) satisfied(name string) bool {
 	for prefix := range state.rowPrefixes {
+		if strings.HasPrefix(name, prefix+".") {
+			return true
+		}
+	}
+	for prefix := range state.resultPrefixes {
 		if strings.HasPrefix(name, prefix+".") {
 			return true
 		}
@@ -264,6 +278,11 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 					}
 					state.available["parallel."+branch.Name+"."+name] = struct{}{}
 				}
+				for prefix := range branchState.resultPrefixes {
+					if _, seeded := parallelSeed.resultPrefixes[prefix]; !seeded {
+						state.resultPrefixes["parallel."+branch.Name+"."+prefix] = struct{}{}
+					}
+				}
 			}
 		case "http_sequence":
 			shell := *action
@@ -285,6 +304,12 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 }
 
 func (state *variableState) registerActionOutputs(action dsl.Action) {
+	if state != nil && dsl.CanonicalActionType(action.Type) == "live_table" {
+		if prefix, _ := action.Params["result_prefix"].(string); strings.TrimSpace(prefix) != "" {
+			state.resultPrefixes[strings.TrimSpace(prefix)] = struct{}{}
+		}
+		return
+	}
 	if state != nil && dsl.CanonicalActionType(action.Type) == "source_parameter" {
 		_, outputs, removed := sourceParameterReadiness(action)
 		for _, name := range removed {
@@ -676,11 +701,13 @@ func sequenceChildActions(params map[string]any) []dsl.Action {
 func intersectVariableStates(target, left, right *variableState) {
 	target.available = intersectStringSets(left.available, right.available)
 	target.saveAll = intersectStringSets(left.saveAll, right.saveAll)
+	target.resultPrefixes = intersectStringSets(left.resultPrefixes, right.resultPrefixes)
 }
 
 func replaceVariableState(target, source *variableState) {
 	target.available = source.available
 	target.saveAll = source.saveAll
+	target.resultPrefixes = source.resultPrefixes
 }
 
 func intersectStringSets(left, right map[string]struct{}) map[string]struct{} {

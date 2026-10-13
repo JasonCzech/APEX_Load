@@ -1,0 +1,12 @@
+/* "Data this script uses": each alias, its columns, table steps and bindings. */
+.script-data-usage { display: grid; gap: 8px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-primary); }
+.script-data-usage h3, .script-data-usage h4, .script-data-usage p { margin: 0; }
+.script-data-aliases { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.script-data-alias { display: grid; gap: 6px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.script-data-alias dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+.script-data-alias dt { color: var(--text-secondary); }
+.script-data-alias dd { margin: 0; overflow-wrap: anywhere; }
+.script-data-steps { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.script-data-steps small { color: var(--text-secondary); }
+.script-data-mismatch { padding: 6px 10px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 8%, transparent); }
+@media (max-width: 560px) { .script-data-alias dl { grid-template-columns: minmax(0, 1fr); } }

@@ -92,3 +92,12 @@
 }
 
 .project-live-table-references code { overflow-wrap: anywhere; }
+
+/* A replayed table step's result in the debugger. */
+.live-table-step-result { display: grid; gap: 8px; }
+.live-table-step-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; }
+.live-table-step-meta div { display: flex; gap: 6px; }
+.live-table-step-meta dt { color: var(--text-secondary); }
+.live-table-step-meta dd { margin: 0; overflow-wrap: anywhere; }
+.live-table-step-note { margin: 0; }
+.live-table-step-result [role="note"] { padding: 6px 10px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 8%, transparent); }

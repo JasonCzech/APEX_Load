@@ -322,6 +322,19 @@ describe('buildLocalReplayPreflight', () => {
     expect(preflight.warnings).toEqual(['variable(s) with no seed or preceding extractor are sent as placeholder text: session_id'])
   })
 
+  it('counts a live-table step’s results as set for later steps', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        { name: 'Too early', type: 'GET', method: 'GET', target: '/jobs/{{var.job.values.id}}' },
+        { name: 'Lease', type: 'live_table', target: '', params: { alias: 'jobs', operation: 'lease', result_prefix: 'job' } },
+        { name: 'Use', type: 'GET', method: 'GET', target: '/jobs/{{var.job.values.id}}?v={{var.job.record_version}}&j={{var.jobless}}' },
+      ],
+    } as unknown as ScriptDefinition)
+    // The use before the step stays flagged; a name that merely starts the same does not count.
+    expect(preflight.missing_variables).toEqual(['job.values.id', 'jobless'])
+  })
+
   it('blocks a missing variable that has no placeholder fallback', () => {
     const jsonHelper = buildLocalReplayPreflight({
       ...baseScript,

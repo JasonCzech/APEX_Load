@@ -133,7 +133,10 @@ describe('ScenarioDataBindings script-level data', () => {
   })
   it('does not let one script source hide another script’s missing data reference', async () => {
     await render([stored, { ...stored, id: 'other', name: 'Other script', script: { ...stored.script!, data_sources: [] } }])
-    expect(container.textContent).toContain('Other script references users, but no script source or scenario pool supplies it')
+    const need = container.querySelector('[aria-label="Data the scripts need"] li')!
+    expect(need.textContent).toContain('usersNot bound')
+    expect(need.textContent).toContain('Used by Other script · columns email · reads a row each iteration')
+    expect(need.querySelector('button[aria-label="Bind users"]')).not.toBeNull()
   })
   it('bounds large data previews and ignores obsolete fetch responses after selection changes', async () => {
     let resolve!: (value: StoredScript) => void
@@ -171,7 +174,7 @@ describe('ScenarioDataBindings adding a binding', () => {
     const added = onChange.mock.calls[0][0] as ScenarioDataPoolBinding[]
     await render(added, onChange)
     expect(container.querySelector('[role="alert"]')).toBeNull()
-    expect(container.textContent).toContain('Choose a data pool, or set Access mode to a shared live table.')
+    expect(container.textContent).toContain('Choose a data pool, or a live table above.')
     // A typed but invalid alias is touched, so its error shows.
     await render([{ ...added[0], alias: '1bad' }], onChange)
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Binding 1')
@@ -191,3 +194,36 @@ describe('ScenarioDataBindings adding a binding', () => {
   })
 })
 
+describe('ScenarioDataBindings binding what the scripts need', () => {
+  let container: HTMLDivElement
+  let root: Root
+  beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container) })
+  afterEach(async () => { await act(async () => root.unmount()); container.remove() })
+  const worker: StoredScript = { id: 'worker', name: 'Worker', protocol: 'http', version: '1', created_at: '', script: { name: 'Worker', version: '1', protocol: 'http', config: {}, actions: [
+    { name: 'Lease', type: 'live_table', target: '', params: { alias: 'jobs', operation: 'lease', result_prefix: 'job' } },
+    { name: 'Call', type: 'request', target: '/jobs/{{var.job.values.id}}' },
+  ] } }
+  const pools = [{ id: 'pool-1', name: 'Jobs', created_at: '', updated_at: '', columns: ['key'] }]
+  async function render(bindings: ScenarioDataPoolBinding[], onChange: (next: ScenarioDataPoolBinding[]) => void) {
+    await act(async () => root.render(<ScenarioDataBindings scripts={[worker]} bindings={bindings} pools={pools} onChange={onChange} canManage={false} />))
+  }
+
+  it('binds an alias the scripts lease from as a live table, and flags what the table lacks', async () => {
+    const onChange = vi.fn()
+    await render([], onChange)
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Bind jobs"]')!.click())
+    const [bound] = onChange.mock.lastCall![0] as ScenarioDataPoolBinding[]
+    expect(bound).toMatchObject({ alias: 'jobs', access_mode: 'live', scope: 'run', live_options: { seed_policy: 'current_at_start' } })
+    await render([{ ...bound, pool_id: 'pool-1' }], onChange)
+    expect(container.querySelector('[aria-label="Data the scripts need"]')!.textContent).toContain('Bound: live table for this run')
+    const choices = [...container.querySelectorAll<HTMLInputElement>('.scenario-data-table-choice input')]
+    expect(choices.map(choice => [choice.value, choice.checked])).toEqual([['snapshot', false], ['run', true], ['project', false]])
+    expect([...container.querySelectorAll('.scenario-data-mismatch')].map(node => node.textContent)).toEqual(['jobs has no column id, which Worker uses.'])
+    // A snapshot cannot run the lease at all.
+    await act(async () => { choices[0].click() })
+    const snapshot = (onChange.mock.lastCall![0] as ScenarioDataPoolBinding[])[0]
+    expect(snapshot).toMatchObject({ access_mode: 'read_only', selection_strategy: 'sequential' })
+    await render([snapshot], onChange)
+    expect(container.querySelector('.scenario-data-mismatch')!.textContent).toBe('Worker changes rows in jobs with table steps, which a read-only snapshot cannot run. Choose a live table.')
+  })
+})

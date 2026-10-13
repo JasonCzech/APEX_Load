@@ -1,4 +1,7 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
+import LiveTableStepResult from './LiveTableStepResult'
+import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
+import { scriptDataUsage } from './scriptDataUsageModel'
 import { liveTableSandboxError } from './liveTableSandboxModel'
 import TooltipButton from './ux/TooltipButton'
 import ResourceSnapshotList from './ResourceSnapshotList'
@@ -369,6 +372,7 @@ export function ScriptReplayDebuggerView({
   const replayMatchesCurrentScript = replayEditableActionsKey !== null &&
     currentEditableActionsKey !== null &&
     replayEditableActionsKey === currentEditableActionsKey
+  const dataUsage = useMemo(() => scriptDataUsage(script), [script])
   // Identify the diagnosis inputs: the replay session plus the editable-action
   // snapshot taken when that replay started. The live draft is intentionally
   // not part of this key — applying a diagnosis fix edits the draft, and that
@@ -514,7 +518,7 @@ export function ScriptReplayDebuggerView({
                       <textarea aria-label="Session Variables JSON" aria-invalid={Boolean(variablesError)} value={replayOptions.variablesText} onChange={event => setReplayOptions(prev => ({ ...prev, variablesText: event.target.value }))} rows={5} />
                     </div>
                   </div>
-                  <LiveTableSandboxEditor value={replayOptions.liveTableSeedsText} onChange={liveTableSeedsText => setReplayOptions(prev => ({ ...prev, liveTableSeedsText }))} />
+                  <LiveTableSandboxEditor value={replayOptions.liveTableSeedsText} usage={dataUsage} onChange={liveTableSeedsText => setReplayOptions(prev => ({ ...prev, liveTableSeedsText }))} />
                 </fieldset>
               </div>
             )}
@@ -1324,7 +1328,10 @@ export function ScriptReplayDebuggerView({
                                     />
                                   </div>
                                 )}
-                                {event.extractions && Object.keys(event.extractions).length > 0 && (
+                                {event.action_type === 'live_table' && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && ['init', 'action', 'teardown'].includes(event.phase) && typeof event.action_index === 'number'
+                                  ? resolveAuthorJsonScopeByKey(script, `${event.phase}:${event.action_index}${event.step_path?.length ? `#${event.step_path.join('/')}` : ''}`)?.action
+                                  : undefined} />}
+                                {event.extractions && Object.keys(event.extractions).length > 0 && event.action_type !== 'live_table' && (
                                   <div className="replay-code-block">
                                     <span className="replay-detail-label">Extractions</span>
                                     <SnapshotBodyPreview

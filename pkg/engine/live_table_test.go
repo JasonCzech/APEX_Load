@@ -285,6 +285,28 @@ func TestLiveTableReplaySandboxIsolatedAndRequiresSeed(t *testing.T) {
 	}
 }
 
+func TestLiveTableReplayEventsCarryTheStepsResult(t *testing.T) {
+	push := liveAction("push", map[string]any{"values": map[string]string{"id": "made"}})
+	delete(push.Params, "result_prefix")
+	script := &dsl.Script{Name: "sandbox", Protocol: "http", Actions: []dsl.Action{liveAction("pop", nil), push}}
+	seed := []LiveTableSandboxSeed{{Alias: "work", Columns: []string{"id"}, Rows: []livetable.Row{{Values: map[string]string{"id": "original"}}}}}
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{LiveTableSeeds: seed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Events) != 2 {
+		t.Fatalf("events=%+v", report.Events)
+	}
+	popped := report.Events[0].Extractions
+	if popped["result.status"] != "ok" || popped["result.values.id"] != "original" || popped["result.record_id"] == "" || popped["result.count"] == "" {
+		t.Fatalf("pop extractions=%v", popped)
+	}
+	// A step without a result prefix publishes nothing to show.
+	if report.Events[1].Extractions != nil {
+		t.Fatalf("push extractions=%v", report.Events[1].Extractions)
+	}
+}
+
 func TestLiveTableResultCanBeTheNextActionsInput(t *testing.T) {
 	var received livetable.Request
 	vu := liveTestVU(liveTableClientFunc(func(_ context.Context, _ string, request livetable.Request) (livetable.Result, error) {

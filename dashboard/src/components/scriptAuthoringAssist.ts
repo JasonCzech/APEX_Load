@@ -559,7 +559,7 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
             severity: 'warning',
             phase,
             actionIndex,
-            message: `Referenced data source "${match[1]}" is not defined.`,
+            message: `"${match[1]}" is not a data source of this script. Bind it in a scenario before running.`,
           })
         }
       }
