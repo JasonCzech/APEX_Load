@@ -120,15 +120,18 @@ func validatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error 
 	if candidate == nil || prior == nil {
 		return fmt.Errorf("credential-preserving update requires a durable prior script")
 	}
-	// The recorder session is provenance, not an application credential. Its
-	// credential-shaped name is intentionally masked on disclosure, but must
-	// not lock every action and parameter in an otherwise credential-free draft.
+	// Provenance, not application credentials: the recorder session and the
+	// protected-source commit fence (owner digest, source hash, script
+	// fingerprint; server-owned and restored on every update) are masked on
+	// disclosure, but no request sends them, so they must not lock every
+	// action, parameter and base URL in an otherwise credential-free draft.
 	// Work on copies so validation never alters persisted provenance.
 	candidate = cloneScriptDefinition(candidate)
 	prior = cloneScriptDefinition(prior)
 	for _, script := range []*dsl.Script{candidate, prior} {
 		if script.Metadata != nil && script.Metadata.Import != nil {
 			delete(script.Metadata.Import.Preserved, "recorder_session_id")
+			delete(script.Metadata.Import.Preserved, storage.ImportSourceCommitFenceMetadataKey)
 		}
 	}
 	projectedCandidate := maskScriptSecrets(candidate)

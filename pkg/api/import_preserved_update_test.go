@@ -4,12 +4,14 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func importedCredentialContextScript(t *testing.T, script *dsl.Script) *dsl.Script {
@@ -499,6 +501,40 @@ func TestRecordedProvenanceDoesNotLockParameterEdits(t *testing.T) {
 	candidate.Config.Browser.HTTPCredentials.Password = "real-credential"
 	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
 		t.Fatal("credential-bearing transport context was allowed to change")
+	}
+}
+
+// An OpenAPI import's commit fence is masked on disclosure like a credential,
+// but it is provenance no request sends: editing the base URL of a script with
+// no credentials is an ordinary edit, while a retained credential still cannot
+// follow a changed base URL.
+func TestImportCommitFenceDoesNotLockBaseURLEdits(t *testing.T) {
+	fence := protectedImportSourceCommitFence{
+		Version: protectedImportSourceCommitFenceVersion, OwnerDigest: strings.Repeat("a", 64), SourceProfile: "openapi",
+		SourceSHA256: strings.Repeat("b", 64), SourceSizeBytes: 221, ScriptFingerprint: strings.Repeat("c", 64),
+	}
+	prior := &dsl.Script{
+		Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "http://127.0.0.1:60557"},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "openapi", Preserved: map[string]any{}}},
+		Actions:  []dsl.Action{{Name: "listOrders", Type: "request", Method: http.MethodGet, Target: "/orders"}},
+	}
+	attachProtectedImportSourceCommitFence(prior, fence)
+	if reflect.DeepEqual(maskScriptSecrets(prior).Metadata.Import.Preserved, prior.Metadata.Import.Preserved) {
+		t.Fatal("the commit fence is no longer masked on disclosure; this test no longer covers it")
+	}
+	candidate := cloneScriptDefinition(prior)
+	candidate.Config.BaseURL = "http://127.0.0.1:60557/"
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatalf("base URL edit of a credential-free import was refused: %v", err)
+	}
+	if _, kept := prior.Metadata.Import.Preserved[storage.ImportSourceCommitFenceMetadataKey]; !kept {
+		t.Fatal("validation mutated provenance")
+	}
+	prior.Actions[0].Headers = map[string]string{"Authorization": "Bearer retained-import-token"}
+	candidate.Actions[0].Headers = map[string]string{"Authorization": "Bearer retained-import-token"}
+	candidate.Config.BaseURL = "https://redirect.example.test"
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
+		t.Fatal("a retained credential was allowed to follow a changed base URL")
 	}
 }
 
