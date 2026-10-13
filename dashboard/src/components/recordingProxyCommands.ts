@@ -43,20 +43,21 @@ export function recorderProxyHost(
   dashboardOrigin: string = "",
 ) {
   const explicitHost = hostFromAddress(proxyAddr);
+  const dashboardHost = hostFromAddress(dashboardOrigin);
+  const dashboardIsLocal =
+    !dashboardHost ||
+    dashboardHost === "127.0.0.1" ||
+    dashboardHost === "::1" ||
+    dashboardHost === "localhost";
   if (explicitHost && !["0.0.0.0", "::"].includes(explicitHost)) {
-    return explicitHost === "127.0.0.1"
+    // A loopback listener is "localhost" to a browser on the controller's
+    // host. To a remote dashboard it is the controller's own loopback: keep it
+    // literal rather than point the workstation's proxy at itself.
+    return explicitHost === "127.0.0.1" && dashboardIsLocal
       ? DEFAULT_RECORDER_PROXY_HOST
       : explicitHost;
   }
-  const dashboardHost = hostFromAddress(dashboardOrigin);
-  if (
-    !dashboardHost ||
-    dashboardHost === "127.0.0.1" ||
-    dashboardHost === "::1"
-  ) {
-    return DEFAULT_RECORDER_PROXY_HOST;
-  }
-  return dashboardHost;
+  return dashboardIsLocal ? DEFAULT_RECORDER_PROXY_HOST : dashboardHost;
 }
 
 export function recorderProxyHostIsLocal(proxyHost: string) {

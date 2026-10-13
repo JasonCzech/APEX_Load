@@ -43,11 +43,11 @@ for (const launch of ['controller', 'agent'] as const) {
 
 test.describe('agent recovery',()=>{
   test.use({agentMode:true})
-  test('unavailable and disconnected agent can be verified and paired again',async({page,harness:h},info)=>{
+  test('unavailable and disconnected agent can be connected again',async({page,harness:h},info)=>{
     const {freePort,stopProcess}=await import('./support/process')
     await studio(page,h)
-    await page.getByPlaceholder('http://127.0.0.1:49152').fill(`http://127.0.0.1:${await freePort()}`)
-    await page.getByRole('button',{name:'Verify Agent',exact:true}).click()
+    await page.getByLabel('Agent address',{exact:true}).fill(`http://127.0.0.1:${await freePort()}`)
+    await page.getByRole('button',{name:'Connect',exact:true}).click()
     await expect(page.locator('.rec-bridge-status')).toHaveClass(/error/)
     const agent=await pairAgent(page,h,info)
     await stopProcess(agent)

@@ -66458,9 +66458,11 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_rejected_host"?: string;
             "last_seq"?: number;
             "name": string;
             "project_id"?: string;
+            "rejected_requests"?: number;
             "request_count"?: number;
             "requests"?: Array<{
               "body"?: string;
@@ -102550,9 +102552,11 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_rejected_host"?: string;
             "last_seq"?: number;
             "name": string;
             "project_id"?: string;
+            "rejected_requests"?: number;
             "request_count"?: number;
             "requests"?: Array<{
               "body"?: string;
@@ -138319,9 +138323,11 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_rejected_host"?: string;
             "last_seq"?: number;
             "name": string;
             "project_id"?: string;
+            "rejected_requests"?: number;
             "request_count"?: number;
             "requests"?: Array<{
               "body"?: string;
@@ -156769,9 +156775,11 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_rejected_host"?: string;
             "last_seq"?: number;
             "name": string;
             "project_id"?: string;
+            "rejected_requests"?: number;
             "request_count"?: number;
             "requests"?: Array<{
               "body"?: string;

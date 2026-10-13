@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,6 +46,18 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// A session the caller's browser cannot reach records nothing: refuse it,
+	// with the reason, while the proxy is not listening or listens only on a
+	// loopback address this caller is not on.
+	if proxy := recorderProxyAvailability(s.recorder.ProxyState(), s.recorderClientIsLocal(r)); proxy["available"] != true {
+		reason, _ := proxy["reason"].(string)
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":       "HTTP proxy recording is not available to this browser: " + reason,
+			"code":        "proxy_unavailable",
+			"reason_code": proxy["reason_code"],
+		})
+		return
+	}
 	if profile != nil {
 		if len(req.IncludeHosts) == 0 {
 			req.IncludeHosts = profile.IncludeHosts
@@ -80,9 +93,11 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
-		"session":      sanitizeRecorderSessionForResponse(session),
-		"proxy_addr":   s.recorder.ProxyAddr(),
-		"ca_cert_path": s.recorder.CACertPath(),
+		"session":    sanitizeRecorderSessionForResponse(session),
+		"proxy_addr": s.recorder.ProxyAddr(),
+	}
+	if s.recorderClientIsLocal(r) {
+		resp["ca_cert_path"] = s.recorder.CACertPath()
 	}
 	if s.desktopMode {
 		// Desktop proxy credentials are a separate per-launch capability. This
@@ -270,6 +285,8 @@ func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Ses
 		LastSeq:                  session.LastSeq,
 		DroppedRequests:          session.DroppedRequests,
 		DroppedWebSocketMessages: session.DroppedWebSocketMessages,
+		RejectedRequests:         session.RejectedRequests,
+		LastRejectedHost:         session.LastRejectedHost,
 		Truncated:                session.Truncated,
 		Warnings:                 sanitizeRecorderWarningsForResponse(session.Warnings),
 		Filters: recorder.SessionFilters{
@@ -616,9 +633,11 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 	if browserActive != nil && projectID != "" && normalizeProjectID(browserActive.ProjectID) != normalizeProjectID(projectID) {
 		browserActive = nil
 	}
+	localClient := s.recorderClientIsLocal(r)
 	resp := map[string]any{
 		"proxy_addr":   s.recorder.ProxyAddr(),
-		"ca_cert_path": s.recorder.CACertPath(),
+		"proxy":        recorderProxyAvailability(s.recorder.ProxyState(), localClient),
+		"local_client": localClient,
 		"active":       activeInfo,
 		"browser": map[string]any{
 			"availability": s.browserRecordingAvailability(),
@@ -626,11 +645,96 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 			"install":      s.browserInstall.snapshot(),
 		},
 	}
+	// The CA file's path is only useful, and only shown, to a browser on the
+	// controller's host; anyone else downloads the certificate.
+	if localClient {
+		resp["ca_cert_path"] = s.recorder.CACertPath()
+	}
 	if s.desktopMode {
 		resp["proxy_auth_token"] = s.recorder.ProxyAuthToken()
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// recorderProxyLoopbackOnly is the reason code for a proxy listening only on
+// the controller host's loopback interface, out of a remote browser's reach.
+const recorderProxyLoopbackOnly = "loopback_only"
+
+// recorderProxyAvailability is whether the viewing browser can record through
+// the proxy: it must be listening, and a loopback-only listener serves only a
+// browser on the controller's host. reason is operator-facing; the dashboard
+// words reason_code for authors.
+func recorderProxyAvailability(proxy recorder.ProxyState, localClient bool) map[string]any {
+	out := map[string]any{
+		"available":               proxy.Running,
+		"running":                 proxy.Running,
+		"private_targets_allowed": proxy.PrivateTargetsAllowed,
+	}
+	switch {
+	case !proxy.Running:
+		out["reason_code"], out["reason"] = proxy.ReasonCode, proxy.Reason
+	case proxy.Loopback && !localClient:
+		out["available"] = false
+		out["reason_code"] = recorderProxyLoopbackOnly
+		out["reason"] = "the recording proxy listens on " + proxy.Addr + " on the controller host, which this browser cannot reach; set APEXLOAD_RECORDER_PROXY_ADDR to a reachable address (with APEXLOAD_RECORDER_PROXY_TOKEN) to record through it"
+	}
+	return out
+}
+
+// recorderClientIsLocal reports whether the browser viewing the dashboard runs
+// on the controller's host: the desktop app, or a request from a loopback peer
+// to a loopback name. Any forwarding header naming another host or client (a
+// reverse proxy or auth sidecar in front, even one that rewrites Host to the
+// loopback upstream) makes it remote. Only a local browser can use a
+// loopback-bound proxy or open the CA file at its path. The headers can only
+// make a request look less local, so they need no trust.
+func (s *Server) recorderClientIsLocal(r *http.Request) bool {
+	if s.desktopMode {
+		return true
+	}
+	if !recorderHostIsLoopback(r.RemoteAddr) || !recorderHostIsLoopback(r.Host) {
+		return false
+	}
+	for _, name := range []string{"X-Forwarded-Host", "X-Forwarded-For", "X-Real-IP"} {
+		for _, value := range r.Header.Values(name) {
+			for _, host := range strings.Split(value, ",") {
+				if !recorderHostIsLoopback(host) {
+					return false
+				}
+			}
+		}
+	}
+	for _, value := range r.Header.Values("Forwarded") {
+		for _, element := range strings.Split(value, ",") {
+			for _, pair := range strings.Split(element, ";") {
+				key, val, ok := strings.Cut(strings.TrimSpace(pair), "=")
+				if !ok {
+					continue
+				}
+				switch strings.ToLower(strings.TrimSpace(key)) {
+				case "for", "host":
+					if !recorderHostIsLoopback(strings.Trim(strings.TrimSpace(val), `"`)) {
+						return false
+					}
+				}
+			}
+		}
+	}
+	return true
+}
+
+func recorderHostIsLoopback(hostport string) bool {
+	host := strings.TrimSpace(hostport)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // sessionRecordingProfile resolves the recording profile a conversion of a

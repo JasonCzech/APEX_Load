@@ -86,6 +86,12 @@ export default defineConfig({
             if (request.headers.origin) {
               proxyRequest.setHeader('Origin', apiProxyOrigin)
             }
+            // Name the browser's address: the controller treats a loopback
+            // peer as a browser on its own host (recorder proxy, CA path), and
+            // this server may be reached from another machine.
+            if (request.socket.remoteAddress) {
+              proxyRequest.setHeader('X-Forwarded-For', request.socket.remoteAddress)
+            }
           })
         },
       },

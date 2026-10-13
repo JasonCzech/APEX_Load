@@ -566,10 +566,20 @@ remotely or cannot launch a headed browser:
 1. Install the `apexload-record-agent` package from the dashboard's **Download the
    APEX Load Recording Agent** link.
 2. Open **Recording Studio** in the dashboard.
-3. Copy the generated terminal command — the pairing token is already embedded in it.
-4. Paste the whole command into Terminal or PowerShell.
-5. Click **Verify Agent** to confirm the local bridge is reachable.
-6. Click **Pair Local Bridge**.
+3. Copy the generated terminal command and paste it into Terminal or PowerShell.
+4. When the agent asks, paste the pairing token shown under the command. The token
+   never appears in the command or its process arguments.
+5. Click **Connect**. The studio checks that the agent answers, then pairs with it.
+
+When the controller cannot open a browser itself (a hosted or Kubernetes controller,
+or one without a display), Recording Studio leads with these steps under **Record
+from your workstation**; the controller's own reason is under **Details for
+administrators**. **HTTP proxy** recording is offered only when your browser can
+reach the controller's recording proxy: a hosted controller's proxy is off in
+production, and a proxy that listens on the controller's loopback address serves only
+a browser on that host. The proxy also records public addresses only, unless an
+administrator sets `APEXLOAD_RECORDER_ALLOW_PRIVATE_TARGETS=true`; requests it blocks
+are counted on the live recording.
 
 The agent binds to `127.0.0.1` on a high port and does not normally need admin rights,
 though locked-down workstations may need IT approval to run a signed binary, launch

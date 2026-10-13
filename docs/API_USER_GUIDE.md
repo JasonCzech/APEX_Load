@@ -537,7 +537,8 @@ Unified replay sessions use `/api/v1/replay/sessions/...` for draft and stored s
 
 Useful recorder and replay endpoints:
 
-- `POST /api/v1/recorder/start` — Start a proxy recording
+- `GET /api/v1/recorder/status` — Recorder state. `proxy` says whether the calling browser can record through the proxy (`available`, `running`, `reason_code`: `not_started`, `production_disabled`, `configuration`, `bind_failed`, `stopped` or `loopback_only`, an operator-facing `reason`, and `private_targets_allowed`); `local_client` says whether the browser runs on the controller's host, and only then is `ca_cert_path` included
+- `POST /api/v1/recorder/start` — Start a proxy recording. Answers `409` with `code: "proxy_unavailable"` and the `reason_code` when the caller cannot use the proxy: it is not listening, or it listens only on the controller's loopback address and the caller is not on that host (`loopback_only`). A session counts the requests the proxy refused for a private target in `rejected_requests`, with the latest host in `last_rejected_host`
 - `POST /api/v1/recorder/{id}/stop` — Stop a recording
 - `POST /api/v1/recorder/{id}/convert/preview` — Preview conversion to a script
 - `POST /api/v1/recorder/{id}/convert` — Convert a recording

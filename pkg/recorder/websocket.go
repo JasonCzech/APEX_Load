@@ -67,12 +67,14 @@ func (r *Recorder) handleWebSocketProxy(w http.ResponseWriter, req *http.Request
 		return
 	}
 	if err := validateProxyTargetURL(targetURL.String()); err != nil {
+		r.noteRejectedTarget(session, targetURL.Hostname(), err)
 		http.Error(w, "websocket target rejected: "+err.Error(), http.StatusForbidden)
 		return
 	}
 	upstreamAddr := hostWithDefaultPort(targetURL.Host, "80")
 	upstreamConn, err := proxySafeDialer(30*time.Second).Dial("tcp", upstreamAddr)
 	if err != nil {
+		r.noteRejectedTarget(session, targetURL.Hostname(), err)
 		http.Error(w, "websocket upstream error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -131,6 +133,7 @@ func (r *Recorder) forwardWebSocketHTTPS(tlsConn net.Conn, clientReader *bufio.R
 		return
 	}
 	if err := validateProxyTargetURL(targetURL.String()); err != nil {
+		r.noteRejectedTarget(session, targetURL.Hostname(), err)
 		writeHTTPError(tlsConn, http.StatusForbidden, "websocket target rejected: "+err.Error())
 		return
 	}
@@ -138,6 +141,7 @@ func (r *Recorder) forwardWebSocketHTTPS(tlsConn net.Conn, clientReader *bufio.R
 	dialAddr := hostWithDefaultPort(connectHost, "443")
 	upstreamConn, err := tls.DialWithDialer(proxySafeDialer(30*time.Second), "tcp", dialAddr, recorderUpstreamTLSConfig(hostname))
 	if err != nil {
+		r.noteRejectedTarget(session, hostname, err)
 		slog.Debug("websocket TLS upstream dial failed", "host", dialAddr, "err", err)
 		writeHTTPError(tlsConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		return
@@ -187,6 +191,7 @@ func (r *Recorder) forwardWebSocketPlainConnect(clientConn net.Conn, clientReade
 		return
 	}
 	if err := validateProxyTargetURL(targetURL.String()); err != nil {
+		r.noteRejectedTarget(session, targetURL.Hostname(), err)
 		writeHTTPError(clientConn, http.StatusForbidden, "websocket target rejected: "+err.Error())
 		return
 	}
@@ -194,6 +199,7 @@ func (r *Recorder) forwardWebSocketPlainConnect(clientConn net.Conn, clientReade
 	upstreamAddr := hostWithDefaultPort(connectHost, "80")
 	upstreamConn, err := proxySafeDialer(30*time.Second).Dial("tcp", upstreamAddr)
 	if err != nil {
+		r.noteRejectedTarget(session, targetURL.Hostname(), err)
 		slog.Debug("websocket CONNECT upstream dial failed", "host", upstreamAddr, "err", err)
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		return

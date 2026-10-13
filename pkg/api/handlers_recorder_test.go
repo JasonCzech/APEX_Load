@@ -446,12 +446,31 @@ func TestHandleConvertRecordingRejectsMalformedJSONBeforePersisting(t *testing.T
 	}
 }
 
+// startTestRecorderProxy runs the server's recording proxy on a free loopback
+// port, as Start does: sessions start only while it listens.
+func startTestRecorderProxy(t *testing.T, server *Server) {
+	t.Helper()
+	if err := server.recorder.StartProxy(); err != nil {
+		t.Fatalf("StartProxy(): %v", err)
+	}
+	t.Cleanup(func() { _ = server.recorder.StopProxy() })
+}
+
+// fromControllerHost makes a test request come from a browser on the
+// controller's host, the only one a loopback-bound proxy serves.
+func fromControllerHost(req *http.Request) *http.Request {
+	req.Host = "127.0.0.1:8080"
+	req.RemoteAddr = "127.0.0.1:50000"
+	return req
+}
+
 func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
-	server := NewServer(ServerConfig{})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
+	server := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	startTestRecorderProxy(t, server)
+	req := fromControllerHost(httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
 		"name": "Cookie Capture",
 		"capture_cookies": true
-	}`))
+	}`)))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
@@ -472,11 +491,12 @@ func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
 }
 
 func TestHandleStartRecordingAllowsStaticCapture(t *testing.T) {
-	server := NewServer(ServerConfig{})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
+	server := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	startTestRecorderProxy(t, server)
+	req := fromControllerHost(httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
 		"name": "Static Capture",
 		"exclude_static": false
-	}`))
+	}`)))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
@@ -664,7 +684,7 @@ func TestHandleRecorderCACertHonorsFormatAfterInitialization(t *testing.T) {
 func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 	stubBrowserRecordingDependencyProbe(t, nil)
 	server := NewServer(ServerConfig{})
-	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	statusReq := fromControllerHost(httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil))
 	statusResp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(statusResp, statusReq)
@@ -688,6 +708,144 @@ func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 	}
 	if got, want := payload.CACertPath, filepath.Join("artifacts", "recorder", "ca-cert.pem"); got != want {
 		t.Fatalf("ca_cert_path = %q, want %q", got, want)
+	}
+}
+
+// The studio offers HTTP proxy recording only when the viewing browser can
+// use the proxy: it must listen, and a loopback-only listener serves only a
+// browser on the controller's host. The CA file's path goes to that browser
+// alone; a remote one downloads the certificate.
+func TestHandleRecorderStatusReportsProxyAvailability(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
+	type proxyStatus struct {
+		Proxy struct {
+			Available             bool   `json:"available"`
+			Running               bool   `json:"running"`
+			ReasonCode            string `json:"reason_code"`
+			Reason                string `json:"reason"`
+			PrivateTargetsAllowed bool   `json:"private_targets_allowed"`
+		} `json:"proxy"`
+		LocalClient bool   `json:"local_client"`
+		CACertPath  string `json:"ca_cert_path"`
+	}
+	status := func(t *testing.T, server *Server, host string, header http.Header) proxyStatus {
+		t.Helper()
+		req := fromControllerHost(httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil))
+		req.Host = host
+		for name, values := range header {
+			req.Header[name] = values
+		}
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+		}
+		var payload proxyStatus
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	stopped := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	got := status(t, stopped, "127.0.0.1:8080", nil)
+	if got.Proxy.Available || got.Proxy.Running || got.Proxy.ReasonCode != recorder.ProxyNotStarted || got.Proxy.Reason == "" {
+		t.Fatalf("a proxy that is not listening must be unavailable with its reason: %+v", got.Proxy)
+	}
+
+	running := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	startTestRecorderProxy(t, running)
+	got = status(t, running, "localhost:8080", nil)
+	if !got.Proxy.Available || !got.Proxy.Running || got.Proxy.ReasonCode != "" || !got.LocalClient || got.CACertPath == "" {
+		t.Fatalf("a local browser must be offered the loopback proxy and the CA path: %+v", got)
+	}
+
+	for _, remote := range []struct {
+		name   string
+		host   string
+		header http.Header
+	}{
+		{name: "ingress host", host: "apexload.example.com"},
+		{name: "forwarded host from a local sidecar", host: "127.0.0.1:8080", header: http.Header{"X-Forwarded-Host": {"apexload.example.com"}}},
+		// An auth sidecar that rewrites Host to its loopback upstream still
+		// names the real client.
+		{name: "sidecar rewriting Host, X-Forwarded-For", host: "127.0.0.1:8080", header: http.Header{"X-Forwarded-For": {"203.0.113.9, 127.0.0.1"}}},
+		{name: "sidecar rewriting Host, Forwarded", host: "127.0.0.1:8080", header: http.Header{"Forwarded": {`for="[2001:db8::7]:4711";proto=https`}}},
+		{name: "sidecar rewriting Host, X-Real-IP", host: "127.0.0.1:8080", header: http.Header{"X-Real-Ip": {"198.51.100.4"}}},
+	} {
+		t.Run(remote.name, func(t *testing.T) {
+			got := status(t, running, remote.host, remote.header)
+			if got.Proxy.Available || !got.Proxy.Running || got.Proxy.ReasonCode != "loopback_only" || got.LocalClient {
+				t.Fatalf("a remote browser cannot reach a loopback proxy: %+v local=%v", got.Proxy, got.LocalClient)
+			}
+			if got.CACertPath != "" {
+				t.Fatalf("the CA path was disclosed to a remote browser: %q", got.CACertPath)
+			}
+		})
+	}
+}
+
+// A remote peer reaching the controller by a loopback name (a port forward
+// from elsewhere) is not on the controller's host either.
+func TestRecorderClientIsLocalRequiresALoopbackPeer(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	req.Host = "localhost:8080"
+	req.RemoteAddr = "192.0.2.10:40000"
+	if server.recorderClientIsLocal(req) {
+		t.Fatal("a non-loopback peer was treated as a browser on the controller's host")
+	}
+	if !server.recorderClientIsLocal(fromControllerHost(req)) {
+		t.Fatal("a loopback peer on a loopback name was not treated as local")
+	}
+	req.Header.Set("Forwarded", "for=127.0.0.1;host=localhost:8080")
+	if !server.recorderClientIsLocal(req) {
+		t.Fatal("loopback-only forwarding headers made a local request remote")
+	}
+}
+
+// A loopback-only proxy serves only the controller's host: a remote browser's
+// start is refused rather than recording what it can never send.
+func TestHandleStartRecordingRefusesARemoteBrowserOnALoopbackProxy(t *testing.T) {
+	server := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	startTestRecorderProxy(t, server)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{"name":"Remote"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "apexload.example.com"
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), `"reason_code":"loopback_only"`) {
+		t.Fatalf("remote start on a loopback proxy = %d %s, want 409 loopback_only", resp.Code, resp.Body.String())
+	}
+	if active := server.recorder.ActiveSessionSummary(); active != nil {
+		t.Fatalf("a refused start left an active session: %+v", active)
+	}
+}
+
+// A session nothing can reach records nothing: start is refused, with the
+// reason, while the proxy is not listening.
+func TestHandleStartRecordingRefusesWithoutAListeningProxy(t *testing.T) {
+	server := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	req := fromControllerHost(httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{"name":"Into the void"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Error      string `json:"error"`
+		Code       string `json:"code"`
+		ReasonCode string `json:"reason_code"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != "proxy_unavailable" || payload.ReasonCode != recorder.ProxyNotStarted || !strings.Contains(payload.Error, "not available") {
+		t.Fatalf("refusal = %+v", payload)
+	}
+	if active := server.recorder.ActiveSessionSummary(); active != nil {
+		t.Fatalf("a refused start left an active session: %+v", active)
 	}
 }
 
@@ -724,7 +882,8 @@ func TestHandleRecorderStatusFiltersActiveSessionByProject(t *testing.T) {
 func TestRecorderResponsesDoNotExposeProxyAuthToken(t *testing.T) {
 	stubBrowserRecordingDependencyProbe(t, nil)
 	t.Setenv("APEXLOAD_RECORDER_PROXY_TOKEN", "proxy-secret")
-	server := NewServer(ServerConfig{})
+	server := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	startTestRecorderProxy(t, server)
 
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
 	statusResp := httptest.NewRecorder()
@@ -740,7 +899,7 @@ func TestRecorderResponsesDoNotExposeProxyAuthToken(t *testing.T) {
 		t.Fatalf("recorder status exposed proxy_auth_token: %s", statusResp.Body.String())
 	}
 
-	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{"name":"No Token Leak"}`))
+	startReq := fromControllerHost(httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{"name":"No Token Leak"}`)))
 	startReq.Header.Set("Content-Type", "application/json")
 	startResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(startResp, startReq)

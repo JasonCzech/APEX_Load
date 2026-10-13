@@ -2,7 +2,7 @@
 
 import { act } from "react";
 import { createRoot, Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import RecordingStudio from "./RecordingStudio";
 import type { WailsDesktopBridge } from "../desktop/desktopBridge";
@@ -499,9 +499,14 @@ describe("RecordingStudio", () => {
     expect(recorderProxyHost(":8081", "https://controller.example.com")).toBe(
       "controller.example.com",
     );
+    // The controller's loopback is not the workstation's: a remote dashboard
+    // keeps the literal address, a local one names localhost.
     expect(
       recorderProxyHost("127.0.0.1:8081", "https://controller.example.com"),
-    ).toBe("localhost");
+    ).toBe("127.0.0.1");
+    expect(recorderProxyHost("127.0.0.1:8081", "http://127.0.0.1:8080")).toBe(
+      "localhost",
+    );
     expect(recorderProxyHostIsLocal("controller.example.com")).toBe(false);
     expect(recorderProxyHostIsLocal("localhost")).toBe(true);
     expect(startCommand).toContain(`SERVICE='USB Bob'\\''s LAN'`);
@@ -3145,7 +3150,7 @@ describe("RecordingStudio", () => {
     );
   });
 
-  it("falls back to the Advanced proxy recorder when browser recording is unavailable", async () => {
+  it("leads with the workstation path and keeps the proxy as an alternative when the controller cannot open a browser", async () => {
     apiMock.getRecorderStatus.mockResolvedValue({
       proxy_addr: ":8081",
       ca_cert_path: "artifacts/recorder/ca-cert.pem",
@@ -3167,7 +3172,18 @@ describe("RecordingStudio", () => {
     expect(
       container.querySelector('[data-testid="browser-recorder-unavailable"]'),
     ).not.toBeNull();
-    expect(container.textContent).toContain("disabled in production mode");
+    // The operator's cause is under "Details for administrators", not the lead.
+    const unavailable = container.querySelector(
+      '[data-testid="browser-recorder-unavailable"]',
+    )!;
+    expect(unavailable.textContent).toContain("Record from your workstation");
+    expect(unavailable.querySelector("details.rec-admin-details")?.textContent).toContain(
+      "disabled in production mode",
+    );
+    expect(unavailable.textContent).not.toContain("Use the proxy recorder option instead");
+    expect(unavailable.textContent).toContain(
+      "You can also record HTTP traffic with the HTTP proxy method.",
+    );
     expect(container.textContent).toContain("Advanced Proxy Recorder");
     expect(container.textContent).toContain("Proxy Setup");
     expect(container.textContent).not.toContain("Download CA Certificate");
@@ -3212,14 +3228,13 @@ describe("RecordingStudio", () => {
     );
     expect(container.textContent).toContain("1Download the Recording Agent");
     expect(container.textContent).toContain("2Run the local command");
-    expect(container.textContent).toContain("3Verify the agent");
-    expect(container.textContent).toContain("4Pair the local bridge");
+    expect(container.textContent).toContain("3Connect to the agent");
+    expect(container.querySelectorAll(".rec-bridge-step-number")).toHaveLength(3);
     expect(container.textContent).toContain(
       "Paste this command into Terminal or PowerShell",
     );
     expect(container.textContent).toContain("Token entered at prompt");
     expect(container.textContent).toContain("paste this pairing token");
-    expect(container.textContent).toContain("Verify Agent");
     const command =
       container.querySelector('[data-testid="browser-recorder-bridge-command"]')
         ?.textContent || "";
@@ -3244,15 +3259,18 @@ describe("RecordingStudio", () => {
       setter.call(inputs[0], "http://127.0.0.1:49152");
       inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const pairButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Pair Local Bridge"),
+    const connectButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Connect",
     );
-    expect(pairButton).toBeDefined();
+    expect(connectButton).toBeDefined();
     await act(async () => {
-      pairButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      connectButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushPromises();
 
+    expect(apiMock.verifyBrowserRecorderBridgeAgent).toHaveBeenCalledWith(
+      "http://127.0.0.1:49152",
+    );
     expect(apiMock.pairBrowserRecorderBridge).toHaveBeenCalledWith(
       "http://127.0.0.1:49152",
       generatedToken,
@@ -3500,7 +3518,7 @@ describe("RecordingStudio", () => {
     );
   });
 
-  it("verifies that the local recording agent is running before pairing", async () => {
+  it("checks that the local recording agent answers, then pairs, on Connect", async () => {
     apiMock.getRecorderStatus.mockResolvedValue({
       proxy_addr: ":8081",
       ca_cert_path: "artifacts/recorder/ca-cert.pem",
@@ -3519,27 +3537,42 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
 
-    const verifyButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Verify Agent"),
+    let resolvePair!: (value: any) => void;
+    apiMock.pairBrowserRecorderBridge.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePair = resolve;
+      }),
     );
-    expect(verifyButton).toBeDefined();
+    const connectButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Connect",
+    );
+    expect(connectButton).toBeDefined();
     await act(async () => {
-      verifyButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      connectButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushPromises();
 
     expect(apiMock.verifyBrowserRecorderBridgeAgent).toHaveBeenCalledWith(
       "http://127.0.0.1:27777",
     );
+    // The agent answered: pairing is under way.
+    expect(apiMock.pairBrowserRecorderBridge).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain(
-      "APEX Load Recording Agent verified",
+      "Connecting to http://127.0.0.1:27777…",
     );
-    expect(container.textContent).toContain(
-      "APEX Load Recording Agent is running at http://127.0.0.1:27777",
-    );
-    expect(container.textContent).toContain(
-      "Click Pair Local Bridge to connect",
-    );
+    expect(container.textContent).toContain("Connecting…");
+    await act(async () => {
+      resolvePair({
+        origin: "http://127.0.0.1:27777",
+        token: "token",
+        session_id: "session",
+        status: { availability: { available: true }, api_origin: "http://127.0.0.1:27777", paired: true },
+      });
+      await Promise.resolve();
+    });
+    await flushPromises();
+    expect(container.textContent).toContain("Local browser recording bridge paired");
+    expect(container.textContent).toContain("Start browser recording");
   });
 
   it("does not navigate to the dashboard shell when the agent download endpoint returns HTML", async () => {
@@ -3631,12 +3664,12 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
 
-    const verifyButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Verify Agent"),
+    const connectButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Connect",
     );
-    expect(verifyButton).toBeDefined();
+    expect(connectButton).toBeDefined();
     await act(async () => {
-      verifyButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      connectButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushPromises();
 
@@ -3646,6 +3679,8 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain(
       "Download and run the agent command",
     );
+    // A missing agent is reported as such; no pairing is attempted.
+    expect(apiMock.pairBrowserRecorderBridge).not.toHaveBeenCalled();
   });
 
   it("copies the bridge command without token argv and regenerates the pairing token", async () => {
@@ -4094,6 +4129,330 @@ describe("RecordingStudio", () => {
     ).toBe("250Requests");
   });
 
+  it("offers only browser actions, with the reason, on a controller whose proxy this browser cannot use", async () => {
+    // No earlier proxy recordings: nothing keeps the proxy method around.
+    apiMock.listRecordings.mockResolvedValue({ sessions: [], count: 0 });
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: {
+        available: false,
+        running: false,
+        reason_code: "production_disabled",
+        reason:
+          "recording proxy is disabled in production mode; set APEXLOAD_RECORDER_PROXY_ALLOW_PRODUCTION=true to opt in explicitly",
+        private_targets_allowed: false,
+      },
+      local_client: false,
+      active: null,
+      browser: {
+        availability: {
+          available: false,
+          code: "production_disabled",
+          reason:
+            "browser recording launches a headed browser on the controller host and is disabled in production mode (set APEXLOAD_BROWSER_RECORDER=on to override)",
+        },
+        active: null,
+      },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    const buttons = Array.from(container.querySelectorAll("button")).map(
+      (button) => button.textContent,
+    );
+    expect(buttons).not.toContain("HTTP proxy (advanced)");
+    expect(buttons).not.toContain("HTTP proxy");
+    const note = container.querySelector(
+      '[data-testid="recording-proxy-unavailable"]',
+    )!;
+    expect(note.textContent).toContain(
+      "HTTP proxy recording isn't available on this controller, so recording uses browser actions.",
+    );
+    expect(note.querySelector("details.rec-admin-details")?.textContent).toContain(
+      "APEXLOAD_RECORDER_PROXY_ALLOW_PRODUCTION",
+    );
+    const proxyCard = container.querySelector<HTMLElement>(
+      '[data-testid="rec-proxy-recorder-option"]',
+    )!;
+    expect(proxyCard.hidden).toBe(true);
+    // The workstation path leads; the operator's switch is tucked away.
+    const browserCard = container.querySelector(
+      '[data-testid="browser-recorder-unavailable"]',
+    )!;
+    expect(browserCard.textContent).toContain(
+      "This controller can't open a browser for you, so the browser opens on your computer instead",
+    );
+    expect(browserCard.textContent).not.toContain("You can also record HTTP traffic");
+    expect(browserCard.querySelector(".rec-browser-unavailable")).toBeNull();
+    expect(browserCard.querySelector("details.rec-admin-details")?.textContent).toContain(
+      "APEXLOAD_BROWSER_RECORDER=on",
+    );
+  });
+
+  it("says a loopback-only proxy serves only browsers on the controller's host", async () => {
+    // No earlier proxy recordings: nothing keeps the proxy method around.
+    apiMock.listRecordings.mockResolvedValue({ sessions: [], count: 0 });
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: {
+        available: false,
+        running: true,
+        reason_code: "loopback_only",
+        reason: "the recording proxy listens on 127.0.0.1:8081 on the controller host",
+      },
+      local_client: false,
+      active: null,
+      browser: { availability: { available: true }, active: null },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    expect(
+      container.querySelector('[data-testid="recording-proxy-unavailable"]')
+        ?.textContent,
+    ).toContain("this controller's proxy only accepts browsers on its own host");
+    // The browser opens where the controller runs, not "on this machine".
+    expect(container.textContent).toContain(
+      "Opens Chromium on the controller's host and records what you do.",
+    );
+    expect(container.textContent).toContain(
+      "Chromium opens on the controller's host with an in-page recording sidebar",
+    );
+  });
+
+  it("returns to browser actions when the proxy becomes unavailable", async () => {
+    // Only the status poll's interval is faked, so the next poll can be run now.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    apiMock.listRecordings.mockResolvedValue({ sessions: [], count: 0 });
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: true, running: true, private_targets_allowed: true },
+      local_client: true,
+      active: null,
+      browser: { availability: { available: true }, active: null },
+    });
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    const proxyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "HTTP proxy (advanced)",
+    )!;
+    await act(async () => {
+      proxyButton.click();
+    });
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="rec-proxy-recorder-option"]')!.hidden,
+    ).toBe(false);
+
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: false, running: false, reason_code: "stopped", reason: "the recording proxy has stopped" },
+      local_client: true,
+      active: null,
+      browser: { availability: { available: true }, active: null },
+    });
+    // The studio's next status poll (every 2 s) learns the proxy is gone.
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+    await flushPromises();
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent === "HTTP proxy (advanced)",
+      ),
+    ).toBe(false);
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="rec-proxy-recorder-option"]')!.hidden,
+    ).toBe(true);
+  });
+
+  it("keeps earlier proxy recordings reachable when the proxy can no longer record", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: false, running: false, reason_code: "production_disabled", reason: "disabled in production mode" },
+      local_client: false,
+      active: null,
+      browser: { availability: { available: true }, active: null },
+    });
+    apiMock.listRecordings.mockResolvedValue({
+      sessions: [
+        {
+          id: "rec-old",
+          name: "Last week",
+          status: "stopped",
+          started_at: "2026-10-01T10:00:00Z",
+          request_count: 4,
+          filters: { exclude_static: true },
+        },
+      ],
+      count: 1,
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    const proxyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "HTTP proxy (advanced)",
+    );
+    expect(proxyButton).toBeDefined();
+    await act(async () => {
+      proxyButton!.click();
+    });
+    await flushPromises();
+    // The recording can still be converted; a new one cannot be started.
+    expect(container.textContent).toContain("Last week");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent === "Convert to Script",
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain("Proxy Setup");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent?.includes("Start Recording"),
+      ),
+    ).toBe(false);
+    expect(
+      container.querySelector('[data-testid="recording-proxy-card-unavailable"]')
+        ?.textContent,
+    ).toContain("Earlier proxy recordings are listed below.");
+  });
+
+  it("does not offer to install the browser on the controller for a paired agent's missing browser", async () => {
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:27777", token: "tok", session_id: "s-1" };
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: true, running: true },
+      local_client: true,
+      active: null,
+      browser: { availability: { available: true }, active: null, install: { status: "idle" } },
+    });
+    apiMock.getBrowserRecorderBridgeStatus.mockResolvedValue({
+      bridge: {
+        availability: {
+          available: false,
+          code: "browsers_not_installed",
+          reason: "Playwright Chromium is not available on the controller host; install the recording browser and retry",
+        },
+        active: null,
+      },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    const card = container.querySelector('[data-testid="browser-recorder-unavailable"]')!;
+    expect(card.textContent).not.toContain("isn't installed on this controller");
+    expect(card.textContent).toContain("Run the command again on your computer");
+    expect(
+      Array.from(card.querySelectorAll("button")).some((button) =>
+        button.textContent?.includes("Install Recording Browser"),
+      ),
+    ).toBe(false);
+  });
+
+  it("warns before recording that private addresses are blocked, and counts blocked requests live", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: true, running: true, private_targets_allowed: false },
+      local_client: true,
+      active: {
+        id: "rec-blocked",
+        name: "Intranet",
+        status: "recording",
+        request_count: 0,
+        started_at: new Date().toISOString(),
+      },
+      browser: { availability: { available: true }, active: null },
+    });
+    apiMock.getRecording.mockResolvedValue({
+      id: "rec-blocked",
+      name: "Intranet",
+      status: "recording",
+      request_count: 0,
+      rejected_requests: 2,
+      last_rejected_host: "10.1.2.3",
+      started_at: new Date().toISOString(),
+      requests: [],
+      filters: { exclude_static: true },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    expect(
+      container.querySelector('[data-testid="recording-proxy-rejected"]')
+        ?.textContent,
+    ).toContain(
+      "2 requests were blocked because 10.1.2.3 is a private or internal address; they were not recorded.",
+    );
+    // Traffic is arriving, so the "is the browser using the proxy?" hint stays away.
+    expect(container.querySelector('[data-testid="recording-proxy-quiet"]')).toBeNull();
+
+    const setupToggle = container.querySelector<HTMLButtonElement>("button.rec-setup-toggle")!;
+    await act(async () => {
+      setupToggle.click();
+    });
+    expect(
+      container.querySelector('[data-testid="recording-proxy-public-only"]')
+        ?.textContent,
+    ).toContain("This controller's proxy records public addresses only.");
+  });
+
+  it("suggests checking the browser's proxy when a recording stays empty", async () => {
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: true, running: true, private_targets_allowed: true },
+      local_client: true,
+      active: { id: "rec-quiet", name: "Quiet", status: "recording", request_count: 0, started_at: startedAt },
+      browser: { availability: { available: true }, active: null },
+    });
+    apiMock.getRecording.mockResolvedValue({
+      id: "rec-quiet",
+      name: "Quiet",
+      status: "recording",
+      request_count: 0,
+      started_at: startedAt,
+      requests: [],
+      filters: { exclude_static: true },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const quiet = container.querySelector('[data-testid="recording-proxy-quiet"]');
+    expect(quiet?.textContent).toContain(
+      "No requests yet. Check that your browser sends its traffic through localhost:8081.",
+    );
+    expect(container.querySelector("#recording-proxy-setup-steps")).toBeNull();
+    await act(async () => {
+      Array.from(quiet!.querySelectorAll("button")).find((button) => button.textContent === "Show proxy setup")!.click();
+    });
+    expect(container.querySelector("#recording-proxy-setup-steps")).not.toBeNull();
+  });
+
   it("fetches the complete request list before opening a summary session", async () => {
     apiMock.listRecordings.mockResolvedValue({
       sessions: [
@@ -4288,12 +4647,14 @@ describe("RecordingStudio", () => {
       root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
     });
     await flushPromises();
-    const pairButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Pair Local Bridge"),
+    const connectButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Connect",
     )!;
-    act(() => {
-      pairButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await act(async () => {
+      connectButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    await flushPromises();
+    expect(apiMock.pairBrowserRecorderBridge).toHaveBeenCalledTimes(1);
 
     apiMock.browserRecorderRequestScope =
       "bridge:http://127.0.0.1:8765:bridge-session-new";
@@ -4343,12 +4704,14 @@ describe("RecordingStudio", () => {
       root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
     });
     await flushPromises();
-    const pairButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Pair Local Bridge"),
+    const connectButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Connect",
     )!;
-    act(() => {
-      pairButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await act(async () => {
+      connectButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    await flushPromises();
+    expect(apiMock.pairBrowserRecorderBridge).toHaveBeenCalledTimes(1);
 
     apiMock.browserRecorderRequestScope =
       "bridge:http://127.0.0.1:27777:paired-session";
@@ -4397,11 +4760,11 @@ describe("RecordingStudio", () => {
       root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
     });
     await flushPromises();
-    const verifyButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Verify Agent"),
+    const connectButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Connect",
     )!;
     act(() => {
-      verifyButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      connectButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     apiMock.browserRecorderRequestScope =
@@ -4415,10 +4778,11 @@ describe("RecordingStudio", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain("APEX Load Recording Agent verified");
     expect(container.textContent).not.toContain(
       "APEX Load Recording Agent is running at http://127.0.0.1:27777",
     );
+    // Nor does the stale check go on to pair with the old origin.
+    expect(apiMock.pairBrowserRecorderBridge).not.toHaveBeenCalled();
   });
 
   it("ignores a recorder action that completes after the active project changes", async () => {
@@ -4512,7 +4876,7 @@ describe("RecordingStudio", () => {
       "no display detected on the controller host for a headed browser",
     );
     expect(unavailable?.textContent).toContain(
-      "Install cannot add a display to this controller",
+      "Installing the browser cannot add a display",
     );
     expect(unavailable?.textContent).toContain(
       "Recording browser install failed",

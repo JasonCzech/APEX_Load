@@ -1695,6 +1695,19 @@
 /* Keep the active journey ahead of launch setup; native hidden must win over card display rules. */
 .recording-studio [hidden] { display: none !important; }
 .rec-mode-picker { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+/* Where the method picker would be when the proxy cannot serve this browser. */
+.rec-method-note { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.rec-method-note p { margin: 0; }
+/* The workstation path: the supported way to record when the controller
+   cannot open a browser itself, so it reads as the card, not a warning. */
+.rec-browser-workstation { display: flex; flex-direction: column; gap: 12px; }
+.rec-browser-workstation > .rec-bridge-panel { margin-top: 0; padding-top: 0; border-top: 0; }
+.rec-bridge-lead,
+.rec-browser-note { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+/* Operator-facing causes (environment switches), out of an author's way. */
+.rec-admin-details { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.rec-admin-details summary { width: fit-content; cursor: pointer; }
+.rec-admin-details p { margin: 6px 0 0; overflow-wrap: anywhere; }
 .rec-browser-launcher { display: flex; flex-direction: column; }
 .rec-browser-launcher > .rec-option-heading { order: -2; }
 .rec-browser-launcher > .brp-panel { order: -1; }

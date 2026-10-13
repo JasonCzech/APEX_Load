@@ -244,7 +244,7 @@ Replay one user and inspect the failing action. Check namespace spelling, extrac
 
 ### Recording agent will not pair
 
-Confirm the recording agent is running on the operator workstation, that the displayed command belongs to the current pairing session, and that Verify Agent can reach its loopback address. Check browser private-network permission and workstation endpoint controls with your administrator. A remote controller cannot reach a workstation's localhost on your behalf. Use the [recording workflow](APPLICATION_USER_GUIDE.md#recording-and-correlation); include agent/build versions and the sanitized pairing error when escalating, but omit pairing tokens.
+Confirm the recording agent is running on the operator workstation, that the displayed command belongs to the current pairing session, and that **Connect** can reach its loopback address. Check browser private-network permission and workstation endpoint controls with your administrator. A remote controller cannot reach a workstation's localhost on your behalf. Use the [recording workflow](APPLICATION_USER_GUIDE.md#recording-and-correlation); include agent/build versions and the sanitized pairing error when escalating, but omit pairing tokens.
 
 ### An import cannot execute
 

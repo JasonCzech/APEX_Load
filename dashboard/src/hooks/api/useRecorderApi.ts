@@ -43,6 +43,9 @@ type RecorderSession = {
   requests?: RecorderRequestRecord[]
   request_count?: number
   last_seq?: number
+  // Requests the proxy refused for a private target, and the latest such host.
+  rejected_requests?: number
+  last_rejected_host?: string
   filters: {
     exclude_static: boolean
     exclude_hosts?: string[]
@@ -75,7 +78,8 @@ type RecorderStartRequest = {
 type RecorderStartResponse = {
   session: RecorderSession
   proxy_addr: string
-  ca_cert_path: string
+  // Only for a browser on the controller's host.
+  ca_cert_path?: string
 }
 
 type RecorderListResponse = {
@@ -90,6 +94,17 @@ type RecorderDeleteResponse = {
 
 type RecorderStatusResponse = {
   proxy_addr?: string
+  // Whether this browser can record through the proxy; reason is operator-facing.
+  proxy?: {
+    available: boolean
+    running?: boolean
+    reason_code?: string
+    reason?: string
+    private_targets_allowed?: boolean
+  }
+  // Whether this browser runs on the controller's host.
+  local_client?: boolean
+  // Only for a browser on the controller's host.
   ca_cert_path?: string
   active?: RecorderActiveStatus
   browser?: {

@@ -83560,6 +83560,8 @@ paths:
                       - exclude_static
                   id:
                     type: string
+                  last_rejected_host:
+                    type: string
                   last_seq:
                     type: integer
                     format: int64
@@ -83567,6 +83569,9 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  rejected_requests:
+                    type: integer
+                    format: int64
                   request_count:
                     type: integer
                     format: int64
@@ -84067,6 +84072,8 @@ paths:
                       - exclude_static
                   id:
                     type: string
+                  last_rejected_host:
+                    type: string
                   last_seq:
                     type: integer
                     format: int64
@@ -84074,6 +84081,9 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  rejected_requests:
+                    type: integer
+                    format: int64
                   request_count:
                     type: integer
                     format: int64
@@ -84513,6 +84523,8 @@ paths:
                       - exclude_static
                   id:
                     type: string
+                  last_rejected_host:
+                    type: string
                   last_seq:
                     type: integer
                     format: int64
@@ -84520,6 +84532,9 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  rejected_requests:
+                    type: integer
+                    format: int64
                   request_count:
                     type: integer
                     format: int64
@@ -84754,6 +84769,8 @@ paths:
                       - exclude_static
                   id:
                     type: string
+                  last_rejected_host:
+                    type: string
                   last_seq:
                     type: integer
                     format: int64
@@ -84761,6 +84778,9 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  rejected_requests:
+                    type: integer
+                    format: int64
                   request_count:
                     type: integer
                     format: int64

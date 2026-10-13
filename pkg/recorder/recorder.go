@@ -124,6 +124,8 @@ type Session struct {
 	LastSeq                  int               `json:"last_seq,omitempty"`
 	DroppedRequests          int64             `json:"dropped_requests,omitempty"`
 	DroppedWebSocketMessages int64             `json:"dropped_websocket_messages,omitempty"`
+	RejectedRequests         int64             `json:"rejected_requests,omitempty"`  // targets the proxy refused to forward to
+	LastRejectedHost         string            `json:"last_rejected_host,omitempty"` // the most recent of them
 	Truncated                bool              `json:"truncated,omitempty"`
 	Warnings                 []string          `json:"warnings,omitempty"`
 	Filters                  SessionFilters    `json:"filters"`
@@ -179,6 +181,8 @@ type Recorder struct {
 	proxyListener    net.Listener
 	proxyDone        chan struct{}
 	proxyStopped     bool
+	proxyStartCode   string // why the last StartProxy failed; "" once running
+	proxyStartReason string
 	proxyClient      *http.Client
 	addr             string
 	proxyAuthToken   string
@@ -643,6 +647,8 @@ func (s *Session) snapshotWindow(includeRequests bool, sinceSeq int, tail int) *
 		LastSeq:                  s.seq,
 		DroppedRequests:          s.DroppedRequests,
 		DroppedWebSocketMessages: s.DroppedWebSocketMessages,
+		RejectedRequests:         s.RejectedRequests,
+		LastRejectedHost:         s.LastRejectedHost,
 		Truncated:                s.Truncated,
 		Warnings:                 append([]string(nil), s.Warnings...),
 		Filters:                  s.Filters,
@@ -767,12 +773,16 @@ func (r *Recorder) StartProxy() error {
 		return fmt.Errorf("recording proxy is already running")
 	}
 	if err := r.validateProxyStartup(); err != nil {
+		r.noteProxyStartFailureLocked(err)
 		return err
 	}
 	listener, err := net.Listen("tcp", r.addr)
 	if err != nil {
-		return fmt.Errorf("listen recording proxy on %s: %w", r.addr, err)
+		err = proxyStartupFailure(ProxyBindFailed, fmt.Errorf("listen recording proxy on %s: %w", r.addr, err))
+		r.noteProxyStartFailureLocked(err)
+		return err
 	}
+	r.proxyStartCode, r.proxyStartReason = "", ""
 	server := &http.Server{
 		Addr:           r.addr,
 		Handler:        http.HandlerFunc(r.handleProxy),
@@ -844,9 +854,67 @@ func (r *Recorder) ProxyAddr() string {
 }
 
 func (r *Recorder) ProxyRunning() bool {
+	return r.ProxyState().Running
+}
+
+// ProxyState is whether the recording proxy is listening, where, and — when it
+// is not — why, as a reason code (ProxyNotStarted, ProxyProductionDisabled,
+// ProxyConfiguration, ProxyBindFailed, ProxyStopped) and the operator-facing
+// cause.
+type ProxyState struct {
+	Running               bool
+	Addr                  string
+	Loopback              bool
+	ReasonCode            string
+	Reason                string
+	PrivateTargetsAllowed bool
+}
+
+func (r *Recorder) ProxyState() ProxyState {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.proxy != nil
+	state := ProxyState{
+		Running:               r.proxy != nil,
+		Addr:                  r.addr,
+		Loopback:              proxyBindIsLoopback(r.addr),
+		PrivateTargetsAllowed: proxyEnvBool(envProxyAllowPrivateTargets),
+	}
+	switch {
+	case state.Running:
+	case r.proxyStopped:
+		state.ReasonCode, state.Reason = ProxyStopped, "the recording proxy has stopped"
+	case r.proxyStartCode != "":
+		state.ReasonCode, state.Reason = r.proxyStartCode, r.proxyStartReason
+	default:
+		state.ReasonCode, state.Reason = ProxyNotStarted, "the recording proxy has not started"
+	}
+	return state
+}
+
+func (r *Recorder) noteProxyStartFailureLocked(err error) {
+	var startup *proxyStartupError
+	if errors.As(err, &startup) {
+		r.proxyStartCode = startup.code
+	} else {
+		r.proxyStartCode = ProxyConfiguration
+	}
+	r.proxyStartReason = err.Error()
+}
+
+// noteRejectedTarget counts a request the proxy refused to forward to a
+// disallowed target, so the recording can say why the browser's traffic is
+// missing from it. Other refusals (malformed targets) are not counted.
+func (r *Recorder) noteRejectedTarget(session *Session, host string, err error) {
+	if session == nil || !isRejectedProxyTarget(err) {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.Status != "recording" {
+		return
+	}
+	session.RejectedRequests++
+	session.LastRejectedHost = strings.Trim(strings.TrimSpace(host), "[]")
 }
 
 func (r *Recorder) ProxyAuthToken() string {
@@ -889,6 +957,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 		targetURL = "http://" + req.Host + req.URL.String()
 	}
 	if err := validateProxyTargetURL(targetURL); err != nil {
+		r.noteRejectedTarget(session, proxyTargetHostname(targetURL), err)
 		http.Error(w, "proxy target rejected: "+err.Error(), http.StatusForbidden)
 		return
 	}
@@ -914,6 +983,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 
 	resp, err := r.proxyClient.Do(proxyReq)
 	if err != nil {
+		r.noteRejectedTarget(session, proxyReq.URL.Hostname(), err)
 		http.Error(w, "upstream error: "+err.Error(), http.StatusBadGateway)
 		return
 	}

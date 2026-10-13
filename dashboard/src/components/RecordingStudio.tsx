@@ -120,6 +120,10 @@ interface RecordingSession {
   requests?: RecordedRequest[];
   request_count?: number;
   last_seq?: number;
+  // Requests the proxy refused for their target (a private address) and the
+  // most recent such host; the browser got a 403 and nothing was recorded.
+  rejected_requests?: number;
+  last_rejected_host?: string;
   filters: {
     exclude_static: boolean;
     exclude_hosts?: string[];
@@ -232,8 +236,20 @@ function recorderImportReviewScript(
   return isScriptDefinitionLike(script) ? script : null;
 }
 
+// Whether this browser can record through the controller's HTTP proxy, and
+// why not. reason is operator-facing; reason_code is what the studio words.
+interface RecorderProxyAvailability {
+  available: boolean;
+  running?: boolean;
+  reason_code?: string;
+  reason?: string;
+  private_targets_allowed?: boolean;
+}
+
 interface RecorderStatus {
   proxy_addr?: string;
+  proxy?: RecorderProxyAvailability;
+  local_client?: boolean;
   proxy_auth_token?: string;
   ca_cert_path?: string;
   active?: {
@@ -417,6 +433,31 @@ function recordingAgentDownloadConfig(): { url: string; managed: boolean } {
     url: `${trimTrailingSlash(API_ORIGIN)}${DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH}`,
     managed: true,
   };
+}
+
+// Requests the proxy blocked for their target, in words for the author.
+function proxyRejectionSummary(session: RecordingSession): string {
+  const count = session.rejected_requests ?? 0;
+  const host = session.last_rejected_host?.trim();
+  const what = count === 1 ? "1 request was" : `${count} requests were`;
+  return `${what} blocked because ${host ? `${host} is` : "the target is"} a private or internal address; ${count === 1 ? "it was" : "they were"} not recorded.`;
+}
+
+// How long a proxy recording may stay empty before the studio suggests the
+// browser is not using the proxy.
+const PROXY_QUIET_HINT_MS = 20_000;
+
+// The author-facing words for a proxy this browser cannot record through;
+// the operator's cause goes under "Details for administrators".
+function proxyUnavailableExplanation(
+  availability: RecorderProxyAvailability | null,
+): { summary: string; details: string } | null {
+  if (!availability || availability.available) return null;
+  const summary =
+    availability.reason_code === "loopback_only"
+      ? "HTTP proxy recording isn't available here: this controller's proxy only accepts browsers on its own host, so recording uses browser actions."
+      : "HTTP proxy recording isn't available on this controller, so recording uses browser actions.";
+  return { summary, details: availability.reason?.trim() || "" };
 }
 
 function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
@@ -612,6 +653,10 @@ export default function RecordingStudio({
   const [proxyAddr, setProxyAddr] = useState("");
   const [proxyAuthToken, setProxyAuthToken] = useState("");
   const [caCertPath, setCaCertPath] = useState("");
+  const [proxyAvailability, setProxyAvailability] =
+    useState<RecorderProxyAvailability | null>(null);
+  // Whether this browser runs on the controller's host; null until known.
+  const [localClient, setLocalClient] = useState<boolean | null>(null);
   const [macOSNetworkService, setMacOSNetworkService] = useState(
     DEFAULT_MACOS_NETWORK_SERVICE,
   );
@@ -842,11 +887,52 @@ export default function RecordingStudio({
 
   const proxyPort = recorderProxyPort(proxyAddr);
   const proxyHost = recorderProxyHost(proxyAddr, currentDashboardOrigin());
-  const proxyHostIsLocal = recorderProxyHostIsLocal(proxyHost);
+  // Only a browser on the controller's host reaches a loopback proxy.
+  const proxyHostIsLocal = recorderProxyHostIsLocal(proxyHost) && localClient !== false;
 
   useEffect(() => {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
+
+  // Leave the HTTP proxy method once the controller says this browser cannot
+  // use it, unless there is a proxy recording to show there: a live one (so it
+  // can be stopped) or earlier ones (to convert, export or delete).
+  const hasStoppedProxySessions = sessions.some((session) => session.status === "stopped");
+  useEffect(() => {
+    if (
+      proxyAvailability?.available === false &&
+      !activeSession &&
+      !hasStoppedProxySessions &&
+      recordingMode === "proxy"
+    ) {
+      setRecordingMode("browser");
+    }
+  }, [activeSession, hasStoppedProxySessions, proxyAvailability?.available, recordingMode]);
+
+  // A proxy recording that stays empty suggests the browser is not sending
+  // its traffic through the proxy; say so once it has been quiet a while.
+  const activeSessionRequestCount =
+    activeSession?.request_count ?? activeSession?.requests?.length ?? 0;
+  const activeSessionId = activeSession?.id;
+  const activeSessionStatus = activeSession?.status;
+  const activeSessionStartedAt = activeSession?.started_at;
+  const [quietProxySessionId, setQuietProxySessionId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!activeSessionId || activeSessionStatus !== "recording" || activeSessionRequestCount > 0) {
+      return undefined;
+    }
+    const startedAt = Date.parse(activeSessionStartedAt || "");
+    const wait = Number.isNaN(startedAt)
+      ? PROXY_QUIET_HINT_MS
+      : Math.max(0, startedAt + PROXY_QUIET_HINT_MS - Date.now());
+    const timer = window.setTimeout(() => setQuietProxySessionId(activeSessionId), wait);
+    return () => window.clearTimeout(timer);
+  }, [activeSessionId, activeSessionStatus, activeSessionStartedAt, activeSessionRequestCount]);
+  const proxyQuiet =
+    !!activeSession &&
+    quietProxySessionId === activeSession.id &&
+    activeSession.status === "recording" &&
+    activeSessionRequestCount === 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -1205,6 +1291,13 @@ export default function RecordingStudio({
         setProxyAddr(recorderStatus.proxy_addr || "");
         setProxyAuthToken(recorderStatus.proxy_auth_token || "");
         setCaCertPath(recorderStatus.ca_cert_path || "");
+        // A controller that predates the field always offered its proxy.
+        setProxyAvailability(recorderStatus.proxy ?? { available: true });
+        setLocalClient(
+          typeof recorderStatus.local_client === "boolean"
+            ? recorderStatus.local_client
+            : null,
+        );
         let liveBrowser = recorderStatus.browser?.active;
         if (api.browserRecorderBridge) {
           try {
@@ -1287,6 +1380,8 @@ export default function RecordingStudio({
       setProxyAddr("");
       setProxyAuthToken("");
       setCaCertPath("");
+      setProxyAvailability(null);
+      setLocalClient(null);
       setBrowserAvailability(null);
       setInstallState(null);
       setBrowserDevices([]);
@@ -1390,7 +1485,7 @@ export default function RecordingStudio({
     if (!token) return;
     setBridgePairing(true);
     setBridgeStatusTone("info");
-    setBridgeStatus("");
+    setBridgeStatus(`Connecting to ${origin}…`);
     try {
       const paired = await api.pairBrowserRecorderBridge(origin, token);
       // A successful pair deliberately changes the recorder request scope from
@@ -1424,7 +1519,9 @@ export default function RecordingStudio({
     }
   };
 
-  const handleVerifyBridgeAgent = async () => {
+  // Whether the Recording Agent answers at the bridge address; a failure says
+  // why in the bridge status. False too when the recorder scope moved on.
+  const verifyBridgeAgent = async (): Promise<boolean> => {
     const sourceRecorderScope = refreshScopeRef.current;
     const origin = bridgeOrigin.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/.+/i.test(origin)) {
@@ -1432,31 +1529,38 @@ export default function RecordingStudio({
       setBridgeStatus(
         `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`,
       );
-      return;
+      return false;
     }
     setBridgeVerifying(true);
     setBridgeStatusTone("info");
-    setBridgeStatus(`Checking APEX Load Recording Agent at ${origin}...`);
+    setBridgeStatus(`Checking APEX Load Recording Agent at ${origin}…`);
     try {
       await api.verifyBrowserRecorderBridgeAgent(origin);
-      if (refreshScopeRef.current !== sourceRecorderScope) return;
+      if (refreshScopeRef.current !== sourceRecorderScope) return false;
       setBridgeOrigin(origin);
-      setBridgeStatusTone("success");
+      setBridgeStatusTone("info");
       setBridgeStatus(
-        `APEX Load Recording Agent is running at ${origin}. Click Pair Local Bridge to connect.`,
+        `APEX Load Recording Agent is running at ${origin}. Connecting…`,
       );
-      showFeedback("APEX Load Recording Agent verified");
+      return true;
     } catch (e: any) {
-      if (refreshScopeRef.current !== sourceRecorderScope) return;
+      if (refreshScopeRef.current !== sourceRecorderScope) return false;
       const message = bridgeVerificationErrorMessage(e, origin);
       setBridgeStatusTone("error");
       setBridgeStatus(message);
       showFeedback(message, "error");
+      return false;
     } finally {
       if (refreshScopeRef.current === sourceRecorderScope) {
         setBridgeVerifying(false);
       }
     }
+  };
+
+  // Connect = check that the agent answers, then pair with it, so a missing
+  // agent is reported as such rather than as a pairing failure.
+  const handleConnectBridge = async () => {
+    if (await verifyBridgeAgent()) await handlePairBridge();
   };
 
   const handleDisconnectBridge = () => {
@@ -1623,8 +1727,9 @@ export default function RecordingStudio({
     try {
       await api.stopRecording(activeSession.id);
       if (!isCurrentProject()) return;
+      const blocked = activeSession.rejected_requests ?? 0;
       showFeedback(
-        `Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured`,
+        `Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured${blocked > 0 ? `, ${blocked} blocked (private address)` : ""}`,
       );
       setActiveSession(null);
       void refresh();
@@ -2441,6 +2546,28 @@ export default function RecordingStudio({
     browserAvailability,
     installState,
   );
+  // Installing fixes only this controller lacking the browser, and only when
+  // it can install one; a paired agent's missing browser is the workstation's.
+  const browserInstallOffered =
+    !api.browserRecorderBridge &&
+    !!installState &&
+    (canRetryBrowserInstall || installState.status === "installing");
+  const proxyOffered = proxyAvailability?.available === true;
+  // A live proxy session keeps the proxy method usable so it can be stopped.
+  const proxyCanRecord = proxyOffered || !!activeSession;
+  const proxyUnavailableNote = proxyUnavailableExplanation(proxyAvailability);
+  const browserLaunchDescription = api.browserRecorderBridge
+    ? "Opens Chromium on your computer through the Recording Agent and records what you do."
+    : !browserAvailability?.available
+      ? "Records what you do in a Chromium browser and turns it into a script."
+      : localClient === false
+        ? "Opens Chromium on the controller's host and records what you do."
+        : "Opens Chromium on this computer and records what you do.";
+  const browserWindowLocation = api.browserRecorderBridge
+    ? "Chromium opens on your computer"
+    : localClient === false
+      ? "Chromium opens on the controller's host"
+      : "Chromium opens on this computer";
   const installStatusTone = installState
     ? browserRecorderInstallTone(installState.status)
     : "info";
@@ -2483,10 +2610,22 @@ export default function RecordingStudio({
         <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>
       )}
 
-      <div className="rec-mode-picker" role="group" aria-label="Recording method">
-        <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
-        <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
-      </div>
+      {proxyCanRecord || hasStoppedProxySessions ? (
+        <div className="rec-mode-picker" role="group" aria-label="Recording method">
+          <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
+          <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
+        </div>
+      ) : proxyUnavailableNote ? (
+        <div className="rec-method-note" data-testid="recording-proxy-unavailable">
+          <p>{proxyUnavailableNote.summary}</p>
+          {proxyUnavailableNote.details && (
+            <details className="rec-admin-details">
+              <summary>Details for administrators</summary>
+              <p>{proxyUnavailableNote.details}</p>
+            </details>
+          )}
+        </div>
+      ) : null}
       <RecordingProfilesCard
         projectId={activeProject?.id}
         selectedId={recordingProfileId}
@@ -2496,56 +2635,70 @@ export default function RecordingStudio({
         <div className="rec-controls-card rec-browser-launcher" hidden={recordingMode !== 'browser'}>
           <div className="rec-option-heading">
             <h3 className="rec-section-title">Record Browser Session</h3>
-            <p>
-              Launch a controlled Chromium session from this controller and
-              capture user actions directly.
-            </p>
+            <p>{browserLaunchDescription}</p>
           </div>
-          {!browserAvailability?.available ? (
+          {!browserAvailability ? (
+            <p className="rec-browser-note" role="status">
+              Checking how this controller can record…
+            </p>
+          ) : !browserAvailability.available ? (
             <div
-              className="rec-browser-unavailable"
+              className="rec-browser-workstation"
               data-testid="browser-recorder-unavailable"
             >
-              <div className="rec-browser-unavailable-title">
-                Browser recording is not available on this controller
-              </div>
-              <div>
-                {browserUnavailableReason || "Checking controller capability."}
-              </div>
-              <div>
-                {browserUnavailableDueToDisplay
-                  ? "Install cannot add a display to this controller. Run the controller on a desktop host with DISPLAY or WAYLAND_DISPLAY, or use the proxy recorder option instead."
-                  : "Use the proxy recorder option instead."}
-              </div>
-              {installStatusVisible && (
-                <div
-                  className={`rec-install-status ${installStatusTone}`}
-                  role={installState.status === "failed" ? "alert" : "status"}
-                >
-                  <strong>
-                    {browserRecorderInstallLabel(installState.status)}
-                  </strong>
-                  {installState.error && <span>{installState.error}</span>}
+              {browserInstallOffered && (
+                <div className="rec-browser-unavailable">
+                  <div className="rec-browser-unavailable-title">
+                    The recording browser isn't installed on this controller
+                  </div>
+                  <div>
+                    Install it here, or record from your workstation below.
+                  </div>
+                  {installStatusVisible && (
+                    <div
+                      className={`rec-install-status ${installStatusTone}`}
+                      role={installState.status === "failed" ? "alert" : "status"}
+                    >
+                      <strong>
+                        {browserRecorderInstallLabel(installState.status)}
+                      </strong>
+                      {installState.error && <span>{installState.error}</span>}
+                    </div>
+                  )}
+                  {installState && canRetryBrowserInstall && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleInstallBrowsers}
+                      disabled={installState.status === "installing"}
+                    >
+                      {installState.status === "installing"
+                        ? "Installing…"
+                        : "Install Recording Browser"}
+                    </button>
+                  )}
                 </div>
               )}
-              {installState && canRetryBrowserInstall && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={handleInstallBrowsers}
-                  disabled={installState.status === "installing"}
-                >
-                  {installState.status === "installing"
-                    ? "Installing…"
-                    : "Install Recording Browser"}
-                </button>
+              {api.browserRecorderBridge && browserUnavailableReason && (
+                <div className="rec-browser-unavailable" role="alert">
+                  {browserUnavailableReason}
+                </div>
               )}
               <div
                 className="rec-bridge-panel"
                 data-testid="browser-recorder-bridge-panel"
               >
                 <div className="rec-browser-unavailable-title">
-                  Use a local recording bridge
+                  {browserInstallOffered
+                    ? "Or record from your workstation"
+                    : "Record from your workstation"}
                 </div>
+                <p className="rec-bridge-lead">
+                  {api.browserRecorderBridge
+                    ? "Run the command again on your computer, then connect to the Recording Agent."
+                    : browserInstallOffered
+                      ? "The browser opens on your computer instead, through the APEX Load Recording Agent."
+                      : "This controller can't open a browser for you, so the browser opens on your computer instead, through the APEX Load Recording Agent."}
+                </p>
                 <div className="rec-bridge-steps">
                   <div className="rec-bridge-step">
                     <div className="rec-bridge-step-number">1</div>
@@ -2697,38 +2850,27 @@ export default function RecordingStudio({
                     <div className="rec-bridge-step-number">3</div>
                     <div className="rec-bridge-step-content">
                       <div className="rec-bridge-step-title">
-                        Verify the agent
+                        Connect to the agent
                       </div>
-                      <div className="rec-form-row">
-                        <div className="rec-label">Bridge URL</div>
+                      <label className="rec-form-row">
+                        <span className="rec-label">Agent address</span>
                         <input
                           className="rec-input"
                           value={bridgeOrigin}
                           onChange={(e) => setBridgeOrigin(e.target.value)}
-                          placeholder="http://127.0.0.1:49152"
+                          placeholder="http://127.0.0.1:27777"
                         />
-                      </div>
+                      </label>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={handleVerifyBridgeAgent}
-                        disabled={bridgeVerifying}
+                        onClick={handleConnectBridge}
+                        disabled={bridgeVerifying || bridgePairing}
                       >
-                        {bridgeVerifying ? "Verifying…" : "Verify Agent"}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="rec-bridge-step">
-                    <div className="rec-bridge-step-number">4</div>
-                    <div className="rec-bridge-step-content">
-                      <div className="rec-bridge-step-title">
-                        Pair the local bridge
-                      </div>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={handlePairBridge}
-                        disabled={bridgePairing}
-                      >
-                        {bridgePairing ? "Pairing…" : "Pair Local Bridge"}
+                        {bridgeVerifying
+                          ? "Checking the agent…"
+                          : bridgePairing
+                            ? "Connecting…"
+                            : "Connect"}
                       </button>
                     </div>
                   </div>
@@ -2739,6 +2881,38 @@ export default function RecordingStudio({
                   </div>
                 )}
               </div>
+              {!api.browserRecorderBridge && browserUnavailableReason && (
+                <details className="rec-admin-details">
+                  <summary>Details for administrators</summary>
+                  <p>{browserUnavailableReason}</p>
+                  {browserUnavailableDueToDisplay && (
+                    <p>
+                      Installing the browser cannot add a display. Run the
+                      controller on a desktop host with DISPLAY or
+                      WAYLAND_DISPLAY to record on it.
+                    </p>
+                  )}
+                  {installStatusVisible && !browserInstallOffered && (
+                    <p>
+                      {browserRecorderInstallLabel(installState.status)}
+                      {installState.error ? `: ${installState.error}` : ""}
+                    </p>
+                  )}
+                </details>
+              )}
+              {proxyOffered && (
+                <p className="rec-browser-note">
+                  You can also record HTTP traffic with the{" "}
+                  <button
+                    type="button"
+                    className="rec-inline-action"
+                    onClick={() => setRecordingMode("proxy")}
+                  >
+                    HTTP proxy
+                  </button>{" "}
+                  method.
+                </p>
+              )}
             </div>
           ) : (
             <div className="rec-start-form">
@@ -2927,13 +3101,13 @@ export default function RecordingStudio({
                 </svg>
                 {browserStartInProgress ? "Starting Browser…" : "Start browser recording"}
               </button>
-              <div className="rec-browser-unavailable">
-                A Chromium window opens on this machine with an in-page
-                recording sidebar (sections, transactions, notes, recent steps,
-                pause and verification picker) you can drag to any corner.
-                Manage the session from there or the control panel docked below
-                — which also opens as a compact popup window.
-              </div>
+              <p className="rec-browser-note">
+                {browserWindowLocation} with an in-page recording sidebar
+                (sections, transactions, notes, recent steps, pause and
+                verification picker) you can drag to any corner. Manage the
+                session from there or from the control panel docked below,
+                which also opens as a compact popup window.
+              </p>
             </div>
           )}
 
@@ -3027,6 +3201,8 @@ export default function RecordingStudio({
             </p>
           </div>
 
+          {proxyCanRecord ? (
+          <>
           {/* Proxy Setup */}
           <div className="rec-setup-section">
             <button
@@ -3232,6 +3408,22 @@ export default function RecordingStudio({
                         >
                           Copy password
                         </button>
+                      </div>
+                    )}
+                    {proxyAvailability?.private_targets_allowed === false && (
+                      <div className="rec-step-note rec-step-note-troubleshoot" data-testid="recording-proxy-public-only">
+                        This controller's proxy records public addresses only.
+                        Requests to private or internal addresses (such as
+                        10.x.x.x, 192.168.x.x or localhost) are blocked unless
+                        an administrator allows private targets.
+                        <details className="rec-admin-details">
+                          <summary>Details for administrators</summary>
+                          <p>
+                            Set APEXLOAD_RECORDER_ALLOW_PRIVATE_TARGETS=true on
+                            the controller to record applications on private
+                            networks.
+                          </p>
+                        </details>
                       </div>
                     )}
                     {!proxyHostIsLocal && (
@@ -3478,6 +3670,25 @@ export default function RecordingStudio({
                     <span className="rec-stat-label">Started</span>
                   </div>
                 </div>
+                {(activeSession.rejected_requests ?? 0) > 0 && (
+                  <div className="rec-feedback error" role="alert" data-testid="recording-proxy-rejected">
+                    {proxyRejectionSummary(activeSession)} An administrator can
+                    allow private targets for the recording proxy.
+                  </div>
+                )}
+                {proxyQuiet && (activeSession.rejected_requests ?? 0) === 0 && (
+                  <div className="rec-feedback" role="status" data-testid="recording-proxy-quiet">
+                    No requests yet. Check that your browser sends its traffic
+                    through {proxyHost}:{proxyPort}.{" "}
+                    <button
+                      type="button"
+                      className="rec-inline-action"
+                      onClick={() => setShowSetup(true)}
+                    >
+                      Show proxy setup
+                    </button>
+                  </div>
+                )}
 
                 {/* Live request feed */}
                 {activeSession.requests &&
@@ -3557,6 +3768,17 @@ export default function RecordingStudio({
               </div>
             )}
           </div>
+          </>
+          ) : (
+            // Earlier proxy recordings stay reachable below; a new one cannot start.
+            <div className="rec-method-note" data-testid="recording-proxy-card-unavailable">
+              <p>
+                {proxyUnavailableNote?.summary ||
+                  "HTTP proxy recording isn't available on this controller."}{" "}
+                Earlier proxy recordings are listed below.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -3605,6 +3827,9 @@ export default function RecordingStudio({
                   </span>
                   <span className="rec-session-meta">
                     <span>{session.base_url || "No base URL"}</span>
+                    {(session.rejected_requests ?? 0) > 0 && (
+                      <span>{session.rejected_requests} blocked (private address)</span>
+                    )}
                     <span>{formatDateTime(session.started_at, { seconds: true })}</span>
                   </span>
                 </button>

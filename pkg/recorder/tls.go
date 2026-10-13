@@ -527,6 +527,10 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 	}
 	hostname := req.URL.Hostname()
 	if err := validateProxyTargetHost(hostname); err != nil {
+		r.mu.RLock()
+		session := r.active
+		r.mu.RUnlock()
+		r.noteRejectedTarget(session, hostname, err)
 		http.Error(w, "proxy target rejected: "+err.Error(), http.StatusForbidden)
 		return
 	}
@@ -802,6 +806,7 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
+		r.noteRejectedTarget(session, hostname, err)
 		slog.Debug("upstream request failed", "url", recorderLogURL(targetURL), "err", recorderLogError(err))
 		writeHTTPError(tlsConn, http.StatusBadGateway, "upstream error: "+err.Error())
 		return

@@ -10,18 +10,18 @@ short-lived token.
 1. Install the trusted `apexload-record-agent` package from the dashboard's
    **Download the APEX Load Recording Agent** link.
 2. Open Recording Studio in the dashboard.
-3. Copy the generated terminal command.
-4. Paste the whole command into Terminal or PowerShell.
-5. Click **Verify Agent** to confirm the local bridge is reachable.
-6. Click **Pair Local Bridge** in the dashboard.
+3. Copy the generated terminal command and paste it into Terminal or PowerShell.
+4. When the agent asks, paste the pairing token shown under the command.
+5. Click **Connect** in the dashboard. It checks that the agent answers, then
+   pairs with it.
 
-The token is already included in the generated command as `--token`. Users do
-not paste it separately.
+The command reads the token from standard input (`--token-stdin`), so it never
+appears in the command line or the process arguments.
 
 Example:
 
 ```bash
-apexload-record-agent --addr 127.0.0.1:27777 --token <dashboard-token> --allow-origin 'https://apexload.example.com'
+apexload-record-agent --addr 127.0.0.1:27777 --token-stdin --allow-origin 'https://apexload.example.com'
 ```
 
 ## Privileges

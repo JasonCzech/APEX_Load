@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -27,6 +28,45 @@ const (
 	envProxyAuthToken            = "APEXLOAD_RECORDER_PROXY_TOKEN"
 	envRecorderTLSInsecure       = "APEXLOAD_RECORDER_TLS_INSECURE_SKIP_VERIFY"
 )
+
+// Why the recording proxy is not running, as ProxyState reports it.
+const (
+	ProxyNotStarted         = "not_started"
+	ProxyProductionDisabled = "production_disabled"
+	ProxyConfiguration      = "configuration"
+	ProxyBindFailed         = "bind_failed"
+	ProxyStopped            = "stopped"
+)
+
+// proxyStartupError is a refusal to start the proxy, with the reason code
+// ProxyState reports for it. Its message is the operator-facing cause.
+type proxyStartupError struct {
+	code string
+	err  error
+}
+
+func (e *proxyStartupError) Error() string { return e.err.Error() }
+func (e *proxyStartupError) Unwrap() error { return e.err }
+
+func proxyStartupFailure(code string, err error) error {
+	return &proxyStartupError{code: code, err: err}
+}
+
+// proxyTargetRejectedError is a target the proxy will not forward to: a
+// private, loopback or link-local address unless private targets are allowed.
+// Sessions count these, so the studio can say why traffic is missing.
+type proxyTargetRejectedError struct{ message string }
+
+func (e *proxyTargetRejectedError) Error() string { return e.message }
+
+func rejectedProxyTarget(format string, args ...any) error {
+	return &proxyTargetRejectedError{message: fmt.Sprintf(format, args...)}
+}
+
+func isRejectedProxyTarget(err error) bool {
+	var rejected *proxyTargetRejectedError
+	return errors.As(err, &rejected)
+}
 
 func proxyProductionMode() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ENV"))) {
@@ -63,23 +103,23 @@ func proxyBindIsLoopback(addr string) bool {
 
 func (r *Recorder) validateProxyStartup() error {
 	if r.requireProxyAuth && strings.TrimSpace(r.proxyAuthToken) == "" {
-		return fmt.Errorf("recording proxy authentication token is required")
+		return proxyStartupFailure(ProxyConfiguration, fmt.Errorf("recording proxy authentication token is required"))
 	}
 	if r.requireProxyAuth && len(r.proxyAuthToken) < minStrictProxyAuthTokenBytes {
-		return fmt.Errorf("recording proxy authentication token must be at least %d bytes", minStrictProxyAuthTokenBytes)
+		return proxyStartupFailure(ProxyConfiguration, fmt.Errorf("recording proxy authentication token must be at least %d bytes", minStrictProxyAuthTokenBytes))
 	}
 	if r.requireLoopback && !proxyBindIsLoopback(r.addr) {
-		return fmt.Errorf("recording proxy strict mode requires a loopback bind, got %q", r.addr)
+		return proxyStartupFailure(ProxyConfiguration, fmt.Errorf("recording proxy strict mode requires a loopback bind, got %q", r.addr))
 	}
 	strictProtectedProxy := r.requireProxyAuth && r.requireLoopback
 	if proxyProductionMode() && !strictProtectedProxy && !proxyEnvBool(envProxyAllowProduction) {
-		return fmt.Errorf("recording proxy is disabled in production mode; set %s=true to opt in explicitly", envProxyAllowProduction)
+		return proxyStartupFailure(ProxyProductionDisabled, fmt.Errorf("recording proxy is disabled in production mode; set %s=true to opt in explicitly", envProxyAllowProduction))
 	}
 	if !proxyBindIsLoopback(r.addr) && strings.TrimSpace(r.proxyAuthToken) == "" && !proxyEnvBool(envProxyAllowUnauthenticated) {
-		return fmt.Errorf("recording proxy wide bind %q requires %s or explicit %s=true", r.addr, envProxyAuthToken, envProxyAllowUnauthenticated)
+		return proxyStartupFailure(ProxyConfiguration, fmt.Errorf("recording proxy wide bind %q requires %s or explicit %s=true", r.addr, envProxyAuthToken, envProxyAllowUnauthenticated))
 	}
 	if proxyProductionMode() && proxyEnvBool(envRecorderTLSInsecure) {
-		return fmt.Errorf("%s is a development-only override and cannot be enabled in production", envRecorderTLSInsecure)
+		return proxyStartupFailure(ProxyConfiguration, fmt.Errorf("%s is a development-only override and cannot be enabled in production", envRecorderTLSInsecure))
 	}
 	return nil
 }
@@ -184,6 +224,15 @@ func validateProxyTargetURL(raw string) error {
 	return validateProxyTargetHost(parsed.Hostname())
 }
 
+// proxyTargetHostname is a target URL's host, for counting a rejection.
+func proxyTargetHostname(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
+}
+
 func validateProxyTargetHost(host string) error {
 	host = strings.Trim(strings.TrimSpace(host), "[]")
 	if host == "" {
@@ -194,10 +243,10 @@ func validateProxyTargetHost(host string) error {
 	}
 	lower := strings.ToLower(host)
 	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
-		return fmt.Errorf("proxy target host %q is not allowed", host)
+		return rejectedProxyTarget("proxy target host %q is not allowed", host)
 	}
 	if ip := net.ParseIP(host); ip != nil && disallowedProxyTargetIP(ip) {
-		return fmt.Errorf("proxy target host %q is not allowed", host)
+		return rejectedProxyTarget("proxy target host %q is not allowed", host)
 	}
 	return nil
 }
@@ -219,7 +268,7 @@ func proxyDialControl(network, address string, _ syscall.RawConn) error {
 		return fmt.Errorf("unresolved proxy target host %q", host)
 	}
 	if disallowedProxyTargetIP(ip) {
-		return fmt.Errorf("proxy target address %s is not allowed", ip)
+		return rejectedProxyTarget("proxy target address %s is not allowed", ip)
 	}
 	return nil
 }
