@@ -295,6 +295,9 @@ type GroupMetric struct {
 	// merges generators' windows, which can differ in length; it is not
 	// sent over the wire.
 	RequestRate float64
+	// CompletedIterations is the group's iterations completed so far in the
+	// run (a running total); nil from a generator that predates it.
+	CompletedIterations *int64
 }
 
 type MetricAggregate struct {
@@ -2391,6 +2394,10 @@ func groupMetricsFromProto(in []*pb.GroupMetric) []GroupMetric {
 			Requests:      requests,
 			RequestErrors: min(max(group.GetRequestErrors(), 0), requests),
 		})
+		if group.CompletedIterations != nil {
+			iterations := max(group.GetCompletedIterations(), 0)
+			groups[len(groups)-1].CompletedIterations = &iterations
+		}
 	}
 	return groups
 }

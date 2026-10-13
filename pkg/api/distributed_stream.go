@@ -1452,6 +1452,8 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 			}
 			if len(batch.Groups) == 0 {
 				batch.Groups = prior.Groups
+			} else {
+				batch.Groups = carryGroupCompletedIterations(batch.Groups, prior.Groups)
 			}
 			if len(batch.TransactionResponseTimeSLA) == 0 {
 				batch.TransactionResponseTimeSLA = prior.TransactionResponseTimeSLA

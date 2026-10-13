@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
 
 import type { BrowserDocumentSummaryMode } from '../../types/browserDocumentEvidence'
+import { DOCUMENT_CAPTURE_SETTING_HINT } from '../browserCaptureSettings'
 import { formatBrowserDocumentValue } from '../browserDocumentEvidenceModel'
-import { BROWSER_COMPARISON_METRICS, buildBrowserComparison } from './browserComparisonModel'
-
-const METRIC_LABELS: Record<string, string> = { lcp: 'LCP', fcp: 'FCP', inp: 'INP', cls: 'CLS', ttfb: 'TTFB' }
+import { BROWSER_COMPARISON_METRICS, BROWSER_METRIC_LABELS, buildBrowserComparison } from './browserComparisonModel'
 
 // BrowserComparisonTable compares a run's browser documents by engine, device
 // profile and scenario group: each metric's p75 over final qualified
@@ -13,7 +12,7 @@ export default function BrowserComparisonTable({ summary, mode }: { summary: unk
   const comparison = useMemo(() => buildBrowserComparison(summary, mode), [summary, mode])
   return <section className="run-report-panel browser-comparison" aria-label="Device, engine and group comparison">
     <h2>Device, engine and group comparison</h2>
-    {comparison.state === 'absent' && <p>{mode === 'live-history' ? 'No browser document evidence has been published for this run yet.' : 'This run kept no browser document evidence.'}</p>}
+    {comparison.state === 'absent' && <p>{mode === 'live-history' ? 'No browser document evidence has been published for this run yet.' : 'This run kept no browser document evidence.'} {DOCUMENT_CAPTURE_SETTING_HINT}</p>}
     {(comparison.state === 'invalid' || comparison.state === 'unsupported') && <p role="note">{comparison.issue}</p>}
     {comparison.state === 'ready' && <>
       <p>
@@ -27,7 +26,7 @@ export default function BrowserComparisonTable({ summary, mode }: { summary: unk
         : <div className="run-archive-coverage-table"><table className="tx-table" aria-label="Browser document comparison">
           <thead><tr>
             <th scope="col">Engine</th><th scope="col">Device profile</th><th scope="col">Group</th>
-            {BROWSER_COMPARISON_METRICS.map(metric => <th scope="col" key={metric}>{METRIC_LABELS[metric]} p75</th>)}
+            {BROWSER_COMPARISON_METRICS.map(metric => <th scope="col" key={metric}>{BROWSER_METRIC_LABELS[metric]} p75</th>)}
           </tr></thead>
           <tbody>{comparison.rows.map(row => <tr key={row.key}>
             <td>{row.engine}</td>

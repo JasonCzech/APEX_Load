@@ -8,6 +8,7 @@ import { buildBrowserDocumentPanelModel } from '../browserDocumentEvidenceModel'
 // computes it (protocol.BrowserMetricDistribution.Quantile).
 
 export const BROWSER_COMPARISON_METRICS: BrowserDocumentMetric[] = ['lcp', 'fcp', 'inp', 'cls', 'ttfb']
+export const BROWSER_METRIC_LABELS: Record<BrowserDocumentMetric, string> = { lcp: 'LCP', fcp: 'FCP', inp: 'INP', cls: 'CLS', ttfb: 'TTFB' }
 
 export interface BrowserComparisonCell {
   p75: number | null

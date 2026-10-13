@@ -12,6 +12,7 @@ import {
   markDataGaps,
   mergeArchiveResourceHistory,
   mergeMetricsHistory,
+  recentGroupJourneyRates,
   recentMetricAverages,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
@@ -781,4 +782,35 @@ it('keeps measured zero JMS age with its own denominator', () => {
  const point = mapExecutionMetricToHistoryPoint({timestamp:'2026-10-01T00:00:00Z',transactions:{receive:{dependency_type:'jms_queue',server_telemetry:{samples:100,consumer_lag_samples:2,avg_consumer_lag_ms:0,max_consumer_lag_ms:0}}}} as unknown as LiveMetrics)
  expect(point.jmsConsumerLagMs).toBe(0)
  expect(point.jmsPeakConsumerLagMs).toBe(0)
+})
+
+describe('recentGroupJourneyRates', () => {
+  const point = (timestampMs: number, values: Record<string, number>): MetricsHistoryPoint => ({ time: '', timestampMs, vusers: 1, tps: 1, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1, ...values })
+
+  it('counts each group\'s completed iterations per minute over the last minute', () => {
+    const rates = recentGroupJourneyRates([
+      point(0, { Shop_iterations: 1 }),
+      point(30_000, { Shop_iterations: 4, Search_iterations: 10 }),
+      point(60_000, { Shop_iterations: 9 }),
+      point(90_000, { Shop_iterations: 14, Search_iterations: 10 }),
+    ], ['Shop', 'Search', 'Absent'])
+    // The window starts at 30 s: (14 - 4) over 60 s, and no Search journeys.
+    expect(rates).toEqual({ Shop: 10, Search: 0 })
+  })
+
+  it('records the running total from a live sample', () => {
+    const live = { timestamp: new Date(0).toISOString(), active_vusers: 1, tps: 1, avg_response_ms: 1, error_pct: 0, total_transactions: 1, total_errors: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1,
+      groups: { Shop: { name: 'Shop', vusers: 1, transactions: 1, errors: 0, tps: 1, avg_response_ms: 1, p50_ms: 1, p90_ms: 1, p99_ms: 1, completed_iterations: 42 } } } as LiveMetrics
+    expect(mapExecutionMetricToHistoryPoint(live).Shop_iterations).toBe(42)
+  })
+
+  it('starts the count again after a total falls, and leaves out too short a span', () => {
+    expect(recentGroupJourneyRates([
+      point(0, { Shop_iterations: 50 }),
+      point(10_000, { Shop_iterations: 2 }),
+      point(40_000, { Shop_iterations: 8 }),
+    ], ['Shop'])).toEqual({ Shop: 12 })
+    expect(recentGroupJourneyRates([point(0, { Shop_iterations: 1 }), point(4_000, { Shop_iterations: 3 })], ['Shop'])).toEqual({})
+    expect(recentGroupJourneyRates([], ['Shop'])).toEqual({})
+  })
 })

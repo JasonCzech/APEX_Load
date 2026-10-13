@@ -44,6 +44,7 @@ const apiMock = {
   getTrafficProfileSources: vi.fn(),
   analyzeCSVDriven: vi.fn(),
   deriveCSVDriven: vi.fn(),
+  getScript: vi.fn(),
 }
 
 // Every edit save presents the paired strong tag of the baseline it loaded.
@@ -719,6 +720,8 @@ describe('TestHub', () => {
     projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
 
     apiMock.listScenarios.mockResolvedValue({ scenarios: [], count: 0 })
+    // clearAllMocks keeps implementations: no test inherits another's script.
+    apiMock.getScript.mockReset()
     apiMock.listScripts.mockResolvedValue({
       scripts: [{ id: 'script-1', name: 'Checkout Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' }],
       count: 1,
@@ -1355,6 +1358,27 @@ describe('TestHub', () => {
     expect(wizardStepMarker('Review')).toBe('5')
     // The stepper no longer needs a note on what its marks mean.
     expect(container.textContent).not.toContain('Checkmarks indicate')
+  })
+
+  // The builder's readiness review reads each group's script, so a browser
+  // script left without page timing capture is named before launch.
+  it('names a browser group without page timings on review', async () => {
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [{ id: 'script-1', name: 'Checkout Flow', protocol: 'browser', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' }],
+      count: 1,
+    })
+    apiMock.getScript.mockResolvedValue({ id: 'script-1', name: 'Checkout Flow', script: { name: 'Checkout Flow', version: '1.0.0', protocol: 'browser', config: { browser: { engine: 'chromium' } }, actions: [] } })
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Review')
+    await flushPromises()
+
+    expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+    expect(container.textContent).toContain("Checkout Flow captures no page timings or Web Vitals")
+    expect(container.textContent).toContain("Turn them on in the script's Runtime Settings › Browser.")
   })
 
   it('shows the configured duration and script-group values on review', async () => {

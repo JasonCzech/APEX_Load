@@ -4,7 +4,7 @@ Status: Guide — optional document evidence v2, request evidence v3 with reques
 
 ## Capture and admission
 
-Enable document capture explicitly on the browser script:
+Enable document capture explicitly on the browser script: in the dashboard, turn on **Capture page timings and Web Vitals** in the script's Runtime Settings › Browser, or **Page timings and Web Vitals** in a scenario group's runtime settings (a group's or the scenario's browser section replaces the script's whole browser section). The JSON is:
 
 ```json
 {

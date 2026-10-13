@@ -110,6 +110,8 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     Object.entries(metric.groups).forEach(([name, groupMetric]) => {
       point[`${name}_tps`] = rounded(groupMetric.tps)
       point[`${name}_requestRate`] = rounded(groupMetric.request_rate)
+      // A running total, kept exact: journeys per minute come from its change.
+      if (typeof groupMetric.completed_iterations === 'number') point[`${name}_iterations`] = groupMetric.completed_iterations
       point[`${name}_avgMs`] = rounded(groupMetric.avg_response_ms)
       point[`${name}_vusers`] = groupMetric.vusers
       point[`${name}_transactions`] = groupMetric.transactions
@@ -278,6 +280,58 @@ export function recentMetricAverages(
   if (artWeight > 0) result.art = artWeightedSum / artWeight
   else if (artSimpleCount > 0) result.art = artSimpleSum / artSimpleCount
   return result
+}
+
+/** The window journeys per minute are counted over, and its label. */
+export const JOURNEY_RATE_WINDOW_MS = 60_000
+export const JOURNEY_RATE_WINDOW = '1 min avg'
+const MIN_JOURNEY_RATE_SPAN_MS = 15_000
+
+/**
+ * Each named group's iterations (journeys) per minute over the trailing
+ * window, anchored on the latest sample as recentMetricAverages is: the
+ * change in the group's running total between the oldest and newest samples
+ * in the window that carry it. A total that falls (a restarted execution, a
+ * generator gone) starts the count again after the fall. A group whose
+ * samples span under 15 s, or carry no total, is left out. The history is
+ * read back from its newest sample and stops at the window's start.
+ */
+export function recentGroupJourneyRates(
+  history: ReadonlyArray<MetricsHistoryPoint>,
+  groups: readonly string[],
+  windowMs: number = JOURNEY_RATE_WINDOW_MS,
+): Record<string, number> {
+  let anchorTs: number | undefined
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const timestamp = history[index].timestampMs
+    if (typeof timestamp === 'number') {
+      anchorTs = timestamp
+      break
+    }
+  }
+  if (anchorTs === undefined || groups.length === 0) return {}
+  const cutoff = anchorTs - windowMs
+  const rates: Record<string, number> = {}
+  for (const name of groups) {
+    const key = `${name}_iterations`
+    let newest: { t: number; v: number } | undefined
+    let oldest: { t: number; v: number } | undefined
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const point = history[index]
+      const t = point.timestampMs
+      if (typeof t !== 'number') continue
+      if (t < cutoff) break
+      const v = seriesValue(point, key)
+      if (v === undefined) continue
+      // An older total above the oldest counted one means the total fell
+      // after it: the count restarted there.
+      if (oldest && v > oldest.v) break
+      newest ??= { t, v }
+      oldest = { t, v }
+    }
+    if (newest && oldest && newest.t - oldest.t >= MIN_JOURNEY_RATE_SPAN_MS) rates[name] = (newest.v - oldest.v) / (newest.t - oldest.t) * 60_000
+  }
+  return rates
 }
 
 // historyPointKey identifies a sample by timestamp (falling back to its display

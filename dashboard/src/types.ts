@@ -2748,6 +2748,8 @@ export interface GroupLiveMetrics {
   goal_window_target_tps?: number
   /** Goal run: (target − goal_window_tps) / target × 100 — positive under target, negative over. */
   goal_gap_pct?: number
+  /** The group's iterations completed so far in the run; absent when a generator does not count them. */
+  completed_iterations?: number
   avg_response_ms: number
   p50_ms: number
   p90_ms: number

@@ -2546,3 +2546,18 @@ button.command-group-name:focus-visible {
 .command-live-table-list .danger {
   color: var(--danger-text);
 }
+
+/* The browser groups' tables are short: they fit the panel instead of
+   taking the wide run tables' minimum width. */
+.command-browser-groups .command-data-table {
+  min-width: 0;
+}
+
+.command-browser-groups .command-data-table th small {
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.command-browser-groups h4 {
+  margin: 0;
+}

@@ -1499,14 +1499,18 @@ type GroupLiveMetrics struct {
 	TargetTPS              float64  `json:"target_tps,omitempty"`
 	ThroughputGapPct       float64  `json:"throughput_gap_pct,omitempty"`
 	ThroughputTargetMissed bool     `json:"throughput_target_missed,omitempty"`
-	GoalWindowTPS          float64  `json:"goal_window_tps,omitempty"`        // goal run: TPS over goalThroughputWindow
-	GoalWindowTargetTPS    float64  `json:"goal_window_target_tps,omitempty"` // the targets in force over that window, averaged
-	GoalGapPct             *float64 `json:"goal_gap_pct,omitempty"`           // signed: + under target, - over
-	AvgResponseMs          float64  `json:"avg_response_ms"`
-	P50Ms                  float64  `json:"p50_ms"`
-	P90Ms                  float64  `json:"p90_ms"`
-	P95Ms                  float64  `json:"p95_ms,omitempty"`
-	P99Ms                  float64  `json:"p99_ms"`
+	// CompletedIterations is the group's iterations completed so far in the
+	// run (a running total); nil when a source does not count them, as a
+	// generator that predates it does not.
+	CompletedIterations *int64   `json:"completed_iterations,omitempty"`
+	GoalWindowTPS       float64  `json:"goal_window_tps,omitempty"`        // goal run: TPS over goalThroughputWindow
+	GoalWindowTargetTPS float64  `json:"goal_window_target_tps,omitempty"` // the targets in force over that window, averaged
+	GoalGapPct          *float64 `json:"goal_gap_pct,omitempty"`           // signed: + under target, - over
+	AvgResponseMs       float64  `json:"avg_response_ms"`
+	P50Ms               float64  `json:"p50_ms"`
+	P90Ms               float64  `json:"p90_ms"`
+	P95Ms               float64  `json:"p95_ms,omitempty"`
+	P99Ms               float64  `json:"p99_ms"`
 	// PercentileQuality has the same provenance vocabulary as an archived
 	// interval summary. It is normally omitted from live metrics and populated
 	// when distributed archive finalization must distinguish a source-generator

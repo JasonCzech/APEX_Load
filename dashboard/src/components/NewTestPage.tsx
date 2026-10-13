@@ -1247,6 +1247,13 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       disabled: false,
     }
   }, [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario])
+  // The readiness review judges the scenario as this run will launch it: the
+  // run's defaults and each group's run overrides laid over the stored ones.
+  const readinessScenario = useMemo(() => scenario && {
+    ...scenario,
+    runtime_settings: buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings,
+    scripts: scenario.scripts.map(group => ({ ...group, runtime_settings: mergeRuntimeSettingsForRun(group.runtime_settings, groupRunOverrides[groupOverrideKey(group)]?.runtime_settings) })),
+  }, [groupRunOverrides, runDefaultOverrides, scenario])
   // continue_on_error has a scenario-level policy the other error-handling
   // booleans do not: it is enabled unless a layer explicitly disables it. Naming
   // the inherit option "Script default" there would promise a fallback the run
@@ -1992,7 +1999,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }, [releaseId, replaceScheduleDraft, scenario, scheduleDefaults])
 
   const runNameDirty = Boolean(scenario && runName !== scenario.name)
-  const releaseDirty = releaseId !== defaultReleaseId
+  // Only a release someone chose (picked, created or restored) is an edit:
+  // until the default-following effect runs, an untouched page's release
+  // briefly differs from a default that just resolved, and leaving then must
+  // not ask about unsaved changes.
+  const releaseDirty = releaseChosenRef.current && releaseId !== defaultReleaseId
   const pendingDefaultDirty = Boolean(editingDefaultKey && hasDefaultEditChanges)
   const pendingGroupDirty = Boolean(editingGroupKey && hasGroupEditChanges)
   const newTestDirty = Boolean(
@@ -3686,7 +3697,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             </section>
           </div>
 
-          {scenario && <NewTestReadiness scenario={scenario} projectId={activeProjectID} summary />}
+          {readinessScenario && <NewTestReadiness scenario={readinessScenario} projectId={activeProjectID} summary />}
         </div>
 
         <aside className="new-test-sidebar-column" hidden={!scenario}>

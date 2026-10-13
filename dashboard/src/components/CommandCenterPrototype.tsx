@@ -2,6 +2,7 @@ import SeriesChartExport from "./SeriesChartExport"
 import { useLiveObservation } from '../hooks/useLiveObservation'
 import { generatorResourceColumns } from './generatorResourceColumns'
 import { filterAndSortRows } from './commandCenterTableSort'
+import CommandCenterBrowserGroups from './CommandCenterBrowserGroups'
 import CommandCenterLiveTables from './CommandCenterLiveTables'
 import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
@@ -27,7 +28,7 @@ import type { BrowserReplaySnapshot, ImportedDashboardResult, IntervalSummaryRec
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange, ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
-import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
+import { JOURNEY_RATE_WINDOW, mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentGroupJourneyRates, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -54,6 +55,7 @@ import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 import {
   buildGroupRunRows,
   buildTransactionRunRows,
+  isBrowserGroup,
   type CommandGroup,
   type GroupRunRow,
   type TransactionRunRow,
@@ -464,7 +466,7 @@ function lowerFirst(value: string) {
   return value.charAt(0).toLowerCase() + value.slice(1)
 }
 
-function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>, population: LivePopulation, throughputPopulation: LivePopulation, recent: RecentMetricAverages): CommandGroup[] {
+function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>, population: LivePopulation, throughputPopulation: LivePopulation, recent: RecentMetricAverages, journeys: Record<string, number>): CommandGroup[] {
   const targetMode = isGoalOrientedRun(test) ? 'tps' : 'vusers'
   const goalTargets = targetMode === 'tps' ? buildGoalTargetMap(test) : {}
   return (test.groups || []).map((group, index) => {
@@ -514,6 +516,8 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       activeVuserRamp,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
       rate,
+      requestRate: averaged?.requestRate ?? (metrics ?? aggregateFallback)?.request_rate,
+      journeysPerMin: journeys[group.name],
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
       errorPct: counts ? liveCountsErrorPercent(counts) : 0,
       p99: metrics?.p99_ms ?? aggregateFallback?.p99_ms ?? 0,
@@ -1086,9 +1090,15 @@ export default function CommandCenterPrototype({
     () => recentMetricAverages(liveMode ? localMetricsHistory : [], undefined, { groups: groupNamesKey ? groupNamesKey.split('\u001f') : [] }),
     [groupNamesKey, liveMode, localMetricsHistory],
   )
+  // Journeys are counted for browser groups alone.
+  const browserGroupNamesKey = (displayTest.groups || []).filter(isBrowserGroup).map(group => group.name).join('\u001f')
+  const journeyRates = useMemo(
+    () => recentGroupJourneyRates(liveMode ? localMetricsHistory : [], browserGroupNamesKey ? browserGroupNamesKey.split('\u001f') : []),
+    [browserGroupNamesKey, liveMode, localMetricsHistory],
+  )
   const groups = useMemo(
-    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets, metricPopulation, throughputPopulation, recentAverages) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
-    [displayTest, emptyMode, hasLiveRoute, liveMode, metricPopulation, prototypeFixtures, recentAverages, state.vuserTargets, throughputPopulation],
+    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets, metricPopulation, throughputPopulation, recentAverages, journeyRates) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
+    [displayTest, emptyMode, hasLiveRoute, journeyRates, liveMode, metricPopulation, prototypeFixtures, recentAverages, state.vuserTargets, throughputPopulation],
   )
   const graphWallGroups = useMemo(
     () => groups.filter(group => graphWallGroupVisibility[group.key] !== false),
@@ -1199,6 +1209,19 @@ export default function CommandCenterPrototype({
     ?? recentRunRate
     ?? liveRate(displayTest.live_metrics, throughputPopulation)
     ?? groups.reduce((sum, group) => sum + group.rate, 0)
+  // Browser groups' pages request every document, script, image and style.
+  // A run of browser groups alone leads with journeys per minute (a dash
+  // until they are measured); a run that mixes them with other groups keeps
+  // one request rate, the one every page shows, and says how much of it their
+  // pages make.
+  const browserGroups = groups.filter(isBrowserGroup)
+  const browserOnly = targetMode !== 'tps' && browserGroups.length > 0 && browserGroups.length === groups.length
+  const runJourneys = browserOnly && browserGroups.every(group => group.journeysPerMin !== undefined)
+    ? browserGroups.reduce((sum, group) => sum + (group.journeysPerMin ?? 0), 0)
+    : undefined
+  const browserPageRequestRate = !browserOnly && throughputPopulation === 'requests' && browserGroups.length > 0
+    ? browserGroups.reduce((sum, group) => sum + (group.requestRate ?? 0), 0)
+    : undefined
   const metricBasis = useMemo<CommandMetricBasis>(() => ({
     population: metricPopulation,
     throughputPopulation,
@@ -1667,9 +1690,12 @@ export default function CommandCenterPrototype({
         errorLabel={errorRateHeader(metricBasis)}
         noRequestSamples={noRequestSamples}
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
-        throughput={runSummaryRate}
-        throughputLabel={rateHeader(metricBasis)}
-        throughputUnit={throughputLabel(metricBasis.throughputPopulation)}
+        throughput={browserOnly ? runJourneys : runSummaryRate}
+        throughputText={browserOnly
+          ? runJourneys === undefined ? MISSING_VALUE : undefined
+          : browserPageRequestRate !== undefined ? `${formatNumber(runSummaryRate, 1)} · ${formatNumber(browserPageRequestRate, 1)} from browser pages` : undefined}
+        throughputLabel={browserOnly ? `Journeys/min (${JOURNEY_RATE_WINDOW})` : rateHeader(metricBasis)}
+        throughputUnit={browserOnly ? 'Journeys/min' : throughputLabel(metricBasis.throughputPopulation)}
         // Average and P95 from the same metrics window, so P95 never reads below the average.
         responseAvgMs={displayTest.live_metrics?.avg_response_ms}
         responseP95Ms={displayTest.live_metrics?.p95_ms}
@@ -1804,6 +1830,9 @@ export default function CommandCenterPrototype({
       {liveMode && testId && displayTest.data_pools?.some(binding => binding.access_mode === 'live') && (
         <CommandCenterLiveTables testId={testId} onOpen={onOpenExecution ? () => onOpenExecution(testId) : undefined} />
       )}
+      {liveMode && browserGroups.length > 0 && (
+        <CommandCenterBrowserGroups groups={browserGroups} metrics={displayTest.live_metrics} rateWindow={metricBasis.rateWindow} requestsCounted={metricPopulation === 'requests'} inRunRequestRate={browserPageRequestRate !== undefined} />
+      )}
 
       {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} test={displayTest} runStatus={runStatus} history={liveMode ? localMetricsHistory : []} /></section>}
       {(!noRequestSamples || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (variant === 'ops' || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (
@@ -1921,6 +1950,8 @@ interface RunControlShelfProps {
   throughputLabel: string
   /** The throughput's unit alone ("Requests/s" or "TPS"), for the compact row. */
   throughputUnit: string
+  /** Shown in place of the formatted throughput, e.g. a dash before it is measured or the browser pages' share. */
+  throughputText?: string
   /** Average and P95 transaction response time (ms) from the latest metrics window. */
   responseAvgMs?: number
   responseP95Ms?: number
@@ -1953,6 +1984,7 @@ function RunControlShelf({
   throughput,
   throughputLabel: throughputMetricLabel,
   throughputUnit,
+  throughputText,
   responseAvgMs,
   responseP95Ms,
   feedback,
@@ -1994,7 +2026,8 @@ function RunControlShelf({
   const errorValue = canStart || noRequestSamples ? 'No samples' : formatOptionalPercent(errorPct)
   const throughputValue = canStart ? 'Not started' : noRequestSamples ? 'No samples' : goalRun
     ? `${formatNumber(throughput ?? 0, 1)} of ${formatNumber(totalTarget, 1)}${goalGapText ? ` · ${goalGapText}` : ''}`
-    : formatNumber(throughput ?? 0, 1)
+    : throughputText ?? formatNumber(throughput ?? 0, 1)
+  const showThroughput = throughput !== undefined || throughputText !== undefined
   // The compact row names each value by the label of its pill.
   const loadLabel = canStart ? 'Planned load' : goalRun ? 'Active VUsers' : 'Observed / Target Load'
   const clockLabel = test.termination_mode === 'iterations' ? 'Elapsed' : 'Elapsed · remaining'
@@ -2012,14 +2045,14 @@ function RunControlShelf({
       {/* Scrolled down, the shelf is one row: the run, its load, rate, clock and errors, and its controls. */}
       {stuck ? <div className="command-run-compact-summary" role="group" aria-label="Run summary">
         <span title={loadLabel}><strong>Load</strong> {loadValue}</span>
-        {throughput !== undefined && <span title={throughputMetricLabel}><strong>{throughputUnit}</strong> {throughputValue}</span>}
+        {showThroughput && <span title={throughputMetricLabel}><strong>{throughputUnit}</strong> {throughputValue}</span>}
         <span title={clockLabel}><strong>Time</strong> {clockValue}</span>
         <span title={errorLabel} className={errorPct && errorPct > 0 ? 'danger' : undefined}><strong>Errors</strong> {errorValue}</span>
       </div> : (
         <div className="command-run-stats" aria-label="Run summary">
           <MetricPill label={loadLabel} value={loadValue} tone="info" />
           {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label={clockLabel} value={clockValue} /></> : <MetricPill label={clockLabel} value={clockValue} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
-          {throughput !== undefined && <MetricPill label={goalRun && !canStart ? `${throughputMetricLabel} / target` : throughputMetricLabel} value={throughputValue} tone={isOffTarget(goalGap) ? 'warning' : 'accent'} />}
+          {showThroughput && <MetricPill label={goalRun && !canStart ? `${throughputMetricLabel} / target` : throughputMetricLabel} value={throughputValue} tone={isOffTarget(goalGap) ? 'warning' : 'accent'} />}
           <MetricPill label="Transaction response (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
           <MetricPill label={errorLabel} value={errorValue} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
           {test.groups.length > 1 && (
@@ -2561,7 +2594,7 @@ function OpsCockpitV2View({
                   <div className="command-v2-group-row" role="row" key={group.name}>
                     <span role="cell" className="command-v2-group-name"><i data-group-index={index} /><strong>{group.name}</strong><small>{group.protocol}</small></span>
                     <span role="cell"><strong>{formatNumber(group.current)} / {formatNumber(target)}</strong><em>{target > 0 ? formatNumber((group.current / target) * 100, 0) : '0'}%</em></span>
-                    <span role="cell"><strong>{formatNumber(group.rate, 1)}</strong></span>
+                    <span role="cell"><strong>{formatNumber(group.rate, 1)}</strong>{group.journeysPerMin !== undefined && isBrowserGroup(group) && <em>{formatNumber(group.journeysPerMin, 1)} journeys/min</em>}</span>
                     <span role="cell"><strong>{formatNumber(art, 0)} ms</strong></span>
                     <span role="cell" className={group.attempts > 0 && group.errorPct > 1 ? 'danger' : 'healthy'}><strong>{group.attempts > 0 ? formatPercent(group.errorPct) : MISSING_VALUE}</strong></span>
                     <span role="cell" className="command-v2-target-stepper">
@@ -2944,7 +2977,7 @@ function CommandRunTables({
 
       <div className="command-table-surface">
         {activeTab === 'groups' && (
-          <GroupRunTable rows={filteredGroupRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No groups match the current filter.' : 'No groups in this run.'} />
+          <GroupRunTable rows={filteredGroupRows} hasBrowserGroups={groupRows.some(row => isBrowserGroup(row))} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No groups match the current filter.' : 'No groups in this run.'} />
         )}
         {activeTab === 'transactions' && (
           <TransactionRunTable rows={filteredTransactionRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No transactions match the current filter.' : 'No transactions have completed yet.'} />
@@ -3052,7 +3085,9 @@ function MetricColumnsTable<Row extends { id: string }>({
   )
 }
 
-function GroupRunTable({ rows, sort, onSort, emptyMessage }: { rows: GroupRunRow[]; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
+// hasBrowserGroups is the run's, not the filtered rows': filtering never
+// changes the table's columns.
+function GroupRunTable({ rows, hasBrowserGroups, sort, onSort, emptyMessage }: { rows: GroupRunRow[]; hasBrowserGroups: boolean; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
   const basis = useContext(CommandMetricBasisContext)
   const countBasis = errorRateBasisLabel(basis.errorBasis)
   const columns: MetricColumn<GroupRunRow>[] = [
@@ -3071,14 +3106,19 @@ function GroupRunTable({ rows, sort, onSort, emptyMessage }: { rows: GroupRunRow
     { label: 'P90', sortKey: 'p90', align: 'right', render: row => formatOptionalMs(row.p90) },
     { label: 'P95', sortKey: 'p95', align: 'right', render: row => formatOptionalMs(row.p95) },
     { label: 'P99', sortKey: 'p99', align: 'right', render: row => formatOptionalMs(row.p99) },
+    // Browser groups' journeys, only in a run that has them.
+    ...(hasBrowserGroups ? [{ label: `Journeys/min (${JOURNEY_RATE_WINDOW})`, sortKey: 'journeysPerMin', align: 'right' as const, render: (row: GroupRunRow) => formatOptionalNumber(row.journeysPerMin, 1) }] : []),
   ]
   return (
     <MetricColumnsTable
+      // A run with browser groups shows their journeys by default: the table
+      // starts afresh, with its own remembered columns, once they appear.
+      key={hasBrowserGroups ? 'browser' : 'plain'}
       label="Groups"
-      caption={`Throughput is ${rateWindowPhrase(basis)}; attempts, failures and error rates are ${countBasis}. Response times are the last sample's, for transactions.`}
+      caption={`Throughput is ${rateWindowPhrase(basis)}; attempts, failures and error rates are ${countBasis}. Response times are the last sample's, for transactions.${hasBrowserGroups ? " Journeys/min count each browser group's iterations, passed or failed." : ''}`}
       columns={columns}
-      essentialColumns={[0, 2, 3, 4, 9, 13]}
-      memoryKey="groupColumns"
+      essentialColumns={hasBrowserGroups ? [0, 2, 3, 4, 9, 13, 15] : [0, 2, 3, 4, 9, 13]}
+      memoryKey={hasBrowserGroups ? 'groupColumnsBrowser' : 'groupColumns'}
       rows={rows}
       sort={sort}
       onSort={onSort}
@@ -4373,6 +4413,7 @@ function GroupLoadTable({
               <span role="cell" data-label={rateHeader(basis)} className={group.throughputTargetMissed ? 'warning' : undefined}>
                 <span className="command-tps-stack">
                   <strong>{formatNumber(group.rate, 1)}</strong>
+                  {group.journeysPerMin !== undefined && isBrowserGroup(group) && <small>{formatNumber(group.journeysPerMin, 1)} journeys/min</small>}
                   {isGoalTarget && <small>{group.goalWindowTargetTps !== undefined ? `10 s target ${formatNumber(group.goalWindowTargetTps, 1)}` : `target ${formatNumber(committedTarget, 1)}`} TPS{gapText ? ` / ${gapText}` : ''}</small>}
                 </span>
               </span>

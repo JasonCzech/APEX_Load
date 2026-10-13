@@ -38,6 +38,7 @@ it('composes comparison, findings, baseline, interactions and journeys (BI-4)', 
   await act(async () => root.render(<BrowserIntelligenceView testId="run-1" projectId="p1" canEvaluate hasArchive test={test} report={report} rootCause={noAnalysis} onOpenDiagnostics={onOpenDiagnostics} />))
   for (const id of ['findings', 'interactions', 'journeys', 'inspector']) expect(container.querySelector(`[data-testid="${id}"]`), id).not.toBeNull()
   expect(container.textContent).toContain('This run kept no browser document evidence.')
+  expect(container.textContent).toContain('Page timings and Web Vitals are recorded only when they are turned on')
   // The report holds no pinned browser policy.
   expect(container.querySelector('[data-testid="findings"]')?.getAttribute('data-pinned')).toBe('false')
   // Without a root-cause analysis the baseline section points to one.

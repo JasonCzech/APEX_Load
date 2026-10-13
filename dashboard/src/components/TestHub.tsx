@@ -4648,8 +4648,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <button type="button" className="btn btn-secondary" onClick={openScriptComposition}>Edit scripts and acceptance</button>
         </section>
         <NewTestReadiness projectId={activeProjectId || ''} scenario={{ id: editingId || 'authoring-draft', updated_at: '',
-          scripts: formGroups.map((group, order) => ({ order, name: group.name, script_id: group.script_id, vusers: group.vusers, transaction_response_time_sla_ms: group.transactionResponseTimeSlaMs })),
-          data_pools: scenarioBindings,
+          scripts: formGroups.map((group, order) => ({ order, name: group.name, script_id: group.script_id, vusers: group.vusers, transaction_response_time_sla_ms: group.transactionResponseTimeSlaMs,
+            runtime_settings: group.runtimeSettings?.browser_config ? { browser_config: group.runtimeSettings.browser_config } : undefined })),
+          data_pools: scenarioBindings, runtime_settings: form.runtime_settings,
         }} compact />
         <div className="data-table scenario-review-groups">
           <table aria-label="Scenario review groups">

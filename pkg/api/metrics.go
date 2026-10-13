@@ -176,6 +176,10 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			P99Ms:                  float64(gm.P99.Microseconds()) / 1000.0,
 			DurationDigest:         gm.DurationDigest,
 		}
+		if gm.CompletedIterationsReported {
+			iterations := gm.CompletedIterations
+			live.GroupMetrics[name].CompletedIterations = &iterations
+		}
 	}
 
 	live.Messaging = map[string]*protocol.MessagingSummary{}

@@ -91497,6 +91497,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -97981,6 +97985,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -104466,6 +104474,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -110963,6 +110975,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -117460,6 +117476,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -123957,6 +123977,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -130454,6 +130478,10 @@ paths:
                                 avg_response_ms:
                                   type: number
                                   format: double
+                                completed_iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 errors:
                                   type: integer
                                   format: int64
@@ -345427,6 +345455,10 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              completed_iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
                               errors:
                                 type: integer
                                 format: int64
@@ -349278,6 +349310,10 @@ paths:
                             avg_response_ms:
                               type: number
                               format: double
+                            completed_iterations:
+                              type: integer
+                              format: int64
+                              nullable: true
                             errors:
                               type: integer
                               format: int64
@@ -359070,6 +359106,10 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              completed_iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
                               errors:
                                 type: integer
                                 format: int64
@@ -362921,6 +362961,10 @@ paths:
                             avg_response_ms:
                               type: number
                               format: double
+                            completed_iterations:
+                              type: integer
+                              format: int64
+                              nullable: true
                             errors:
                               type: integer
                               format: int64
@@ -404323,6 +404367,10 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              completed_iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
                               errors:
                                 type: integer
                                 format: int64
@@ -408174,6 +408222,10 @@ paths:
                             avg_response_ms:
                               type: number
                               format: double
+                            completed_iterations:
+                              type: integer
+                              format: int64
+                              nullable: true
                             errors:
                               type: integer
                               format: int64
@@ -417910,6 +417962,10 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              completed_iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
                               errors:
                                 type: integer
                                 format: int64
@@ -421761,6 +421817,10 @@ paths:
                             avg_response_ms:
                               type: number
                               format: double
+                            completed_iterations:
+                              type: integer
+                              format: int64
+                              nullable: true
                             errors:
                               type: integer
                               format: int64
@@ -437378,6 +437438,10 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              completed_iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
                               errors:
                                 type: integer
                                 format: int64
@@ -441229,6 +441293,10 @@ paths:
                             avg_response_ms:
                               type: number
                               format: double
+                            completed_iterations:
+                              type: integer
+                              format: int64
+                              nullable: true
                             errors:
                               type: integer
                               format: int64
@@ -452972,6 +453040,10 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              completed_iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
                               errors:
                                 type: integer
                                 format: int64
@@ -456811,6 +456883,10 @@ paths:
                             avg_response_ms:
                               type: number
                               format: double
+                            completed_iterations:
+                              type: integer
+                              format: int64
+                              nullable: true
                             errors:
                               type: integer
                               format: int64

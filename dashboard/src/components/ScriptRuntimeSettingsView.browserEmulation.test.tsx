@@ -258,6 +258,21 @@ describe('ScriptRuntimeSettingsView browser QUIC', () => {
     expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ quic: undefined }))
   })
 
+  // The capture settings that fill the report's Browser tab are offered here,
+  // off by default, and say what they fill.
+  it('offers page timings and interaction evidence', () => {
+    const { onUpdateField } = renderBrowser(browserScript())
+    const checkbox = (text: string) => Array.from(container.querySelectorAll<HTMLLabelElement>('label.checkbox-label'))
+      .find(label => label.textContent === text)?.querySelector<HTMLInputElement>('input')
+    expect(checkbox('Capture page timings and Web Vitals')?.checked).toBe(false)
+    expect(checkbox('Capture interaction evidence')?.checked).toBe(false)
+    expect(container.querySelector('#browser-capture-hint')?.textContent).toContain("Browser groups panel and the run report's Browser tab")
+    act(() => checkbox('Capture page timings and Web Vitals')!.click())
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ engine: 'chromium', capture_document_metrics: true }))
+    act(() => checkbox('Capture interaction evidence')!.click())
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ capture_interactions: true }))
+  })
+
   it('does not offer off for WebKit', () => {
     const script = browserScript()
     script.config.browser = { engine: 'webkit' }

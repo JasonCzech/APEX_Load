@@ -313,12 +313,17 @@ type GroupMetrics struct {
 	TargetTPS              float64 `json:"target_tps,omitempty"`
 	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
 	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
-	AvgDuration            time.Duration
-	P50                    time.Duration
-	P90                    time.Duration
-	P95                    time.Duration
-	P99                    time.Duration
-	DurationDigest         *TDigestSnapshot `json:"-"`
+	// CompletedIterations is the group's iterations completed so far in the
+	// run (a running total, not the window's). CompletedIterationsReported is
+	// false for a group the collector does not count.
+	CompletedIterations         int64 `json:"completed_iterations,omitempty"`
+	CompletedIterationsReported bool  `json:"completed_iterations_reported,omitempty"`
+	AvgDuration                 time.Duration
+	P50                         time.Duration
+	P90                         time.Duration
+	P95                         time.Duration
+	P99                         time.Duration
+	DurationDigest              *TDigestSnapshot `json:"-"`
 }
 
 type ActionMetrics struct {
@@ -1042,6 +1047,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, gm := range snap.ByGroup {
 		gm.TargetTPS = groupTargets[name]
+		if value, ok := mc.groupRunTotals.Load(name); ok {
+			gm.CompletedIterations, gm.CompletedIterationsReported = value.(*groupRunCounters).completedIterations.Load(), true
+		}
 		if gm.Requests > 0 {
 			gm.RequestRate = float64(gm.Requests) / window.Seconds()
 		}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { request } from '../../hooks/apiClient'
 import { getErrorMessage } from '../../utils/errorUtils'
+import { INTERACTION_CAPTURE_SETTING_HINT } from '../browserCaptureSettings'
 import Notice from '../ux/Notice'
 
 // Browser interaction patterns and heatmaps (E4) from a run's archived
@@ -89,7 +90,7 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   if (error?.state === 'missing') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">This run's saved archive is not available yet (it may still be publishing), so no interaction patterns can be shown. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
   if (error?.state === 'not_finalized') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">Interaction patterns appear once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
   if (error) return <Notice tone="error" title="Interaction patterns could not be loaded" details={error.detail} action={<button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Retry interaction patterns</button>} />
-  if (!analysis || analysis.status === 'not_captured') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p>This run recorded no interaction evidence.</p></section>
+  if (!analysis || analysis.status === 'not_captured') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p>This run recorded no interaction evidence. {INTERACTION_CAPTURE_SETTING_HINT}</p></section>
   if (analysis.status === 'unavailable') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">The run captured interaction evidence, but none reached its archive{analysis.coverage?.dropped ? ` (${analysis.coverage.dropped} gestures lost)` : ''}, so no pattern or heatmap can be shown.</p></section>
   // A response without its coverage or thresholds is not an analysis this
   // panel can show; say so rather than fail the report around it.

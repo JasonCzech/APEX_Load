@@ -27,6 +27,10 @@ export interface CommandGroup {
   tps: number
   /** The throughput the page shows: the page's population (requests/s or TPS) over its window. */
   rate: number
+  /** Requests per second over the page's window; a browser group's are the requests its pages make. */
+  requestRate?: number
+  /** Completed iterations per minute over the last minute; unset when not reported. */
+  journeysPerMin?: number
   art: number
   /** Failed over attempted in the page's error population, run to date where reported. */
   errorPct: number
@@ -44,6 +48,8 @@ export interface GroupRunRow {
   currentVusers?: number
   targetVusers?: number
   rate: number
+  /** A browser group's completed iterations per minute; unset for other groups. */
+  journeysPerMin?: number
   targetTps?: number
   throughputGap?: number
   attempts: number
@@ -70,6 +76,11 @@ export interface TransactionRunRow {
   p90: number
   p95?: number
   p99: number
+}
+
+/** A group whose VUsers drive a real browser: its iterations are user journeys. */
+export function isBrowserGroup(group: { protocol?: string }): boolean {
+  return group.protocol === 'browser'
 }
 
 // A transaction's `count` already includes its errors.
@@ -105,6 +116,7 @@ export function buildGroupRunRows(groups: CommandGroup[], metrics?: LiveMetrics)
       currentVusers: groupMetrics?.vusers ?? group.current,
       targetVusers: group.targetVusers,
       rate: group.rate,
+      journeysPerMin: isBrowserGroup(group) ? group.journeysPerMin : undefined,
       targetTps,
       // The gap Group Load shows: a goal run's is measured on its averaged
       // rate against its committed target.

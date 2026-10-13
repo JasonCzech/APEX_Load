@@ -50,6 +50,10 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	// Requests, failed requests and the request rate per group. Generators'
 	// windows can differ in length, so each rates its own window, as TPS does.
 	groupRequestsByName := make(map[string]generatorrpc.GroupMetric)
+	// Each group's completed iterations: the generators' running totals
+	// summed, unknown when one of the group's generators does not count them.
+	groupIterationsByName := make(map[string]int64)
+	groupIterationsUnknown := make(map[string]bool)
 	// A fleet's request counts are only whole when every generator counts
 	// them; otherwise the sample carries none rather than part of the fleet's.
 	requestCountsVersion := uint32(generatorrpc.CurrentRequestCountsVersion)
@@ -216,6 +220,11 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				continue
 			}
 			groupsByName[name] += group.ActiveVUsers
+			if group.CompletedIterations != nil {
+				groupIterationsByName[name] += max(*group.CompletedIterations, 0)
+			} else {
+				groupIterationsUnknown[name] = true
+			}
 			if requests, requestErrors := distributedGroupRequestCounts(group); requests > 0 {
 				merged := groupRequestsByName[name]
 				merged.Requests += requests
@@ -361,13 +370,18 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	sort.Strings(groupNames)
 	for _, name := range groupNames {
 		requests := groupRequestsByName[name]
+		var iterations *int64
+		if total, counted := groupIterationsByName[name]; counted && !groupIterationsUnknown[name] {
+			iterations = &total
+		}
 		combined.Groups = append(combined.Groups, generatorrpc.GroupMetric{
-			Name:          name,
-			ActiveVUsers:  groupsByName[name],
-			Metrics:       mergeGeneratorMetricAggregates(groupMetricsByName[name]),
-			Requests:      requests.Requests,
-			RequestErrors: requests.RequestErrors,
-			RequestRate:   requests.RequestRate,
+			Name:                name,
+			ActiveVUsers:        groupsByName[name],
+			Metrics:             mergeGeneratorMetricAggregates(groupMetricsByName[name]),
+			Requests:            requests.Requests,
+			RequestErrors:       requests.RequestErrors,
+			RequestRate:         requests.RequestRate,
+			CompletedIterations: iterations,
 		})
 	}
 	combined.RequestCountsVersion = requestCountsVersion
@@ -431,6 +445,43 @@ func applyDistributedRequestMetrics(live *LiveMetrics, batch generatorrpc.Metric
 			groupLive.Requests += requests
 			groupLive.RequestErrors += requestErrors
 			groupLive.RequestRate += rate
+		}
+	}
+}
+
+// carryGroupCompletedIterations keeps a group's last reported completed
+// iterations on a terminal batch that leaves them out (terminal evidence
+// rebuilt without its counters), so the run's last sample does not lose them.
+func carryGroupCompletedIterations(groups, prior []generatorrpc.GroupMetric) []generatorrpc.GroupMetric {
+	priorIterations := make(map[string]*int64, len(prior))
+	for _, group := range prior {
+		if group.CompletedIterations != nil {
+			priorIterations[strings.TrimSpace(group.Name)] = group.CompletedIterations
+		}
+	}
+	if len(priorIterations) == 0 {
+		return groups
+	}
+	carried := append([]generatorrpc.GroupMetric(nil), groups...)
+	for index := range carried {
+		if carried[index].CompletedIterations == nil {
+			carried[index].CompletedIterations = priorIterations[strings.TrimSpace(carried[index].Name)]
+		}
+	}
+	return carried
+}
+
+// applyDistributedGroupIterations sets each named group's completed
+// iterations from the batch's, leaving a group whose count is unknown
+// without one.
+func applyDistributedGroupIterations(live *LiveMetrics, batch generatorrpc.MetricsBatch) {
+	for _, group := range batch.Groups {
+		if group.CompletedIterations == nil {
+			continue
+		}
+		if groupLive := live.GroupMetrics[strings.TrimSpace(group.Name)]; groupLive != nil {
+			iterations := *group.CompletedIterations
+			groupLive.CompletedIterations = &iterations
 		}
 	}
 }
@@ -773,6 +824,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 	defer func() {
 		applyDistributedRequestMetrics(live, batch)
+		applyDistributedGroupIterations(live, batch)
 		actions := map[string]*TxMetrics{}
 		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 3 {
 			for _, a := range batch.ActionMetrics {

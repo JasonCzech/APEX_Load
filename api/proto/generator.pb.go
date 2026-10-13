@@ -4175,8 +4175,12 @@ type GroupMetric struct {
 	// failed ones. A generator that predates them reports zero.
 	Requests      int64 `protobuf:"varint,4,opt,name=requests,proto3" json:"requests,omitempty"`
 	RequestErrors int64 `protobuf:"varint,5,opt,name=request_errors,json=requestErrors,proto3" json:"request_errors,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// completed_iterations is the group's iterations completed so far in the
+	// run on this generator (a running total, not the window's). A generator
+	// that predates it leaves it unset, which is not zero.
+	CompletedIterations *int64 `protobuf:"varint,6,opt,name=completed_iterations,json=completedIterations,proto3,oneof" json:"completed_iterations,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GroupMetric) Reset() {
@@ -4240,6 +4244,13 @@ func (x *GroupMetric) GetRequests() int64 {
 func (x *GroupMetric) GetRequestErrors() int64 {
 	if x != nil {
 		return x.RequestErrors
+	}
+	return 0
+}
+
+func (x *GroupMetric) GetCompletedIterations() int64 {
+	if x != nil && x.CompletedIterations != nil {
+		return *x.CompletedIterations
 	}
 	return 0
 }
@@ -8376,13 +8387,15 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1ftest_dropped_subscriber_batches\x18\t \x01(\x03H\x00R\x1ctestDroppedSubscriberBatches\x88\x01\x01\x12/\n" +
 	"\x13collection_sequence\x18\n" +
 	" \x01(\x04R\x12collectionSequenceB\"\n" +
-	" _test_dropped_subscriber_batches\"\xc1\x01\n" +
+	" _test_dropped_subscriber_batches\"\x92\x02\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\x126\n" +
 	"\ametrics\x18\x03 \x01(\v2\x1c.apexload.v1.MetricAggregateR\ametrics\x12\x1a\n" +
 	"\brequests\x18\x04 \x01(\x03R\brequests\x12%\n" +
-	"\x0erequest_errors\x18\x05 \x01(\x03R\rrequestErrors\"\xb6\x06\n" +
+	"\x0erequest_errors\x18\x05 \x01(\x03R\rrequestErrors\x126\n" +
+	"\x14completed_iterations\x18\x06 \x01(\x03H\x00R\x13completedIterations\x88\x01\x01B\x17\n" +
+	"\x15_completed_iterations\"\xb6\x06\n" +
 	"\x0eHTTPVersionMix\x12\x18\n" +
 	"\aactions\x18\x01 \x01(\x03R\aactions\x12I\n" +
 	"\n" +
@@ -9097,6 +9110,7 @@ func file_api_proto_generator_proto_init() {
 		return
 	}
 	file_api_proto_generator_proto_msgTypes[41].OneofWrappers = []any{}
+	file_api_proto_generator_proto_msgTypes[42].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[51].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[52].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[53].OneofWrappers = []any{}

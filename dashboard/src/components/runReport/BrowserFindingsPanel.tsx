@@ -70,7 +70,7 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
         ? `The browser evaluation failed: ${state.failure || 'no reason recorded'}.`
         : browserPolicyPinned === false
           ? 'This run has no browser evaluation. It pinned no browser policy, so the run report cannot evaluate it. An evaluation under a named policy revision (API or apexctl) is read from that evaluation and does not appear here.'
-          : `This run has no browser evaluation. A run that pins a browser policy and captures document evidence is queued for evaluation when its archive is finalized${evaluable ? '; evaluate it here if none was queued' : ''}.`}</p>}
+          : `This run has no browser evaluation. A run that pins a browser policy and captures page timings and Web Vitals (Runtime Settings › Browser) is queued for evaluation when its archive is finalized${evaluable ? '; evaluate it here if none was queued' : ''}.`}</p>}
     {evaluable && !loading && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
     {result && <>
       <p>

@@ -801,6 +801,23 @@ VUsers helps only where producers are short. Runs that use live tables also show
 **Live tables** panel in Command Center with each table's available and leased rows,
 waits and unknown outcomes; **Open live tables** leads to the run page's previews.
 
+A browser group's pages request every document, script, image and style they load.
+A run that mixes browser groups with others keeps one Requests/s, the same on every
+page, and Command Center's summary says how much of it comes from browser pages; a
+run of browser groups alone leads with journeys per minute (a dash until 15 s of
+samples have arrived). A journey is one iteration of the group's script, passed or
+failed. A **Browser groups** panel lists each browser group's journeys per minute
+(1 min avg), its page requests per second, and the pages' Web Vitals (LCP, FCP, INP,
+CLS and TTFB at p75) as they are published, and the **Groups** table adds a
+Journeys/min column. Page timings and Web Vitals, like the interaction evidence on
+the run report's **Browser** tab, are recorded only when **Capture page timings and
+Web Vitals** (and **Capture interaction evidence**) is on in the browser script's
+Runtime Settings › Browser; a scenario's or group's own browser runtime settings
+replace the script's, these two included. Both are off by default and need
+generators that support browser evidence. The run readiness review names the browser
+groups that will capture none and where to turn them on, and empty panels name the
+setting.
+
 When errors climb, drill into the live error evidence to see representative failures
 rather than guessing — a 500 from your application and a connection reset from an
 exhausted generator look identical in an error-rate chart and call for opposite

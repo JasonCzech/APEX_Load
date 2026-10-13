@@ -37182,6 +37182,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -44742,6 +44743,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -45899,6 +45901,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -62853,6 +62856,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -64006,6 +64010,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -67843,6 +67848,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -83357,6 +83363,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -84514,6 +84521,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -104985,6 +104993,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -106142,6 +106151,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -121760,6 +121770,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -123854,6 +123865,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -125948,6 +125960,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -128042,6 +128055,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -130136,6 +130150,7 @@ export interface operations {
                 "goal_window_tps"?: number;
                 "groups"?: Record<string, ({
                   "avg_response_ms": number;
+                  "completed_iterations"?: (number) | null;
                   "errors": number;
                   "goal_gap_pct"?: (number) | null;
                   "goal_window_target_tps"?: number;
@@ -134126,6 +134141,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -135283,6 +135299,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -159647,6 +159664,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;
@@ -160804,6 +160822,7 @@ export interface operations {
               "goal_window_tps"?: number;
               "groups"?: Record<string, ({
                 "avg_response_ms": number;
+                "completed_iterations"?: (number) | null;
                 "errors": number;
                 "goal_gap_pct"?: (number) | null;
                 "goal_window_target_tps"?: number;

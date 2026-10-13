@@ -2347,13 +2347,27 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 		stats.ActiveVUsers = assignment.vuserCount
 	}
 	batch := s.metricsBatchForMetrics(testID, assignment.executionGeneration, stats, transactions, aggregates, assignment.paused, groupAssignments, lifecycleState, lifecycleError, telemetry)
+	// Each group's execution reports its own completed iterations; a group
+	// with no execution stats yet has completed none.
+	for _, group := range batch.Groups {
+		iterations := assignment.groupStats[group.GetName()].CompletedIterations
+		group.CompletedIterations = &iterations
+	}
 	batch.TransactionResponseTimeSla = transactionResponseTimeSLA
 	batch.HttpVersionMix = httpVersionMixToProto(assignment.groupHTTPVersions)
 	return batch
 }
 
 func (s *Service) metricsBatchForState(testID string, executionGeneration uint64, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
-	return s.metricsBatchForMetrics(testID, executionGeneration, GeneratorStats{ActiveVUsers: vuserCount}, nil, metricsAggregateSet{}, paused, groupAssignments, lifecycleState, lifecycleError, nil)
+	batch := s.metricsBatchForMetrics(testID, executionGeneration, GeneratorStats{ActiveVUsers: vuserCount}, nil, metricsAggregateSet{}, paused, groupAssignments, lifecycleState, lifecycleError, nil)
+	// A staged group has completed no iteration yet. Other states built here
+	// (terminal evidence rebuilt without its counters) leave the count out.
+	if lifecycleState == "STAGED" {
+		for _, group := range batch.Groups {
+			group.CompletedIterations = new(int64)
+		}
+	}
+	return batch
 }
 
 func isGeneratorTerminalLifecycle(state string) bool {

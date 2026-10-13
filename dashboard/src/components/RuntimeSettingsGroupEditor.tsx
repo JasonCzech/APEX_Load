@@ -1376,6 +1376,14 @@ export default function RuntimeSettingsGroupEditor({
                       <input type="checkbox" checked={Boolean(effectiveBrowser.client_metrics)} onChange={event => patchBrowserConfig({ client_metrics: event.target.checked })} />
                       <div><strong>Client metrics</strong><span>Collect browser client-side metrics.</span></div>
                     </label>
+                    <label className={`scenario-option-card ${effectiveBrowser.capture_document_metrics ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.capture_document_metrics)} onChange={event => patchBrowserConfig({ capture_document_metrics: event.target.checked })} />
+                      <div><strong>Page timings and Web Vitals</strong><span>TTFB, FCP, LCP, INP and CLS per page, for Command Center and the report&apos;s Browser tab. Needs generators that support browser evidence.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${effectiveBrowser.capture_interactions ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.capture_interactions)} onChange={event => patchBrowserConfig({ capture_interactions: event.target.checked })} />
+                      <div><strong>Interaction evidence</strong><span>Where each click and gesture landed, never typed values, for the report&apos;s Browser tab.</span></div>
+                    </label>
                     <label className={`scenario-option-card ${effectiveBrowser.cache_enabled ? 'selected' : ''}`}>
                       <input type="checkbox" checked={Boolean(effectiveBrowser.cache_enabled)} onChange={event => patchBrowserConfig({ cache_enabled: event.target.checked })} />
                       <div><strong>Cache enabled</strong><span>Allow the browser cache during replay.</span></div>

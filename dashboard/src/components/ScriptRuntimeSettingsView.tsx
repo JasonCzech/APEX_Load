@@ -1464,6 +1464,16 @@ export function ScriptRuntimeSettingsView({
                 <span>Capture client metrics</span>
               </label>
               <label className="checkbox-label">
+                <input type="checkbox" checked={script.config.browser?.capture_document_metrics ?? false} aria-describedby="browser-capture-hint"
+                  onChange={e => updateField('config.browser', { ...script.config.browser, capture_document_metrics: e.target.checked })} />
+                <span>Capture page timings and Web Vitals</span>
+              </label>
+              <label className="checkbox-label">
+                <input type="checkbox" checked={script.config.browser?.capture_interactions ?? false} aria-describedby="browser-capture-hint"
+                  onChange={e => updateField('config.browser', { ...script.config.browser, capture_interactions: e.target.checked })} />
+                <span>Capture interaction evidence</span>
+              </label>
+              <label className="checkbox-label">
                 <input type="checkbox" checked={script.config.browser?.review_policy?.allow_reviewed_javascript || false}
                   onChange={e => updateField('config.browser', {
                     ...script.config.browser,
@@ -1506,6 +1516,9 @@ export function ScriptRuntimeSettingsView({
                 <span>Simulate a new user each iteration</span>
               </label>
             </div>
+            <p id="browser-capture-hint" className="form-hint full-width">
+              Page timings and Web Vitals (TTFB, FCP, LCP, INP, CLS) fill Command Center&apos;s Browser groups panel and the run report&apos;s Browser tab. Interaction evidence records where each gesture landed, never typed values. Both are off by default and need generators that support browser evidence. A scenario or group that sets its own browser runtime settings replaces this script&apos;s, these two included; the run readiness review names any browser group left without page timings.
+            </p>
           </div>
         </div>}
       </div>

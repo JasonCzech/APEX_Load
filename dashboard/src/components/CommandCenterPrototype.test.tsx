@@ -2239,7 +2239,8 @@ describe('CommandCenterPrototype', () => {
     const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'P99')!
     await click(p99)
     expect(container.querySelector<HTMLTableCellElement>('th[aria-label="P99 sort"]')?.hidden).toBe(false)
-    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(7)
+    // Six default columns, the fixture's browser group's journeys, and P99.
+    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(8)
     await click(preset)
     await changeTextInput(inputByLabel('Filter command center table rows'), 'Checkout')
     await click(buttonNamed('Graph Wall'))

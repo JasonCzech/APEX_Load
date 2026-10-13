@@ -59,6 +59,7 @@ describe('BrowserInteractionsPanel', () => {
   it('says when a run recorded no interaction evidence', async () => {
     const { container, root } = await render({ ...analysis, status: 'not_captured', patterns: [], heatmaps: [] })
     expect(container.textContent).toContain('This run recorded no interaction evidence.')
+    expect(container.textContent).toContain("turned on in the browser script's or scenario group's Runtime Settings › Browser")
     await act(async () => root.unmount())
   })
 

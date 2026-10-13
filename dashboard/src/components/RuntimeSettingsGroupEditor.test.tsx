@@ -1405,6 +1405,33 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.browser).toBeUndefined()
   })
 
+  // Page timings and interaction evidence are the group's to choose: the
+  // first choice materializes the inherited section with the script's own.
+  it('turns on page timings and interaction evidence for a browser group', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Experience',
+      scriptId: 's1',
+      protocol: 'browser',
+      scriptConfig: { base_url: '', browser: { engine: 'chromium', capture_interactions: true } },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={groups} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Browser (Playwright)')
+    const checkbox = (text: string) => Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes(text),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(checkbox('Page timings and Web Vitals').checked).toBe(false)
+    expect(checkbox('Interaction evidence').checked).toBe(true)
+    act(() => checkbox('Page timings and Web Vitals').click())
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.browser_config).toEqual({ engine: 'chromium', capture_interactions: true, capture_document_metrics: true })
+  })
+
   it('does not resurrect inherited HTTP nested siblings inside an existing group section', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
