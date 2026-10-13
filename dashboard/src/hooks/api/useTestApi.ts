@@ -41,6 +41,7 @@ import type { JourneyRiskReport } from '../../components/runReport/journeyRiskMo
 import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goals'
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
+import type { ScheduleClockChange } from '../../types/executionPlans'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
 import type { ExemplarPage, RcaAnalysisResponse, RcaCritique, RcaWindowLinks } from '../../types/rca'
 import type {
@@ -210,6 +211,8 @@ type ScenarioScheduleRequest = {
 type ScenarioScheduleListResponse = {
   schedules: ScenarioSchedule[]
   count: number
+  /** Each schedule's clock changes, by schedule ID; schedules without any are left out. */
+  clock_changes?: Record<string, ScheduleClockChange[]>
 }
 
 type ScenarioSchedulePreview = {
@@ -218,6 +221,7 @@ type ScenarioSchedulePreview = {
   occurrences: string[]
   count: number
   conflict_summary?: string
+  clock_changes?: ScheduleClockChange[]
 }
 
 type ScenarioScheduleOccurrencesResponse = {

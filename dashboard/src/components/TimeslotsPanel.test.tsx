@@ -304,8 +304,8 @@ describe('TimeslotsPanel', () => {
     await act(async () => setInput(generators, '0'))
     expect(container.querySelector('#timeslot-generators-note')?.textContent).toContain('1 or more')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Reserve')?.disabled).toBe(true)
-    // The time zone is chosen from a list, not typed.
-    expect(container.querySelector('select[aria-label="Time zone"]')).toBeTruthy()
+    // The time zone is found in a list of every zone, never free text.
+    expect(container.querySelector('input[aria-label="Time zone"]')?.getAttribute('list')).toBeTruthy()
   })
 
   it('opens a labelled reservation dialog, focuses the start field, and restores focus on Escape', async () => {

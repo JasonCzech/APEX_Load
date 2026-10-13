@@ -4,6 +4,8 @@ import { formatDateTime } from '../utils/dateTime'
 import {
   RESERVATION_INCREMENT_MINUTES,
   formatScheduleInstant,
+  formatScheduleClockChange,
+  formatScheduleInstantForViewer,
   COMMON_TIMEZONES,
   ceilDateToReservationIncrement,
   datetimeLocalToISO,
@@ -20,7 +22,6 @@ import {
   formatScheduleWindow,
   formatTimeslotLabel,
   formatTimeZoneOffset,
-  formatTimeZoneOptionLabel,
   scheduleStatusTone,
 } from './newTestScheduleFormat'
 
@@ -181,12 +182,6 @@ describe('timezone helpers', () => {
     expect(formatTimeZoneOffset(new Date('2026-06-18T00:00:00Z'), 'UTC')).toBe('UTC+00:00')
   })
 
-  it('builds a readable option label with spaces', () => {
-    const label = formatTimeZoneOptionLabel('America/New_York', new Date('2026-06-18T00:00:00Z'))
-    expect(label).toContain('America/New York')
-    expect(label).toContain('UTC-')
-  })
-
   it('exposes a UTC-first timezone list', () => {
     expect(COMMON_TIMEZONES[0]).toBe('UTC')
     expect(COMMON_TIMEZONES).toContain('Asia/Tokyo')
@@ -236,3 +231,23 @@ describe('startNowBlocker', () => {
   })
 })
 
+
+describe('schedule times across zones and clock changes', () => {
+  it('names a skipped spring-forward time and a repeated fall-back one', () => {
+    expect(formatScheduleClockChange({ date: '2027-03-14', kind: 'skipped', local_times: ['02:30'], matches: 1, at: '2027-03-14T08:00:00Z' }, 'America/Chicago'))
+      .toBe("Sun, Mar 14, 2027: 2:30 AM doesn't exist (clocks go forward), so that run is skipped.")
+    expect(formatScheduleClockChange({ date: '2027-03-14', kind: 'skipped', local_times: ['02:00', '02:10', '02:20'], matches: 6, at: '2027-03-14T08:00:00Z' }, 'America/Chicago'))
+      .toBe("Sun, Mar 14, 2027: 2:00 AM, 2:10 AM, 2:20 AM and 3 more don't exist (clocks go forward), so those 6 runs are skipped.")
+    expect(formatScheduleClockChange({ date: '2026-11-01', kind: 'repeated', local_times: ['01:30'], matches: 1, runs_at: '2026-11-01T06:30:00Z', at: '2026-11-01T07:00:00Z' }, 'America/Chicago'))
+      .toBe('Sun, Nov 1, 2026: 1:30 AM happens twice (clocks go back); it runs once, at the first (Nov 1, 2026, 1:30 AM CDT).')
+    expect(formatScheduleClockChange({ date: '2026-11-01', kind: 'repeated', local_times: ['01:00', '01:30'], matches: 2, runs_at: '2026-11-01T06:00:00Z', at: '2026-11-01T07:00:00Z' }, 'America/Chicago'))
+      .toBe('Sun, Nov 1, 2026: 1:00 AM and 1:30 AM happen twice (clocks go back); each runs once, at the first.')
+  })
+
+  it("shows a run in the schedule's zone, with the viewer's beside it when that differs", () => {
+    expect(formatScheduleInstantForViewer('2026-10-12T06:30:00Z', 'America/Chicago', 'America/Chicago')).toBe('Oct 12, 2026, 1:30 AM CDT')
+    expect(formatScheduleInstantForViewer('2026-10-12T06:30:00Z', 'America/Chicago', 'America/New_York')).toBe('Oct 12, 2026, 1:30 AM CDT (2:30 AM EDT your time)')
+    expect(formatScheduleInstantForViewer('2026-10-12T04:30:00Z', 'America/Chicago', 'UTC')).toBe('Oct 11, 2026, 11:30 PM CDT (Oct 12, 4:30 AM UTC your time)')
+    expect(formatScheduleInstantForViewer(undefined, 'UTC', 'UTC')).toBe('Not scheduled')
+  })
+})

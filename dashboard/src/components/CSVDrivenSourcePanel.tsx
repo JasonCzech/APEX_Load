@@ -11,6 +11,7 @@ import type {
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
+import TimezoneSelect from './ux/TimezoneSelect'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatTrafficProfileAxisTime, inferTimestampMode, trafficProfileTargetAt } from './trafficProfilePreviewModel'
 
@@ -259,7 +260,7 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
               {layout === 'long' && <label><span>Group / series column</span><select value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateColumnMapping() }}><option value="">Select…</option>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>}
               <label><span>{layout === 'wide' ? 'Target columns' : 'Target column'}</span><select multiple={layout === 'wide'} size={layout === 'wide' ? Math.min(6, Math.max(2, selectedSheet.columns.length)) : undefined} value={valueColumns} onChange={event => { setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value).slice(0, layout === 'wide' ? undefined : 1)); invalidateColumnMapping() }}>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>
               {mode === 'goal_oriented' && <label><span>Optional ART columns</span><select multiple size={Math.min(6, Math.max(2, selectedSheet.columns.length))} value={artColumns} onChange={event => { setARTColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateColumnMapping() }}>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>}
-              {timestampMode === 'absolute' && <label><span>Timezone</span><input value={timezone} onChange={event => { setTimezone(event.target.value); invalidateColumnMapping() }} /></label>}
+              {timestampMode === 'absolute' && <label><span>Timezone</span><TimezoneSelect ariaLabel="Timezone" note="Timestamps without an offset are read in this zone; exports are usually UTC" value={timezone} onChange={value => { setTimezone(value); invalidateColumnMapping() }} /></label>}
             </div>
             <button type="button" className="btn btn-secondary" disabled={busy || Boolean(analyzeBlocker)} aria-describedby={analyzeBlocker ? 'csv-analyze-blocker' : undefined} onClick={() => void analyze()}>{busy ? 'Analyzing…' : analyzed ? 'Re-analyze schedule' : 'Analyze schedule'}</button>
             {analyzeBlocker && <p id="csv-analyze-blocker" className="setting-desc">{analyzeBlocker}</p>}

@@ -1159,12 +1159,12 @@ describe('NewTestPage', () => {
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
     await act(async () => editButton?.click())
     const maintenanceStart = container.querySelector<HTMLInputElement>('[aria-label="Maintenance window 1 start time"]')
-    const maintenanceTimezone = container.querySelector<HTMLSelectElement>('[aria-label="Maintenance window 1 timezone"]')
+    const maintenanceTimezone = container.querySelector<HTMLInputElement>('[aria-label="Maintenance window 1 timezone"]')
     expect(maintenanceStart).toBeTruthy()
     expect(maintenanceTimezone?.value).toBe('Europe/Berlin')
     await act(async () => {
       if (maintenanceStart) setInputValue(maintenanceStart, '02:30')
-      if (maintenanceTimezone) setSelectValue(maintenanceTimezone, 'Asia/Tokyo')
+      if (maintenanceTimezone) setInputValue(maintenanceTimezone, 'Asia/Tokyo')
     })
     const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save schedule')
     await flushDebouncedPreflight()
@@ -3707,6 +3707,7 @@ describe('NewTestPage', () => {
         },
       ],
       count: 1,
+      clock_changes: { 'schedule-1': [{ date: '2027-03-14', kind: 'skipped', local_times: ['02:00'], matches: 1, at: '2027-03-14T07:00:00Z' }] },
     })
     apiMock.listScenarioScheduleOccurrences.mockResolvedValue({
       occurrences: [
@@ -3769,10 +3770,13 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('owner Project Admin')
     expect(container.textContent).toContain('America/New_York')
     expect(container.textContent).toContain('Current UTC: 12:34 UTC')
-    const timezoneSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.value === 'America/New_York')) as HTMLSelectElement | undefined
-    expect(timezoneSelect).toBeTruthy()
-    expect(Array.from(timezoneSelect?.options || []).find(option => option.value === 'UTC')?.textContent).toBe('UTC - 12:34 UTC+00:00')
-    expect(Array.from(timezoneSelect?.options || []).find(option => option.value === 'America/New_York')?.textContent).toBe('America/New York - 08:34 UTC-04:00')
+    // The zone picker lists each zone with its current offset and time.
+    const timezoneInput = container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-timezone-label"]')!
+    await act(async () => timezoneInput.focus())
+    const zoneOptions = Array.from(document.getElementById(timezoneInput.getAttribute('list') || '')?.querySelectorAll('option') || [])
+    expect(zoneOptions.find(option => option.value === 'UTC')?.label).toMatch(/^UTC\+00:00 · 12:34 now/)
+    expect(zoneOptions.find(option => option.value === 'America/New_York')?.label).toMatch(/^UTC-04:00 · 08:34 now/)
+    expect(container.textContent).toContain("Sun, Mar 14, 2027: 2:00 AM doesn't exist (clocks go forward), so that run is skipped.")
     expect(container.textContent).toContain('1 blackout')
     expect(container.textContent).toContain('1 maintenance')
     expect(container.textContent).toContain('1 availability')
@@ -4683,7 +4687,7 @@ describe('NewTestPage', () => {
 
     expect(container.querySelector('[aria-labelledby="schedule-scenario-label"]')).toBeInstanceOf(HTMLSelectElement)
     expect(container.querySelector('[aria-labelledby="schedule-name-label"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-labelledby="schedule-timezone-label"]')).toBeInstanceOf(HTMLSelectElement)
+    expect(container.querySelector('[aria-labelledby="schedule-timezone-label"]')?.getAttribute('list')).toBeTruthy()
     expect(container.querySelector('[aria-labelledby="schedule-release-label"]')).toBeInstanceOf(HTMLSelectElement)
 
     const addWindowButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '+ Add window')

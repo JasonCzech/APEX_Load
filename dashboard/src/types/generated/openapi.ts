@@ -113596,6 +113596,14 @@ export interface operations {
       "200": {
         content: {
           "application/json": ({
+            "clock_changes"?: Array<{
+              "at": string;
+              "date": string;
+              "kind": string;
+              "local_times": Array<string>;
+              "matches": number;
+              "runs_at"?: (string) | null;
+            }>;
             "conflict_summary"?: string;
             "count": number;
             "cron_expr": string;
@@ -143491,6 +143499,14 @@ export interface operations {
       "200": {
         content: {
           "application/json": ({
+            "clock_changes"?: Array<{
+              "at": string;
+              "date": string;
+              "kind": string;
+              "local_times": Array<string>;
+              "matches": number;
+              "runs_at"?: (string) | null;
+            }>;
             "conflict_summary"?: string;
             "count": number;
             "cron_expr": string;

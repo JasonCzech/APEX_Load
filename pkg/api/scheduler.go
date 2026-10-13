@@ -3313,6 +3313,10 @@ type ScenarioSchedulePreview struct {
 	Occurrences     []time.Time `json:"occurrences"`
 	Count           int         `json:"count"`
 	ConflictSummary string      `json:"conflict_summary,omitempty"`
+	// ClockChanges names the daylight-saving changes the schedule's times
+	// fall into before its last previewed run (and within a year at least):
+	// skipped spring-forward times and repeated fall-back ones.
+	ClockChanges []ScheduleClockChange `json:"clock_changes,omitempty"`
 }
 
 // PreviewScenarioScheduleRuns computes the next `count` fire times for a candidate
@@ -3364,7 +3368,8 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 		DisabledUntil:       disabledUntil,
 	}
 	occurrences := make([]time.Time, 0, count)
-	cursor := time.Now().UTC()
+	previewFrom := time.Now().UTC()
+	cursor := previewFrom
 	if !executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, cursor) {
 		for i := 0; i < count; i++ {
 			next, err := nextScenarioScheduleRun(schedule, cursor)
@@ -3396,7 +3401,14 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 		}
 		conflictSummary = tr.previewScheduleConflictSummaryWithTimeslotsLocked(schedule, scenario, quotaAt, activeSlots, reservationErr, projectQuota, releaseEvidence, capacityEvidence)
 	}()
-	return &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: occurrences, Count: len(occurrences), ConflictSummary: conflictSummary}, nil
+	var through *time.Time
+	if len(occurrences) > 0 {
+		through = &occurrences[len(occurrences)-1]
+	}
+	clockChanges := scheduleClockChanges(cronExpr, tz, previewFrom, scheduleClockChangeHorizon(previewFrom, through), func(candidate time.Time) (bool, error) {
+		return scheduleAllowsCandidate(schedule, candidate)
+	})
+	return &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: occurrences, Count: len(occurrences), ConflictSummary: conflictSummary, ClockChanges: clockChanges}, nil
 }
 
 func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, bool, error) {

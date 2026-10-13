@@ -189,6 +189,26 @@ export interface ExecutionPlanScheduleRequest {
   expected_revision?: number
 }
 
+/**
+ * A daylight-saving change in a schedule's timezone that its wall-clock times
+ * fall into: when the clocks go forward the matched times do not exist and
+ * are skipped; when they go back the matched times happen twice and run once,
+ * at the first.
+ */
+export interface ScheduleClockChange {
+  /** Local calendar date of the affected times (YYYY-MM-DD). */
+  date: string
+  kind: 'skipped' | 'repeated'
+  /** The first few matched wall-clock times (HH:MM). */
+  local_times: string[]
+  /** Every matched wall-clock time of the change. */
+  matches: number
+  /** Repeated times: the one instant the first of them runs. */
+  runs_at?: string
+  /** The instant the clocks change. */
+  at: string
+}
+
 /** A candidate schedule's next runs, from the server's own evaluator. */
 export interface SchedulePreviewResponse {
   cron_expr: string
@@ -196,11 +216,14 @@ export interface SchedulePreviewResponse {
   occurrences: string[]
   count: number
   conflict_summary?: string
+  clock_changes?: ScheduleClockChange[]
 }
 
 export interface ExecutionPlanScheduleListResponse {
   schedules: ExecutionPlanSchedule[]
   count: number
+  /** Each schedule's clock changes, by schedule ID; schedules without any are left out. */
+  clock_changes?: Record<string, ScheduleClockChange[]>
 }
 
 export interface ExecutionPlanScheduleOccurrence {

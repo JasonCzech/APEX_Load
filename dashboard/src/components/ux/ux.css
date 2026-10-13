@@ -245,3 +245,16 @@
 .ux-library-filters-toggle { display: inline-flex; align-items: center; gap: 6px; }
 .ux-library-filters-count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--accent-contrast); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
 .ux-library-filter-fields[hidden] { display: none; }
+
+/* TimezoneSelect: the zone field, then the zone's offset and time below. */
+.timezone-select {
+  display: inline-grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timezone-select-offset {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

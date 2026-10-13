@@ -585,7 +585,7 @@ func (s *Server) handleListScenarioSchedules(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"schedules": schedules, "count": len(schedules)})
+	writeJSON(w, http.StatusOK, map[string]any{"schedules": schedules, "count": len(schedules), "clock_changes": scenarioScheduleClockChanges(schedules, time.Now().UTC())})
 }
 
 func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Request) {

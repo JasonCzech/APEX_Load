@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../hooks/apiClient'
 import type { ExecutionPlan } from '../types'
+import type { SchedulePreviewResponse } from '../types/executionPlans'
 import ExecutionPlanSchedulesModal from './ExecutionPlanSchedulesModal'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
@@ -18,7 +19,7 @@ const apiMock = vi.hoisted(() => ({
   deleteExecutionPlanSchedule: vi.fn(),
   listExecutionPlanScheduleOccurrences: vi.fn(),
   resolveExecutionPlanScheduleOccurrence: vi.fn(),
-  previewExecutionPlanSchedule: vi.fn(async () => ({ cron_expr: '0 2 * * *', timezone: 'UTC', occurrences: [] as string[], count: 0 })),
+  previewExecutionPlanSchedule: vi.fn(async (): Promise<SchedulePreviewResponse> => ({ cron_expr: '0 2 * * *', timezone: 'UTC', occurrences: [], count: 0 })),
 }))
 
 vi.mock('../hooks/api/useExecutionPlansApi', () => ({
@@ -305,6 +306,30 @@ describe('ExecutionPlanSchedulesModal accessibility', () => {
     await act(async () => button('Create').click())
     await flush()
     expect(apiMock.createExecutionPlanSchedule).toHaveBeenCalledWith(plan.id, expect.objectContaining({ name: 'nightly', release_id: 'rel-2' }))
+  })
+
+  // A saved schedule and a candidate one both name the daylight-saving
+  // changes their times fall into; next runs read in the schedule's zone.
+  it('names skipped and repeated times on saved and previewed schedules', async () => {
+    apiMock.listExecutionPlanSchedules.mockResolvedValue({
+      schedules: [{ ...schedule, cron_expr: '30 1 * * *', timezone: 'America/Chicago', next_run_at: '2026-10-13T06:30:00Z' }],
+      count: 1,
+      clock_changes: { [schedule.id]: [{ date: '2026-11-01', kind: 'repeated', local_times: ['01:30'], matches: 1, runs_at: '2026-11-01T06:30:00Z', at: '2026-11-01T07:00:00Z' }] },
+    })
+    apiMock.previewExecutionPlanSchedule.mockResolvedValue({
+      cron_expr: '30 2 14 3 *', timezone: 'America/Chicago', occurrences: ['2028-03-14T07:30:00Z'], count: 1,
+      clock_changes: [{ date: '2027-03-14', kind: 'skipped', local_times: ['02:30'], matches: 1, at: '2027-03-14T08:00:00Z' }],
+    })
+    await act(async () => {
+      root.render(<ExecutionPlanSchedulesModal plan={plan} canManage onClose={() => {}} />)
+    })
+    await flush()
+    expect(container.textContent).toContain('next: Oct 13, 2026, 1:30 AM CDT')
+    expect(container.textContent).toContain('Sun, Nov 1, 2026: 1:30 AM happens twice (clocks go back); it runs once, at the first (Nov 1, 2026, 1:30 AM CDT).')
+    await act(async () => button('New schedule').click())
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 450)) })
+    await flush()
+    expect(container.textContent).toContain("Sun, Mar 14, 2027: 2:30 AM doesn't exist (clocks go forward), so that run is skipped.")
   })
 
   it('says how to file scheduled runs under a release when the plan has none', async () => {

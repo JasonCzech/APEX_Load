@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -70,7 +71,7 @@ func (s *Server) handleListExecutionPlanSchedules(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"schedules": schedules, "count": len(schedules)})
+	writeJSON(w, http.StatusOK, map[string]any{"schedules": schedules, "count": len(schedules), "clock_changes": executionPlanScheduleClockChanges(schedules, time.Now().UTC())})
 }
 
 func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *http.Request) {

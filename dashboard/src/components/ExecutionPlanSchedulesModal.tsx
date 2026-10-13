@@ -19,9 +19,12 @@ import {
   datetimeLocalToISO,
   describeCron,
   formatDatetimeLocalValue,
+  formatScheduleInstantForViewer,
   formatScheduleToken,
 } from './newTestScheduleFormat'
-import { ScheduleCurrentUtc, ScheduleNextRuns, ScheduleTimezoneSelect, type SchedulePreviewState } from './ScheduleCadenceFields'
+import { ScheduleClockChanges, ScheduleCurrentUtc, ScheduleNextRuns, type SchedulePreviewState } from './ScheduleCadenceFields'
+import TimezoneSelect from './ux/TimezoneSelect'
+import type { ScheduleClockChange } from '../types/executionPlans'
 import { useScheduleClock } from '../hooks/useScheduleClock'
 import { occurrenceStatusLabel, overlapPolicyLabel, scheduleHoldSentence } from './executionPlanActivityModel'
 
@@ -117,6 +120,8 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
   const api = useExecutionPlansApi()
 	const { runGuarded } = useNavigationGuardRunner()
   const [schedules, setSchedules] = useState<ExecutionPlanSchedule[]>([])
+  // Each schedule's daylight-saving changes, by schedule ID.
+  const [clockChanges, setClockChanges] = useState<Record<string, ScheduleClockChange[]>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -154,6 +159,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
     resolveGenerationRef.current += 1
     resolveInFlightRef.current = false
     setSchedules([])
+    setClockChanges({})
     setLoading(false)
     setError(null)
     setBusy(false)
@@ -179,6 +185,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
       const res = await api.listExecutionPlanSchedules(requestedPlanId)
       if (!isCurrentRequest()) return
       setSchedules(res.schedules || [])
+      setClockChanges(res.clock_changes || {})
       setScheduleLoadFailed(false)
     } catch (err) {
       if (!isCurrentRequest()) return
@@ -343,6 +350,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
     }
     if (scheduleResult.status === 'fulfilled') {
       setSchedules(scheduleResult.value.schedules || [])
+      setClockChanges(scheduleResult.value.clock_changes || {})
       setScheduleLoadFailed(false)
     }
 
@@ -427,7 +435,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
         disabled_from: datetimeLocalToISO(disabledFrom) || undefined,
         disabled_until: datetimeLocalToISO(disabledUntil) || undefined,
       }, 5).then(result => {
-        if (!cancelled) setPreview({ key: previewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '' })
+        if (!cancelled) setPreview({ key: previewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '', clockChanges: result.clock_changes || [] })
       }).catch(err => {
         if (!cancelled) setPreview({ key: previewKey, occurrences: [], error: err instanceof ApiError ? err.message : 'Invalid schedule' })
       })
@@ -503,7 +511,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                 </label>
                 <div className="pp-field">
                   <span id={`${titleId}-timezone`}>Timezone</span>
-                  <ScheduleTimezoneSelect labelledBy={`${titleId}-timezone`} value={draft.timezone} now={clock} onChange={timezone => setDraft(d => (d ? { ...d, timezone } : d))} />
+                  <TimezoneSelect labelledBy={`${titleId}-timezone`} value={draft.timezone} now={clock} onChange={timezone => setDraft(d => (d ? { ...d, timezone } : d))} />
                   <ScheduleCurrentUtc now={clock} />
                 </div>
               </div>
@@ -649,7 +657,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                       </span>
                       {scheduleHoldSentence(schedule.next_required_action, schedule.next_run_at)
                         ? <span>{scheduleHoldSentence(schedule.next_required_action, schedule.next_run_at)}</span>
-                        : <span>next: {formatTimestamp(schedule.next_run_at)}</span>}
+                        : <span>next: {formatScheduleInstantForViewer(schedule.next_run_at, schedule.timezone || 'UTC')}</span>}
                       {schedule.last_run_at ? <span>last: {formatTimestamp(schedule.last_run_at)}</span> : null}
                       <span>files runs under {releaseLabel(schedule.release_id)}</span>
                       {schedule.next_required_action === 'approval_required' && onReviewApproval ? (
@@ -658,6 +666,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                         </button>
                       ) : null}
                     </div>
+                    <ScheduleClockChanges changes={clockChanges[schedule.id]} timezone={schedule.timezone || 'UTC'} />
                     {schedule.last_error && schedule.next_required_action !== 'approval_required' && schedule.next_required_action !== 'waiting_for_previous_run' ? (
                       <div className="pp-row-meta">
                         <span className="pp-pill pp-pill-danger">last error</span>

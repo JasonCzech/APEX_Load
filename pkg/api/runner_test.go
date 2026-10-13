@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -7001,6 +7002,23 @@ func TestPreviewScenarioScheduleRuns(t *testing.T) {
 	macro, err := runner.PreviewScenarioScheduleRuns(scenario.ID, CreateScenarioScheduleRequest{CronExpr: "@daily"}, 3)
 	if err != nil || macro.Count != 3 {
 		t.Fatalf("macro preview = %+v err=%v", macro, err)
+	}
+	if len(preview.ClockChanges) != 0 {
+		t.Fatalf("UTC preview clock changes = %+v, want none", preview.ClockChanges)
+	}
+	// Within any year a Chicago 01:00-02:30 schedule meets one fall-back
+	// (01:00 and 01:30 happen twice) and one spring-forward (02:00 and 02:30
+	// do not exist); the preview names both.
+	chicago, err := runner.PreviewScenarioScheduleRuns(scenario.ID, CreateScenarioScheduleRequest{CronExpr: "*/30 1-2 * * *", Timezone: "America/Chicago"}, 5)
+	if err != nil {
+		t.Fatalf("chicago preview: %v", err)
+	}
+	kinds := map[string][]string{}
+	for _, change := range chicago.ClockChanges {
+		kinds[change.Kind] = change.LocalTimes
+	}
+	if !reflect.DeepEqual(kinds["repeated"], []string{"01:00", "01:30"}) || !reflect.DeepEqual(kinds["skipped"], []string{"02:00", "02:30"}) {
+		t.Fatalf("chicago clock changes = %+v, want repeated 01:00/01:30 and skipped 02:00/02:30", chicago.ClockChanges)
 	}
 }
 

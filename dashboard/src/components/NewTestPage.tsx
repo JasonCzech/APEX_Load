@@ -26,7 +26,6 @@ import { formatTimeCompact, isValidDurationInput, isValidNonNegativeDurationInpu
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { SortIndicator } from './SortIndicator'
 import {
-  COMMON_TIMEZONES,
   datetimeLocalToISO,
   describeCron,
   firstLaunchConflict,
@@ -38,6 +37,7 @@ import {
   formatNextBlockingEvent,
   formatReservationWindow,
   formatScheduleInstant,
+  formatScheduleInstantForViewer,
   formatScheduleToken,
   formatScheduleWindow,
   formatTimeslotLabel,
@@ -49,7 +49,9 @@ import PageViewToggle from './PageViewToggle'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { CronBuilder } from './ScheduleCronBuilder'
 import { describeDataBinding } from './scenarioDataBindingModel'
-import { ScheduleCurrentUtc, ScheduleNextRuns, ScheduleTimezoneSelect } from './ScheduleCadenceFields'
+import { ScheduleClockChanges, ScheduleCurrentUtc, ScheduleNextRuns, type SchedulePreviewState } from './ScheduleCadenceFields'
+import TimezoneSelect from './ux/TimezoneSelect'
+import type { ScheduleClockChange } from '../types/executionPlans'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
   applyGroupErrorHandlingDraftEdit,
@@ -407,15 +409,13 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
             <input aria-label={`${kind} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
             <span className="schedule-window-sep">to</span>
             <input aria-label={`${kind} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
-            <select
-              aria-label={`${kind} window ${i + 1} timezone`}
+            <TimezoneSelect
+              ariaLabel={`${kind} window ${i + 1} timezone`}
               className="settings-input schedule-window-timezone"
               value={w.timezone?.trim() || fallbackTimezone.trim() || 'UTC'}
               disabled={disabled}
-              onChange={e => update(i, { timezone: e.target.value })}
-            >
-              {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
-            </select>
+              onChange={timezone => update(i, { timezone })}
+            />
             <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${kind.toLowerCase()} window ${i + 1}`}>Remove</button>
           </div>
         ))}
@@ -677,6 +677,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     return () => { cancelled = true }
   }, [api, activeApplication?.id, releaseCatalogRefresh])
   const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
+  // Each saved schedule's daylight-saving changes, by schedule ID.
+  const [scheduleClockChanges, setScheduleClockChanges] = useState<Record<string, ScheduleClockChange[]>>({})
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
   const [scheduleClock, setScheduleClock] = useState(() => new Date())
@@ -691,7 +693,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [scheduleDefaults, setScheduleDefaults] = useState<DashboardScheduleDefaultsSettings>(DEFAULT_SCHEDULE_DEFAULTS)
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [scheduleDraftBaseline, setScheduleDraftBaseline] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
-  const [schedulePreview, setSchedulePreview] = useState<{ key: string; occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
+  const [schedulePreview, setSchedulePreview] = useState<(SchedulePreviewState & { key: string }) | null>(null)
   const [runName, setRunName] = useState('')
   const runNameScenarioRef = useRef('')
   const runNameEditedRef = useRef(false)
@@ -1159,7 +1161,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
         disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
       }, 5).then(result => {
-        if (!cancelled) setSchedulePreview({ key: schedulePreviewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '' })
+        if (!cancelled) setSchedulePreview({ key: schedulePreviewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '', clockChanges: result.clock_changes || [] })
       }).catch(err => {
         if (!cancelled) setSchedulePreview({ key: schedulePreviewKey, occurrences: [], error: getErrorMessage(err, 'Invalid schedule') })
       })
@@ -1357,6 +1359,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       const res = await api.listScenarioSchedules(currentScenarioId)
       if (!isCurrentScheduleScope(scope) || requestGeneration !== scheduleRequestGenerationRef.current) return
       setSchedules(res.schedules || [])
+      setScheduleClockChanges(res.clock_changes || {})
       setCatalogRefresh(value => value + 1)
     } catch (err: unknown) {
       if (isCurrentScheduleScope(scope) && requestGeneration === scheduleRequestGenerationRef.current) {
@@ -3050,7 +3053,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <span className="setting-desc">IANA timezone used for cron evaluation</span>
                     <ScheduleCurrentUtc now={scheduleClock} />
                   </div>
-                  <ScheduleTimezoneSelect className="settings-input" labelledBy="schedule-timezone-label" value={scheduleDraft.timezone} now={scheduleClock} onChange={timezone => setScheduleDraft(prev => ({ ...prev, timezone }))} />
+                  <TimezoneSelect className="settings-input" labelledBy="schedule-timezone-label" value={scheduleDraft.timezone} now={scheduleClock} onChange={timezone => setScheduleDraft(prev => ({ ...prev, timezone }))} />
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
@@ -3198,7 +3201,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                   {!!item.availability_windows?.length && <span className="script-health-token healthy">{item.availability_windows.length} availability</span>}
                                 </div>
                               </td>
-                              <td>{formatScheduleInstant(item.next_run_at, item.timezone)}</td>
+                              <td>
+                                {formatScheduleInstantForViewer(item.next_run_at, item.timezone)}
+                                <ScheduleClockChanges changes={scheduleClockChanges[item.id]} timezone={item.timezone || 'UTC'} />
+                              </td>
                               <td>{formatScheduleInstant(item.last_run_at, item.timezone)}</td>
                               <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
                           <td aria-label="Schedule governance">

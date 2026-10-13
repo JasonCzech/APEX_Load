@@ -7509,14 +7509,14 @@ col.results-actions-col {
   font-family: var(--font-mono, monospace);
 }
 
-.cron-next-runs ul {
+:is(.cron-next-runs, .schedule-clock-changes) ul {
   margin: 4px 0 0;
   padding-left: 16px;
   color: var(--text-secondary, #94a3b8);
   font-size: 14px;
 }
 
-.cron-next-runs li {
+:is(.cron-next-runs, .schedule-clock-changes) li {
   list-style: disc;
 }
 

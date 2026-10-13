@@ -8,6 +8,7 @@ import type { AnalysisCapabilities, AnalysisImport, AnalysisMapping, AnalysisPoi
 import './AnalysisWorkspace.css'
 import { downloadBlob } from '../utils/fileUtils'
 import AnalysisSavedMappings from './AnalysisSavedMappings'
+import TimezoneSelect from './ux/TimezoneSelect'
 import AnalysisComparison from './AnalysisComparison'
 import AnalysisIdentityMapping from './AnalysisIdentityMapping'
 import AnalysisIdentityFilters from './AnalysisIdentityFilters'
@@ -185,7 +186,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
             <AnalysisSavedMappings projectId={projectId} mapping={mapping} canEdit={canEdit && !mappingUnsupported} onLoad={item => { updateMapping(item.definition); setMappingTemplate(item) }} />
             <label>Timestamp column<select value={JSON.stringify(mapping.timestamp)} onChange={e => setMapping({ ...mapping, timestamp: JSON.parse(e.target.value) })}><option value="[]">Choose a timestamp</option>{columns.map(c => <option key={c.path} disabled={analysisProtectedIdentityColumn(c.path_components)} value={JSON.stringify(c.path_components)}>{c.path}{analysisProtectedIdentityColumn(c.path_components) ? ' (protected)' : ''}</option>)}</select></label>
             <label>Timestamp format<select value={mapping.timestamp_encoding} onChange={e => setMapping({ ...mapping, timestamp_encoding: e.target.value })}>{['timestamp', 'timestamp_offset', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns'].map(value => <option key={value}>{value}</option>)}</select></label>
-            <label>Source timezone<input value={mapping.timezone} onChange={e => setMapping({ ...mapping, timezone: e.target.value })} placeholder="America/New_York" /></label>
+            <label>Source timezone<TimezoneSelect ariaLabel="Source timezone" note="Timestamps without an offset are read in this zone; exports are usually UTC" value={mapping.timezone} onChange={timezone => setMapping({ ...mapping, timezone })} /></label>
             {identityAvailable ? <AnalysisIdentityMapping mapping={mapping} columns={columns} onChange={setMapping} /> : <p>Imported identity schema 2 is unavailable on this controller. Version 1 imports remain available.</p>}
             {analysisMappingDisclosureError(mapping) && <p role="alert">{analysisMappingDisclosureError(mapping)} The stored draft is retained for correction.</p>}
             {mappingUnsupported && <p role="alert">This identity mapping is retained, but cannot be committed by this controller. Connect to a controller advertising imported identity schema 2.</p>}

@@ -54700,6 +54700,35 @@ paths:
               schema:
                 type: object
                 properties:
+                  clock_changes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at:
+                          type: string
+                          format: date-time
+                        date:
+                          type: string
+                        kind:
+                          type: string
+                        local_times:
+                          type: array
+                          items:
+                            type: string
+                        matches:
+                          type: integer
+                          format: int64
+                        runs_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - at
+                        - date
+                        - kind
+                        - local_times
+                        - matches
                   conflict_summary:
                     type: string
                   count:
@@ -174419,6 +174448,35 @@ paths:
               schema:
                 type: object
                 properties:
+                  clock_changes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at:
+                          type: string
+                          format: date-time
+                        date:
+                          type: string
+                        kind:
+                          type: string
+                        local_times:
+                          type: array
+                          items:
+                            type: string
+                        matches:
+                          type: integer
+                          format: int64
+                        runs_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - at
+                        - date
+                        - kind
+                        - local_times
+                        - matches
                   conflict_summary:
                     type: string
                   count:

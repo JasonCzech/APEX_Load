@@ -1357,9 +1357,10 @@ func (tr *TestRunner) PreviewExecutionPlanScheduleRuns(planID string, req Create
 		return nil, fmt.Errorf("disabled_from must be before disabled_until")
 	}
 	preview := &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: make([]time.Time, 0, count)}
-	cursor := time.Now().UTC()
+	previewFrom := time.Now().UTC()
+	cursor := previewFrom
+	allows := executionPlanScheduleAllows(disabledFrom, disabledUntil)
 	if !executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, cursor) {
-		allows := executionPlanScheduleAllows(disabledFrom, disabledUntil)
 		for len(preview.Occurrences) < count {
 			next, err := nextCronRun(cronExpr, tz, cursor, allows)
 			if err != nil || next == nil {
@@ -1370,5 +1371,10 @@ func (tr *TestRunner) PreviewExecutionPlanScheduleRuns(planID string, req Create
 		}
 	}
 	preview.Count = len(preview.Occurrences)
+	var through *time.Time
+	if preview.Count > 0 {
+		through = &preview.Occurrences[preview.Count-1]
+	}
+	preview.ClockChanges = scheduleClockChanges(cronExpr, tz, previewFrom, scheduleClockChangeHorizon(previewFrom, through), allows)
 	return preview, nil
 }

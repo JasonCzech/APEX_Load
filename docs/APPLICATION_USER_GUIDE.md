@@ -836,9 +836,19 @@ To run a scenario on a cadence — a nightly regression, a weekly soak — use s
 2. Pick a stored scenario.
 3. Define when it should run with the visual **cron builder**: a five-field editor over
    a standard cron expression, so you do not have to remember cron syntax.
-4. Set the schedule's **timezone**. Schedules fire in their declared timezone, not UTC,
-   so a schedule set to 02:00 Europe/London fires at 02:00 local time across daylight
-   saving changes.
+4. Set the schedule's **timezone**; a new schedule starts in your browser's zone. Type
+   any part of a zone's name to find it; each zone shows its current UTC offset and
+   time. Schedules fire in their declared timezone, not UTC, so a schedule set to 02:00
+   Europe/London fires at 02:00 local time across daylight saving changes. The next
+   five runs are listed in the schedule's zone, with your own time beside them when
+   your zone differs. When a run's local time falls in a daylight-saving change the
+   schedule says so, in the editor and on the saved schedule: a time the clocks skip
+   (02:30 on a spring-forward night) does not exist and that run is skipped, and a time
+   that happens twice (01:30 on a fall-back night) runs once, at the first. Plan
+   schedules, booking windows and data imports (traffic profiles, CSV schedules,
+   analysis sources) use the same zone picker; focus it to browse every zone. An
+   import's zone is the one timestamps without an offset are read in, and starts at
+   UTC, since exported timestamps usually are.
 5. Save. Depending on governance settings, a new schedule may enter `pending_approval`
    and wait for sign-off before it becomes active.
 

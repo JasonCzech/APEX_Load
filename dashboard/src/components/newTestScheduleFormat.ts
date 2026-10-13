@@ -1,4 +1,5 @@
 import { CapacityTimeslot, LaunchConflict, LaunchPreflightResponse } from '../types'
+import type { ScheduleClockChange } from '../types/executionPlans'
 import { formatDateTime } from '../utils/dateTime'
 
 // Pure schedule / launch-window / timezone / cron formatters extracted from
@@ -17,6 +18,82 @@ export function formatScheduleTimestampInZone(value: string, timeZone?: string) 
   } catch {
     return formatScheduleTimestamp(value)
   }
+}
+
+/** A schedule instant in a zone with the zone's short name, e.g. "Oct 12, 2026, 1:30 AM CDT". */
+export function formatScheduleTimestampWithZone(value: string, timeZone?: string) {
+  try {
+    return new Date(value).toLocaleString(undefined, { timeZone: timeZone || 'UTC', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+  } catch {
+    return formatScheduleTimestamp(value)
+  }
+}
+
+let cachedViewerTimeZone: string | undefined
+
+/** The viewer's own timezone, as the browser reports it (read once). */
+export function viewerTimeZone(): string {
+  if (cachedViewerTimeZone === undefined) {
+    try {
+      cachedViewerTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    } catch {
+      cachedViewerTimeZone = 'UTC'
+    }
+  }
+  return cachedViewerTimeZone
+}
+
+/**
+ * A schedule instant in the schedule's zone, and in the viewer's beside it
+ * when that differs: "Oct 12, 2026, 1:30 AM CDT (2:30 AM EDT your time)".
+ */
+export function formatScheduleInstantForViewer(value: string | undefined, timeZone?: string, viewerZone = viewerTimeZone()) {
+  if (!value) return 'Not scheduled'
+  const inSchedule = formatScheduleTimestampWithZone(value, timeZone)
+  if ((timeZone || 'UTC') === viewerZone) return inSchedule
+  let mine: string
+  try {
+    // The calendar date in a zone, as YYYY-MM-DD.
+    const zonedDate = (zone: string) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
+    mine = new Date(value).toLocaleString(undefined, zonedDate(timeZone || 'UTC') === zonedDate(viewerZone)
+      ? { timeZone: viewerZone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }
+      : { timeZone: viewerZone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+  } catch {
+    return inSchedule
+  }
+  return `${inSchedule} (${mine} your time)`
+}
+
+/** "Sun, Mar 14, 2027" for a YYYY-MM-DD calendar date. */
+function formatCalendarDate(date: string) {
+  const parsed = new Date(`${date}T12:00:00Z`)
+  return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** "2:30 AM" for a HH:MM wall-clock time. */
+function formatWallClock(time: string) {
+  const [hours, minutes] = time.split(':').map(Number)
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return time
+  return new Date(Date.UTC(2000, 0, 1, hours, minutes)).toLocaleTimeString(undefined, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' })
+}
+
+/**
+ * One sentence naming a daylight-saving change a schedule falls into, e.g.
+ * "Sun, Mar 14, 2027: 2:30 AM doesn't exist (clocks go forward), so that run is skipped."
+ */
+export function formatScheduleClockChange(change: ScheduleClockChange, timeZone?: string) {
+  const times = change.local_times.map(formatWallClock)
+  const more = change.matches - times.length
+  const list = more > 0 ? `${times.join(', ')} and ${more} more`
+    : times.length > 1 ? `${times.slice(0, -1).join(', ')} and ${times[times.length - 1]}`
+      : times[0] || ''
+  const one = change.matches === 1
+  const date = formatCalendarDate(change.date)
+  if (change.kind === 'skipped') {
+    return `${date}: ${list} ${one ? "doesn't" : "don't"} exist (clocks go forward), so ${one ? 'that run is' : `those ${change.matches} runs are`} skipped.`
+  }
+  const first = one && change.runs_at ? ` (${formatScheduleTimestampWithZone(change.runs_at, timeZone)})` : ''
+  return `${date}: ${list} ${one ? 'happens' : 'happen'} twice (clocks go back); ${one ? 'it runs' : 'each runs'} once, at the first${first}.`
 }
 
 /** A schedule instant in the schedule's own timezone, so it matches the zone shown beside it. */
@@ -163,14 +240,23 @@ export function formatUtcScheduleClock(date: Date) {
   }).format(date)
 }
 
+// One formatter per zone and purpose: zone pickers label every IANA zone.
+const zoneFormatterCache = new Map<string, Intl.DateTimeFormat>()
+function zoneFormatter(kind: 'clock' | 'parts', timeZone: string) {
+  const key = `${kind}:${timeZone}`
+  let formatter = zoneFormatterCache.get(key)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', kind === 'clock'
+      ? { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+      : { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+    zoneFormatterCache.set(key, formatter)
+  }
+  return formatter
+}
+
 export function formatTimeZoneClock(date: Date, timeZone: string) {
   try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).format(date)
+    return zoneFormatter('clock', timeZone).format(date)
   } catch {
     return formatUtcScheduleClock(date)
   }
@@ -178,16 +264,7 @@ export function formatTimeZoneClock(date: Date, timeZone: string) {
 
 export function formatTimeZoneOffset(date: Date, timeZone: string) {
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(date)
+    const parts = zoneFormatter('parts', timeZone).formatToParts(date)
     const partValue = (type: string) => Number(parts.find(part => part.type === type)?.value || 0)
     const zonedTime = Date.UTC(
       partValue('year'),
@@ -206,10 +283,6 @@ export function formatTimeZoneOffset(date: Date, timeZone: string) {
   } catch {
     return 'UTC+00:00'
   }
-}
-
-export function formatTimeZoneOptionLabel(timeZone: string, date: Date) {
-  return `${timeZone.replace(/_/g, ' ')} - ${formatTimeZoneClock(date, timeZone)} ${formatTimeZoneOffset(date, timeZone)}`
 }
 
 export function formatScheduleToken(value?: string) {

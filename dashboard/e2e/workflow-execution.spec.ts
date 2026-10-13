@@ -51,7 +51,7 @@ test('[U15] held run stays reserved across reload and starts only on explicit ac
   await page.reload()
   await statusIsStable(() => runStatus(request, id), 'RESERVED')
   expect(target.count()).toBe(0)
-  await page.getByRole('button', { name: /^Start(?: Test| Run| Now)?$/ }).first().click()
+  await page.getByRole('button', { name: /^Start(?: test| run| now)?$/i }).first().click()
   const confirm = page.getByRole('dialog')
   if (await confirm.isVisible()) await confirm.getByRole('button', { name: /^Start/ }).click()
   await expect.poll(() => target.count(), { timeout: 60_000 }).toBeGreaterThan(0)
