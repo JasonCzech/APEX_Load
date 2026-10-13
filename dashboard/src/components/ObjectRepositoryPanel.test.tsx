@@ -28,6 +28,9 @@ const scriptApiMock = { listScripts: vi.fn() }
 vi.mock('../hooks/api/useScriptApi', () => ({
   useScriptApi: () => scriptApiMock,
 }))
+// What uses each asset is read by its own hook; tests set it directly.
+const sharedAssetUsage = vi.hoisted(() => ({ value: null as import('../types/sharedAssets').SharedAssetUsage | null, refresh: vi.fn() }))
+vi.mock('./useSharedAssetUsage', () => ({ useSharedAssetUsage: () => ({ usage: sharedAssetUsage.value, error: '', refresh: sharedAssetUsage.refresh }) }))
 const projectScripts = ['script-7', 'script-9', 'script-b', 'script-draft'].map(id => ({ id, name: `Checkout ${id}`, protocol: 'web' }))
 
 let container: HTMLElement
@@ -94,6 +97,39 @@ async function openNewRepository() {
 }
 
 describe('ObjectRepositoryPanel', () => {
+  it('says which scripts point at each repository and will not delete one they use', async () => {
+    sharedAssetUsage.value = { project_id: 'proj-a', data_pools: {}, live_tables: {}, object_repositories: { r1: [{ id: 'script-7', name: 'Checkout script-7' }] }, correlation_rulesets: {} }
+    try {
+      apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [repo({ objects: [{ logical_name: 'go', css: '#go' }] }), repo({ id: 'r2', name: 'Spare' })], count: 2 })
+      await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+      await flush()
+      const meta = Array.from(container.querySelectorAll('.pp-row-meta')).map(element => element.textContent)
+      expect(meta[0]).toContain('used by 1 script')
+      expect(meta[1]).toContain('not used by a script')
+      await act(async () => { container.querySelector<HTMLButtonElement>('.pp-row-title-button')!.click() })
+      const link = container.querySelector<HTMLAnchorElement>('.shared-asset-used-by a')
+      expect(link?.textContent).toBe('Checkout script-7')
+      expect(link?.getAttribute('href')).toBe('#/scripts?mode=edit&scriptId=script-7&projectId=proj-a')
+
+      sharedAssetUsage.refresh.mockClear()
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-row-actions button')).filter(button => button.textContent === 'Delete')[0].click() })
+      expect(sharedAssetUsage.refresh).toHaveBeenCalled()
+      // The confirmation loads on demand.
+      await vi.waitFor(async () => {
+        await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+        expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+      }, { timeout: 3000, interval: 20 })
+      const dialog = container.querySelector('[role="dialog"]')!
+      expect(dialog.textContent).toContain('Scripts point at its objects, so it cannot be deleted.')
+      expect(dialog.querySelector('.shared-asset-used-by a')?.textContent).toBe('Checkout script-7')
+      // Nothing to fill in, and nothing to confirm, while a script uses it.
+      expect(dialog.querySelector('input')).toBeNull()
+      expect(Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete repository')!.disabled).toBe(true)
+    } finally {
+      sharedAssetUsage.value = null
+    }
+  })
+
   it('lists repositories and seeds one from a script', async () => {
     apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [repo({ objects: [{ logical_name: 'go', css: '#go', best_confidence: 90 }] })], count: 1 })
     apiMock.createObjectRepositoryFromScript.mockResolvedValue(repo({ id: 'r2', name: 'Seeded' }))
@@ -176,6 +212,8 @@ describe('ObjectRepositoryPanel', () => {
     expect(object.xpath).toBe('xpath=//a') // mirrored into the descriptor
     expect(object.best_confidence).toBe(89) // bumped strictly above the prior primary
     expect(object.candidates?.find(c => c.value === 'xpath=//a')?.confidence).toBe(89)
+    // Promoting changes no script's references, so what uses it is not re-read.
+    expect(sharedAssetUsage.refresh).not.toHaveBeenCalled()
   })
 
   it('passes bind_script when the import checkbox is set', async () => {
@@ -193,6 +231,8 @@ describe('ObjectRepositoryPanel', () => {
     await flush()
 
     expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith(expect.objectContaining({ script_id: 'script-9', bind_script: true }))
+    // The bound script now uses the new repository.
+    expect(sharedAssetUsage.refresh).toHaveBeenCalled()
   })
 
   it('ignores a late object-repository response from the previous project', async () => {

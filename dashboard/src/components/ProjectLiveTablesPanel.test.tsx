@@ -8,6 +8,9 @@ import type { ProjectLiveTableView } from '../types/projectLiveTables'
 
 const { api } = vi.hoisted(() => ({ api: { listProjectLiveTables: vi.fn(), getProjectLiveTable: vi.fn(), listDataPools: vi.fn(), createProjectLiveTable: vi.fn(), getProjectLiveTableRows: vi.fn(), mutateProjectLiveTable: vi.fn(), changeProjectLiveTableLifecycle: vi.fn(), exportProjectLiveTable: vi.fn() } }))
 vi.mock('../hooks/useApi', () => ({ useApi: () => api }))
+// What uses each asset is read by its own hook; tests set it directly.
+const sharedAssetUsage = vi.hoisted(() => ({ value: null as import('../types/sharedAssets').SharedAssetUsage | null, refresh: vi.fn() }))
+vi.mock('./useSharedAssetUsage', () => ({ useSharedAssetUsage: () => ({ usage: sharedAssetUsage.value, error: '', refresh: sharedAssetUsage.refresh }) }))
 const table: ProjectLiveTableView = { id: 'table', project_id: 'project', name: 'Shared work', profile: 'native_queue', columns: ['id', 'note'], state: 'active', config_revision: '2', instance_id: 'instance', stats: { revision: '9007199254740993', counts: { available: 1, leased: 0 }, capacity: { max_rows: 10, max_bytes: 1024 } }, attachments: [], permissions: { can_view: true, can_mutate: true, can_admin: true } }
 const preview = { columns: table.columns, revision: table.stats!.revision, total: 1, rows: [{ id: 'row', version: '9007199254740995', values: { id: 'private-value', note: '' }, state: 'available' }] }
 let container: HTMLDivElement; let root: Root
@@ -267,4 +270,24 @@ it('opens the table a link names and follows another link on the same page', asy
   expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'table'])
   await act(async () => root.render(<ProjectLiveTablesPanel projectId="project" selectedId="another" />))
   expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'another'])
+})
+
+it('says which scenarios bind a table, links them, and lists them before a lifecycle change', async () => {
+  sharedAssetUsage.value = { project_id: 'project', data_pools: {}, live_tables: { table: [{ id: 'scenario-1', name: 'Worker run', alias: 'work' }] }, object_repositories: {}, correlation_rulesets: {} }
+  try {
+    await open()
+    expect(container.querySelector('select option[value="table"]')?.textContent).toContain('used by 1 scenario')
+    const details = container.querySelector('[aria-label="Project live table details"]')!
+    const link = details.querySelector<HTMLAnchorElement>('.shared-asset-used-by a')
+    expect(link?.textContent).toBe('Worker run')
+    expect(link?.getAttribute('href')).toBe('#/tests?view=builder&scenarioId=scenario-1&step=data&projectId=project')
+    const lifecycle = [...details.querySelectorAll('details')].find(element => element.querySelector('summary')?.textContent === 'Table lifecycle')!
+    expect(lifecycle.textContent).toContain('This affects the runs of 1 scenario')
+    // Resuming changes nothing for them, so the list is not shown.
+    const action = lifecycle.querySelector('select')!
+    await act(async () => { action.value = 'resume'; action.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(lifecycle.textContent).not.toContain('This affects the runs of')
+  } finally {
+    sharedAssetUsage.value = null
+  }
 })

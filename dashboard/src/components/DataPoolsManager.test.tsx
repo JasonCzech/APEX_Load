@@ -35,6 +35,9 @@ vi.mock('../hooks/useApi', () => ({
 vi.mock('../utils/fileUtils', () => ({
   downloadBlob: downloadBlobMock,
 }))
+// What uses each asset is read by its own hook; tests set it directly.
+const sharedAssetUsage = vi.hoisted(() => ({ value: null as import('../types/sharedAssets').SharedAssetUsage | null, refresh: vi.fn() }))
+vi.mock('./useSharedAssetUsage', () => ({ useSharedAssetUsage: () => ({ usage: sharedAssetUsage.value, error: '', refresh: sharedAssetUsage.refresh }) }))
 
 // The workspace the page renders the manager for.
 const projectContextMock = {
@@ -387,6 +390,43 @@ describe('DataPoolsManager', () => {
     expect(section?.textContent).not.toContain('Unable to delete data pool')
   })
 
+
+  it('says which scenarios bind each pool, links them, and lists them before a delete they block', async () => {
+    sharedAssetUsage.value = { project_id: 'project-1', data_pools: { 'pool-1': [{ id: 'scenario-1', name: 'Checkout run', alias: 'customers' }] }, live_tables: {}, object_repositories: {}, correlation_rulesets: {} }
+    try {
+      apiMock.listDataPools.mockResolvedValue({ data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }, { id: 'pool-2', name: 'Idle', project_id: 'project-1', created_at: '', updated_at: '' }], count: 2 })
+      apiMock.getDataPool.mockResolvedValue({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [], total: 0 })
+      await act(async () => renderManager(root))
+      await flushPromises()
+      await flushPromises()
+      const section = container.querySelector('#settings-section-data-pools')!
+      const rows = Array.from(section.querySelectorAll('.settings-release-row'))
+      expect(rows.map(row => row.querySelector('small')?.textContent)).toEqual([expect.stringContaining('Used by 1 scenario'), expect.stringContaining('Not bound by a scenario')])
+      // The open pool links its scenario at the Data step, where the binding is changed.
+      const link = section.querySelector<HTMLAnchorElement>('.shared-asset-used-by a')
+      expect(link?.textContent).toBe('Checkout run')
+      expect(link?.getAttribute('href')).toBe('#/tests?view=builder&scenarioId=scenario-1&step=data&projectId=project-1')
+
+      const deleteFor = (row: Element) => Array.from(row.querySelectorAll('.settings-inline-actions button')).find(button => button.textContent?.trim() === 'Delete')!
+      sharedAssetUsage.refresh.mockClear()
+      await act(async () => deleteFor(rows[0]).dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      // A fresh read, so the list is current when it is shown.
+      expect(sharedAssetUsage.refresh).toHaveBeenCalled()
+      let dialog = container.querySelector('[role="dialog"]')!
+      expect(dialog.textContent).toContain('cannot be deleted while scenarios bind it')
+      expect(dialog.querySelector('.shared-asset-used-by a')?.textContent).toBe('Checkout run')
+      const confirm = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Delete data pool')!
+      expect(confirm().disabled).toBe(true)
+      await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Cancel')!.click())
+
+      await act(async () => deleteFor(rows[1]).dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      dialog = container.querySelector('[role="dialog"]')!
+      expect(dialog.textContent).toContain('No scenario binds it.')
+      expect(confirm().disabled).toBe(false)
+    } finally {
+      sharedAssetUsage.value = null
+    }
+  })
 
   it('opens a repository-linked pool and never silently selects a different pool for an unavailable link', async () => {
     apiMock.listDataPools.mockResolvedValue({ data_pools: [{ id: 'pool-linked', name: 'Linked pool', project_id: 'project-1', created_at: '', updated_at: '' }, { id: 'pool-other', name: 'Other pool', project_id: 'project-1', created_at: '', updated_at: '' }], count: 2 })

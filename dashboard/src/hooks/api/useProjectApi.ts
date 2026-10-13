@@ -8,6 +8,7 @@ import {
   type ProjectSecretsWriteResponse,
   type ProjectSecretWrite,
 } from '../../types/secrets'
+import type { SharedAssetUsage, SharedAssetUsageKind } from '../../types/sharedAssets'
 import { request } from '../apiClient'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
@@ -78,6 +79,12 @@ export function useProjectApi() {
     [],
   )
 
+  const getSharedAssetUsage = useCallback(
+    (projectId: string, include: SharedAssetUsageKind[], options?: ApiCallOptions) =>
+      request<SharedAssetUsage>(`/projects/${encodeURIComponent(projectId)}/shared-asset-usage${query({ include: include.join(',') })}`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const createProjectSecrets = useCallback(
     (projectId: string, secrets: ProjectSecretWrite[], options?: ApiCallOptions) =>
       request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, withCallOptions({
@@ -127,6 +134,7 @@ export function useProjectApi() {
       listProjectSecrets,
       getProjectSecretStatuses,
       getProjectSecretUsage,
+      getSharedAssetUsage,
       createProjectSecrets,
       rotateProjectSecret,
       listFolders,
@@ -134,6 +142,6 @@ export function useProjectApi() {
       updateFolder,
       deleteFolder,
     }),
-    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, getProjectSecretUsage, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
+    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, getProjectSecretUsage, getSharedAssetUsage, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
   )
 }

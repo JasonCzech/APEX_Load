@@ -49,6 +49,7 @@ var modularAPIRouteCatalogs = []apiRouteCatalog{
 	dynatraceNativeAPIRouteCatalog,
 	elasticAPIRouteCatalog,
 	objectActivityAPIRouteCatalog,
+	sharedAssetsAPIRouteCatalog,
 	executionRecoveryAPIRouteCatalog,
 	analysisAPIRouteCatalog,
 	runMonitoringAPIRouteCatalog,

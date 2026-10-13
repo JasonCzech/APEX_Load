@@ -2403,6 +2403,10 @@ function AppShell({
 
   const handleScenarioViewChange = useCallback(
     (scenarioView: "library" | "builder" | "plans") => {
+      // A link that named a scenario has done its job once the builder opens
+      // it: replace that entry, so Back leaves rather than reopening it.
+      const linked = viewRef.current;
+      if (linked.page === "tests" && linked.scenarioId) replaceRouteOnNextViewSync.current = true;
       setView((current) => {
         if (current.page !== "tests") return current;
         const next: AppView =
@@ -3108,8 +3112,9 @@ function AppShell({
     : viewToLocationHash({
     ...view,
     // Scenario subviews share one editor instance. Re-keying on its own view
-    // toggle loses the selected saved scenario and the save confirmation.
-    ...(view.page === "tests" ? { scenarioView: undefined } : {}),
+    // toggle loses the selected saved scenario and the save confirmation; a
+    // link's scenario, once opened, leaves the address without re-keying it.
+    ...(view.page === "tests" ? { scenarioView: undefined, scenarioId: undefined, scenarioStep: undefined } : {}),
     // Access subtabs share directory selections, filters, drafts, and issued keys.
     ...(view.page === "access" ? { accessView: undefined } : {}),
     // Report sections/lenses belong to the same run. Keep focus and population
@@ -3568,6 +3573,8 @@ function AppShell({
                   featurePolicySignal={featurePolicySignal}
                   applicationRepository={applicationRepository}
                   initialView={view.scenarioView}
+                  initialScenarioId={view.scenarioId}
+                  initialScenarioStep={view.scenarioStep}
                   testStatuses={testStatuses}
                   onSelectTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}

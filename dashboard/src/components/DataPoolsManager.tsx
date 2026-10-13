@@ -7,6 +7,8 @@ import type { Project, SharedDataPool, SharedDataPoolRow } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import SettingsConfirmDialog from './SettingsConfirmDialog'
+import SharedAssetUsedBy from './SharedAssetUsedBy'
+import { useSharedAssetUsage } from './useSharedAssetUsage'
 import { clearSettingsBreadcrumb, readSettingsBreadcrumb, writeSettingsBreadcrumb } from './settingsBreadcrumbs'
 import { formatDateTime } from './settingsPageFormatters'
 import DataRowGrid, { type DataGridRow } from './ux/DataRowGrid'
@@ -45,9 +47,17 @@ interface Props {
  * import and export their rows. Shared assets › Test data shows it; what can
  * be changed follows the viewer's role.
  */
+/** A pool row's count of the scenarios that bind it. */
+function usedByCount(count: number): string {
+  return count === 0 ? 'Not bound by a scenario' : `Used by ${count} ${count === 1 ? 'scenario' : 'scenarios'}`
+}
+
 const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function DataPoolsManager({ activeProject, projects, preferredPoolId, canManage, noProjectHint, onDraftChange, onListError }, ref) {
   const api = useApi()
   const [confirmDeletePool, setConfirmDeletePool] = useState<SharedDataPool | null>(null)
+  // The scenarios that bind each pool: a bound pool cannot be deleted.
+  const { usage: assetUsage, error: assetUsageError, refresh: refreshAssetUsage } = useSharedAssetUsage(activeProject?.id, 'data_pools')
+  const poolUses = (poolId: string) => assetUsage ? assetUsage.data_pools?.[poolId] || [] : undefined
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<SharedDataPoolRow | null>(null)
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
@@ -271,6 +281,8 @@ const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function Da
     } catch (error: unknown) {
       if (activeDataPoolProjectIdRef.current === projectId) {
         setDataPoolActionError(getErrorMessage(error, 'Unable to delete data pool'))
+        // A scenario may have bound it since the confirmation listed its users.
+        refreshAssetUsage()
       }
     } finally {
       dataPoolCatalogMutationBusyRef.current = false
@@ -703,10 +715,10 @@ const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function Da
                   }}
                 >
                   <span>{pool.name}</span>
-                  <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}</small>
+                  <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}{poolUses(pool.id) && ` · ${usedByCount(poolUses(pool.id)!.length)}`}</small>
                 </button>
                 {canManage && <div className="settings-inline-actions">
-                  <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={dataPoolCatalogMutationBusy} onClick={() => setConfirmDeletePool(pool)}>
+                  <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={dataPoolCatalogMutationBusy} onClick={() => { refreshAssetUsage(); setConfirmDeletePool(pool) }}>
                     Delete
                   </button>
                 </div>}
@@ -720,6 +732,7 @@ const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function Da
 
       {!onListError && listError && <p className="settings-error-inline" role="alert">{listError}</p>}
       {dataPoolActionNotice && <p className="settings-notice" role="status" aria-live="polite">{dataPoolActionNotice}</p>}
+      {assetUsageError && <p className="new-test-inline-note" role="status">{assetUsageError}</p>}
 
       {selectedDataPoolId && (
         <div className="settings-subsection">
@@ -727,6 +740,7 @@ const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function Da
             <div>
               <span className="setting-label">{selectedDataPool ? `Rows of ${selectedDataPool.name}` : 'Rows'}</span>
               <span className="setting-desc">{canManage ? 'Each column is a parameter that scripts read by name. Edit a cell and press Enter, or move to another cell, to save it.' : 'Each column is a parameter that scripts read by name.'}</span>
+              {activeProject && poolUses(selectedDataPoolId) && <SharedAssetUsedBy kind="scenario" projectId={activeProject.id} uses={poolUses(selectedDataPoolId)!} none="No scenario binds this pool yet." />}
             </div>
             <strong>
               {dataPoolRowsTotal > dataPoolRows.length
@@ -873,14 +887,21 @@ const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function Da
       open={Boolean(confirmDeletePool)}
       title="Delete data pool"
       confirmLabel="Delete data pool"
-      confirmDisabled={dataPoolCatalogMutationBusy}
+      confirmDisabled={dataPoolCatalogMutationBusy || Boolean(confirmDeletePool && poolUses(confirmDeletePool.id)?.length)}
       onCancel={() => setConfirmDeletePool(null)}
       onConfirm={() => {
         if (confirmDeletePool) void deleteDataPool(confirmDeletePool)
       }}
     >
-      <p>Delete data pool <strong>{confirmDeletePool?.name}</strong>? Data pools bound to scenarios must be unbound first.</p>
-      <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
+      {confirmDeletePool && activeProject && poolUses(confirmDeletePool.id)?.length
+        ? <>
+          <p><strong>{confirmDeletePool.name}</strong> cannot be deleted while scenarios bind it. Open each scenario's Data step and remove the binding first.</p>
+          <SharedAssetUsedBy kind="scenario" label="Bound by" projectId={activeProject.id} uses={poolUses(confirmDeletePool.id)!} none="" />
+        </>
+        : <>
+          <p>Delete data pool <strong>{confirmDeletePool?.name}</strong>? {confirmDeletePool && poolUses(confirmDeletePool.id) ? 'No scenario binds it.' : 'Data pools bound to scenarios must be unbound first.'}</p>
+          <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
+        </>}
     </SettingsConfirmDialog>
 
     <SettingsConfirmDialog

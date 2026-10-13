@@ -143842,6 +143842,88 @@ export interface operations {
       };
     };
   };
+  "handleSharedAssetUsage": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "include"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "correlation_rulesets"?: (Record<string, {
+              "applied_to": Array<{
+                "archived"?: boolean;
+                "id": string;
+                "name": string;
+              }>;
+              "learned_from"?: ({
+                "archived"?: boolean;
+                "id": string;
+                "name": string;
+              }) | null;
+            }>) | null;
+            "data_pools"?: (Record<string, Array<{
+              "alias": string;
+              "archived"?: boolean;
+              "id": string;
+              "name": string;
+            }>>) | null;
+            "live_tables"?: (Record<string, Array<{
+              "alias": string;
+              "archived"?: boolean;
+              "id": string;
+              "name": string;
+            }>>) | null;
+            "object_repositories"?: (Record<string, Array<{
+              "archived"?: boolean;
+              "id": string;
+              "name": string;
+            }>>) | null;
+            "project_id": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleSizeScenarioFromGoal": {
     parameters?: never;
     requestBody: {
@@ -180272,6 +180354,9 @@ export interface paths {
   };
   "/api/v1/projects/{id}/secrets/{name}/usage": {
     "get": operations["handleProjectSecretUsage"];
+  };
+  "/api/v1/projects/{id}/shared-asset-usage": {
+    "get": operations["handleSharedAssetUsage"];
   };
   "/api/v1/projects/{id}/telemetry-policy": {
     "put": operations["handleUpdateProjectTelemetryPolicy"];

@@ -3,6 +3,7 @@ import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPa
 import type { NavPage } from './components/Sidebar'
 import { isScriptImportLauncher, isScriptImportMode, LEGACY_IMPORT_ROUTE_LAUNCHER } from './scriptImportLaunchers'
 import { isSharedAssetsSection, type SharedAssetsSection } from './components/sharedAssetsNavigation'
+import type { ScenarioWizardStep } from './components/scenarioWizardUtils'
 import { sharedAssetsSectionForSetting } from './components/settingsNavigation'
 
 export type AppWorkspaceScope = {
@@ -20,7 +21,8 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
   | { page: 'command-center'; testId?: string; ccView?: CommandCenterRouteView }
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown'; focus?: ReportFocus } & RootCauseRouteState
-  | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
+  // scenarioId opens that scenario in the builder, at scenarioStep when given.
+  | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans'; scenarioId?: string; scenarioStep?: ScenarioWizardStep }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string; importLauncher?: string; importMode?: string }
   | { page: 'swagger'; search?: string }
@@ -48,6 +50,7 @@ const NAV_PAGES: NavPage[] = [
 
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
+const SCENARIO_STEPS: readonly ScenarioWizardStep[] = ['scripts', 'source', 'run', 'data', 'review']
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
 // Activity filters and page travel in the URL so a reload or link keeps them.
@@ -226,6 +229,12 @@ export function parseAppViewFromHash(hash: string): AppView {
 
   if (page === 'tests') {
     const scenarioView = params.get('view')
+    const scenarioId = params.get('scenarioId') || undefined
+    const scenarioStep = SCENARIO_STEPS.find(step => step === params.get('step'))
+    // A scenario opens in the builder; the library and plans name none.
+    if (scenarioId && (!scenarioView || scenarioView === 'builder')) {
+      return { page: 'tests', scenarioView: 'builder', scenarioId, ...(scenarioStep ? { scenarioStep } : {}), ...workspaceScope }
+    }
     return {
       page: 'tests',
       ...(isScenarioView(scenarioView) ? { scenarioView } : {}),
@@ -456,6 +465,8 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'tests') {
     const params = new URLSearchParams()
     if (view.scenarioView) params.set('view', view.scenarioView)
+    if (view.scenarioId) params.set('scenarioId', view.scenarioId)
+    if (view.scenarioId && view.scenarioStep) params.set('step', view.scenarioStep)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/tests?${query}` : '#/tests'
@@ -623,6 +634,7 @@ export type UnscopedProjectAsset = {
 export function projectAssetForAppView(view: AppView): UnscopedProjectAsset | null {
   if (view.page === 'scripts' && view.scriptId) return { kind: 'script', id: view.scriptId }
   if (view.page === 'new-test' && view.scenarioId) return { kind: 'scenario', id: view.scenarioId }
+  if (view.page === 'tests' && view.scenarioId) return { kind: 'scenario', id: view.scenarioId }
   if (view.page === 'test' || view.page === 'report') return { kind: 'test', id: view.testId }
   if (view.page === 'command-center' && view.testId) return { kind: 'test', id: view.testId }
   return null
@@ -639,6 +651,7 @@ export function unscopedProjectAssetForAppView(view: AppView): UnscopedProjectAs
 export function scopeAppViewToProject(view: AppView, projectId: string): AppView {
   if (view.page === 'scripts') return scopeAppViewToWorkspace(view, { projectId })
   if (view.page === 'new-test') return scopeAppViewToWorkspace(view, { projectId })
+  if (view.page === 'tests' && view.scenarioId) return scopeAppViewToWorkspace(view, { projectId })
   if (view.page === 'test') return scopeAppViewToWorkspace(view, { projectId })
   if (view.page === 'report') return scopeAppViewToWorkspace(view, { projectId })
   if (view.page === 'command-center') return scopeAppViewToWorkspace(view, { projectId })

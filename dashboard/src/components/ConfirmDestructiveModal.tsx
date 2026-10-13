@@ -1,5 +1,5 @@
 import DialogLayer from './ux/DialogLayer'
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import './ConfirmDestructiveModal.css'
 
@@ -19,6 +19,10 @@ interface Props {
   forceLabel?: string
   forceDescription?: string
   warning?: string
+  /** What the action affects, shown before the reason is asked for. */
+  affects?: ReactNode
+  /** Why the action cannot run now; the confirm stays disabled while set. */
+  blocked?: string
   error?: string | null
   loading?: boolean
   onCancel: () => void
@@ -35,6 +39,8 @@ export default function ConfirmDestructiveModal({
   forceLabel = 'Force',
   forceDescription,
   warning,
+  affects,
+  blocked,
   error,
   loading = false,
   onCancel,
@@ -62,7 +68,7 @@ export default function ConfirmDestructiveModal({
     setForce(false)
   }, [target])
 
-  const canSubmit = useMemo(() => reason.trim().length > 0 && confirmation.trim() === target && !loading, [confirmation, loading, reason, target])
+  const canSubmit = useMemo(() => !blocked && reason.trim().length > 0 && confirmation.trim() === target && !loading, [blocked, confirmation, loading, reason, target])
 
   return (
     <DialogLayer><div
@@ -102,43 +108,48 @@ export default function ConfirmDestructiveModal({
           </div>
 
           {warning && <p className="destructive-warning">{warning}</p>}
+          {blocked && <p className="destructive-warning" role="status">{blocked}</p>}
+          {affects}
           {error && <p className="form-error" role="alert">{error}</p>}
 
-          <label>
-            <span>Reason</span>
-            <input
-              ref={reasonInputRef}
-              value={reason}
-              onChange={event => setReason(event.target.value)}
-              placeholder="Operational reason"
-              disabled={loading}
-            />
-          </label>
-
-          <label>
-            <span>Type target to confirm</span>
-            <input
-              value={confirmation}
-              onChange={event => setConfirmation(event.target.value)}
-              placeholder={target}
-              disabled={loading}
-            />
-          </label>
-
-          {allowForce && (
-            <label className="destructive-force-row">
+          {/* Nothing to confirm while the action is blocked. */}
+          {!blocked && <>
+            <label>
+              <span>Reason</span>
               <input
-                type="checkbox"
-                checked={force}
-                onChange={event => setForce(event.target.checked)}
+                ref={reasonInputRef}
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                placeholder="Operational reason"
                 disabled={loading}
               />
-              <span>
-                <strong>{forceLabel}</strong>
-                {forceDescription && <small>{forceDescription}</small>}
-              </span>
             </label>
-          )}
+
+            <label>
+              <span>Type target to confirm</span>
+              <input
+                value={confirmation}
+                onChange={event => setConfirmation(event.target.value)}
+                placeholder={target}
+                disabled={loading}
+              />
+            </label>
+
+            {allowForce && (
+              <label className="destructive-force-row">
+                <input
+                  type="checkbox"
+                  checked={force}
+                  onChange={event => setForce(event.target.checked)}
+                  disabled={loading}
+                />
+                <span>
+                  <strong>{forceLabel}</strong>
+                  {forceDescription && <small>{forceDescription}</small>}
+                </span>
+              </label>
+            )}
+          </>}
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={requestCancel} disabled={loading}>Cancel</button>

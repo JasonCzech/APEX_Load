@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func (s *SQLiteStore) SaveObjectRepository(repo *ObjectRepository) error {
@@ -343,30 +341,17 @@ func (s *SQLiteStore) DeleteObjectRepositoryIfUnreferencedAndUnchanged(id string
 	return true, tx.Commit()
 }
 
+// actionJSONReferencesObjectRepository reports whether a stored action list
+// points at the repository, using the same walk Shared assets' Used by lists.
 func actionJSONReferencesObjectRepository(raw string, repositoryID string) (bool, error) {
-	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" {
-		return false, nil
+	ids, err := actionJSONObjectRepositoryIDs(raw)
+	if err != nil {
+		return false, err
 	}
-	var actions []dsl.Action
-	if err := json.Unmarshal([]byte(raw), &actions); err != nil {
-		return false, fmt.Errorf("decode script actions while checking object repository references: %w", err)
-	}
-	var references func([]dsl.Action) bool
-	references = func(actions []dsl.Action) bool {
-		for i := range actions {
-			prefix, _, qualified := strings.Cut(strings.TrimSpace(actions[i].ObjectRef), ":")
-			if qualified && strings.HasPrefix(strings.TrimSpace(prefix), "object-repo-") && strings.TrimSpace(prefix) == repositoryID {
-				return true
-			}
-			if actions[i].Control != nil {
-				for _, branch := range actions[i].Control.ActionBranches() {
-					if references(branch.Actions) {
-						return true
-					}
-				}
-			}
+	for _, id := range ids {
+		if id == repositoryID {
+			return true, nil
 		}
-		return false
 	}
-	return references(actions), nil
+	return false, nil
 }

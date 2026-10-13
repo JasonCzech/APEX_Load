@@ -6,6 +6,9 @@ import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGua
 import { CorrelationRuleset, CorrelationRulesetApplyResponse } from '../types'
 import './parityPanels.css'
 import ScriptPicker, { type ScriptOption } from './ScriptPicker'
+import { scriptEditorHref } from './assetLinks'
+import SharedAssetUsedBy from './SharedAssetUsedBy'
+import { useSharedAssetUsage } from './useSharedAssetUsage'
 import { useDisclosedFormFocus } from './useDisclosedFormFocus'
 import { formatDateTime } from '../utils/dateTime'
 
@@ -40,6 +43,21 @@ function snapshotCaughtUp(
 
 // Project-scoped catalog of learned, reusable correlation rules. Discover rules
 // from a script's recorded baseline, then apply them to other scripts.
+/**
+ * Where a rule set was learned, as its row says it: the script's name, never
+ * its internal "script:<id>" source, even once that script is gone.
+ */
+function learnedFromLabel(source: string | undefined, scriptName: string | undefined, usageLoaded: boolean): string {
+  if (scriptName) return `learned from ${scriptName} · `
+  if (source?.startsWith('script:')) return usageLoaded ? 'learned from a script that no longer exists · ' : ''
+  return source ? `${source} · ` : ''
+}
+
+/** A rule set row's count of the scripts it was applied to. */
+function appliedToCount(count: number): string {
+  return count === 0 ? 'not applied yet' : `applied to ${count} ${count === 1 ? 'script' : 'scripts'}`
+}
+
 export default function CorrelationRulesetPanel({ projectId, canManage = false, scripts }: Props) {
   const api = useCorrelationRulesetApi()
   const titleId = useId()
@@ -63,6 +81,9 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
   const [applyForm, setApplyForm] = useState<{ rulesetId: string; scriptId: string }>({ rulesetId: '', scriptId: '' })
   const [applyResult, setApplyResult] = useState<CorrelationRulesetApplyResponse | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CorrelationRuleset | null>(null)
+  // Where each rule set was learned and the scripts it was applied to.
+  const { usage, error: usageError, refresh: refreshUsage } = useSharedAssetUsage(projectId, 'correlation_rulesets')
+  const rulesetUse = (rulesetId: string) => usage?.correlation_rulesets?.[rulesetId]
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -222,6 +243,8 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
         ].sort((left, right) => left.name.localeCompare(right.name)))
         setShowDiscover(false)
         setDiscoverForm({ scriptId: '', name: '' })
+        // The new rule set names the script it was learned from.
+        refreshUsage()
       },
     )
   }
@@ -261,7 +284,10 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
         return
       }
       setApplyResult(res)
-      if (commit) await load()
+      if (commit) {
+        await load()
+        refreshUsage()
+      }
     } catch (err) {
       if (!isCurrentApply()) return
       setApplyResult(null)
@@ -374,6 +400,7 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
       )}
 
       {loading && <p className="pp-muted">Loading…</p>}
+      {usageError && <p className="pp-muted" role="status">{usageError}</p>}
       {!loading && projectId && rulesets.length === 0 && <div className="pp-empty">No correlation rulesets yet — discover one from a script with a recorded baseline.</div>}
 
       <div className="pp-list">
@@ -385,10 +412,12 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
                 <span className="pp-pill pp-pill-muted">{ruleset.rules?.length || 0} rule{(ruleset.rules?.length || 0) === 1 ? '' : 's'}</span>
               </button>
               <div className="pp-row-meta">
-                {ruleset.source ? `${ruleset.source} · ` : ''}updated {formatTimestamp(ruleset.updated_at)}
+                {learnedFromLabel(ruleset.source, rulesetUse(ruleset.id)?.learned_from?.name, Boolean(usage))}updated {formatTimestamp(ruleset.updated_at)}{rulesetUse(ruleset.id) ? ` · ${appliedToCount(rulesetUse(ruleset.id)!.applied_to.length)}` : ''}
               </div>
               {expanded === ruleset.id && (
                 <>
+                  {projectId && rulesetUse(ruleset.id)?.learned_from && <p className="shared-asset-used-by"><span className="shared-asset-used-by-label">Learned from</span> <a href={scriptEditorHref(rulesetUse(ruleset.id)!.learned_from!.id, projectId)}>{rulesetUse(ruleset.id)!.learned_from!.name}</a></p>}
+                  {projectId && rulesetUse(ruleset.id) && <SharedAssetUsedBy kind="script" label="Applied to" projectId={projectId} uses={rulesetUse(ruleset.id)!.applied_to} none="Not applied to a script yet." />}
                   {(ruleset.rules?.length || 0) > 0 && (
                     <ul className="pp-sublist">
                       {ruleset.rules.slice(0, 25).map((rule, index) => (
@@ -440,7 +469,7 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
             </div>
             {canManage && (
               <div className="pp-row-actions">
-                <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(ruleset)} disabled={busy}>Delete</button>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => { refreshUsage(); setDeleteTarget(ruleset) }} disabled={busy}>Delete</button>
               </div>
             )}
           </div>
@@ -451,7 +480,8 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false, 
         <Suspense fallback={null}>
           <ConfirmDestructiveModal
             title="Delete correlation ruleset"
-            description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.rules?.length || 0} rules.`}
+            description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.rules?.length || 0} rules. Scripts it was applied to keep their copies of the rules.`}
+            affects={projectId && rulesetUse(deleteTarget.id)?.applied_to.length ? <SharedAssetUsedBy kind="script" label="Applied to" projectId={projectId} uses={rulesetUse(deleteTarget.id)!.applied_to} none="" /> : undefined}
             target={deleteTarget.name}
             targetLabel="Ruleset"
             confirmLabel="Delete ruleset"

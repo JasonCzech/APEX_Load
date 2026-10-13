@@ -1,0 +1,8 @@
+/* What uses a shared asset: a label, then each user as a link. */
+.shared-asset-used-by { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 4px 0 0; font-size: var(--font-size-sm, 13px); color: var(--text-secondary); }
+.shared-asset-used-by.is-empty { display: block; }
+.shared-asset-used-by-label { font-weight: 600; }
+.shared-asset-used-by ul { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; list-style: none; margin: 0; padding: 0; }
+.shared-asset-used-by li { display: inline-flex; gap: 4px; align-items: baseline; }
+/* Visual separators only; the list says how many there are. */
+.shared-asset-used-by li:not(:last-child)::after { content: ',' / ''; }

@@ -151,6 +151,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyMonitorManagementContract(route, &contract, typeDefinitions)
 		applyBrowserResourcePageContract(route, &contract, typeDefinitions)
 		applyObjectActivityContract(route, &contract)
+		applySharedAssetUsageContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
@@ -271,11 +272,12 @@ var explicitRouteContractTypes = map[string]struct {
 	},
 	"POST /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations":               {requestType: "DynatraceOperationRequest", responseTypes: map[int]string{202: "DynatraceOperationResponse"}},
 	"GET /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations/{operation_id}": {responseTypes: map[int]string{200: "DynatraceOperationResponse"}},
-	"GET /api/v1/projects/{id}/activity":  {responseTypes: map[int]string{200: "ObjectActivityListResponse"}},
-	"POST /api/v1/scripts/{id}/archive":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
-	"POST /api/v1/scripts/{id}/restore":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
-	"POST /api/v1/scenarios/{id}/archive": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
-	"POST /api/v1/scenarios/{id}/restore": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
+	"GET /api/v1/projects/{id}/activity":           {responseTypes: map[int]string{200: "ObjectActivityListResponse"}},
+	"GET /api/v1/projects/{id}/shared-asset-usage": {responseTypes: map[int]string{200: "SharedAssetUsageResponse"}},
+	"POST /api/v1/scripts/{id}/archive":            {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
+	"POST /api/v1/scripts/{id}/restore":            {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
+	"POST /api/v1/scenarios/{id}/archive":          {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
+	"POST /api/v1/scenarios/{id}/restore":          {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
 	"POST /api/v1/auth/ci/github/exchange": {
 		requestType: "githubCIExchangeRequest",
 	},
@@ -2111,6 +2113,15 @@ func openAPIHTTPStatus(expr ast.Expr) (int, bool) {
 func receiverIsImportUpload(expr ast.Expr, variables map[string]bool) bool {
 	ident, ok := expr.(*ast.Ident)
 	return ok && variables[ident.Name]
+}
+
+// applySharedAssetUsageContract documents include, which a helper parses.
+func applySharedAssetUsageContract(route discoveredRoute, contract *inferredRouteContract) {
+	if route.Method != "GET" || route.Path != "/api/v1/projects/{id}/shared-asset-usage" {
+		return
+	}
+	// The handler's kind lookups are not query parameters; include is the only one.
+	contract.QueryParameters = []oasParameter{{Name: "include", In: "query", Description: "Comma-separated kinds to report (" + strings.Join(sharedAssetUsageKinds, ", ") + "); omitted means all. Kinds not asked for are absent from the response.", Schema: oasParamSchema{Type: "string"}}}
 }
 
 func applyObjectActivityContract(route discoveredRoute, contract *inferredRouteContract) {

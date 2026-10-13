@@ -29,6 +29,9 @@ const scriptApiMock = { listScripts: vi.fn() }
 vi.mock('../hooks/api/useScriptApi', () => ({
   useScriptApi: () => scriptApiMock,
 }))
+// What uses each asset is read by its own hook; tests set it directly.
+const sharedAssetUsage = vi.hoisted(() => ({ value: null as import('../types/sharedAssets').SharedAssetUsage | null, refresh: vi.fn() }))
+vi.mock('./useSharedAssetUsage', () => ({ useSharedAssetUsage: () => ({ usage: sharedAssetUsage.value, error: '', refresh: sharedAssetUsage.refresh }) }))
 const projectScripts = ['s1', 's2', 's7', 's9', 's10', 'script-b', 'script-draft'].map(id => ({ id, name: `Recorded ${id}`, protocol: 'web' }))
 
 let container: HTMLElement
@@ -94,6 +97,49 @@ async function discoverFrom(id: string) {
 }
 
 describe('CorrelationRulesetPanel', () => {
+  it('names the script a rule set was learned from and the scripts it was applied to', async () => {
+    sharedAssetUsage.value = { project_id: 'proj-a', data_pools: {}, live_tables: {}, object_repositories: {}, correlation_rulesets: { r1: { learned_from: { id: 's1', name: 'Recorded login' }, applied_to: [{ id: 's2', name: 'Checkout' }] } } }
+    try {
+      apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+      await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+      await flush()
+      const meta = container.querySelector('.pp-row-meta')!.textContent
+      expect(meta).toContain('learned from Recorded login')
+      expect(meta).not.toContain('script:s1')
+      expect(meta).toContain('applied to 1 script')
+      await act(async () => { container.querySelector<HTMLButtonElement>('.pp-row-title-button')!.click() })
+      expect(Array.from(container.querySelectorAll('.shared-asset-used-by a')).map(link => [link.textContent, link.getAttribute('href')])).toEqual([
+        ['Recorded login', '#/scripts?mode=edit&scriptId=s1&projectId=proj-a'],
+        ['Checkout', '#/scripts?mode=edit&scriptId=s2&projectId=proj-a'],
+      ])
+      await act(async () => { findButton('Delete')!.click() })
+      await waitForDestructiveDialog()
+      const dialog = container.querySelector('[role="dialog"]')!
+      // Applying copied the rules, so deleting the set changes no script.
+      expect(dialog.textContent).toContain('Scripts it was applied to keep their copies of the rules.')
+      expect(dialog.querySelector('.shared-asset-used-by a')?.textContent).toBe('Checkout')
+    } finally {
+      sharedAssetUsage.value = null
+    }
+  })
+
+  it('names neither an internal id nor a missing script as where a rule set was learned', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+    await flush()
+    // Before usage is known, the source is not shown as an id.
+    expect(container.querySelector('.pp-row-meta')!.textContent).not.toContain('script:s1')
+    sharedAssetUsage.value = { project_id: 'proj-a', correlation_rulesets: { r1: { applied_to: [] } } }
+    try {
+      await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+      const meta = container.querySelector('.pp-row-meta')!.textContent
+      expect(meta).toContain('learned from a script that no longer exists')
+      expect(meta).not.toContain('script:s1')
+    } finally {
+      sharedAssetUsage.value = null
+    }
+  })
+
   it('does not let a slow prior-project response overwrite the current project', async () => {
     let resolveA!: (value: { correlation_rulesets: CorrelationRuleset[]; count: number }) => void
     let resolveB!: (value: { correlation_rulesets: CorrelationRuleset[]; count: number }) => void

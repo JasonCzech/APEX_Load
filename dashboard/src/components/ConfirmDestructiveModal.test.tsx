@@ -25,6 +25,32 @@ describe('ConfirmDestructiveModal', () => {
     container.remove()
   })
 
+  it('shows what the action affects and stays disabled while it is blocked', async () => {
+    const onConfirm = vi.fn()
+    await act(async () => {
+      root.render(
+        <ConfirmDestructiveModal
+          title="Delete object repository"
+          description="Deletes it"
+          target="Pages"
+          confirmLabel="Delete repository"
+          blocked="Scripts point at its objects."
+          affects={<ul aria-label="Used by"><li>Checkout</li></ul>}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+        />,
+      )
+    })
+    expect(container.querySelector('[aria-label="Used by"]')?.textContent).toBe('Checkout')
+    expect(container.textContent).toContain('Scripts point at its objects.')
+    // No reason or typed name is asked for an action that cannot run.
+    expect(container.querySelector('input')).toBeNull()
+    const submit = button('Delete repository')
+    expect(submit.disabled).toBe(true)
+    await act(async () => { container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
   it('requires reason and exact target confirmation before submit', async () => {
     const onConfirm = vi.fn()
 

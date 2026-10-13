@@ -310,6 +310,35 @@ describe('ProjectSecretsPanel', () => {
     expect(details.textContent).not.toContain('Load more consumers')
   })
 
+  it('links script consumers and lists what a rotation changes before it runs', async () => {
+    apiMock.getProjectSecretUsage.mockResolvedValue({
+      project_id: 'project-1',
+      name: 'EXISTING_TOKEN',
+      usage_revision: 'shared-usage-1',
+      consumer_count: 3,
+      reference_count: 4,
+      consumers: [
+        { script_id: 'script-1', script_name: 'Checkout', reference_count: 2 },
+        { script_id: 'appdynamics_connection:connection-1', script_name: 'Billing AppDynamics', resource_type: 'appdynamics_connection', resource_id: 'connection-1', reference_count: 1 },
+      ],
+      limit: 2,
+      offset: 0,
+      has_more: true,
+    })
+    await act(async () => {
+      root.render(<ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />)
+    })
+    await flushPromises()
+    const consumerLinks = () => Array.from(container.querySelectorAll('.project-secret-row a')).map(link => [link.textContent, link.getAttribute('href')])
+    // A script opens in its editor; a connection is named with its kind, not linked.
+    expect(consumerLinks()).toEqual([['Checkout', '#/scripts?mode=edit&scriptId=script-1&projectId=project-1']])
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('.project-secret-row button')).find(button => button.textContent === 'Rotate')!.click())
+    const listed = container.querySelector('.project-secret-rotation-consumers')!
+    expect(listed.textContent).toContain('Rotating changes the value for 3 consumers, including:')
+    expect(listed.textContent).toContain('Billing AppDynamics (appdynamics connection) · 1 reference')
+    expect(listed.querySelector('a')?.getAttribute('href')).toBe('#/scripts?mode=edit&scriptId=script-1&projectId=project-1')
+  })
+
   it('honors provider create and replace capabilities independently', async () => {
     apiMock.listProjectSecrets.mockImplementation(async (projectId: string) => ({
       project_id: projectId,

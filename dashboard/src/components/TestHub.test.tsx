@@ -4073,6 +4073,48 @@ describe('TestHub', () => {
     expect(wizardStepButton('Data')?.getAttribute('aria-current')).toBe('step')
   })
 
+  it('opens the scenario a link names at the step it names, once access is known', async () => {
+    const stored: StoredScenario = { id: 'linked-scenario', name: 'Linked scenario', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    const onScenarioViewChange = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioId="linked-scenario" initialScenarioStep="data" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.getScenario).toHaveBeenCalledWith('linked-scenario')
+    expect(container.querySelector('.scenario-builder-mode')?.textContent).toBe('Editing')
+    expect(wizardStepButton('Data')?.getAttribute('aria-current')).toBe('step')
+    // The same link is not reopened over the open scenario on a re-render.
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioId="linked-scenario" initialScenarioStep="data" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    expect(apiMock.getScenario).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells a role that cannot edit why a scenario link opened the library', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({ enabled: true, authenticated: true, resources: [{ id: 'tests_and_scenarios', name: 'Tests and Scenarios', description: '', operations: [{ id: 'manage_tests', label: 'Manage tests', allowed: false }] }] })
+    const onScenarioViewChange = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioId="linked-scenario" initialScenarioStep="data" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.getScenario).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Current session can view scenarios but cannot create or edit them.')
+    expect(onScenarioViewChange).toHaveBeenCalledWith('library')
+  })
+
+  it.each([
+    ['no longer exists', undefined, 'scenario gone-scenario not found'],
+    ['is archived', '2026-10-01T00:00:00Z', 'Gone scenario is archived. Restore it from the Scenario library to edit it.'],
+  ])('returns a link to a scenario that %s to the library, saying why', async (_case, archivedAt, message) => {
+    if (archivedAt) apiMock.listScenarios.mockResolvedValue({ scenarios: [{ id: 'gone-scenario', name: 'Gone scenario', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 1 }], created_at: '', updated_at: '', script_count: 1, archived_at: archivedAt }], count: 1 })
+    const onScenarioViewChange = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioId="gone-scenario" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.getScenario).toHaveBeenCalledWith('gone-scenario')
+    expect(container.textContent).toContain(message)
+    expect(onScenarioViewChange).toHaveBeenCalledWith('library')
+    expect(container.querySelector('.scenario-builder-mode')).toBeNull()
+  })
+
   it('shows a goal-driven group\'s VUsers as sized automatically', async () => {
     const stored: StoredScenario = { id: 'goal-vusers', name: 'Goal VUsers', duration: '5m', workload_shape_id: 'open-arrival-rate', scenario_mode: 'goal_oriented', scripts: [{ order: 0, script_id: 'script-1', vusers: 1 }], created_at: '', updated_at: '', script_count: 1 }
     apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })

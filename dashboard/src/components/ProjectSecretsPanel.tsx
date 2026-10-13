@@ -1,4 +1,5 @@
-import { secretConsumerKey } from '../types/secrets'
+import { secretConsumerKey, type ProjectSecretConsumer } from '../types/secrets'
+import { scriptEditorHref } from './assetLinks'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
@@ -40,6 +41,17 @@ function metadataCaughtUp(listed: ProjectSecretMetadata, committed: ProjectSecre
     return listedTimestamp > committedTimestamp
   }
   return false
+}
+
+/** What reads a secret: scripts link to their editor; other consumers (connections, monitors) name their kind. */
+function SecretConsumerList({ consumers, projectId }: { consumers: ProjectSecretConsumer[]; projectId: string }) {
+  return <ul>{consumers.map(consumer => {
+    const script = !consumer.resource_type || consumer.resource_type === 'script'
+    return <li key={secretConsumerKey(consumer)}>
+      {script ? <a href={scriptEditorHref(consumer.script_id, projectId)}>{consumer.script_name}</a> : consumer.script_name}
+      {script ? '' : ` (${consumer.resource_type!.replace(/_/g, ' ')})`} · {consumer.reference_count} {consumer.reference_count === 1 ? 'reference' : 'references'}
+    </li>
+  })}</ul>
 }
 
 export default function ProjectSecretsPanel({
@@ -480,9 +492,7 @@ export default function ProjectSecretsPanel({
                   {(usageByName[secret.name]?.consumers.length || 0) > 0 && (
                     <details>
                       <summary>Consumers</summary>
-                      <ul>{usageByName[secret.name].consumers.map(consumer => (
-                        <li key={secretConsumerKey(consumer)}>{consumer.script_name}{consumer.resource_type && consumer.resource_type !== 'script' ? ` (${consumer.resource_type.replace(/_/g, ' ')})` : ''} · {consumer.reference_count}</li>
-                      ))}</ul>
+                      <SecretConsumerList consumers={usageByName[secret.name].consumers} projectId={projectId} />
                       {usageByName[secret.name].has_more && (
                         <button
                           className="btn btn-ghost btn-sm"
@@ -509,6 +519,12 @@ export default function ProjectSecretsPanel({
                       autoComplete="new-password"
                       placeholder="Enter replacement value"
                     />
+                    {(usageByName[secret.name]?.consumers.length || 0) > 0 && (
+                      <div className="project-secret-rotation-consumers">
+                        <span>{`Rotating changes the value for ${usageByName[secret.name].consumer_count} consumer${usageByName[secret.name].consumer_count === 1 ? '' : 's'}${usageByName[secret.name].has_more ? `, including` : ''}:`}</span>
+                        <SecretConsumerList consumers={usageByName[secret.name].consumers} projectId={projectId} />
+                      </div>
+                    )}
                     {(usageByName[secret.name]?.consumer_count || 0) > 1 && (
                       <label className="project-secret-shared-rotation-ack">
                         <input

@@ -5,6 +5,9 @@ import type { SharedDataPool } from '../types/dataPools'
 import type { ProjectLiveTableCreate, ProjectLiveTableLifecycle, ProjectLiveTableMutation, ProjectLiveTableRow, ProjectLiveTableRows, ProjectLiveTableView } from '../types/projectLiveTables'
 import { getErrorMessage } from '../utils/errorUtils'
 import DataRowGrid from './ux/DataRowGrid'
+import SharedAssetUsedBy from './SharedAssetUsedBy'
+import { useSharedAssetUsage } from './useSharedAssetUsage'
+import type { SharedAssetScenarioUse } from '../types/sharedAssets'
 import { decimalInteger, projectTableCreateErrors, projectTableLifecycleBlock } from './projectLiveTableModel'
 import { dataPoolColumnNames } from './scenarioDataBindingModel'
 import './ProjectLiveTablesPanel.css'
@@ -27,6 +30,10 @@ export default function ProjectLiveTablesPanel({ projectId, projectName, canCrea
   const [create, setCreate] = useState<ProjectLiveTableCreate>({ name: '', profile: 'native_queue', columns: [], limits: { max_rows: 10000, max_bytes: 8388608 } })
   const [attempted, setAttempted] = useState(false)
   useEffect(() => { if (selectedId) setSelected(selectedId) }, [selectedId])
+  // The scenarios that bind each table, refreshed with the list.
+  const { usage, error: usageError, refresh: refreshUsage } = useSharedAssetUsage(projectId, 'live_tables')
+  const tableUses = (tableId: string) => usage ? usage.live_tables?.[tableId] || [] : undefined
+  const reload = () => { setRefresh(value => value + 1); refreshUsage() }
   useEffect(() => {
     const abort = new AbortController()
     setLoading(true); setError('')
@@ -54,9 +61,10 @@ export default function ProjectLiveTablesPanel({ projectId, projectName, canCrea
   return <div className="project-live-tables">
     <p>Project tables share committed data across concurrent runs in {projectName || 'the selected project'}. They remain available after a run finishes. Existing shared data pools and run tables keep their own lifecycle.</p>
     {!projectId ? <p role="status">Select a project to inspect its live tables.</p> : <>
-      <button type="button" className="btn btn-secondary" onClick={() => setRefresh(value => value + 1)}>Refresh project tables</button>
+      <button type="button" className="btn btn-secondary" onClick={reload}>Refresh project tables</button>
       {error && <p role="alert">{error}</p>}
-      {loading ? <p role="status">Loading project live tables…</p> : tables.length === 0 && !error ? <p>No project live tables yet. Create one to share runtime data between runs.</p> : <label>Project live table<select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Select a table</option>{tables.map(table => <option key={table.id} value={table.id}>{table.name} · {profileLabel(table.profile)} · {table.state}</option>)}</select></label>}
+      {usageError && <p role="status">{usageError}</p>}
+      {loading ? <p role="status">Loading project live tables…</p> : tables.length === 0 && !error ? <p>No project live tables yet. Create one to share runtime data between runs.</p> : <label>Project live table<select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Select a table</option>{tables.map(table => <option key={table.id} value={table.id}>{table.name} · {profileLabel(table.profile)} · {table.state}{tableUses(table.id) ? ` · ${boundByCount(tableUses(table.id)!.length)}` : ''}</option>)}</select></label>}
       {canCreate && <details><summary>Create project live table</summary><fieldset disabled={creating}><legend>Starting definition</legend>
         <p>The source pool is read once at creation. Recovery uses durable encrypted state. Leaving the source empty creates an empty table with the declared columns.</p>
         <div className="settings-grid">
@@ -70,12 +78,17 @@ export default function ProjectLiveTablesPanel({ projectId, projectName, canCrea
         {attempted && projectTableCreateErrors(create).map(issue => <p role="alert" key={issue}>{issue}</p>)}
         <button type="button" className="btn btn-primary" onClick={() => void submitCreate()}>{creating ? 'Creating…' : 'Create table'}</button>
       </fieldset></details>}
-      {selected && <ProjectTableDetail key={`${projectId}:${selected}`} projectId={projectId} tableId={selected} onChanged={() => setRefresh(value => value + 1)} />}
+      {selected && <ProjectTableDetail key={`${projectId}:${selected}`} projectId={projectId} tableId={selected} uses={tableUses(selected)} onChanged={reload} />}
     </>}
   </div>
 }
 
-function ProjectTableDetail({ projectId, tableId, onChanged }: { projectId: string; tableId: string; onChanged: () => void }) {
+/** A table's count of the scenarios that bind it. */
+function boundByCount(count: number): string {
+  return count === 0 ? 'not bound by a scenario' : `used by ${count} ${count === 1 ? 'scenario' : 'scenarios'}`
+}
+
+function ProjectTableDetail({ projectId, tableId, uses, onChanged }: { projectId: string; tableId: string; /** The scenarios that bind it, once known. */ uses?: SharedAssetScenarioUse[]; onChanged: () => void }) {
   const api = useApi()
   const [table, setTable] = useState<ProjectLiveTableView | null>(null)
   const [rows, setRows] = useState<ProjectLiveTableRows | null>(null)
@@ -186,11 +199,11 @@ function ProjectTableDetail({ projectId, tableId, onChanged }: { projectId: stri
   return <section className="settings-subsection" aria-label="Project live table details">
     {error && <p role="alert">{error}</p>}{metadataError && <p role="alert">{metadataError}</p>}{notice && <p role="status">{notice}</p>}
     {!table ? !error && !metadataError && <p role="status">Loading table details…</p> : <>
-      <h2>{table.name}</h2><p>Project scope · {profileLabel(table.profile)} · {table.state} · Configuration revision {table.config_revision} · Data revision {table.stats?.revision || 'Unavailable'}</p>
+      <h3>{table.name}</h3>{uses && <SharedAssetUsedBy kind="scenario" projectId={projectId} uses={uses} none="No scenario binds this table yet." />}<p>Project scope · {profileLabel(table.profile)} · {table.state} · Configuration revision {table.config_revision} · Data revision {table.stats?.revision || 'Unavailable'}</p>
       <p>Instance <code>{table.instance_id}</code>. Finishing a run detaches it; it does not clear or close this table.</p>
       <p>Available: {table.stats?.counts?.available ?? 'Unknown'} · Leased: {table.stats?.counts?.leased ?? 'Unknown'} · Size: {table.stats?.data_bytes ?? 'Unknown'} bytes · Capacity: {table.stats?.capacity?.max_rows ?? 'Unknown'} rows, {table.stats?.capacity?.max_bytes ?? 'Unknown'} bytes.</p>
       <p>Command retries retain the original outcome for {table.stats?.capacity?.retry_window_ms ? `${table.stats.capacity.retry_window_ms / 1000} seconds` : 'the configured retry window'}. After that window, inspect the table before starting a new command.</p>
-      <h3>Attached runs</h3>{!table.attachments?.length ? <p>No runs attached.</p> : <ul>{table.attachments.map((attachment, index) => <li key={attachment.id || index}><a href={`#/test/${encodeURIComponent(attachment.run_id)}?projectId=${encodeURIComponent(projectId)}`}>{attachment.run_id}</a> · {attachment.group_name} · {attachment.alias} · {attachment.state}</li>)}</ul>}
+      <h4>Attached runs</h4>{!table.attachments?.length ? <p>No runs attached.</p> : <ul>{table.attachments.map((attachment, index) => <li key={attachment.id || index}><a href={`#/test/${encodeURIComponent(attachment.run_id)}?projectId=${encodeURIComponent(projectId)}`}>{attachment.run_id}</a> · {attachment.group_name} · {attachment.alias} · {attachment.state}</li>)}</ul>}
       <p>Preview and export reveal test data and are audited. Each preview is bound to the instance and revision shown above.</p>
       <div className="project-live-table-actions"><button type="button" className="btn btn-secondary" disabled={busy || !table.permissions.can_view || !table.stats?.revision} onClick={() => void loadRows()}>Preview up to 100 rows</button><button type="button" className="btn btn-secondary" disabled={busy || !table.permissions.can_view || !table.stats?.revision} onClick={() => void exportRows()}>Export table</button><button type="button" className="btn btn-ghost" onClick={() => { previewEpoch.current++; setRows(null); setReconciliationReviewed(false); setEdit(null); setValues({}); setOperation('append') }}>Hide row values</button><button type="button" className="btn btn-ghost" onClick={() => setRefresh(value => value + 1)}>Refresh table</button></div>
       {rows && <><p>Preview revision {rows.revision} · {rows.total ? offset + 1 : 0}–{Math.min(offset + rows.rows.length, rows.total)} of {rows.total} rows.</p><DataRowGrid label="Project live table rows" columns={rows.columns} firstRowNumber={offset + 1} markEmpty rows={rows.rows.map((row, index) => ({ id: row.id || `position-${offset + index + 1}`, values: row.values, status: row.state && row.state !== 'available' ? row.state : undefined }))} rowActions={(_gridRow, rowNumber) => {
@@ -215,7 +228,7 @@ function ProjectTableDetail({ projectId, tableId, onChanged }: { projectId: stri
         {!table.permissions.can_mutate && <p>Current data-management permission is required to recover the outcome.</p>}
         {pendingExpired && <><p>The retry window expired. The earlier command may have completed. Review a current preview and retained evidence before clearing its identity; clearing it sends no new command.</p><label><input type="checkbox" aria-label="Confirm reconciliation review" disabled={busy || !rows || rows.revision !== table.stats?.revision} checked={reconciliationReviewed} onChange={event => setReconciliationReviewed(event.target.checked)} />I reviewed the table and understand that the earlier command may have completed.</label><button type="button" className="btn btn-secondary" disabled={busy || !table.permissions.can_mutate || !reconciliationReviewed || !rows || rows.revision !== table.stats?.revision} onClick={() => { setPending(null); setPendingExpired(false); setReconciliationReviewed(false); setEdit(null); setValues({}); setColumns([]); setOperation('append'); setError(''); setNotice('Pending command cleared after review. No new command was sent.') }}>Clear pending command after review</button></>}
       </div>}
-      {table.permissions.can_admin && <details><summary>Table lifecycle</summary><fieldset disabled={busy || !!pending}><legend>Governed lifecycle action</legend><label>Action<select value={lifecycle} onChange={event => { setLifecycle(event.target.value as ProjectLiveTableLifecycle['action']); setConfirmed(false) }}><option value="quiesce">Quiesce — stop new attachments</option><option value="resume">Resume — allow new attachments</option><option value="reset">Reset — create a fresh instance</option><option value="archive">Archive table</option></select></label><p>Reset and archive require quiescence, all attachment retry windows to finish and no leases. Reset changes the instance identity; old capabilities cannot be reused.</p>{lifecycleBlock && <p role="status">{lifecycleBlock}</p>}<label>Reason<textarea value={reason} maxLength={1024} onChange={event => setReason(event.target.value)} /></label><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />I confirm this lifecycle change for {table.name}.</label><button type="button" className="btn btn-secondary" disabled={!!lifecycleBlock || !confirmed || !reason.trim() || !table.stats?.revision} onClick={() => void changeLifecycle()}>Apply lifecycle change</button></fieldset></details>}
+      {table.permissions.can_admin && <details><summary>Table lifecycle</summary><fieldset disabled={busy || !!pending}><legend>Governed lifecycle action</legend><label>Action<select value={lifecycle} onChange={event => { setLifecycle(event.target.value as ProjectLiveTableLifecycle['action']); setConfirmed(false) }}><option value="quiesce">Quiesce — stop new attachments</option><option value="resume">Resume — allow new attachments</option><option value="reset">Reset — create a fresh instance</option><option value="archive">Archive table</option></select></label><p>Reset and archive require quiescence, all attachment retry windows to finish and no leases. Reset changes the instance identity; old capabilities cannot be reused.</p>{lifecycleBlock && <p role="status">{lifecycleBlock}</p>}{lifecycle !== 'resume' && uses && uses.length > 0 && <SharedAssetUsedBy kind="scenario" label="This affects the runs of" projectId={projectId} uses={uses} none="" />}<label>Reason<textarea value={reason} maxLength={1024} onChange={event => setReason(event.target.value)} /></label><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />I confirm this lifecycle change for {table.name}.</label><button type="button" className="btn btn-secondary" disabled={!!lifecycleBlock || !confirmed || !reason.trim() || !table.stats?.revision} onClick={() => void changeLifecycle()}>Apply lifecycle change</button></fieldset></details>}
     </>}
   </section>
 }

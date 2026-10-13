@@ -82024,6 +82024,169 @@ paths:
       tags:
         - Projects
       x-handler: handleProjectSecretStatus
+  /api/v1/projects/{id}/shared-asset-usage:
+    get:
+      summary: Shared Asset Usage
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleSharedAssetUsage
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correlation_rulesets:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        applied_to:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              archived:
+                                type: boolean
+                              id:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                              - id
+                              - name
+                        learned_from:
+                          type: object
+                          properties:
+                            archived:
+                              type: boolean
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - id
+                            - name
+                          nullable: true
+                      required:
+                        - applied_to
+                    nullable: true
+                  data_pools:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          alias:
+                            type: string
+                          archived:
+                            type: boolean
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - alias
+                          - id
+                          - name
+                    nullable: true
+                  live_tables:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          alias:
+                            type: string
+                          archived:
+                            type: boolean
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - alias
+                          - id
+                          - name
+                    nullable: true
+                  object_repositories:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          archived:
+                            type: boolean
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                    nullable: true
+                  project_id:
+                    type: string
+                required:
+                  - project_id
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: include
+          in: query
+          description: Comma-separated kinds to report (data_pools, live_tables, object_repositories, correlation_rulesets); omitted means all. Kinds not asked for are absent from the response.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleSharedAssetUsage
   /api/v1/projects/{id}/telemetry-policy:
     put:
       summary: Update Project Telemetry Policy

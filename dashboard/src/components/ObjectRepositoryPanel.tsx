@@ -6,6 +6,8 @@ import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGua
 import { ObjectRepository, RepositoryObject } from '../types'
 import './parityPanels.css'
 import ScriptPicker, { type ScriptOption } from './ScriptPicker'
+import SharedAssetUsedBy from './SharedAssetUsedBy'
+import { useSharedAssetUsage } from './useSharedAssetUsage'
 import { useDisclosedFormFocus } from './useDisclosedFormFocus'
 import { formatDateTime } from '../utils/dateTime'
 
@@ -42,6 +44,11 @@ function formatTimestamp(value?: string): string {
 // Project-scoped catalog of reusable named UI element descriptors (the
 // LoadRunner/TruClient object-repository analog). Seed one from a script's
 // captured selectors, or create it empty.
+/** A repository row's count of the scripts that point at it. */
+function usedByScripts(count: number): string {
+  return count === 0 ? 'not used by a script' : `used by ${count} ${count === 1 ? 'script' : 'scripts'}`
+}
+
 export default function ObjectRepositoryPanel({ projectId, canManage = false, scripts }: Props) {
   const api = useObjectRepositoryApi()
   const titleId = useId()
@@ -55,6 +62,9 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
   const { openerRef, formRef } = useDisclosedFormFocus(showCreate)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ObjectRepository | null>(null)
+  // The scripts whose actions point at each repository: a referenced one cannot be deleted.
+  const { usage, error: usageError, refresh: refreshUsage } = useSharedAssetUsage(projectId, 'object_repositories')
+  const repositoryUses = (repositoryId: string) => usage ? usage.object_repositories?.[repositoryId] || [] : undefined
   const [busy, setBusy] = useState(false)
   const actionSequenceRef = useRef(0)
   const activeActionRef = useRef<{ id: number; projectId?: string; generation: number } | null>(null)
@@ -202,6 +212,8 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
         setRepositories(current => [...current.filter(repository => repository.id !== committed.id), committed].sort((left, right) => left.name.localeCompare(right.name)))
         setShowCreate(false)
         setNewRepository(blankNewRepository)
+        // Seeding with "point the script's actions at it" makes that script a user.
+        if (form.source === 'script' && form.bindScript) refreshUsage()
       },
     )
   }
@@ -350,6 +362,7 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
       )}
 
       {loading && <p className="pp-muted">Loading…</p>}
+      {usageError && <p className="pp-muted" role="status">{usageError}</p>}
       {!loading && projectId && repositories.length === 0 && <div className="pp-empty">No object repositories yet.</div>}
 
       <div className="pp-list">
@@ -361,8 +374,9 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
                 <span className="pp-pill pp-pill-muted">{repo.objects?.length || 0} object{(repo.objects?.length || 0) === 1 ? '' : 's'}</span>
               </button>
               <div className="pp-row-meta">
-                {repo.description ? `${repo.description} · ` : ''}{repo.source ? `${repo.source} · ` : ''}updated {formatTimestamp(repo.updated_at)}
+                {repo.description ? `${repo.description} · ` : ''}{repo.source ? `${repo.source} · ` : ''}updated {formatTimestamp(repo.updated_at)}{repositoryUses(repo.id) ? ` · ${usedByScripts(repositoryUses(repo.id)!.length)}` : ''}
               </div>
+              {expanded === repo.id && projectId && repositoryUses(repo.id) && <SharedAssetUsedBy kind="script" projectId={projectId} uses={repositoryUses(repo.id)!} none="No script points at these objects yet." />}
               {expanded === repo.id && (repo.objects?.length || 0) > 0 && (
                 <ul className="pp-sublist">
                   {repo.objects.slice(0, 25).map((object, objectIndex) => {
@@ -409,7 +423,7 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
                   <input type="checkbox" checked={!!repo.auto_promote_on_heal} disabled={busy} onChange={() => toggleAutoPromote(repo)} />
                   Auto-promote heals
                 </label>
-                <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(repo)} disabled={busy}>Delete</button>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => { refreshUsage(); setDeleteTarget(repo) }} disabled={busy}>Delete</button>
               </div>
             )}
           </div>
@@ -420,7 +434,9 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
         <Suspense fallback={null}>
           <ConfirmDestructiveModal
             title="Delete object repository"
-            description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.objects?.length || 0} objects. Scripts referencing it will lose the shared descriptors.`}
+            description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.objects?.length || 0} objects.`}
+            blocked={repositoryUses(deleteTarget.id)?.length ? 'Scripts point at its objects, so it cannot be deleted. Open each script and point those actions elsewhere first.' : undefined}
+            affects={projectId && repositoryUses(deleteTarget.id)?.length ? <SharedAssetUsedBy kind="script" projectId={projectId} uses={repositoryUses(deleteTarget.id)!} none="" /> : undefined}
             target={deleteTarget.name}
             targetLabel="Repository"
             confirmLabel="Delete repository"
@@ -437,7 +453,10 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false, sc
                   setRepositories(current => current.filter(repository => repository.id !== target.id))
                   setDeleteTarget(null)
                 },
-              )
+              ).then(deleted => {
+                // A refused delete usually means a script points at it now.
+                if (!deleted) refreshUsage()
+              })
             }}
           />
         </Suspense>

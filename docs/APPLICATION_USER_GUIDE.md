@@ -1196,6 +1196,15 @@ everything and can export pools.
   Seed one from a script's recorded elements, and optionally point that script's
   actions at it. A changed selector is then fixed once rather than in fourteen scripts.
 
+Each row says what uses it, and each user is a link: the scenarios that bind a pool or
+live table (opening at their Data step, where the binding is changed), the scripts that
+point at an object repository or read a secret, and the script a correlation rule set was
+learned from and the scripts it was applied to. A pool or repository that something uses
+cannot be deleted; its Delete lists what to change first. Applying a rule set copies its
+rules into the script, so deleting the set changes no script. Rotating a secret lists the
+scripts and connections whose value changes before it runs, and a lifecycle change to a
+live table lists the scenarios whose runs it affects.
+
 Old addresses for these (Repository › Shared test data and Live tables, Project
 secrets, the Scripts page's Shared assets tab) open the matching section.
 

@@ -119,6 +119,9 @@ interface Props {
   onNavigate?: (page: NavPage) => void
   onScenarioViewChange?: (view: 'library' | 'builder' | 'plans') => void
   initialView?: 'library' | 'builder' | 'plans'
+  /** A scenario a link names, opened in the builder (at initialScenarioStep). */
+  initialScenarioId?: string
+  initialScenarioStep?: ScenarioWizardStep
   featurePolicySignal?: number
   onScriptWorkflowChange?: (active: boolean) => void
 }
@@ -815,7 +818,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', featurePolicySignal = 0 }: Props) {
+function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', initialScenarioId, initialScenarioStep, featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -1849,30 +1852,61 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // body as the baseline whose tag its save presents, never from a list row
   // that may be stale.
   // Edit opens at Start, or at the step the author asked for from the library.
-  const openEdit = async (scenario: StoredScenario, step: ScenarioWizardStep = 'scripts') => {
-    if (assigningScenarioIds.has(scenario.id) || openingScenarioId) return
+  // Opens a saved scenario for editing; says whether it opened, failed (with
+  // the reason shown) or was set aside for a newer request.
+  const openEdit = async (scenario: StoredScenario, step: ScenarioWizardStep = 'scripts'): Promise<'opened' | 'failed' | 'skipped'> => {
+    if (assigningScenarioIds.has(scenario.id) || openingScenarioId) return 'skipped'
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
-      return
+      return 'failed'
     }
     const generation = ++scenarioOpenGenerationRef.current
     const scopeProjectId = activeProjectId
     setOpeningScenarioId(scenario.id)
     try {
       const fresh = await api.getScenario(scenario.id)
-      if (generation !== scenarioOpenGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return
+      if (generation !== scenarioOpenGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return 'skipped'
       if (!fresh?.id || fresh.id !== scenario.id) throw new Error('The controller returned an incomplete scenario. Refresh the library and try again.')
+      // As in the library, where Edit is disabled for it: an archived scenario is restored first.
+      if (fresh.archived_at) throw new Error(`${fresh.name || 'This scenario'} is archived. Restore it from the Scenario library to edit it.`)
       let baseline: ScenarioAuthoringBaseline | null = null
       try { baseline = scenarioBaselineFromRead(fresh, scopeProjectId || undefined) } catch { baseline = null }
       openEditFrom(fresh, baseline)
       setWizardStep(step)
       if (!baseline) setScenarioConflict({ reason: scenarioRevisionUnsupported, loading: false, current: null })
+      return 'opened'
     } catch (err: unknown) {
-      if (generation === scenarioOpenGenerationRef.current && currentProjectIdRef.current === scopeProjectId) setError(getErrorMessage(err, 'Unable to load the scenario for editing'))
+      if (generation !== scenarioOpenGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return 'skipped'
+      setError(getErrorMessage(err, 'Unable to load the scenario for editing'))
+      return 'failed'
     } finally {
       if (generation === scenarioOpenGenerationRef.current) setOpeningScenarioId('')
     }
   }
+  // A link that names a scenario (Shared assets' Used by) opens it once access
+  // is known; a role that cannot edit gets the library and the reason.
+  const openEditRef = useRef(openEdit)
+  openEditRef.current = openEdit
+  const onScenarioViewChangeRef = useRef(onScenarioViewChange)
+  onScenarioViewChangeRef.current = onScenarioViewChange
+  const openedScenarioLinkRef = useRef('')
+  useEffect(() => {
+    if (!initialScenarioId) {
+      openedScenarioLinkRef.current = ''
+      return
+    }
+    if (!effectiveAccessLoaded || !activeProjectId) return
+    const key = `${activeProjectId}:${initialScenarioId}:${initialScenarioStep || ''}`
+    if (openedScenarioLinkRef.current === key) return
+    openedScenarioLinkRef.current = key
+    void openEditRef.current({ id: initialScenarioId } as StoredScenario, initialScenarioStep).then(outcome => {
+      // A scenario that cannot be opened leaves the library showing why, not an empty builder.
+      if (outcome === 'failed') {
+        setShowForm(false)
+        onScenarioViewChangeRef.current?.('library')
+      }
+    })
+  }, [activeProjectId, effectiveAccessLoaded, initialScenarioId, initialScenarioStep])
 
   const duplicateScenario = (scenario: StoredScenario) => {
     if (!canManageTests) {
