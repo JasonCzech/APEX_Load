@@ -24,7 +24,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const workspace = await createWorkspace(request)
 
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
 
   const importControls = page.getByRole('group', { name: 'Script import controls' })

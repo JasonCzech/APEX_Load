@@ -1928,8 +1928,31 @@
 
 .script-workflow-picker {
   display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(180px, 1fr);
+  gap: 12px;
+}
+
+/* The three in-page workflows are tabs; Record, beside them, opens Recording Studio. */
+.script-workflow-tabs {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.script-workflow-link {
+  position: relative;
+}
+
+.script-workflow-card .script-workflow-link-arrow {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  color: var(--accent-text);
+  font-size: 16px;
 }
 
 .script-workflow-card {
@@ -2482,7 +2505,8 @@
 @media (max-width: 980px) {
   .script-create-existing-toolbar,
   .script-create-lanes,
-  .script-workflow-picker {
+  .script-workflow-picker,
+  .script-workflow-tabs {
     grid-template-columns: 1fr;
   }
 }

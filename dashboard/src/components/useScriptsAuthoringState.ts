@@ -75,6 +75,13 @@ interface UseScriptsAuthoringStateOptions {
   initialImport?: ScriptImportLauncherDescriptor | null
   initialEditId?: string
   projectId?: string
+  /**
+   * The page step the route names (the library, the builder, Recording
+   * Studio, a draft). The page moves to it when it changes (Back, Forward, a
+   * link); a draft cannot be restored, so a route to one without it opens the
+   * builder.
+   */
+  builderStep?: 'list' | 'create' | 'record' | 'import' | 'draft' | null
 }
 
 export interface ScriptsCreateOptionActions {
@@ -176,6 +183,19 @@ function importLauncherState(launcher: string, mode?: string | null): Pick<Autho
   return { subView: importSurfaceForLauncher(descriptor.launcher), importLauncher: descriptor.launcher, importMode: descriptor.mode }
 }
 
+// Whether two states show the same surface: the same sub-view and, for an
+// importer, the same launcher and mode.
+function sameAuthoringSurface(a: AuthoringState, b: AuthoringState): boolean {
+  return a.subView === b.subView && a.editingId === b.editingId && (a.importLauncher || null) === (b.importLauncher || null) && (a.importMode || null) === (b.importMode || null)
+}
+
+// The entry a page-step route opens at: the library, Recording Studio, or
+// the builder (also for a draft, which cannot be restored).
+function builderEntryMode(mode: ScriptsAuthoringEntryView | undefined, builderStep: UseScriptsAuthoringStateOptions['builderStep']): ScriptsAuthoringEntryView | undefined {
+  if (mode !== 'create' || !builderStep) return mode
+  return builderStep === 'record' ? 'recorder' : builderStep === 'list' ? 'list' : 'create'
+}
+
 function createAuthoringState(mode?: ScriptsAuthoringEntryView, editId?: string, initialImport?: ScriptImportLauncherDescriptor | null): AuthoringState {
   const importState = initialImport?.launcher ? importLauncherState(initialImport.launcher, initialImport.mode) : null
   const subView: ScriptsAuthoringSubView = importState?.subView || (mode === 'create' ? 'create-options' : mode) || 'list'
@@ -200,8 +220,14 @@ export function useScriptsAuthoringState({
   initialImport,
   initialEditId,
   projectId,
+  builderStep,
 }: UseScriptsAuthoringStateOptions): ScriptsAuthoringStateModel {
-  const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId, initialImport))
+  // A builder route opens its step from the first render, and a reset to
+  // the route's entry keeps it: the builder or Recording Studio (a draft
+  // cannot be restored, so it opens the builder).
+  const builderStepRef = useRef(builderStep)
+  builderStepRef.current = builderStep
+  const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(builderEntryMode(initialMode, builderStep), initialEditId, initialImport))
   const editRequestGenerationRef = useRef(0)
   const invalidateEditRequest = useCallback(() => {
     editRequestGenerationRef.current += 1
@@ -513,12 +539,33 @@ export function useScriptsAuthoringState({
   useEffect(() => {
     if (initialMode === 'edit' && initialEditId && !initialImportLauncher) {
       void handleEdit(initialEditId)
-    } else {
-      invalidateEditRequest()
-      setAuthoringState(createAuthoringState(initialMode, initialEditId, initialImportLauncher ? { launcher: initialImportLauncher, mode: initialImportMode } : null))
+    } else if (!builderStepRef.current || builderStepRef.current === 'import') {
+      // An importer route (or an entry outside the page steps) opens its
+      // surface; one already open stays as it is, with the files it holds.
+      const next = createAuthoringState(builderEntryMode(initialMode, builderStepRef.current), initialEditId, initialImportLauncher ? { launcher: initialImportLauncher, mode: initialImportMode } : null)
+      if (!sameAuthoringSurface(authoringStateRef.current, next)) {
+        invalidateEditRequest()
+        setAuthoringState(previous => sameAuthoringSurface(previous, next) ? previous : next)
+      }
     }
+    // Other page steps (library, builder, recorder, draft) follow their route
+    // through the step effect below.
     return invalidateEditRequest
   }, [handleEdit, initialEditId, initialImportLauncher, initialImportMode, initialMode, invalidateEditRequest])
+
+  // The route's builder step, applied when it changes; the page's own moves
+  // reach the route already matching, and leave the state as it is.
+  useEffect(() => {
+    // An importer route is opened by the effect above, from its launcher.
+    if (!builderStep || builderStep === 'import') return
+    const wanted: ScriptsAuthoringSubView = builderStep === 'record' ? 'recorder' : builderStep === 'draft' ? 'create' : builderStep === 'list' ? 'list' : 'create-options'
+    if (authoringStateRef.current.subView === wanted) return
+    invalidateEditRequest()
+    setAuthoringState(previous => {
+      if (previous.subView === wanted) return previous
+      return createAuthoringState(builderEntryMode('create', builderStep))
+    })
+  }, [builderStep, invalidateEditRequest])
 
   return {
     authoringState,

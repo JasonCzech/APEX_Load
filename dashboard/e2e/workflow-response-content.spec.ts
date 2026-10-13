@@ -109,7 +109,7 @@ async function compressedTarget() {
 async function inspectHAR(page: Page, workspace: Workspace, name: string, entries: unknown[]) {
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })

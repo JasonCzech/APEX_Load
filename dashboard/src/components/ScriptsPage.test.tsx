@@ -1050,6 +1050,42 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Browser Recorder')
   })
 
+  it('follows the builder route and reports its tabs and steps for the address', async () => {
+    const onAuthoringStateChange = vi.fn()
+    const render = async (builderRoute: Parameters<typeof ScriptsPage>[0]['builderRoute']) => {
+      await act(async () => {
+        root.render(<ScriptsPage initialMode="create" builderRoute={builderRoute} onAuthoringStateChange={onAuthoringStateChange} />)
+      })
+      await flushPromises()
+    }
+    const selectedWorkflow = () => container.querySelector('[aria-label="Script creation workflows"] [role="tab"][aria-selected="true"]')?.textContent
+    await render({ step: 'create', workflow: 'source' })
+    expect(selectedWorkflow()).toContain('Import')
+    expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ subView: 'create-options', createWorkflow: 'source', createCategory: 'editors', recordMethod: 'browser' }))
+
+    // Back to an entry naming another tab moves it, in place.
+    await render({ step: 'create', workflow: 'start-new', category: 'templates' })
+    expect(selectedWorkflow()).toContain('Create')
+    expect(container.querySelector('[aria-label="Start new script categories"] [role="tab"][aria-selected="true"]')?.textContent).toContain('Starter Templates')
+
+    // The page's own tab change reaches the address.
+    await clickButton('Import')
+    expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ createWorkflow: 'source' }))
+
+    // A route to Recording Studio opens it, with the method it names.
+    await render({ step: 'record', method: 'proxy' })
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    await flushPromises()
+    expect(container.querySelector('[data-testid="recording-studio"]')).not.toBeNull()
+    expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ subView: 'recorder', recordMethod: 'proxy' }))
+
+    // And to the library.
+    await render({ step: 'list' })
+    expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ subView: 'list' }))
+  })
+
   it('consolidates template and manual choices under Start New Script', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
@@ -1730,7 +1766,7 @@ describe('ScriptsPage', () => {
     // The authoring surface is loaded lazily; wait for it rather than for a
     // fixed number of ticks, which only held when an earlier test had loaded it.
     await vi.waitFor(() => expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull(), { timeout: 5000 })
-    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1', importLauncher: null, importMode: null })
+    expect(onAuthoringStateChange).toHaveBeenCalledWith(expect.objectContaining({ subView: 'edit', editingId: 'script-1', importLauncher: null, importMode: null }))
   })
 
   it('filters the script library by authoring health categories', async () => {

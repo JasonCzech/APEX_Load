@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { terminalRunReportView, APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, scriptsRouteForAuthoringState, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
+import { terminalRunReportView, scriptsPageStep, scriptsPageStepDepth, APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, scriptsRouteForAuthoringState, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('round-trips analysis baseline and population into a transaction report', () => {
@@ -152,12 +152,34 @@ describe('appRouting', () => {
     expect(route({ subView: 'list', editingId: null })).toEqual({ page: 'scripts', mode: 'list', projectId: 'p1' })
     expect(route({ subView: 'edit', editingId: 'script-1' })).toEqual({ page: 'scripts', mode: 'edit', scriptId: 'script-1', projectId: 'p1' })
     expect(route({ subView: 'traffic_har', editingId: null, importLauncher: 'traffic_har', importMode: 'auto_detect' })).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p1' })
-    // The recorder, an unsaved draft and the create options have no route of
-    // their own: they reopen at the create options, not the archive importer.
-    for (const subView of ['recorder', 'create', 'create-options']) {
-      expect(route({ subView, editingId: null }), subView).toEqual({ page: 'scripts', mode: 'create', projectId: 'p1' })
-    }
+    // The Script builder's steps: the builder on its workflow and Start new
+    // tab, Recording Studio with its method, and an unsaved draft.
+    expect(route({ subView: 'create-options', editingId: null })).toEqual({ page: 'scripts', mode: 'create', projectId: 'p1' })
+    expect(route({ subView: 'create-options', editingId: null, createWorkflow: 'start-new', createCategory: 'templates' })).toEqual({ page: 'scripts', mode: 'create', workflow: 'start-new', category: 'templates', projectId: 'p1' })
+    // The Start new tab belongs to that workflow alone.
+    expect(route({ subView: 'create-options', editingId: null, createWorkflow: 'source', createCategory: 'templates' })).toEqual({ page: 'scripts', mode: 'create', workflow: 'source', projectId: 'p1' })
+    expect(route({ subView: 'recorder', editingId: null, recordMethod: 'proxy' })).toEqual({ page: 'scripts', mode: 'record', method: 'proxy', projectId: 'p1' })
+    expect(route({ subView: 'create', editingId: null, createWorkflow: 'existing' })).toEqual({ page: 'scripts', mode: 'draft', projectId: 'p1' })
+    // A surface without a route of its own reopens at the builder, not the archive importer.
     expect(route({ subView: 'edit', editingId: null })).toEqual({ page: 'scripts', mode: 'create', projectId: 'p1' })
+  })
+
+  it('reads builder steps and drops tabs that do not belong to them', () => {
+    expect(parseAppViewFromHash('#/scripts?mode=create&workflow=existing&category=blocks')).toEqual({ page: 'scripts', mode: 'create', workflow: 'existing' })
+    expect(parseAppViewFromHash('#/scripts?mode=create&category=blocks')).toEqual({ page: 'scripts', mode: 'create', category: 'blocks' })
+    expect(parseAppViewFromHash('#/scripts?mode=create&workflow=bogus&category=nope')).toEqual({ page: 'scripts', mode: 'create' })
+    expect(parseAppViewFromHash('#/scripts?mode=record&method=proxy')).toEqual({ page: 'scripts', mode: 'record', method: 'proxy' })
+    expect(parseAppViewFromHash('#/scripts?mode=record&method=telnet&workflow=existing')).toEqual({ page: 'scripts', mode: 'record' })
+    expect(parseAppViewFromHash('#/scripts?mode=draft&method=proxy')).toEqual({ page: 'scripts', mode: 'draft' })
+    expect(scriptsPageStep({ page: 'scripts', mode: 'draft' })).toBe('draft')
+    expect(scriptsPageStep({ page: 'scripts' })).toBe('list')
+    expect(scriptsPageStep({ page: 'scripts', mode: 'edit', scriptId: 's' })).toBeNull()
+    expect(scriptsPageStep({ page: 'scripts', mode: 'import', importLauncher: 'openapi' })).toBe('import')
+    expect(scriptsPageStepDepth('create')).toBeLessThan(scriptsPageStepDepth('import'))
+    expect(scriptsPageStepDepth('import')).toBeLessThan(scriptsPageStepDepth('draft'))
+    expect(scriptsPageStepDepth('list')).toBeLessThan(scriptsPageStepDepth('create'))
+    expect(scriptsPageStepDepth('create')).toBeLessThan(scriptsPageStepDepth('record'))
+    expect(scriptsPageStepDepth('record')).toBeLessThan(scriptsPageStepDepth('draft'))
   })
 
   it('round-trips deep links for runs, scenario launches, and scripts', () => {

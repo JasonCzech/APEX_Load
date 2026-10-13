@@ -39,7 +39,7 @@ test('Aura HAR review exposes HTTP200 failures and missing responses with safe s
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   // The collapsed sidebar shows only an icon; the workspace path is the button's accessible name.
   await expect(page.getByRole('button', { name: new RegExp(`Workspace context\\..*${workspace.label} project`) })).toBeVisible()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
   const capture = { log: { version: '1.2', creator: { name: 'synthetic', version: '1' }, entries: [
@@ -96,7 +96,7 @@ test('Aura parameter review applies one nested field without changing repeated s
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
   const literal = '001D000000IqhSLIAZ'
@@ -155,7 +155,7 @@ test('native correlation review preserves exact original source navigation throu
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
   const clientId = 'synthetic-bayeux-client'

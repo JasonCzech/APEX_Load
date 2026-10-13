@@ -1,4 +1,5 @@
-import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 import { type Project, type StoredScript } from '../types'
 import ScriptCreateOptions, { type CreateWorkflow, type StartNewCategory } from './ScriptCreateOptions'
@@ -8,6 +9,24 @@ import LazyLoadBoundary from './LazyLoadBoundary'
 import LoadingState from './ux/LoadingState'
 
 const ScriptsAuthoringSurface = lazy(() => import('./ScriptsAuthoringSurface'))
+
+/**
+ * Chosen content (a template, a block, a recording) is unsaved from the first
+ * render, but the editor that guards it may still be loading: until it does,
+ * leaving asks here (it cannot be saved yet, only kept or discarded).
+ */
+function LoadingDraftGuard({ name }: { name: string }) {
+  const guard = useMemo<NavigationGuard>(() => ({
+    id: 'scripts-loading-draft',
+    label: name || 'New script',
+    isDirty: () => true,
+    save: () => false,
+    discard: () => {},
+    canSave: false,
+  }), [name])
+  useNavigationGuard(guard, true)
+  return null
+}
 
 interface Props {
   initialCreateWorkflow?: CreateWorkflow
@@ -26,6 +45,13 @@ interface Props {
   onStartExistingScript?: (script: StoredScript, options?: { migrateSecrets?: boolean }) => void
   canManageScripts?: boolean
   canMigrateSecrets?: boolean
+  /** The builder's workflow and Start new tab, and the recorder's method, when the page holds them (to route them). */
+  createWorkflow?: CreateWorkflow
+  onCreateWorkflowChange?: (workflow: CreateWorkflow) => void
+  createCategory?: StartNewCategory
+  onCreateCategoryChange?: (category: StartNewCategory) => void
+  recordMethod?: ScriptsAuthoringSurfaceProps['recordMethod']
+  onRecordMethodChange?: ScriptsAuthoringSurfaceProps['onRecordMethodChange']
   children: ReactNode
 }
 
@@ -46,6 +72,12 @@ export default function ScriptsAuthoringShell({
   onStartExistingScript,
   canManageScripts = true,
   canMigrateSecrets = false,
+  createWorkflow,
+  onCreateWorkflowChange,
+  createCategory,
+  onCreateCategoryChange,
+  recordMethod,
+  onRecordMethodChange,
   children,
 }: Props) {
   const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>(initialCreateWorkflow || 'start-new')
@@ -63,6 +95,11 @@ export default function ScriptsAuthoringShell({
     workflowChosenByUserRef.current = true
     setCreateOptionsWorkflow(workflow)
   }
+  // The page holds them when it routes them; this shell's own state otherwise.
+  const activeWorkflow = createWorkflow ?? createOptionsWorkflow
+  const changeWorkflow = onCreateWorkflowChange ?? changeCreateOptionsWorkflow
+  const activeCategory = createCategory ?? createOptionsCategory
+  const changeCategory = onCreateCategoryChange ?? setCreateOptionsCategory
 
   if (!canManageScripts) {
     return <>{children}</>
@@ -91,10 +128,10 @@ export default function ScriptsAuthoringShell({
         scripts={scripts}
         onStartExistingScript={onStartExistingScript}
         canMigrateSecrets={canMigrateSecrets}
-        workflow={createOptionsWorkflow}
-        onWorkflowChange={changeCreateOptionsWorkflow}
-        category={createOptionsCategory}
-        onCategoryChange={setCreateOptionsCategory}
+        workflow={activeWorkflow}
+        onWorkflowChange={changeWorkflow}
+        category={activeCategory}
+        onCategoryChange={changeCategory}
       />
     )
   }
@@ -102,7 +139,10 @@ export default function ScriptsAuthoringShell({
   if (authoringState.subView !== 'list') {
     return (
       <LazyLoadBoundary title="Authoring tools could not be loaded.">
-        <Suspense fallback={<LoadingState what="authoring tools" />}>
+        <Suspense fallback={<>
+          {authoringState.subView === 'create' && authoringState.draftInitiallyDirty && <LoadingDraftGuard name={authoringState.draftScript?.name || ''} />}
+          <LoadingState what="authoring tools" />
+        </>}>
           <ScriptsAuthoringSurface
             subView={authoringState.subView}
             importLauncher={authoringState.importLauncher}
@@ -130,6 +170,8 @@ export default function ScriptsAuthoringShell({
             onImported={onImported}
             onEditDraft={onEditDraft}
             onReturnToDraftSource={onReturnToDraftSource}
+            recordMethod={recordMethod}
+            onRecordMethodChange={onRecordMethodChange}
           />
         </Suspense>
       </LazyLoadBoundary>

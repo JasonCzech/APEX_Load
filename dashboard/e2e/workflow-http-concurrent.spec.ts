@@ -279,7 +279,7 @@ test('LoadRunner concurrent markers import exact child mappings and replay on th
     await page.setViewportSize({ width: 1600, height: 1050 })
     await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
     if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-    await page.getByRole('button', { name: 'Import', exact: true }).click()
+    await page.getByRole('tab', { name: 'Import', exact: true }).click()
     await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
     const source = `Action() {\nweb_url("Login", "URL=${target.url}/login", LAST);\nweb_concurrent_start(NULL);\nweb_reg_save_param_json("ParamName=first", "QueryString=$.value", LAST);\nweb_url("First sibling", "URL=${target.url}/group/1", LAST);\nweb_reg_save_param_json("ParamName=second", "QueryString=$.value", LAST);\nweb_url("Second sibling", "URL=${target.url}/group/2", LAST);\nweb_concurrent_end(NULL);\nweb_url("Consume joined values", "URL=${target.url}/consume?first={first}&second={second}", LAST);\nreturn 0;\n}`
     await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({ name: 'concurrent-http.zip', mimeType: 'application/zip', buffer: sourceArchive(source) })

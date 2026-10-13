@@ -195,7 +195,7 @@ export async function importOpenAPI(page: Page, name: string, target: string) {
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
   // Navigate through the actual creation entry rather than seeding the script.
   await page.getByRole('button', { name: 'Script builder', exact: true }).first().click()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
   const spec = { openapi: '3.0.3', info: { title: name, version: '1.0' }, servers: [{ url: target }], paths: { '/orders': { get: { operationId: 'listOrders', responses: { '200': { description: 'Orders' } } } } } }

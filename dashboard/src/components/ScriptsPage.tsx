@@ -23,6 +23,7 @@ import { type NavPage } from './Sidebar'
 import { type ScriptSecretStatus } from '../types/secrets'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringEntryView, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
+import type { ScriptsBuilderCategory, ScriptsBuilderWorkflow, ScriptsPageStep, ScriptsRecordMethod } from '../appRouting'
 import type { ScriptImportLauncherDescriptor } from '../scriptImportLaunchers'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -61,8 +62,27 @@ interface Props {
   onNativeImportRequestHandled?: () => void
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
-  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null; importMode?: string | null }) => void
+  onAuthoringStateChange?: (state: {
+    subView: ScriptsAuthoringSubView
+    editingId: string | null
+    importLauncher?: string | null
+    importMode?: string | null
+    createWorkflow?: ScriptsBuilderWorkflow | null
+    createCategory?: ScriptsBuilderCategory | null
+    recordMethod?: ScriptsRecordMethod | null
+  }) => void
   featurePolicySignal?: number
+  /**
+   * The page step (library, builder, Recording Studio, importer, draft) and
+   * builder tabs the route names. Given, the page follows it (Back, Forward, a link)
+   * without remounting, and reports its own moves through onAuthoringStateChange.
+   */
+  builderRoute?: {
+    step: ScriptsPageStep
+    workflow?: ScriptsBuilderWorkflow
+    category?: ScriptsBuilderCategory
+    method?: ScriptsRecordMethod
+  } | null
 }
 
 type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
@@ -159,7 +179,7 @@ function scriptSearchText(script: StoredScript) {
 
 const healthFilterKeys = healthFilters.map(filter => filter.key)
 
-export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialImport, initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
+export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialImport, initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0, builderRoute }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -493,7 +513,34 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     initialImport,
     initialEditId,
     projectId: activeProjectId,
+    builderStep: builderRoute?.step ?? null,
   })
+  // The builder's tabs and the recorder's method, held here so the route can
+  // name them; a route that names one moves it (Back, Forward, a link).
+  const [builderTabs, setBuilderTabs] = useState<{ workflow: ScriptsBuilderWorkflow; category: ScriptsBuilderCategory; method: ScriptsRecordMethod }>(() => ({
+    workflow: builderRoute?.workflow ?? initialCreateWorkflow ?? 'start-new',
+    category: builderRoute?.category ?? 'editors',
+    method: builderRoute?.method ?? 'browser',
+  }))
+  const routedWorkflow = builderRoute?.workflow
+  const routedCategory = builderRoute?.category
+  const routedMethod = builderRoute?.method
+  useEffect(() => {
+    setBuilderTabs(previous => {
+      const next = {
+        workflow: routedWorkflow ?? previous.workflow,
+        category: routedCategory ?? previous.category,
+        method: routedMethod ?? previous.method,
+      }
+      return next.workflow === previous.workflow && next.category === previous.category && next.method === previous.method ? previous : next
+    })
+  }, [routedCategory, routedMethod, routedWorkflow])
+  // The page holds the tabs whenever it reports its route, so the route can
+  // name them from wherever the builder was reached.
+  const builderRouted = Boolean(onAuthoringStateChange)
+  const setCreateWorkflow = useCallback((workflow: ScriptsBuilderWorkflow) => setBuilderTabs(previous => previous.workflow === workflow ? previous : { ...previous, workflow }), [])
+  const setCreateCategory = useCallback((category: ScriptsBuilderCategory) => setBuilderTabs(previous => previous.category === category ? previous : { ...previous, category }), [])
+  const setRecordMethod = useCallback((method: ScriptsRecordMethod) => setBuilderTabs(previous => previous.method === method ? previous : { ...previous, method }), [])
   const handleSavedScript = useCallback((...args: Parameters<typeof acceptSavedScript>) => {
     acceptSavedScript(...args)
     onScriptSaved?.(args[0])
@@ -856,8 +903,11 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       editingId: authoringState.editingId,
       importLauncher: authoringState.importLauncher,
       importMode: authoringState.importMode,
+      createWorkflow: builderTabs.workflow,
+      createCategory: builderTabs.category,
+      recordMethod: builderTabs.method,
     })
-  }, [authoringState.editingId, authoringState.importLauncher, authoringState.importMode, authoringState.subView, onAuthoringStateChange])
+  }, [authoringState.editingId, authoringState.importLauncher, authoringState.importMode, authoringState.subView, builderTabs, onAuthoringStateChange])
 
   const handleDelete = async (id: string) => {
     if (!canManageScripts || movingScriptIds.has(id)) return
@@ -1118,6 +1168,14 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       )}
       <ScriptsAuthoringShell
         initialCreateWorkflow={initialCreateWorkflow}
+        {...(builderRouted ? {
+          createWorkflow: builderTabs.workflow,
+          onCreateWorkflowChange: setCreateWorkflow,
+          createCategory: builderTabs.category,
+          onCreateCategoryChange: setCreateCategory,
+          recordMethod: builderTabs.method,
+          onRecordMethodChange: setRecordMethod,
+        } : {})}
         authoringState={authoringState}
         projectId={activeProject?.id}
         policyRefreshSignal={featurePolicySignal}

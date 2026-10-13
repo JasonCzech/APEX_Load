@@ -39,7 +39,8 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'new-test':
       return 'New run'
     case 'scripts':
-      if (view.mode === 'create') return 'Create script'
+      if (view.mode === 'create' || view.mode === 'draft') return 'Create script'
+      if (view.mode === 'record') return 'Record browser'
       if (view.mode === 'edit') return 'Edit script'
       if (view.mode === 'import') return 'Import script'
       return 'Scripts'

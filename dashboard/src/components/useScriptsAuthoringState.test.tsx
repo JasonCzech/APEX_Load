@@ -19,8 +19,8 @@ type HarnessProps = {
   initialEditId?: string
 }
 
-function AuthoringStateHarness({ api, initialMode, initialImport, initialEditId }: HarnessProps) {
-  const model = useScriptsAuthoringState({ api: { ...api, ...pairedAuthoringTestApi(api.getScript) } as never, initialMode, initialImport, initialEditId })
+function AuthoringStateHarness({ api, initialMode, initialImport, initialEditId, builderStep }: HarnessProps & { builderStep?: 'list' | 'create' | 'record' | 'draft' | null }) {
+  const model = useScriptsAuthoringState({ api: { ...api, ...pairedAuthoringTestApi(api.getScript) } as never, initialMode, initialImport, initialEditId, builderStep })
 
   return (
     <div>
@@ -279,6 +279,39 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('subview')).toBe('edit')
     expect(readTestId('editing-id')).toBe('saved-script-1')
     expect(readTestId('draft-return-subview')).toBe('create-options')
+  })
+
+  it('moves to the page step the route names, keeping a draft only while it is open', async () => {
+    const api = { getScript: vi.fn() }
+    const render = async (builderStep: 'list' | 'create' | 'record' | 'draft') => {
+      await act(async () => {
+        root.render(<AuthoringStateHarness api={api} initialMode="create" builderStep={builderStep} />)
+      })
+    }
+    // A route to Recording Studio opens it from the first render.
+    await render('record')
+    expect(readTestId('subview')).toBe('recorder')
+    await render('create')
+    expect(readTestId('subview')).toBe('create-options')
+
+    // A draft the page opened is the draft step; the route following it changes nothing.
+    await click('start-template')
+    await render('draft')
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Template Draft')
+    // Back to the builder leaves the draft (the page asked about it first).
+    await render('create')
+    expect(readTestId('subview')).toBe('create-options')
+    expect(readTestId('draft-name')).toBe('none')
+    await render('list')
+    expect(readTestId('subview')).toBe('list')
+  })
+
+  it('opens the builder for a route to a draft it cannot restore', async () => {
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={{ getScript: vi.fn() }} initialMode="create" builderStep="draft" />)
+    })
+    expect(readTestId('subview')).toBe('create-options')
   })
 
   it('loads the requested script into edit mode and resets when switching subviews', async () => {

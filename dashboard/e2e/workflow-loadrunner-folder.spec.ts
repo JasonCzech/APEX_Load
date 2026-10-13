@@ -11,7 +11,7 @@ async function openLoadRunnerImport(page: Page) {
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
 }
 

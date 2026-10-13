@@ -2,7 +2,7 @@ import TooltipButton from './components/ux/TooltipButton'
 import TopbarActionButton from './components/TopbarActionButton'
 import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
-import { scriptsRouteForAuthoringState, terminalRunReportView } from './appRouting';
+import { scriptsPageStep, scriptsPageStepDepth, scriptsRouteForAuthoringState, terminalRunReportView, type ScriptsBuilderCategory, type ScriptsBuilderWorkflow, type ScriptsRecordMethod } from './appRouting';
 import PageHeader from './components/ux/PageHeader'
 import { settingsOwner, sharedAssetsSectionForSetting } from "./components/settingsNavigation";
 import {
@@ -333,6 +333,14 @@ function AppShell({
   );
   const popstateHashToIgnore = useRef<string | null>(null);
   const replaceRouteOnNextViewSync = useRef(false);
+  // The Script builder entry each builder step was pushed from, by history
+  // index, so closing the step goes back to that entry instead of adding one.
+  const scriptsBuilderParents = useRef(new Map<number, string>());
+  const pendingScriptsBuilderParent = useRef<string | null>(null);
+  // What the Scripts page last reported: whether its surface moved since (a
+  // Close may go back to the entry it came from), and what to name instead of
+  // a draft route the page cannot open.
+  const lastScriptsState = useRef<Parameters<typeof scriptsRouteForAuthoringState>[0] | null>(null);
   const guardedHistoryTraversal = useRef<{
     phase: "restoring" | "proceeding";
     pending: PendingGuardedHistoryTraversal;
@@ -369,6 +377,20 @@ function AppShell({
   const isDevUserPreview = authStatus?.mode === "dev" && devViewMode === "user";
   const scriptMode =
     view.page === "scripts" && "mode" in view ? view.mode : undefined;
+  // The library, the builder, Recording Studio, an importer and an unsaved
+  // draft are steps of one mounted page: the route moves the page between
+  // them rather than remounting it, which would drop the draft (or the files
+  // an importer was opened with).
+  const scriptsStep = scriptsPageStep(view);
+  const scriptsBuilderRoute =
+    view.page === "scripts" && scriptsStep
+      ? {
+          step: scriptsStep,
+          ...(view.workflow ? { workflow: view.workflow } : {}),
+          ...(view.category ? { category: view.category } : {}),
+          ...(view.method ? { method: view.method } : {}),
+        }
+      : null;
   // An import route names its importer (the route boundary translates older
   // addresses); the page opens it by launcher descriptor.
   const scriptImport =
@@ -2388,15 +2410,52 @@ function AppShell({
   useDockBadge(desktopShellActiveRunCount);
 
   const handleScriptsAuthoringStateChange = useCallback(
-    (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null; importMode?: string | null }) => {
+    (state: {
+      subView: ScriptsAuthoringSubView;
+      editingId: string | null;
+      importLauncher?: string | null;
+      importMode?: string | null;
+      createWorkflow?: ScriptsBuilderWorkflow | null;
+      createCategory?: ScriptsBuilderCategory | null;
+      recordMethod?: ScriptsRecordMethod | null;
+    }) => {
       setScriptsTopbarState(state);
-      // Keep the URL naming what is open (library, editor, import) so a
-      // refresh or a shared link returns to it. replaceState, not setView:
-      // the page is keyed by its route and a view change would remount it.
-      const current = parseAppViewFromHash(window.location.hash);
-      if (current.page !== "scripts") return;
-      const next = viewToLocationHash(scriptsRouteForAuthoringState(state, workspaceScopeForAppView(current)));
-      if (next !== window.location.hash) window.history.replaceState(window.history.state, "", next);
+      const surfaceMoved = lastScriptsState.current !== null && lastScriptsState.current.subView !== state.subView;
+      lastScriptsState.current = state;
+      // Keep the URL naming what is open (library, editor, import, builder
+      // step) so a refresh, a shared link or Back returns to it.
+      const located = parseAppViewFromHash(window.location.hash);
+      if (located.page !== "scripts") return;
+      const nextView = scriptsRouteForAuthoringState(state, workspaceScopeForAppView(located));
+      const next = viewToLocationHash(nextView);
+      if (next === window.location.hash) return;
+      const keyedStep = scriptsPageStep(viewRef.current);
+      const nextStep = scriptsPageStep(nextView);
+      if (!keyedStep || !nextStep) {
+        // The page is keyed by its route: entering or leaving a saved
+        // script's editor through a view change would remount it, so only
+        // the URL follows.
+        window.history.replaceState(window.history.state, "", next);
+        return;
+      }
+      // Page steps keep the page mounted, so they are history entries:
+      // a deeper step is a new one, closing a step goes back to the entry it
+      // came from, and a tab within a step replaces the current one.
+      if (surfaceMoved && scriptsBuilderParents.current.get(appHistoryIndex.current) === next) {
+        window.history.back();
+        return;
+      }
+      const locatedStep = scriptsPageStep(located);
+      const deeper = locatedStep !== null && scriptsPageStepDepth(nextStep) > scriptsPageStepDepth(locatedStep);
+      if (deeper) {
+        pendingScriptsBuilderParent.current = window.location.hash;
+      } else {
+        replaceRouteOnNextViewSync.current = true;
+      }
+      // Always a new view object: the route sync writes the URL even when the
+      // view it last saw already names this step (the URL had moved on to an
+      // editor or importer since).
+      setView(nextView);
     },
     [],
   );
@@ -2437,8 +2496,22 @@ function AppShell({
   useEffect(() => {
     if (view.page !== "scripts") {
       setScriptsTopbarState(null);
+      lastScriptsState.current = null;
     }
   }, [view.page]);
+
+  // A draft lives only in the page: a route to one it does not hold (Forward
+  // to a closed draft, a reload) names what the page shows instead.
+  useEffect(() => {
+    const reported = lastScriptsState.current;
+    if (view.page !== "scripts" || scriptsPageStep(view) !== "draft" || !reported) return;
+    // Only a surface the page shows in place of the draft corrects it; one it
+    // left the draft for (a saved script's editor) keeps its own address.
+    const showsAnotherStep = reported.subView === "list" || reported.subView === "create-options" || reported.subView === "recorder" || Boolean(reported.importLauncher);
+    if (!showsAnotherStep) return;
+    replaceRouteOnNextViewSync.current = true;
+    setView(scriptsRouteForAuthoringState(reported, workspaceScopeForAppView(view)));
+  }, [view]);
 
   const navigateBack = useCallback(
     (fallbackPage: NavPage = "dashboard") => {
@@ -2703,6 +2776,8 @@ function AppShell({
 
     const replaceCurrentRoute = replaceRouteOnNextViewSync.current;
     replaceRouteOnNextViewSync.current = false;
+    const scriptsBuilderParent = pendingScriptsBuilderParent.current;
+    pendingScriptsBuilderParent.current = null;
     if (window.location.hash !== nextHash) {
       if (replaceCurrentRoute) {
         window.history.replaceState(
@@ -2715,6 +2790,8 @@ function AppShell({
       const nextHistoryIndex = appHistoryIndex.current + 1;
       appHistoryIndex.current = nextHistoryIndex;
       popstateHashToIgnore.current = null;
+      if (scriptsBuilderParent) scriptsBuilderParents.current.set(nextHistoryIndex, scriptsBuilderParent);
+      else scriptsBuilderParents.current.delete(nextHistoryIndex);
       window.history.pushState(
         withAppHistoryIndex(window.history.state, nextHistoryIndex),
         "",
@@ -3126,6 +3203,8 @@ function AppShell({
     ...(view.page === "activity" ? { activityQuery: undefined } : {}),
     // Command Center analysis views switch in place.
     ...(view.page === "command-center" ? { ccView: undefined } : {}),
+    // The Scripts page's steps and tabs move one mounted page.
+    ...(view.page === "scripts" && scriptsPageStep(view) ? { mode: "create" as const, workflow: undefined, category: undefined, method: undefined, importLauncher: undefined, importMode: undefined } : {}),
     applicationId: undefined,
     releaseId: undefined,
   });
@@ -3653,9 +3732,10 @@ function AppShell({
               {view.page === "scripts" && !routeAssetScopeBlocked && (
                 <ScriptsPage
                   featurePolicySignal={featurePolicySignal}
-                  key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}-${scriptImport ? `${scriptImport.launcher}:${scriptImport.mode || ""}` : ""}`}
+                  key={`scripts-${scriptsNavigationVersion}-${scriptsStep ? "steps" : `${scriptMode || "list"}-${scriptEditId || ""}`}`}
                   applicationRepository={applicationRepository}
-                  initialMode={scriptMode === "import" ? undefined : scriptMode}
+                  initialMode={scriptsStep ? "create" : scriptMode === "edit" ? "edit" : undefined}
+                  builderRoute={scriptsBuilderRoute}
                   initialImport={scriptImport}
                   initialEditId={scriptEditId}
                   nativeImportRequest={nativeImportRequest}

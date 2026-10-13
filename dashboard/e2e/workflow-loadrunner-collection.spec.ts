@@ -9,7 +9,7 @@ test('reviews and saves nested VuGen projects independently, retaining failed an
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
   await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/loadrunner-collection.zip'))
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()

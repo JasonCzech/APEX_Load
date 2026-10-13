@@ -51,6 +51,9 @@ export interface ScriptsAuthoringSurfaceProps {
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
+  /** Recording Studio's method, when the page holds it (to route it). */
+  recordMethod?: 'browser' | 'proxy'
+  onRecordMethodChange?: (method: 'browser' | 'proxy') => void
   onReturnToDraftSource: () => void
 }
 
@@ -133,6 +136,8 @@ function ScriptsAuthoringContent({
   onImported,
   onEditDraft,
   onReturnToDraftSource,
+  recordMethod,
+  onRecordMethodChange,
 }: ScriptsAuthoringSurfaceProps) {
   // Nothing supplies the folderId prop today: ScriptsAuthoringShell, the only
   // caller does not pass one, and the current authoring surface has no folder
@@ -234,7 +239,7 @@ function ScriptsAuthoringContent({
       )
     case 'bruno-import':
       return createOptionsSurface(
-        <BrunoImport initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        <BrunoImport key={`${importLauncher}:${importMode || ''}`} initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
         false,
         null,
       )
@@ -242,21 +247,21 @@ function ScriptsAuthoringContent({
       return createOptionsSurface(
         // A recording opened in the editor, saved or not, closes back to the
         // studio; one not in the library yet asks before it is discarded.
-        <RecordingStudio destinationControl={destinationFolderControl} activeProject={activeProject} folderId={destinationFolderValue} onImported={result => onImported({ ...result, returnTarget: RECORDING_STUDIO_RETURN_TARGET })} onEdit={script => onEditDraft(script, undefined, RECORDING_STUDIO_RETURN_TARGET, { initiallyDirty: true })} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        <RecordingStudio destinationControl={destinationFolderControl} activeProject={activeProject} folderId={destinationFolderValue} onImported={result => onImported({ ...result, returnTarget: RECORDING_STUDIO_RETURN_TARGET })} onEdit={script => onEditDraft(script, undefined, RECORDING_STUDIO_RETURN_TARGET, { initiallyDirty: true })} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} method={recordMethod} onMethodChange={onRecordMethodChange} />,
         false, null, destinationOperationBusy,
       )
     case 'sample':
       return renderCreateOptionsSurface(
-        <SampleScriptImport initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        <SampleScriptImport key={`${importLauncher}:${importMode || ''}`} initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
       )
     case 'protocol-import':
       if (importLauncher === 'yaml_chooser') {
         return renderCreateOptionsSurface(
-          <YAMLImportChooser initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+          <YAMLImportChooser key={`${importLauncher}:${importMode || ''}`} initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
         )
       }
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        <ProtocolAssetImport key={`${importLauncher}:${importMode || ''}`} kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
       )
     case 'oracle-review':
       return createOptionsSurface(

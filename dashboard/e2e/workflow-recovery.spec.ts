@@ -9,7 +9,7 @@ test('[U22] creation capability failure has an actionable retry that recovers', 
   await expect(page.getByRole('alert')).toContainText('Workflow capabilities temporarily unavailable')
   await page.unroute(pattern)
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Import', exact: true })).toBeVisible()
   await expect(page.getByText('Workflow capabilities temporarily unavailable')).toBeHidden()
 })
 

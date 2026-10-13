@@ -6,6 +6,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
+import { useNavigationGuardRunner, type NavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { type AuthoringState, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
@@ -22,8 +24,11 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+// While set, the surface (and the editor in it) is still loading.
+const surfaceLoading = vi.hoisted(() => ({ value: false }))
+
 vi.mock('./ScriptsAuthoringSurface', () => ({
-  default: ({
+  default: function SurfaceMock({
     subView,
     draftScript,
     draftReturnTarget,
@@ -53,7 +58,9 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
     onImported?: (result: { scripts: StoredScript[]; scenario?: { name?: string } | null }) => void
     onEditDraft?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }) => void
     onReturnToDraftSource?: () => void
-  }) => (
+  }) {
+    if (surfaceLoading.value) throw new Promise(() => {})
+    return (
     <div data-testid="authoring-surface">
       <span>subview:{subView}</span>
       <span>launcher:{importLauncher || 'none'}</span>
@@ -91,7 +98,8 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
       >surface-edit-draft</button>
       <button onClick={onReturnToDraftSource}>surface-return</button>
     </div>
-  ),
+    )
+  },
 }))
 
 function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): ScriptsCreateOptionActions {
@@ -512,6 +520,57 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(blocksTab().getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Compose Login Flow')
+  })
+
+  it('asks before leaving a chosen draft while its editor is still loading', async () => {
+    surfaceLoading.value = true
+    let runner!: NavigationGuardRunner
+    const CaptureRunner = () => { runner = useNavigationGuardRunner(); return null }
+    try {
+      await act(async () => {
+        root.render(
+          <NavigationGuardProvider>
+            <CaptureRunner />
+            {renderShell({ authoringState: createState('create', { draftScript: { name: 'HTTP API Smoke', version: '1', protocol: 'http', config: {}, actions: [] } as never, draftInitiallyDirty: true }) })}
+          </NavigationGuardProvider>,
+        )
+      })
+      await flushPromises()
+      expect(container.textContent).toContain('Loading authoring tools')
+      const leave = vi.fn()
+      await act(async () => { void runner.runGuarded(leave) })
+      expect(leave).not.toHaveBeenCalled()
+      expect(document.body.textContent).toContain('HTTP API Smoke')
+      // It cannot be saved yet: only kept or discarded.
+      expect(Array.from(document.body.querySelectorAll('button')).some(button => button.textContent === 'Save changes')).toBe(false)
+      await act(async () => {
+        Array.from(document.body.querySelectorAll('button')).find(button => button.textContent === 'Discard changes')!.click()
+      })
+      expect(leave).toHaveBeenCalledOnce()
+    } finally {
+      surfaceLoading.value = false
+    }
+  })
+
+  it('does not hold a blank draft while its editor loads', async () => {
+    surfaceLoading.value = true
+    let runner!: NavigationGuardRunner
+    const CaptureRunner = () => { runner = useNavigationGuardRunner(); return null }
+    try {
+      await act(async () => {
+        root.render(
+          <NavigationGuardProvider>
+            <CaptureRunner />
+            {renderShell({ authoringState: createState('create', { draftScript: { name: '', version: '1', protocol: 'http', config: {}, actions: [] } as never }) })}
+          </NavigationGuardProvider>,
+        )
+      })
+      const leave = vi.fn()
+      await act(async () => { void runner.runGuarded(leave) })
+      expect(leave).toHaveBeenCalledOnce()
+    } finally {
+      surfaceLoading.value = false
+    }
   })
 
   it('renders backend starter templates and delegates template drafts', async () => {

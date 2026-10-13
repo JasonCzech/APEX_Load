@@ -1,6 +1,6 @@
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type AuthoringImportSurface } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
@@ -680,6 +680,12 @@ export default function ScriptCreateOptions({
     }
   }, [loadImportSurfaces, policyRefreshSignal])
 
+  const idPrefix = useId()
+  const workflowTabs: Array<{ id: CreateWorkflow; label: string; detail: string }> = [
+    ...(featureEnabled('script_builder.existing_scripts') ? [{ id: 'existing' as const, label: 'Use existing', detail: 'Clone a saved script into a new editable draft.' }] : []),
+    ...(startNewCategoryTabs.length > 0 ? [{ id: 'start-new' as const, label: 'Create', detail: 'Use templates, reusable blocks, or blank protocol editors.' }] : []),
+    ...(featureEnabled('script_builder.imports') ? [{ id: 'source' as const, label: 'Import', detail: 'Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.' }] : []),
+  ]
   const visibleImportSurfaces = importSurfaces.filter(surface => surface.visible)
   const filteredImportSurfaces = visibleImportSurfaces.filter(surface => {
     const text = [surface.title, surface.description, surface.category, surface.badge, surface.id,
@@ -720,28 +726,38 @@ export default function ScriptCreateOptions({
             </div>
       )}
 
-      <div className="script-workflow-picker" aria-label="Script creation workflows">
-        {featureEnabled('script_builder.existing_scripts') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'existing' ? 'active' : ''}`} aria-label="Use existing" onClick={() => setActiveWorkflow('existing')}>
-          <strong>Use existing</strong>
-          <small>Clone a saved script into a new editable draft.</small>
-        </button>}
-        {startNewCategoryTabs.length > 0 && <button type="button" className={`script-workflow-card ${activeWorkflow === 'start-new' ? 'active' : ''}`} aria-label="Create" onClick={() => setActiveWorkflow('start-new')}>
-          <strong>Create</strong>
-          <small>Use templates, reusable blocks, or blank protocol editors.</small>
-        </button>}
-        {featureEnabled('script_builder.browser_recording') && <button type="button" className="script-workflow-card" aria-label="Record" onClick={onOpenRecorder}>
-          <strong>Record</strong>
-          <small>Capture a user journey and review it before save.</small>
-        </button>}
-        {featureEnabled('script_builder.imports') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'source' ? 'active' : ''}`} aria-label="Import" onClick={() => setActiveWorkflow('source')}>
-          <strong>Import</strong>
-          <small>Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.</small>
+      <div className="script-workflow-picker">
+        {/* The three ways to start here are tabs of this page; Record opens Recording Studio. */}
+        {workflowTabs.length > 0 && <TabList className="script-workflow-tabs" aria-label="Script creation workflows">
+          {workflowTabs.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`${idPrefix}-tab-${tab.id}`}
+              aria-selected={activeWorkflow === tab.id}
+              aria-controls={`${idPrefix}-panel-${tab.id}`}
+              aria-labelledby={`${idPrefix}-tab-${tab.id}-label`}
+              aria-describedby={`${idPrefix}-tab-${tab.id}-detail`}
+              tabIndex={activeWorkflow === tab.id ? 0 : -1}
+              className={`script-workflow-card ${activeWorkflow === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveWorkflow(tab.id)}
+            >
+              <strong id={`${idPrefix}-tab-${tab.id}-label`}>{tab.label}</strong>
+              <small id={`${idPrefix}-tab-${tab.id}-detail`}>{tab.detail}</small>
+            </button>
+          ))}
+        </TabList>}
+        {featureEnabled('script_builder.browser_recording') && <button type="button" className="script-workflow-card script-workflow-link" aria-labelledby={`${idPrefix}-record-label`} aria-describedby={`${idPrefix}-record-detail`} onClick={onOpenRecorder}>
+          <strong id={`${idPrefix}-record-label`}>Record</strong>
+          <small id={`${idPrefix}-record-detail`}>Opens Recording Studio to capture a user journey and review it before save.</small>
+          <span className="script-workflow-link-arrow" aria-hidden="true">→</span>
         </button>}
       </div>
 
       <div className="script-create-lanes compact">
         {activeWorkflow === 'existing' && (
-          <section className="script-create-lane api full">
+          <section className="script-create-lane api full" role="tabpanel" id={`${idPrefix}-panel-existing`} aria-labelledby={`${idPrefix}-tab-existing-label`}>
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Script library</span>
               <h3>Copy an Existing Script</h3>
@@ -862,7 +878,7 @@ export default function ScriptCreateOptions({
         )}
 
         {activeWorkflow === 'start-new' && (
-          <section className="script-create-lane api full">
+          <section className="script-create-lane api full" role="tabpanel" id={`${idPrefix}-panel-start-new`} aria-labelledby={`${idPrefix}-tab-start-new-label`}>
             <div className="script-create-lane-header">
               <span className="script-create-kicker">New draft authoring</span>
               <h3>Start New Script</h3>
@@ -1026,7 +1042,7 @@ export default function ScriptCreateOptions({
         )}
 
         {activeWorkflow === 'source' && (
-          <section className="script-create-lane import full">
+          <section className="script-create-lane import full" role="tabpanel" id={`${idPrefix}-panel-source`} aria-labelledby={`${idPrefix}-tab-source-label`}>
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Source-driven authoring</span>
               <h3>Import from source</h3>

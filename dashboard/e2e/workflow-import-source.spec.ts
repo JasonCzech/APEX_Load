@@ -12,7 +12,7 @@ test('source catalog search and importer guidance stay consistent across formats
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   // Refresh hierarchy cached before the authenticated API setup.
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   const search = page.getByRole('searchbox', { name: 'Find a source format' })
   await search.fill('no-such-format')
   await expect(page.getByText(/No source formats match your search/)).toBeVisible()
@@ -67,7 +67,7 @@ test('import addresses name their importer, survive a reload and keep the old ad
   // An importer opened from the catalog is named in the address, so a reload
   // reopens it (it used to fall back to the LoadRunner archive importer).
   await page.goto(`/#/scripts?mode=create&${scope}`)
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.locator('.script-create-option').filter({ has: page.getByRole('heading', { name: 'HAR Traffic', exact: true }) }).click()
   await expect(title('Import HAR Traffic')).toBeVisible()
@@ -80,7 +80,7 @@ test('import addresses name their importer, survive a reload and keep the old ad
   await expect(title('Import JMeter Test Plan')).toBeVisible()
   await page.goto(`/#/scripts?mode=import&launcher=har-import&${scope}`)
   await expect(title('Scripts')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Import', exact: true })).toBeVisible()
 })
 
 test('Oracle review clears obsolete findings and never offers a script destination', async ({ page }, testInfo) => {
@@ -90,7 +90,7 @@ test('Oracle review clears obsolete findings and never offers a script destinati
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   // Refresh hierarchy cached before the authenticated API setup.
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('Oracle')
   await page.locator('.script-create-option').click()
   await expect(page.getByText('Review only: this page produces findings and next actions.', { exact: false })).toBeVisible()
@@ -118,7 +118,7 @@ test('Postman inspection sends project scope before collection bytes', async ({ 
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('Postman')
   await page.locator('.script-create-option').click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
@@ -142,7 +142,7 @@ test('HAR comparison can be removed and upload errors recover accessibly', async
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   // Refresh hierarchy cached before the authenticated API setup.
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
   const inputs = page.getByRole('group', { name: 'Script import controls' }).locator('input[type=file]')
@@ -167,7 +167,7 @@ test('JMeter review uses the shared six tabs and retains project scope during up
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('JMeter')
   await page.locator('.script-create-option').click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
@@ -249,7 +249,7 @@ test('HAR picker accepts captures above 50 MiB and rejects files above 100 MiB',
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
   await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })

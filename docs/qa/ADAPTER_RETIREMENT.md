@@ -10,12 +10,13 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
 
 - **Decision:** retired. Importers are opened by a launcher descriptor (launcher and optional mode), and the Scripts sub-view that renders one is derived from it (`dashboard/src/scriptImportLaunchers.ts`).
 - **Callers:**
-  - **Route mode:** the Scripts route only ever accepted `list`, `create`, `edit` and `import`, so no caller passed an alias.
+  - **Route mode:** the Scripts route accepted `list`, `create`, `edit` and `import` (later also the builder steps `record` and `draft`), so no caller passed an alias.
   - **`setSubview`:** no caller passed an alias either.
   - **Dead branches removed:** ten alias sub-views (`har-import`, `openapi-import` and so on) had renderer branches in `ScriptsAuthoringSurface` and title entries in `appTopbar` that were unreachable; both were removed.
 - **Route boundary:**
   - An import route names its importer: `#/scripts?mode=import&launcher=<id>[&importMode=<mode>]`.
   - The page writes the launcher into the address, so a reload or a shared link reopens the same importer. Before, it reopened the LoadRunner archive importer.
+  - The library and the Script builder's steps are routes of one mounted page: `#/scripts?mode=create[&workflow=existing|start-new|source][&category=templates|editors|blocks]`, `mode=record[&method=browser|proxy]` and `mode=draft` (an unsaved draft; a reload or Forward to one opens the builder). A deeper step is a history entry, closing a step goes back to the entry it came from, and a tab replaces the current entry (`workflow-script-builder-routes.spec.ts`).
 - **Old addresses:** see below.
 - **Proof:**
   - `appRouting.test.ts` checks the old address, round trips and an unknown launcher.

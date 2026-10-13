@@ -613,6 +613,9 @@ interface RecordingStudioProps {
   destinationControl?: ReactNode;
   onImported?: (result: ImportedSaveResult) => void;
   onEdit?: (script: ScriptDefinition) => void;
+  /** The recording method, when the page holds it (to route it). */
+  method?: "browser" | "proxy";
+  onMethodChange?: (method: "browser" | "proxy") => void;
   onClose?: () => void;
   onOperationBusyChange?: (busy: boolean) => void;
 }
@@ -625,8 +628,15 @@ export default function RecordingStudio({
   onEdit,
   onClose,
   onOperationBusyChange,
+  method,
+  onMethodChange,
 }: RecordingStudioProps) {
-  const [recordingMode, setRecordingMode] = useState<'browser' | 'proxy'>('browser');
+  const [internalRecordingMode, setInternalRecordingMode] = useState<'browser' | 'proxy'>('browser');
+  const recordingMode = method ?? internalRecordingMode;
+  const setRecordingMode = useCallback((nextMode: 'browser' | 'proxy') => {
+    if (onMethodChange) onMethodChange(nextMode);
+    else setInternalRecordingMode(nextMode);
+  }, [onMethodChange]);
   const [browserURLError, setBrowserURLError] = useState('');
   const browserURLRef = useRef<HTMLInputElement>(null);
   const api = useApi();
@@ -907,7 +917,7 @@ export default function RecordingStudio({
     ) {
       setRecordingMode("browser");
     }
-  }, [activeSession, hasStoppedProxySessions, proxyAvailability?.available, recordingMode]);
+  }, [activeSession, hasStoppedProxySessions, proxyAvailability?.available, recordingMode, setRecordingMode]);
 
   // A proxy recording that stays empty suggests the browser is not sending
   // its traffic through the proxy; say so once it has been quiet a while.

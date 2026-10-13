@@ -9,7 +9,7 @@ test('transaction names survive archive import without requiring secret bindings
   const label = 'B2B_Checkout_ApexActionController_ServiceAddress_GetSearchResults_2026'
   const workspace = await createWorkspace(request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
   await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/transaction-labels.zip'))
   const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')

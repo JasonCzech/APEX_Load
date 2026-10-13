@@ -24,7 +24,11 @@ export type AppView = AppWorkspaceScope & (
   // scenarioId opens that scenario in the builder, at scenarioStep when given.
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans'; scenarioId?: string; scenarioStep?: ScenarioWizardStep }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
-  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string; importLauncher?: string; importMode?: string }
+  // The Script builder's steps are routes of one page: the builder (create,
+  // with its workflow and Start new category), Recording Studio (record,
+  // with its method) and an unsaved draft (draft, which a reload cannot
+  // restore and so opens the builder).
+  | { page: 'scripts'; mode?: 'list' | 'create' | 'record' | 'draft' | 'edit' | 'import'; scriptId?: string; importLauncher?: string; importMode?: string; workflow?: ScriptsBuilderWorkflow; category?: ScriptsBuilderCategory; method?: ScriptsRecordMethod }
   | { page: 'swagger'; search?: string }
   | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
@@ -48,7 +52,31 @@ const NAV_PAGES: NavPage[] = [
   'settings',
 ]
 
-const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
+const SCRIPT_MODES = ['list', 'create', 'record', 'draft', 'edit', 'import'] as const
+export type ScriptsBuilderWorkflow = 'existing' | 'start-new' | 'source'
+export type ScriptsBuilderCategory = 'templates' | 'editors' | 'blocks'
+export type ScriptsRecordMethod = 'browser' | 'proxy'
+const SCRIPTS_BUILDER_WORKFLOWS: readonly ScriptsBuilderWorkflow[] = ['existing', 'start-new', 'source']
+const SCRIPTS_BUILDER_CATEGORIES: readonly ScriptsBuilderCategory[] = ['templates', 'editors', 'blocks']
+const SCRIPTS_RECORD_METHODS: readonly ScriptsRecordMethod[] = ['browser', 'proxy']
+// The Scripts page's steps, the ones it moves between without remounting,
+// by depth: the library, the Script builder, Recording Studio or an importer
+// (both opened from the builder), and an unsaved draft (which can open from
+// any of them). A saved script's editor is a route of its own.
+const SCRIPTS_PAGE_STEP_DEPTH = { list: 0, create: 1, record: 2, import: 2, draft: 3 } as const
+export type ScriptsPageStep = keyof typeof SCRIPTS_PAGE_STEP_DEPTH
+
+/** The page step a scripts route names, or null for a saved script's editor. */
+export function scriptsPageStep(view: AppView): ScriptsPageStep | null {
+  if (view.page !== 'scripts') return null
+  if (!view.mode) return 'list'
+  return view.mode === 'edit' ? null : view.mode
+}
+
+/** How deep a page step sits; a step deeper than the current one is a new history entry. */
+export function scriptsPageStepDepth(step: ScriptsPageStep): number {
+  return SCRIPTS_PAGE_STEP_DEPTH[step]
+}
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const SCENARIO_STEPS: readonly ScenarioWizardStep[] = ['scripts', 'source', 'run', 'data', 'review']
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
@@ -301,9 +329,16 @@ export function parseAppViewFromHash(hash: string): AppView {
         ...workspaceScope,
       }
     }
+    const workflow = params.get('workflow')
+    const category = params.get('category')
+    const method = params.get('method')
     return {
       page: 'scripts',
       ...(isScriptMode(mode) ? { mode } : {}),
+      ...(mode === 'create' && SCRIPTS_BUILDER_WORKFLOWS.includes(workflow as ScriptsBuilderWorkflow) ? { workflow: workflow as ScriptsBuilderWorkflow } : {}),
+      // The Start new tab belongs to that workflow alone.
+      ...(mode === 'create' && (workflow === null || workflow === 'start-new') && SCRIPTS_BUILDER_CATEGORIES.includes(category as ScriptsBuilderCategory) ? { category: category as ScriptsBuilderCategory } : {}),
+      ...(mode === 'record' && SCRIPTS_RECORD_METHODS.includes(method as ScriptsRecordMethod) ? { method: method as ScriptsRecordMethod } : {}),
       ...(scriptId ? { scriptId } : {}),
       ...workspaceScope,
     }
@@ -506,6 +541,9 @@ export function viewToLocationHash(view: AppView): string {
       params.set('launcher', view.importLauncher)
       if (view.importMode) params.set('importMode', view.importMode)
     }
+    if (view.mode === 'create' && view.workflow) params.set('workflow', view.workflow)
+    if (view.mode === 'create' && view.category && (!view.workflow || view.workflow === 'start-new')) params.set('category', view.category)
+    if (view.mode === 'record' && view.method) params.set('method', view.method)
     if (view.scriptId) params.set('scriptId', view.scriptId)
     appendWorkspaceScope(params, view)
     const query = params.toString()
@@ -571,14 +609,24 @@ export function workspaceScopeForAppView(view: AppView): AppWorkspaceScope {
 }
 
 /**
- * The scripts route naming what the authoring surface has open, so a refresh
- * or a shared link returns to it: the library, a saved
- * script's editor, or a named importer. The create options, the recorder and an unsaved draft have
- * no route of their own and reopen at the create options, never at the
- * archive importer a bare import route opens.
+ * The scripts route naming what the authoring surface has open, so a refresh,
+ * a shared link or Back returns to it: the library, a saved script's editor,
+ * a named importer, the Script builder on its workflow and Start new tab,
+ * Recording Studio with its method, or an unsaved draft (which a reload
+ * cannot restore, so it opens the builder). A surface without a route of its
+ * own reopens at the builder, never at the archive importer a bare import
+ * route opens.
  */
 export function scriptsRouteForAuthoringState(
-  state: { subView: string; editingId: string | null; importLauncher?: string | null; importMode?: string | null },
+  state: {
+    subView: string
+    editingId: string | null
+    importLauncher?: string | null
+    importMode?: string | null
+    createWorkflow?: ScriptsBuilderWorkflow | null
+    createCategory?: ScriptsBuilderCategory | null
+    recordMethod?: ScriptsRecordMethod | null
+  },
   scope: AppWorkspaceScope,
 ): Extract<AppView, { page: 'scripts' }> {
   if (state.subView === 'list') return { page: 'scripts', mode: 'list', ...scope }
@@ -586,7 +634,16 @@ export function scriptsRouteForAuthoringState(
   if (state.importLauncher && isScriptImportLauncher(state.importLauncher)) {
     return { page: 'scripts', mode: 'import', importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}), ...scope }
   }
-  return { page: 'scripts', mode: 'create', ...scope }
+  if (state.subView === 'recorder') return { page: 'scripts', mode: 'record', ...(state.recordMethod ? { method: state.recordMethod } : {}), ...scope }
+  if (state.subView === 'create') return { page: 'scripts', mode: 'draft', ...scope }
+  const workflow = state.createWorkflow || undefined
+  return {
+    page: 'scripts',
+    mode: 'create',
+    ...(workflow ? { workflow } : {}),
+    ...(state.createCategory && (!workflow || workflow === 'start-new') ? { category: state.createCategory } : {}),
+    ...scope,
+  }
 }
 
 export function scopeAppViewToWorkspace(view: AppView, scope: AppWorkspaceScope): AppView {
