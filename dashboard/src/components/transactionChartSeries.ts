@@ -27,6 +27,13 @@ export function transactionChartSeriesKey(name: string, metric: TransactionChart
   return `${TRANSACTION_SERIES_PREFIX}${encodeURIComponent(name)}:${metric}`
 }
 
+// One group's rate of a transaction, kept beside the run-wide series so a
+// group's row in the Transactions table averages its own rate. The prefix
+// keeps it out of the transaction charts.
+export function groupTransactionTpsSeriesKey(group: string, transaction: string) {
+  return `group-transaction:${encodeURIComponent(group)}:${encodeURIComponent(transaction)}:tps`
+}
+
 export function transactionChartSeriesName(key: string): string | undefined {
   if (!key.startsWith(TRANSACTION_SERIES_PREFIX)) return undefined
   const metric = TRANSACTION_SERIES_METRICS.find(candidate => key.endsWith(`:${candidate}`))

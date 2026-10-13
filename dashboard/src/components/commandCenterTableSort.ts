@@ -6,7 +6,8 @@ export interface CommandTableSort {
 }
 
 // A column whose value can come in another unit sorts those rows by it among themselves.
-const SORT_TIEBREAKERS: Record<string, string> = { memory: 'memoryMb' }
+// A transaction's rows, one for each group that ran it, sort by group.
+const SORT_TIEBREAKERS: Record<string, string> = { memory: 'memoryMb', name: 'group' }
 
 export function filterAndSortRows<T extends object>(rows: T[], filter: string, sort: CommandTableSort): T[] {
   const query = filter.trim().toLowerCase()

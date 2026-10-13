@@ -56,6 +56,7 @@ import {
   buildGroupRunRows,
   buildTransactionRunRows,
   isBrowserGroup,
+  transactionRowGroups,
   type CommandGroup,
   type GroupRunRow,
   type TransactionRunRow,
@@ -2906,13 +2907,25 @@ function CommandRunTables({
   const basis = useContext(CommandMetricBasisContext)
   const transactionSource = metrics?.transactions && Object.keys(metrics.transactions).length > 0 ? metrics.transactions : transactionSnapshot
   const transactionNamesKey = Object.entries(transactionSource).map(([key, tx]) => tx?.name?.trim() || key).join('\u001f')
+  const soleGroup = groups.length === 1 ? groups[0].name : undefined
+  // The groups each transaction has rows for, whose own rates are averaged.
+  const groupTransactionPairsKey = Object.entries(transactionSource).flatMap(([key, tx]) => {
+    const name = tx?.name?.trim() || key
+    return tx ? transactionRowGroups(tx, soleGroup).flatMap(group => group === undefined ? [] : [`${group}\u0000${name}`]) : []
+  }).join('\u001f')
   // TPS over the same samples as the page's other rates.
-  const recentTransactionTps = useMemo(
-    () => transactionNamesKey ? recentMetricAverages(basis.history, undefined, { transactions: transactionNamesKey.split('\u001f') }).transactions : undefined,
-    [basis.history, transactionNamesKey],
+  const recentTransactionAverages = useMemo(
+    () => transactionNamesKey ? recentMetricAverages(basis.history, undefined, {
+      transactions: transactionNamesKey.split('\u001f'),
+      groupTransactions: groupTransactionPairsKey ? groupTransactionPairsKey.split('\u001f').map(pair => pair.split('\u0000') as [string, string]) : undefined,
+    }) : undefined,
+    [basis.history, groupTransactionPairsKey, transactionNamesKey],
   )
   const groupRows = useMemo(() => buildGroupRunRows(groups, metrics), [groups, metrics])
-  const transactionRows = useMemo(() => buildTransactionRunRows(metrics, transactionSnapshot, recentTransactionTps), [metrics, recentTransactionTps, transactionSnapshot])
+  const transactionRows = useMemo(
+    () => buildTransactionRunRows(metrics, transactionSnapshot, recentTransactionAverages?.transactions, recentTransactionAverages?.groupTransactions, soleGroup),
+    [metrics, recentTransactionAverages, soleGroup, transactionSnapshot],
+  )
   const infrastructureRows = useMemo(() => buildInfrastructureRows(groups, metrics), [groups, metrics])
   const activeEvidence = selectedEvidence.find(item => item.id === selectedEvidenceId) || selectedEvidence[0]
 
@@ -3131,6 +3144,7 @@ function TransactionRunTable({ rows, sort, onSort, emptyMessage }: { rows: Trans
   const basis = useContext(CommandMetricBasisContext)
   const columns: MetricColumn<TransactionRunRow>[] = [
     { label: 'Transaction', sortKey: 'name', render: row => <strong>{row.name}</strong> },
+    { label: 'Group', sortKey: 'group', render: row => row.group ?? MISSING_VALUE },
     { label: 'Protocol', sortKey: 'protocol', render: row => row.protocol },
     { label: `TPS (${basis.rateWindow})`, sortKey: 'tps', align: 'right', render: row => formatOptionalNumber(row.tps, 1) },
     { label: 'Attempts (last sample)', sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
@@ -3145,10 +3159,11 @@ function TransactionRunTable({ rows, sort, onSort, emptyMessage }: { rows: Trans
   return (
     <MetricColumnsTable
       label="Transactions"
-      caption={`TPS is ${rateWindowPhrase(basis)}; attempts, failures, error rates and response times are the last sample's, across all groups.`}
+      caption={`TPS is ${rateWindowPhrase(basis)}; attempts, failures, error rates and response times are the last sample's. A transaction more than one group runs has a row for each group's share.`}
       columns={columns}
-      essentialColumns={[0, 2, 3, 5, 9]}
-      memoryKey="transactionColumns"
+      essentialColumns={[0, 1, 3, 4, 6, 10]}
+      // Group is a new second column: earlier remembered choices name other columns.
+      memoryKey="transactionColumnsByGroup"
       rows={rows}
       sort={sort}
       onSort={onSort}

@@ -207,7 +207,10 @@ type MetricsBatch struct {
 	ActionMetricsVersion  uint32
 	// RequestCountsVersion is 1 when the groups' request counts are counted;
 	// 0 from an older generator, whose zero counts mean "not counted".
-	RequestCountsVersion       uint32
+	RequestCountsVersion uint32
+	// GroupTransactionsVersion is 1 when the groups carry their transactions
+	// (GroupMetric.TransactionMetrics); 0 from an older generator.
+	GroupTransactionsVersion   uint32
 	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
 	Browser                    *BrowserMetrics
@@ -298,6 +301,9 @@ type GroupMetric struct {
 	// CompletedIterations is the group's iterations completed so far in the
 	// run (a running total); nil from a generator that predates it.
 	CompletedIterations *int64
+	// TransactionMetrics are the group's business transactions in the window,
+	// by name; none from a generator that predates them.
+	TransactionMetrics []MetricAggregate
 }
 
 type MetricAggregate struct {
@@ -1756,6 +1762,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
 		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
 		RequestCountsVersion:       batch.GetRequestCountsVersion(),
+		GroupTransactionsVersion:   batch.GetGroupTransactionsVersion(),
 		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:                    browserMetricsFromProto(batch.GetBrowserMetrics()),
@@ -2388,11 +2395,12 @@ func groupMetricsFromProto(in []*pb.GroupMetric) []GroupMetric {
 	for _, group := range in {
 		requests := max(group.GetRequests(), 0)
 		groups = append(groups, GroupMetric{
-			Name:          group.GetName(),
-			ActiveVUsers:  group.GetActiveVusers(),
-			Metrics:       metricAggregateFromProto(group.GetMetrics()),
-			Requests:      requests,
-			RequestErrors: min(max(group.GetRequestErrors(), 0), requests),
+			Name:               group.GetName(),
+			ActiveVUsers:       group.GetActiveVusers(),
+			Metrics:            metricAggregateFromProto(group.GetMetrics()),
+			Requests:           requests,
+			RequestErrors:      min(max(group.GetRequestErrors(), 0), requests),
+			TransactionMetrics: metricAggregatesFromProto(group.GetTransactionMetrics()),
 		})
 		if group.CompletedIterations != nil {
 			iterations := max(group.GetCompletedIterations(), 0)

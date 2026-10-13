@@ -3743,8 +3743,12 @@ type MetricsBatch struct {
 	// request_errors are counted. An older generator sends 0: its zero request
 	// counts mean "not counted", not "no requests".
 	RequestCountsVersion uint32 `protobuf:"varint,37,opt,name=request_counts_version,json=requestCountsVersion,proto3" json:"request_counts_version,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// group_transactions_version is 1 when each GroupMetric carries its
+	// transactions (transaction_metrics). An older generator sends 0: its
+	// transactions belong to no group's share.
+	GroupTransactionsVersion uint32 `protobuf:"varint,38,opt,name=group_transactions_version,json=groupTransactionsVersion,proto3" json:"group_transactions_version,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -4036,6 +4040,13 @@ func (x *MetricsBatch) GetRequestCountsVersion() uint32 {
 	return 0
 }
 
+func (x *MetricsBatch) GetGroupTransactionsVersion() uint32 {
+	if x != nil {
+		return x.GroupTransactionsVersion
+	}
+	return 0
+}
+
 type MetricsBatchTelemetry struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	DroppedResults    int64                  `protobuf:"varint,1,opt,name=dropped_results,json=droppedResults,proto3" json:"dropped_results,omitempty"`
@@ -4179,8 +4190,12 @@ type GroupMetric struct {
 	// run on this generator (a running total, not the window's). A generator
 	// that predates it leaves it unset, which is not zero.
 	CompletedIterations *int64 `protobuf:"varint,6,opt,name=completed_iterations,json=completedIterations,proto3,oneof" json:"completed_iterations,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// The group's business transactions in the window, by name, so the
+	// controller can say which groups ran each transaction (see
+	// MetricsBatch.group_transactions_version). Sent without duration digests.
+	TransactionMetrics []*MetricAggregate `protobuf:"bytes,7,rep,name=transaction_metrics,json=transactionMetrics,proto3" json:"transaction_metrics,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GroupMetric) Reset() {
@@ -4253,6 +4268,13 @@ func (x *GroupMetric) GetCompletedIterations() int64 {
 		return *x.CompletedIterations
 	}
 	return 0
+}
+
+func (x *GroupMetric) GetTransactionMetrics() []*MetricAggregate {
+	if x != nil {
+		return x.TransactionMetrics
+	}
+	return nil
 }
 
 // HTTPVersionMix counts HTTP actions by negotiated version (1.1, 2, 3,
@@ -8335,7 +8357,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xa0\x12\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xde\x12\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -8374,7 +8396,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10joint_metrics_v4\x18\" \x03(\v2\x1c.apexload.v1.MetricAggregateR\x0ejointMetricsV4\x12K\n" +
 	"\x12joint_metrics_info\x18# \x01(\v2\x1d.apexload.v1.JointMetricsInfoR\x10jointMetricsInfo\x12E\n" +
 	"\x10http_version_mix\x18$ \x01(\v2\x1b.apexload.v1.HTTPVersionMixR\x0ehttpVersionMix\x124\n" +
-	"\x16request_counts_version\x18% \x01(\rR\x14requestCountsVersion\"\xb9\x04\n" +
+	"\x16request_counts_version\x18% \x01(\rR\x14requestCountsVersion\x12<\n" +
+	"\x1agroup_transactions_version\x18& \x01(\rR\x18groupTransactionsVersion\"\xb9\x04\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -8387,14 +8410,15 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1ftest_dropped_subscriber_batches\x18\t \x01(\x03H\x00R\x1ctestDroppedSubscriberBatches\x88\x01\x01\x12/\n" +
 	"\x13collection_sequence\x18\n" +
 	" \x01(\x04R\x12collectionSequenceB\"\n" +
-	" _test_dropped_subscriber_batches\"\x92\x02\n" +
+	" _test_dropped_subscriber_batches\"\xe1\x02\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\x126\n" +
 	"\ametrics\x18\x03 \x01(\v2\x1c.apexload.v1.MetricAggregateR\ametrics\x12\x1a\n" +
 	"\brequests\x18\x04 \x01(\x03R\brequests\x12%\n" +
 	"\x0erequest_errors\x18\x05 \x01(\x03R\rrequestErrors\x126\n" +
-	"\x14completed_iterations\x18\x06 \x01(\x03H\x00R\x13completedIterations\x88\x01\x01B\x17\n" +
+	"\x14completed_iterations\x18\x06 \x01(\x03H\x00R\x13completedIterations\x88\x01\x01\x12M\n" +
+	"\x13transaction_metrics\x18\a \x03(\v2\x1c.apexload.v1.MetricAggregateR\x12transactionMetricsB\x17\n" +
 	"\x15_completed_iterations\"\xb6\x06\n" +
 	"\x0eHTTPVersionMix\x12\x18\n" +
 	"\aactions\x18\x01 \x01(\x03R\aactions\x12I\n" +
@@ -9032,76 +9056,77 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	14,  // 62: apexload.v1.MetricsBatch.joint_metrics_info:type_name -> apexload.v1.JointMetricsInfo
 	45,  // 63: apexload.v1.MetricsBatch.http_version_mix:type_name -> apexload.v1.HTTPVersionMix
 	49,  // 64: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
-	85,  // 65: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
-	86,  // 66: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
-	87,  // 67: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
-	88,  // 68: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
-	47,  // 69: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
-	48,  // 70: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
-	50,  // 71: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
-	51,  // 72: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
-	55,  // 73: apexload.v1.ServerTelemetry.grpc:type_name -> apexload.v1.GRPCDiagnostics
-	54,  // 74: apexload.v1.ServerTelemetry.websocket:type_name -> apexload.v1.WebSocketDiagnostics
-	53,  // 75: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
-	34,  // 76: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
-	40,  // 77: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
-	59,  // 78: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
-	57,  // 79: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
-	18,  // 80: apexload.v1.ProtocolRuntimeCapacity.resources:type_name -> apexload.v1.RuntimeResourceCapacity
-	57,  // 81: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
-	62,  // 82: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
-	63,  // 83: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	63,  // 84: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	8,   // 85: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
-	21,  // 86: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
-	73,  // 87: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
-	16,  // 88: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
-	17,  // 89: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
-	7,   // 90: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
-	26,  // 91: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
-	24,  // 92: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
-	12,  // 93: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
-	22,  // 94: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
-	5,   // 95: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
-	34,  // 96: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
-	38,  // 97: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
-	36,  // 98: apexload.v1.GeneratorControl.SetThroughputCap:input_type -> apexload.v1.ThroughputCapRequest
-	59,  // 99: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
-	40,  // 100: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
-	58,  // 101: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
-	75,  // 102: apexload.v1.GeneratorControl.LiveTableChannel:input_type -> apexload.v1.LiveTableReply
-	77,  // 103: apexload.v1.GeneratorControl.RendezvousChannel:input_type -> apexload.v1.RendezvousReply
-	61,  // 104: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
-	65,  // 105: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
-	67,  // 106: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	67,  // 107: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	2,   // 108: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
-	71,  // 109: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
-	9,   // 110: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
-	29,  // 111: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
-	25,  // 112: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
-	33,  // 113: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
-	23,  // 114: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
-	23,  // 115: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
-	35,  // 116: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
-	39,  // 117: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
-	37,  // 118: apexload.v1.GeneratorControl.SetThroughputCap:output_type -> apexload.v1.ThroughputCapAck
-	60,  // 119: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
-	41,  // 120: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
-	42,  // 121: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
-	74,  // 122: apexload.v1.GeneratorControl.LiveTableChannel:output_type -> apexload.v1.LiveTableRequest
-	76,  // 123: apexload.v1.GeneratorControl.RendezvousChannel:output_type -> apexload.v1.RendezvousRequest
-	64,  // 124: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
-	66,  // 125: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
-	68,  // 126: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
-	69,  // 127: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
-	4,   // 128: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
-	72,  // 129: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
-	110, // [110:130] is the sub-list for method output_type
-	90,  // [90:110] is the sub-list for method input_type
-	90,  // [90:90] is the sub-list for extension type_name
-	90,  // [90:90] is the sub-list for extension extendee
-	0,   // [0:90] is the sub-list for field type_name
+	49,  // 65: apexload.v1.GroupMetric.transaction_metrics:type_name -> apexload.v1.MetricAggregate
+	85,  // 66: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
+	86,  // 67: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
+	87,  // 68: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
+	88,  // 69: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	47,  // 70: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
+	48,  // 71: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
+	50,  // 72: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
+	51,  // 73: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
+	55,  // 74: apexload.v1.ServerTelemetry.grpc:type_name -> apexload.v1.GRPCDiagnostics
+	54,  // 75: apexload.v1.ServerTelemetry.websocket:type_name -> apexload.v1.WebSocketDiagnostics
+	53,  // 76: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
+	34,  // 77: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
+	40,  // 78: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
+	59,  // 79: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
+	57,  // 80: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
+	18,  // 81: apexload.v1.ProtocolRuntimeCapacity.resources:type_name -> apexload.v1.RuntimeResourceCapacity
+	57,  // 82: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
+	62,  // 83: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
+	63,  // 84: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	63,  // 85: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	8,   // 86: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
+	21,  // 87: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
+	73,  // 88: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
+	16,  // 89: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
+	17,  // 90: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
+	7,   // 91: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
+	26,  // 92: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
+	24,  // 93: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
+	12,  // 94: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
+	22,  // 95: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
+	5,   // 96: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
+	34,  // 97: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
+	38,  // 98: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
+	36,  // 99: apexload.v1.GeneratorControl.SetThroughputCap:input_type -> apexload.v1.ThroughputCapRequest
+	59,  // 100: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
+	40,  // 101: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
+	58,  // 102: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
+	75,  // 103: apexload.v1.GeneratorControl.LiveTableChannel:input_type -> apexload.v1.LiveTableReply
+	77,  // 104: apexload.v1.GeneratorControl.RendezvousChannel:input_type -> apexload.v1.RendezvousReply
+	61,  // 105: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
+	65,  // 106: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
+	67,  // 107: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	67,  // 108: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	2,   // 109: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
+	71,  // 110: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
+	9,   // 111: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
+	29,  // 112: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
+	25,  // 113: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
+	33,  // 114: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	23,  // 115: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
+	23,  // 116: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
+	35,  // 117: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	39,  // 118: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	37,  // 119: apexload.v1.GeneratorControl.SetThroughputCap:output_type -> apexload.v1.ThroughputCapAck
+	60,  // 120: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
+	41,  // 121: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	42,  // 122: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	74,  // 123: apexload.v1.GeneratorControl.LiveTableChannel:output_type -> apexload.v1.LiveTableRequest
+	76,  // 124: apexload.v1.GeneratorControl.RendezvousChannel:output_type -> apexload.v1.RendezvousRequest
+	64,  // 125: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	66,  // 126: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	68,  // 127: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
+	69,  // 128: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
+	4,   // 129: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
+	72,  // 130: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
+	111, // [111:131] is the sub-list for method output_type
+	91,  // [91:111] is the sub-list for method input_type
+	91,  // [91:91] is the sub-list for extension type_name
+	91,  // [91:91] is the sub-list for extension extendee
+	0,   // [0:91] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }

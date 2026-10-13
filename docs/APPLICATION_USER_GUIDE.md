@@ -847,7 +847,9 @@ goal-oriented run's throughput stays in TPS, the unit of its targets. Every labe
 names what it counts and its window: on a run's Command Center page rates are
 averaged over the last 10 s (the overview and the Dashboard show the last sample),
 error rates and counts are run to date, and the **Transactions** table lists each
-transaction's own TPS and the last sample's counts. When request counts would
+transaction's own TPS and the last sample's counts, with the group that ran it: a
+transaction more than one group runs has a row for each group's share. (A generator
+that predates group shares leaves its transactions without a group.) When request counts would
 cover only part of a run — a generator that predates them is in the fleet, or
 another controller took the run over from stored history — they are left out
 rather than shown as run to date, and the page counts that run in

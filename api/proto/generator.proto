@@ -636,6 +636,10 @@ message MetricsBatch {
   // request_errors are counted. An older generator sends 0: its zero request
   // counts mean "not counted", not "no requests".
   uint32 request_counts_version = 37;
+  // group_transactions_version is 1 when each GroupMetric carries its
+  // transactions (transaction_metrics). An older generator sends 0: its
+  // transactions belong to no group's share.
+  uint32 group_transactions_version = 38;
 }
 
 message MetricsBatchTelemetry {
@@ -677,6 +681,10 @@ message GroupMetric {
   // run on this generator (a running total, not the window's). A generator
   // that predates it leaves it unset, which is not zero.
   optional int64 completed_iterations = 6;
+  // The group's business transactions in the window, by name, so the
+  // controller can say which groups ran each transaction (see
+  // MetricsBatch.group_transactions_version). Sent without duration digests.
+  repeated MetricAggregate transaction_metrics = 7;
 }
 
 // HTTPVersionMix counts HTTP actions by negotiated version (1.1, 2, 3,

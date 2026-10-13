@@ -322,6 +322,11 @@ type metricsAggregateSet struct {
 // counts only from batches of this version.
 const CurrentRequestCountsVersion = 1
 
+// CurrentGroupTransactionsVersion marks batches whose groups carry their
+// transactions (MetricsBatch.GroupTransactionsVersion); a controller
+// attributes transactions to groups only when every batch does.
+const CurrentGroupTransactionsVersion = 1
+
 // requestCounts are attempted requests, failed ones included, and the
 // failed ones.
 type requestCounts struct {
@@ -335,6 +340,11 @@ type transactionWindowAggregate struct {
 	dependencies map[string]*metricAccumulator
 	soap         map[string]*metricAccumulator
 	groups       map[string]*metricAccumulator
+	// groupTransactions holds each group's transactions by name (the group
+	// keyed as in groups), so the controller can attribute them;
+	// groupTransactionSeries counts them across groups.
+	groupTransactions      map[string]map[string]*metricAccumulator
+	groupTransactionSeries int
 	// requests counts every result that is not a business transaction, as
 	// the archive's request (action) population does.
 	requests requestCounts
@@ -360,6 +370,10 @@ const (
 	maxTransactionWindowSeries    = 256
 	maxRetainedTransactionSamples = 4096
 	metricOverflowSeries          = "[other]"
+	// maxGroupTransactionWindowSeries bounds a window's group-transaction
+	// series across all groups; past it a group's new transactions fold into
+	// its overflow series.
+	maxGroupTransactionWindowSeries = 4 * maxTransactionWindowSeries
 )
 
 // windowSecondsFromMs converts a batch window in milliseconds to seconds for
@@ -406,11 +420,12 @@ func effectiveBatchWindowMs(a assignedTest, fallbackMs int64) int64 {
 
 func newTransactionWindowAggregate() *transactionWindowAggregate {
 	return &transactionWindowAggregate{
-		fleet:        newMetricAccumulator("fleet"),
-		transactions: make(map[string]*metricAccumulator),
-		dependencies: make(map[string]*metricAccumulator),
-		soap:         make(map[string]*metricAccumulator),
-		groups:       make(map[string]*metricAccumulator),
+		fleet:             newMetricAccumulator("fleet"),
+		transactions:      make(map[string]*metricAccumulator),
+		dependencies:      make(map[string]*metricAccumulator),
+		soap:              make(map[string]*metricAccumulator),
+		groups:            make(map[string]*metricAccumulator),
+		groupTransactions: make(map[string]map[string]*metricAccumulator),
 	}
 }
 
@@ -423,9 +438,13 @@ func (a *transactionWindowAggregate) add(tx TransactionMetric) {
 		return
 	}
 	a.fleet.add(tx)
+	// The name the transaction is counted under (bounded), which its group's
+	// share uses too.
+	transactionName := ""
 	if name := strings.TrimSpace(tx.Name); name != "" {
 		acc := boundedWindowAccumulator(a.transactions, name)
 		acc.add(tx)
+		transactionName = acc.name
 	}
 	if target := strings.TrimSpace(tx.DependencyTarget); target != "" {
 		acc := boundedWindowAccumulator(a.dependencies, target)
@@ -441,6 +460,23 @@ func (a *transactionWindowAggregate) add(tx TransactionMetric) {
 	if groupName := strings.TrimSpace(tx.Group); groupName != "" {
 		acc := boundedWindowAccumulator(a.groups, groupName)
 		acc.add(tx)
+		if name := transactionName; name != "" {
+			transactions := a.groupTransactions[acc.name]
+			if transactions == nil {
+				transactions = make(map[string]*metricAccumulator)
+				a.groupTransactions[acc.name] = transactions
+			}
+			if transactions[name] == nil && a.groupTransactionSeries >= maxGroupTransactionWindowSeries {
+				name = metricOverflowSeries
+			}
+			share := transactions[name]
+			if share == nil {
+				share = newMetricAccumulator(name)
+				transactions[name] = share
+				a.groupTransactionSeries++
+			}
+			share.add(tx)
+		}
 	}
 }
 
@@ -508,7 +544,7 @@ func (a *transactionWindowAggregate) finalize(windowMs int64) metricsAggregateSe
 		Transactions:  finalizeMetricAccumulatorMap(a.transactions, windowSec),
 		Dependencies:  finalizeMetricAccumulatorMap(a.dependencies, windowSec),
 		SOAP:          finalizeMetricAccumulatorMap(a.soap, windowSec),
-		Groups:        finalizeGroupAccumulatorMap(a.groups, windowSec),
+		Groups:        finalizeGroupAccumulatorMap(a.groups, a.groupTransactions, windowSec),
 		Requests:      a.requests.requests,
 		RequestErrors: a.requests.errors,
 	}
@@ -581,7 +617,7 @@ func finalizeMetricAccumulatorMap(values map[string]*metricAccumulator, windowSe
 	return out
 }
 
-func finalizeGroupAccumulatorMap(values map[string]*metricAccumulator, windowSec float64) []GroupMetric {
+func finalizeGroupAccumulatorMap(values map[string]*metricAccumulator, transactions map[string]map[string]*metricAccumulator, windowSec float64) []GroupMetric {
 	if len(values) == 0 {
 		return nil
 	}
@@ -593,7 +629,7 @@ func finalizeGroupAccumulatorMap(values map[string]*metricAccumulator, windowSec
 	out := make([]GroupMetric, 0, len(names))
 	for _, name := range names {
 		if aggregate := values[name].finalize(windowSec); aggregate != nil {
-			out = append(out, GroupMetric{Name: name, Metrics: aggregate})
+			out = append(out, GroupMetric{Name: name, Metrics: aggregate, TransactionMetrics: finalizeMetricAccumulatorMap(transactions[name], windowSec)})
 		}
 	}
 	return out
@@ -2396,11 +2432,12 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 			}
 			requests := aggregates.GroupRequests[name]
 			groups = append(groups, &pb.GroupMetric{
-				Name:          name,
-				ActiveVusers:  activeGroupVUsers,
-				Metrics:       metricAggregateToProto(findGroupMetricAggregate(aggregates.Groups, name)),
-				Requests:      requests.requests,
-				RequestErrors: requests.errors,
+				Name:               name,
+				ActiveVusers:       activeGroupVUsers,
+				Metrics:            metricAggregateToProto(findGroupMetricAggregate(aggregates.Groups, name)),
+				Requests:           requests.requests,
+				RequestErrors:      requests.errors,
+				TransactionMetrics: metricAggregatesToProto(groupTransactionsForWire(findGroupTransactionMetrics(aggregates.Groups, name))),
 			})
 		}
 	}
@@ -2523,6 +2560,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		ActionPropertyMetrics:         metricAggregatesToProto(aggregates.ActionProperties),
 		ActionMetricsVersion:          aggregates.NativeVersion,
 		RequestCountsVersion:          CurrentRequestCountsVersion,
+		GroupTransactionsVersion:      CurrentGroupTransactionsVersion,
 		PropertyMetrics:               metricAggregatesToProto(aggregates.Properties),
 		RegionMetrics:                 metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:                  metricAggregateToProto(aggregates.Fleet),
@@ -3466,11 +3504,13 @@ func mergeGroupMetricSeries(values []GroupMetric) []GroupMetric {
 		return nil
 	}
 	byName := make(map[string][]MetricAggregate)
+	transactionsByName := make(map[string][]MetricAggregate)
 	for _, value := range values {
 		if value.Metrics == nil || strings.TrimSpace(value.Name) == "" {
 			continue
 		}
 		byName[value.Name] = append(byName[value.Name], *value.Metrics)
+		transactionsByName[value.Name] = append(transactionsByName[value.Name], value.TransactionMetrics...)
 	}
 	names := make([]string, 0, len(byName))
 	for name := range byName {
@@ -3480,7 +3520,7 @@ func mergeGroupMetricSeries(values []GroupMetric) []GroupMetric {
 	out := make([]GroupMetric, 0, len(names))
 	for _, name := range names {
 		if aggregate := mergeMetricAggregates(byName[name]); aggregate != nil {
-			out = append(out, GroupMetric{Name: name, Metrics: aggregate})
+			out = append(out, GroupMetric{Name: name, Metrics: aggregate, TransactionMetrics: mergeMetricAggregateSeries(transactionsByName[name])})
 		}
 	}
 	return out
@@ -3681,6 +3721,30 @@ func findGroupMetricAggregate(groups []GroupMetric, name string) *MetricAggregat
 	for _, group := range groups {
 		if group.Name == name {
 			return group.Metrics
+		}
+	}
+	return nil
+}
+
+// groupTransactionsForWire is a group's transactions without their duration
+// digests: the run-wide transactions carry those, and a group's share shows
+// the percentiles its generators report.
+func groupTransactionsForWire(values []MetricAggregate) []MetricAggregate {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]MetricAggregate, len(values))
+	for index, value := range values {
+		value.DurationDigest = nil
+		out[index] = value
+	}
+	return out
+}
+
+func findGroupTransactionMetrics(groups []GroupMetric, name string) []MetricAggregate {
+	for _, group := range groups {
+		if group.Name == name {
+			return group.TransactionMetrics
 		}
 	}
 	return nil

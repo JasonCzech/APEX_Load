@@ -2662,6 +2662,22 @@ export interface TxMetrics {
   p90_ms: number
   p95_ms?: number
   p99_ms: number
+  /** The groups whose VUsers ran it in the window, sorted; absent when the source does not attribute transactions. */
+  groups?: string[]
+  /** Each group's share, when more than one group ran it. */
+  by_group?: Record<string, TransactionGroupShare>
+}
+
+/** One group's part of a transaction more than one group ran in the window. */
+export interface TransactionGroupShare {
+  tps: number
+  count: number
+  errors: number
+  avg_ms: number
+  p50_ms: number
+  p90_ms: number
+  p95_ms?: number
+  p99_ms: number
 }
 
 export interface LiveErrorPattern {

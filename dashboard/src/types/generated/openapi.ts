@@ -36181,6 +36181,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -36188,6 +36189,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -36208,6 +36210,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -36215,6 +36218,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -37033,6 +37037,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -37040,6 +37045,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -37068,6 +37074,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -37075,6 +37082,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -37289,6 +37297,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -37296,6 +37305,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -37319,6 +37329,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -37326,6 +37337,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -37399,6 +37411,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -37406,6 +37419,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -37606,6 +37620,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -37613,6 +37628,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -43732,6 +43748,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -43739,6 +43756,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -43926,6 +43944,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -43933,6 +43952,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -44664,6 +44684,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -44671,6 +44692,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -44699,6 +44721,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -44706,6 +44729,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -44941,6 +44965,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -44948,6 +44973,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -44971,6 +44997,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -44978,6 +45005,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -45051,6 +45079,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -45058,6 +45087,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -45258,6 +45288,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -45265,6 +45296,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -45377,6 +45409,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -45384,6 +45417,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -45587,6 +45621,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -45594,6 +45629,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -46161,6 +46197,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -46168,6 +46205,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -46358,6 +46396,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -46365,6 +46404,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -46605,6 +46645,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -46612,6 +46653,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -47000,6 +47042,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -47007,6 +47050,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -62829,6 +62873,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -62836,6 +62881,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -62864,6 +62910,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -62871,6 +62918,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -63106,6 +63154,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -63113,6 +63162,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -63136,6 +63186,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -63143,6 +63194,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -63216,6 +63268,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -63223,6 +63276,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -63423,6 +63477,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -63430,6 +63485,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -63538,6 +63594,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -63545,6 +63602,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -63748,6 +63806,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -63755,6 +63814,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -64322,6 +64382,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -64329,6 +64390,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -64519,6 +64581,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -64526,6 +64589,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -64766,6 +64830,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -64773,6 +64838,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -65161,6 +65227,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -65168,6 +65235,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66969,6 +67037,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -66976,6 +67045,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -66996,6 +67066,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -67003,6 +67074,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -67821,6 +67893,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -67828,6 +67901,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -67856,6 +67930,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -67863,6 +67938,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -68077,6 +68153,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -68084,6 +68161,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -68107,6 +68185,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -68114,6 +68193,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -68187,6 +68267,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -68194,6 +68275,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -68394,6 +68476,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -68401,6 +68484,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -82455,6 +82539,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -82462,6 +82547,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -82649,6 +82735,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -82656,6 +82743,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -83387,6 +83475,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -83394,6 +83483,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -83422,6 +83512,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -83429,6 +83520,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -83664,6 +83756,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -83671,6 +83764,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -83694,6 +83788,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -83701,6 +83796,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -83774,6 +83870,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -83781,6 +83878,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -83981,6 +84079,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -83988,6 +84087,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -84100,6 +84200,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -84107,6 +84208,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -84310,6 +84412,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -84317,6 +84420,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -84884,6 +84988,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -84891,6 +84996,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85081,6 +85187,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -85088,6 +85195,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85328,6 +85436,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -85335,6 +85444,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85723,6 +85833,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -85730,6 +85841,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -104158,6 +104270,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -104165,6 +104278,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -104352,6 +104466,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -104359,6 +104474,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105090,6 +105206,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105097,6 +105214,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105125,6 +105243,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105132,6 +105251,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105367,6 +105487,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105374,6 +105495,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105397,6 +105519,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105404,6 +105527,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105477,6 +105601,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105484,6 +105609,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105684,6 +105810,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105691,6 +105818,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -105803,6 +105931,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -105810,6 +105939,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -106013,6 +106143,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -106020,6 +106151,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -106587,6 +106719,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -106594,6 +106727,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -106784,6 +106918,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -106791,6 +106926,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -107031,6 +107167,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -107038,6 +107175,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -107426,6 +107564,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -107433,6 +107572,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -121023,6 +121163,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -121030,6 +121171,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -121050,6 +121192,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -121057,6 +121200,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -121875,6 +122019,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -121882,6 +122027,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -121910,6 +122056,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -121917,6 +122064,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -122131,6 +122279,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -122138,6 +122287,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -122161,6 +122311,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -122168,6 +122319,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -122241,6 +122393,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -122248,6 +122401,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -122448,6 +122602,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -122455,6 +122610,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -123118,6 +123274,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -123125,6 +123282,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -123145,6 +123303,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -123152,6 +123311,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -123970,6 +124130,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -123977,6 +124138,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -124005,6 +124167,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -124012,6 +124175,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -124226,6 +124390,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -124233,6 +124398,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -124256,6 +124422,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -124263,6 +124430,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -124336,6 +124504,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -124343,6 +124512,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -124543,6 +124713,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -124550,6 +124721,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -125213,6 +125385,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -125220,6 +125393,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -125240,6 +125414,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -125247,6 +125422,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -126065,6 +126241,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -126072,6 +126249,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -126100,6 +126278,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -126107,6 +126286,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -126321,6 +126501,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -126328,6 +126509,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -126351,6 +126533,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -126358,6 +126541,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -126431,6 +126615,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -126438,6 +126623,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -126638,6 +126824,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -126645,6 +126832,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -127308,6 +127496,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -127315,6 +127504,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -127335,6 +127525,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -127342,6 +127533,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -128160,6 +128352,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -128167,6 +128360,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -128195,6 +128389,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -128202,6 +128397,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -128416,6 +128612,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -128423,6 +128620,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -128446,6 +128644,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -128453,6 +128652,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -128526,6 +128726,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -128533,6 +128734,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -128733,6 +128935,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -128740,6 +128943,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -129403,6 +129607,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -129410,6 +129615,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -129430,6 +129636,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -129437,6 +129644,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -130255,6 +130463,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -130262,6 +130471,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -130290,6 +130500,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -130297,6 +130508,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -130511,6 +130723,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -130518,6 +130731,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -130541,6 +130755,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -130548,6 +130763,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -130621,6 +130837,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -130628,6 +130845,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -130828,6 +131046,7 @@ export interface operations {
                   "avg_ms": number;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
+                  "by_group"?: Record<string, (Record<string, unknown>) | null>;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -130835,6 +131054,7 @@ export interface operations {
                   "dependency_type"?: string;
                   "errors": number;
                   "exemplars"?: Array<Record<string, unknown>>;
+                  "groups"?: Array<string>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -133314,6 +133534,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -133321,6 +133542,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -133508,6 +133730,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -133515,6 +133738,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134246,6 +134470,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134253,6 +134478,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134281,6 +134507,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134288,6 +134515,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134523,6 +134751,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134530,6 +134759,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134553,6 +134783,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134560,6 +134791,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134633,6 +134865,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134640,6 +134873,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134840,6 +135074,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134847,6 +135082,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -134959,6 +135195,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -134966,6 +135203,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -135169,6 +135407,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -135176,6 +135415,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -135743,6 +135983,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -135750,6 +135991,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -135940,6 +136182,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -135947,6 +136190,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -136187,6 +136431,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -136194,6 +136439,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -136582,6 +136828,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -136589,6 +136836,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -159020,6 +159268,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -159027,6 +159276,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -159214,6 +159464,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -159221,6 +159472,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -159952,6 +160204,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -159959,6 +160212,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -159987,6 +160241,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -159994,6 +160249,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -160229,6 +160485,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160236,6 +160493,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -160259,6 +160517,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160266,6 +160525,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -160339,6 +160599,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160346,6 +160607,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -160546,6 +160808,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160553,6 +160816,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -160665,6 +160929,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160672,6 +160937,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -160875,6 +161141,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160882,6 +161149,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -161449,6 +161717,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -161456,6 +161725,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -161646,6 +161916,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -161653,6 +161924,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -161893,6 +162165,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -161900,6 +162173,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -162288,6 +162562,7 @@ export interface operations {
                 "avg_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
+                "by_group"?: Record<string, (Record<string, unknown>) | null>;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -162295,6 +162570,7 @@ export interface operations {
                 "dependency_type"?: string;
                 "errors": number;
                 "exemplars"?: Array<Record<string, unknown>>;
+                "groups"?: Array<string>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;

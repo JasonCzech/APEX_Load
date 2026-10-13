@@ -230,3 +230,37 @@ exportTest('pause waits for controller confirmation and preserves running state 
   await expect(page.getByRole('combobox', { name: 'Current run', exact: true }).locator('option:checked')).toContainText('RUNNING')
  } finally { allowPause() }
 })
+
+// C5: a transaction more than one group runs has a row for each group's
+// share, and one only one group runs is that group's.
+test('the Transactions table attributes each live transaction to the groups that run it', async ({ page, baseURL }) => {
+  test.setTimeout(120_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const script = async (name: string, actions: Array<Record<string, unknown>>) => idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name, version: '1.0.0', protocol: 'http', config: { base_url: baseURL, pacing: { type: 'fixed_interval', interval_ms: 500 }, run_logic: { auto_transactions: 'per_action' } }, actions },
+  } })))
+  const loginStep = { name: 'Login', type: 'request', method: 'GET', target: '/api/v1/system/health' }
+  const buyers = await script('Group share buyers', [loginStep, { name: 'Search', type: 'request', method: 'GET', target: '/api/v1/system/health' }])
+  const sellers = await script('Group share sellers', [loginStep])
+  const testId = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Group shares', duration: '5m', groups: [{ name: 'Buyers', script_id: buyers, vusers: 1, ramp_up: '1s' }, { name: 'Sellers', script_id: sellers, vusers: 1, ramp_up: '1s' }],
+  } })))
+  try {
+    await json(await request.post(`/api/v1/tests/${testId}/start`))
+    await page.goto(`/#/command-center/${testId}?${scopeQuery(workspace)}`)
+    const tables = page.getByRole('region', { name: 'Command center run tables', exact: true })
+    await tables.getByRole('tab', { name: 'Transactions', exact: true }).click()
+    const rows = tables.locator('tbody tr')
+    await expect(rows.filter({ hasText: 'Login' }).filter({ hasText: 'Buyers' })).toHaveCount(1, { timeout: 60_000 })
+    await expect(rows.filter({ hasText: 'Login' }).filter({ hasText: 'Sellers' })).toHaveCount(1)
+    await expect(rows.filter({ hasText: 'Search' })).toContainText('Buyers')
+    await expect(tables.getByText(/has a row for each group's share/)).toBeVisible()
+  } finally {
+    await abortLiveRun(request, { testId, scriptId: buyers })
+    await request.delete(`/api/v1/scripts/${sellers}`)
+  }
+})

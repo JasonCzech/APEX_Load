@@ -5,6 +5,7 @@ import {
   carryForwardPositiveResponseTimes,
   estimateSampleIntervalMs,
   filterExecutionChartData,
+  groupTransactionKey,
   mapArchiveResourceSamples,
   mapArchiveSummarySamples,
   mapExecutionHistory,
@@ -17,7 +18,7 @@ import {
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
-import { transactionChartSeriesKey } from './transactionChartSeries'
+import { groupTransactionTpsSeriesKey, transactionChartSeriesKey, transactionChartSeriesNames } from './transactionChartSeries'
 import type { MetricsHistoryPoint, LiveMetrics } from '../types'
 
 describe('testExecutionMetricsModel', () => {
@@ -704,6 +705,25 @@ describe('recentMetricAverages', () => {
     // A name no sample carries (history recorded without group detail) has no
     // average, so the page shows its latest value rather than 0.
     expect(recentMetricAverages(history, undefined, { groups: ['Checkout'], transactions: ['Login'] })).toMatchObject({ groups: {}, transactions: {} })
+  })
+
+  // Each group's rate of a transaction is a series of its own: its share, or
+  // the whole when one group ran it, averaged like the transaction's.
+  it('keeps and averages each group\'s rate of a transaction', () => {
+    const live = (timestamp: string, tps: number, transactions: LiveMetrics['transactions']) => mapExecutionMetricToHistoryPoint({
+      timestamp, active_vusers: 2, tps, avg_response_ms: 10, error_pct: 0, total_transactions: 1, total_errors: 0,
+      p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1, transactions,
+    } as LiveMetrics)
+    const figures = { count: 1, errors: 0, avg_ms: 1, p50_ms: 1, p90_ms: 1, p99_ms: 1 }
+    const history = [
+      live('2026-10-13T10:00:00Z', 4, { Login: { name: 'Login', tps: 4, ...figures, groups: ['buyers'] } }),
+      live('2026-10-13T10:00:01Z', 6, { Login: { name: 'Login', tps: 6, ...figures, groups: ['buyers', 'sellers'], by_group: { buyers: { tps: 2, ...figures }, sellers: { tps: 4, ...figures } } } }),
+    ]
+    expect(history[1][groupTransactionTpsSeriesKey('sellers', 'Login')]).toBe(4)
+    // The group series are not transaction chart series.
+    expect(transactionChartSeriesNames(history)).toEqual(['Login'])
+    const averages = recentMetricAverages(history, undefined, { groupTransactions: [['buyers', 'Login'], ['sellers', 'Login'], ['browsers', 'Login']] })
+    expect(averages.groupTransactions).toEqual({ [groupTransactionKey('buyers', 'Login')]: 3, [groupTransactionKey('sellers', 'Login')]: 2 })
   })
 
   it('reads request rates from live samples into history points', () => {

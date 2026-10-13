@@ -1,4 +1,5 @@
 import type { LiveMetrics, TxMetrics, VUserRampStatus } from '../types'
+import { groupTransactionKey } from './testExecutionMetricsModel'
 
 export interface CommandGroup {
   key: string
@@ -66,6 +67,8 @@ export interface GroupRunRow {
 export interface TransactionRunRow {
   id: string
   name: string
+  /** The group whose share the row is; absent when the source does not say. */
+  group?: string
   protocol: string
   tps: number
   attempts: number
@@ -135,30 +138,58 @@ export function buildGroupRunRows(groups: CommandGroup[], metrics?: LiveMetrics)
   })
 }
 
-// Transaction rows: TPS over the page's window where the history has it
-// (recentTps), else the last sample's; attempts, failures and response
-// times are the last sample window's, as live transaction counts are only
-// kept per window.
+/**
+ * The groups a transaction has rows for in the Transactions table: each group
+ * whose share it carries, or else the one group that ran all of it (the run's
+ * only group, soleGroup, when the source does not say). undefined is a row
+ * with no group.
+ */
+export function transactionRowGroups(tx: TxMetrics, soleGroup?: string): Array<string | undefined> {
+  const shares = Object.keys(tx.by_group ?? {}).filter(group => tx.by_group?.[group])
+  if (shares.length > 1) return shares.sort((left, right) => left.localeCompare(right))
+  return [tx.groups?.length === 1 ? tx.groups[0] : tx.groups?.length ? undefined : soleGroup]
+}
+
+// Transaction rows, one for each group that ran the transaction: TPS over
+// the page's window where the history has it (recentTps by transaction,
+// recentGroupTps by groupTransactionKey), else the last sample's; attempts,
+// failures and response times are the last sample window's, as live
+// transaction counts are only kept per window. A transaction the source does
+// not attribute belongs to soleGroup, the run's only group, if it has one.
 export function buildTransactionRunRows(
   metrics?: LiveMetrics,
   transactionSnapshot?: Record<string, TxMetrics>,
   recentTps?: Record<string, number>,
+  recentGroupTps?: Record<string, number>,
+  soleGroup?: string,
 ): TransactionRunRow[] {
   const transactions = (metrics?.transactions && Object.keys(metrics.transactions).length > 0)
     ? metrics.transactions
     : transactionSnapshot
-  return Object.entries(transactions || {}).flatMap(([name, tx]) => tx ? [{
-    id: `transaction-${name}`,
-    name,
-    protocol: tx.dependency_type || 'transaction',
-    tps: recentTps?.[tx.name?.trim() || name] ?? tx.tps ?? 0,
-    attempts: tx.count,
-    errors: tx.errors,
-    errorPct: errorPctFromAttempts(tx.errors, tx.count),
-    art: tx.avg_ms,
-    p50: tx.p50_ms,
-    p90: tx.p90_ms,
-    p95: tx.p95_ms,
-    p99: tx.p99_ms,
-  }] : [])
+  const row = (key: string, name: string, group: string | undefined, protocol: string, tps: number, figures: Pick<TxMetrics, 'count' | 'errors' | 'avg_ms' | 'p50_ms' | 'p90_ms' | 'p95_ms' | 'p99_ms'>): TransactionRunRow => ({
+    id: `transaction-${encodeURIComponent(group ?? '')}:${encodeURIComponent(key)}`,
+    name: key,
+    group,
+    protocol,
+    tps: (group === undefined ? undefined : recentGroupTps?.[groupTransactionKey(group, name)]) ?? tps,
+    attempts: figures.count,
+    errors: figures.errors,
+    errorPct: errorPctFromAttempts(figures.errors, figures.count),
+    art: figures.avg_ms,
+    p50: figures.p50_ms,
+    p90: figures.p90_ms,
+    p95: figures.p95_ms,
+    p99: figures.p99_ms,
+  })
+  return Object.entries(transactions || {}).flatMap(([key, tx]) => {
+    if (!tx) return []
+    const name = tx.name?.trim() || key
+    const protocol = tx.dependency_type || 'transaction'
+    return transactionRowGroups(tx, soleGroup).map(group => {
+      const share = group === undefined ? undefined : tx.by_group?.[group]
+      return share
+        ? row(key, name, group, protocol, share.tps ?? 0, share)
+        : row(key, name, group, protocol, recentTps?.[name] ?? tx.tps ?? 0, tx)
+    })
+  })
 }

@@ -88999,6 +88999,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -89021,6 +89028,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -89087,6 +89098,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -89109,6 +89127,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -91735,6 +91757,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -91757,6 +91786,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -91862,6 +91895,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -91884,6 +91924,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92607,6 +92651,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -92629,6 +92680,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92707,6 +92762,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -92729,6 +92791,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92972,6 +93038,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -92994,6 +93067,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -93617,6 +93694,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -93639,6 +93723,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -95487,6 +95575,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -95509,6 +95604,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -95575,6 +95674,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -95597,6 +95703,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -98223,6 +98333,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -98245,6 +98362,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -98350,6 +98471,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -98372,6 +98500,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -99095,6 +99227,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -99117,6 +99256,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -99195,6 +99338,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -99217,6 +99367,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -99460,6 +99614,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -99482,6 +99643,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -100105,6 +100270,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -100127,6 +100299,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -101976,6 +102152,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -101998,6 +102181,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -102064,6 +102251,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -102086,6 +102280,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -104712,6 +104910,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -104734,6 +104939,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -104839,6 +105048,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -104861,6 +105077,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -105584,6 +105804,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -105606,6 +105833,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -105684,6 +105915,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -105706,6 +105944,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -105949,6 +106191,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -105971,6 +106220,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -106594,6 +106847,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -106616,6 +106876,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -108477,6 +108741,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -108499,6 +108770,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -108565,6 +108840,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -108587,6 +108869,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -111213,6 +111499,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -111235,6 +111528,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -111340,6 +111637,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -111362,6 +111666,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -112085,6 +112393,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -112107,6 +112422,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -112185,6 +112504,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -112207,6 +112533,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -112450,6 +112780,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -112472,6 +112809,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -113095,6 +113436,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -113117,6 +113465,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -114978,6 +115330,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -115000,6 +115359,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -115066,6 +115429,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -115088,6 +115458,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -117714,6 +118088,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -117736,6 +118117,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -117841,6 +118226,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -117863,6 +118255,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -118586,6 +118982,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -118608,6 +119011,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -118686,6 +119093,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -118708,6 +119122,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -118951,6 +119369,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -118973,6 +119398,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -119596,6 +120025,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -119618,6 +120054,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -121479,6 +121919,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -121501,6 +121948,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -121567,6 +122018,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -121589,6 +122047,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -124215,6 +124677,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -124237,6 +124706,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -124342,6 +124815,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -124364,6 +124844,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -125087,6 +125571,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -125109,6 +125600,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -125187,6 +125682,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -125209,6 +125711,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -125452,6 +125958,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -125474,6 +125987,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -126097,6 +126614,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -126119,6 +126643,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -127980,6 +128508,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -128002,6 +128537,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -128068,6 +128607,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -128090,6 +128636,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -130716,6 +131266,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -130738,6 +131295,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -130843,6 +131404,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -130865,6 +131433,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -131588,6 +132160,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -131610,6 +132189,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -131688,6 +132271,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -131710,6 +132300,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -131953,6 +132547,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -131975,6 +132576,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -132598,6 +133203,13 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                by_group:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: TransactionGroupShare'
+                                    additionalProperties: true
+                                    nullable: true
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -132620,6 +133232,10 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                groups:
+                                  type: array
+                                  items:
+                                    type: string
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -342894,6 +343510,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -342916,6 +343538,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -343588,6 +344214,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -343610,6 +344242,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -345903,6 +346539,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -345925,6 +346568,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -346027,6 +346674,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -346049,6 +346703,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -346836,6 +347494,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -346858,6 +347523,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -346935,6 +347604,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -346957,6 +347633,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -347199,6 +347879,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -347221,6 +347908,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -347842,6 +348533,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -347864,6 +348562,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -348236,6 +348938,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -348258,6 +348966,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -348985,6 +349697,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -349007,6 +349725,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -350893,6 +351615,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -350915,6 +351643,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -351599,6 +352331,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -351621,6 +352359,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -352470,6 +353212,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -352492,6 +353240,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -353793,6 +354545,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -353815,6 +354573,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -356545,6 +357307,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -356567,6 +357335,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -357239,6 +358011,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -357261,6 +358039,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -359554,6 +360336,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -359576,6 +360365,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -359678,6 +360471,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -359700,6 +360500,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -360487,6 +361291,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -360509,6 +361320,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -360586,6 +361401,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -360608,6 +361430,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -360850,6 +361676,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -360872,6 +361705,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -361493,6 +362330,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -361515,6 +362359,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -361887,6 +362735,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -361909,6 +362763,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -362636,6 +363494,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -362658,6 +363522,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -364544,6 +365412,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -364566,6 +365440,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -365250,6 +366128,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -365272,6 +366156,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -366121,6 +367009,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -366143,6 +367037,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -367444,6 +368342,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -367466,6 +368370,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -401806,6 +402714,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -401828,6 +402742,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -402500,6 +403418,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -402522,6 +403446,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -404815,6 +405743,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -404837,6 +405772,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -404939,6 +405878,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -404961,6 +405907,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -405748,6 +406698,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -405770,6 +406727,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -405847,6 +406808,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -405869,6 +406837,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -406111,6 +407083,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -406133,6 +407112,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -406754,6 +407737,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -406776,6 +407766,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -407148,6 +408142,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -407170,6 +408170,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -407897,6 +408901,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -407919,6 +408929,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -409805,6 +410819,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -409827,6 +410847,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -410511,6 +411535,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -410533,6 +411563,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -411382,6 +412416,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -411404,6 +412444,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -412705,6 +413749,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -412727,6 +413777,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -415401,6 +416455,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -415423,6 +416483,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -416095,6 +417159,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -416117,6 +417187,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -418410,6 +419484,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -418432,6 +419513,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -418534,6 +419619,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -418556,6 +419648,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -419343,6 +420439,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -419365,6 +420468,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -419442,6 +420549,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -419464,6 +420578,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -419706,6 +420824,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -419728,6 +420853,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -420349,6 +421478,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -420371,6 +421507,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -420743,6 +421883,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -420765,6 +421911,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -421492,6 +422642,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -421514,6 +422670,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -423400,6 +424560,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -423422,6 +424588,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -424106,6 +425276,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -424128,6 +425304,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -424977,6 +426157,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -424999,6 +426185,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -426300,6 +427490,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -426322,6 +427518,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -434877,6 +436077,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -434899,6 +436105,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -435571,6 +436781,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -435593,6 +436809,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -437886,6 +439106,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -437908,6 +439135,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -438010,6 +439241,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -438032,6 +439270,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -438819,6 +440061,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -438841,6 +440090,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -438918,6 +440171,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -438940,6 +440200,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -439182,6 +440446,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -439204,6 +440475,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -439825,6 +441100,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -439847,6 +441129,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -440219,6 +441505,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -440241,6 +441533,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -440968,6 +442264,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -440990,6 +442292,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -442876,6 +444182,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -442898,6 +444210,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -443582,6 +444898,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -443604,6 +444926,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -444453,6 +445779,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -444475,6 +445807,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -445776,6 +447112,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -445798,6 +447140,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -453488,6 +454834,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -453510,6 +454863,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -453612,6 +454969,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -453634,6 +454998,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -454421,6 +455789,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -454443,6 +455818,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -454520,6 +455899,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -454542,6 +455928,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -454784,6 +456174,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -454806,6 +456203,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -455427,6 +456828,13 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              by_group:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: TransactionGroupShare'
+                                  additionalProperties: true
+                                  nullable: true
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -455449,6 +456857,10 @@ paths:
                                 items:
                                   type: object
                                   additionalProperties: true
+                              groups:
+                                type: array
+                                items:
+                                  type: string
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -455809,6 +457221,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -455831,6 +457249,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -456558,6 +457980,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -456580,6 +458008,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -458466,6 +459898,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -458488,6 +459926,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -459172,6 +460614,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -459194,6 +460642,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -460043,6 +461495,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -460065,6 +461523,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time
@@ -461366,6 +462828,12 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            by_group:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             correlation_count:
                               type: integer
                               format: int64
@@ -461388,6 +462856,10 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            groups:
+                              type: array
+                              items:
+                                type: string
                             last_error_at:
                               type: string
                               format: date-time

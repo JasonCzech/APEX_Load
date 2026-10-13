@@ -107,14 +107,12 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 	}
 
 	out := *live
-	// Transaction metrics are aggregated globally by action name. The current
-	// live-metrics model does not retain a group+transaction dimension, so a
-	// selected-group response cannot safely attribute any transaction series to
-	// the selected groups. Omit the global series instead of returning metrics
-	// from groups the caller explicitly hid.
+	// Messaging and native evidence are aggregated globally, with no group
+	// dimension: omit them rather than return metrics from groups the caller
+	// explicitly hid. Transactions keep what is attributable to the selected
+	// groups (transactionsForGroups).
 	out.Messaging = nil
 	out.NativeEvidence = nil
-	out.Transactions = nil
 	// The version mix is run-wide too.
 	out.HTTPVersions = nil
 	selectedNames := make(map[string]struct{}, len(filter.Names))
@@ -146,8 +144,45 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 		selected = append(selected, groupMetrics)
 	}
 	applySelectedGroupAggregate(&out, selected)
+	out.Transactions = transactionsForGroups(live.Transactions, selectedNames)
 	out.MessagingProgress = messagingProgressForGroups(live.MessagingProgress, filter.Names)
 	return &out
+}
+
+// transactionsForGroups keeps the transactions the selected groups ran,
+// each with exact figures: one only selected groups ran, whole; one shared
+// with other groups, the share of the one selected group that ran it. A
+// transaction two selected groups share with a hidden one, or one without
+// attribution (an older generator's), is left out: its figures cannot be
+// split.
+func transactionsForGroups(transactions map[string]*TxMetrics, selected map[string]struct{}) map[string]*TxMetrics {
+	out := make(map[string]*TxMetrics)
+	for name, tx := range transactions {
+		if tx == nil || len(tx.Groups) == 0 {
+			continue
+		}
+		chosen := make([]string, 0, len(tx.Groups))
+		for _, group := range tx.Groups {
+			if _, ok := selected[group]; ok {
+				chosen = append(chosen, group)
+			}
+		}
+		switch {
+		case len(chosen) == len(tx.Groups):
+			out[name] = tx
+		case len(chosen) == 1 && tx.ByGroup[chosen[0]] != nil:
+			share := tx.ByGroup[chosen[0]]
+			out[name] = &TxMetrics{
+				Name: tx.Name, DependencyType: tx.DependencyType, Groups: chosen,
+				TPS: share.TPS, Count: share.Count, Errors: share.Errors,
+				AvgMs: share.AvgMs, P50Ms: share.P50Ms, P90Ms: share.P90Ms, P95Ms: share.P95Ms, P99Ms: share.P99Ms,
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func filterLiveMetricsHistoryForGroups(history []*LiveMetrics, filter groupFilterQuery) []*LiveMetrics {

@@ -15,6 +15,10 @@ const (
 	maxMetricsSnapshotBytes   = 64 << 20
 	maxMetricsBatchSize       = 10_000
 	metricOverflowLabel       = "__other__"
+	// maxGroupTransactionEntries bounds a window's group-transaction pairs
+	// across all groups; past it a group's new transactions fold into its
+	// overflow entry.
+	maxGroupTransactionEntries = 2048
 )
 
 func compactMetricsResult(input *protocol.Result) *protocol.Result {
@@ -213,6 +217,10 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	estimateActions(snapshot.ByRegion)
 	for key := range snapshot.ByGroup {
 		bytes += len(key) + 256
+	}
+	for key, transactions := range snapshot.ByGroupTransaction {
+		bytes += len(key) + 48
+		estimateActions(transactions)
 	}
 	for key := range snapshot.BrowserByDevice {
 		bytes += len(key) + 256

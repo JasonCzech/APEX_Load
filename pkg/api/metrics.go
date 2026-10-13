@@ -136,6 +136,17 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	for name, am := range snap.ByTransaction {
 		live.Transactions[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
+	groupTransactions := make(map[string]map[string]*TransactionGroupShare, len(snap.ByGroupTransaction))
+	for group, transactions := range snap.ByGroupTransaction {
+		shares := make(map[string]*TransactionGroupShare, len(transactions))
+		for name, am := range transactions {
+			if share := groupTransactionShareFromAction(am, snap.Window); share != nil {
+				shares[name] = share
+			}
+		}
+		groupTransactions[group] = shares
+	}
+	attributeTransactionsToGroups(live.Transactions, groupTransactions)
 
 	for name, am := range snap.ByDependencyTarget {
 		live.DependencyHealth[name] = buildTxMetricsFromAction(name, am, snap.Window)

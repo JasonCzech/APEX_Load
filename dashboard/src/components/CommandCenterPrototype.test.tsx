@@ -1740,6 +1740,8 @@ describe('CommandCenterPrototype', () => {
     await click(tabNamed('Transactions'))
     expect(tableWorkspace?.textContent).toContain('POST /orders')
     expect(tableWorkspace?.textContent).not.toContain('Checkout API')
+    // Each row says whose share of the transaction it is.
+    expect([...tableWorkspace!.querySelectorAll('th')].map(header => header.textContent?.trim())).toEqual(expect.arrayContaining([expect.stringMatching(/^Group/)]))
 
     await click(tabNamed('Error Details'))
 
@@ -1894,8 +1896,8 @@ describe('CommandCenterPrototype', () => {
       p99_ms: 410,
     }, snapshot)
 
-    expect(rowsWhenPresent.some(row => row.id === 'transaction-POST /orders')).toBe(true)
-    expect(rowsWhenMissing.some(row => row.id === 'transaction-POST /orders')).toBe(true)
+    expect(rowsWhenPresent.some(row => row.name === 'POST /orders')).toBe(true)
+    expect(rowsWhenMissing.some(row => row.name === 'POST /orders')).toBe(true)
   })
 
   it('does not query Prometheus in prototype (non-live) mode', async () => {

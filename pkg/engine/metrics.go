@@ -133,6 +133,7 @@ type MetricsSnapshot struct {
 	ByProperty                 map[string]*ActionMetrics `json:"by_property,omitempty"`
 	ByRegion                   map[string]*ActionMetrics `json:"by_region,omitempty"`
 	ByGroup                    map[string]*GroupMetrics
+	ByGroupTransaction         map[string]map[string]*ActionMetrics   `json:"by_group_transaction,omitempty"` // each group's share of its business transactions (count, errors, average and percentiles), named as in ByTransaction
 	BrowserDocuments           *protocol.BrowserDocumentSummary       `json:"browser_documents,omitempty"`
 	Browser                    *BrowserMetricsSummary                 `json:"browser,omitempty"`
 	BrowserByDevice            map[string]*BrowserDeviceMetrics       `json:"browser_by_device,omitempty"`
@@ -703,6 +704,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ByActionProperty:    make(map[string]*ActionMetrics),
 		ByRegion:            make(map[string]*ActionMetrics),
 		ByGroup:             make(map[string]*GroupMetrics),
+		ByGroupTransaction:  make(map[string]map[string]*ActionMetrics),
 		ErrorsByClass:       make(map[string]int64),
 		BrowserByDevice:     make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
@@ -746,6 +748,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	regionDurationSum := make(map[string]time.Duration)
 	groupDigests := make(map[string]*TDigest)
 	groupDurationSum := make(map[string]time.Duration)
+	groupTransactionDigests := make(map[string]*TDigest)
+	groupTransactionDurationSum := make(map[string]time.Duration)
+	groupTransactionEntries := 0
 
 	mc.targetsMu.RLock()
 	jointProjection, groupProtocols := mc.jointProjection, mc.groupProtocols
@@ -838,6 +843,29 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 					groupDigests[groupName] = NewTDigest(200)
 				}
 				groupDigests[groupName].Add(float64(r.Duration))
+				// The group's own share of the transaction, under the name
+				// ByTransaction counts it as (bounded there).
+				groupTransactions := snap.ByGroupTransaction[groupName]
+				if groupTransactions == nil {
+					groupTransactions = make(map[string]*ActionMetrics)
+					snap.ByGroupTransaction[groupName] = groupTransactions
+				}
+				shareName := transactionName
+				if _, ok := groupTransactions[shareName]; !ok && groupTransactionEntries >= maxGroupTransactionEntries {
+					shareName = metricOverflowLabel
+				}
+				// A share counts attempts, failures and response times only.
+				gtm, ok := groupTransactions[shareName]
+				if !ok {
+					gtm = &ActionMetrics{Name: shareName}
+					groupTransactions[shareName] = gtm
+					groupTransactionEntries++
+				}
+				gtm.Count++
+				if !r.Success {
+					gtm.Errors++
+				}
+				recordDurationSample(groupTransactionDigests, groupTransactionDurationSum, groupName+"\x00"+shareName, r.Duration)
 			}
 		}
 
@@ -1075,6 +1103,19 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	if len(snap.ByTransaction) == 0 {
 		snap.ByTransaction = nil
+	}
+	for group, transactions := range snap.ByGroupTransaction {
+		for name, share := range transactions {
+			key := group + "\x00" + name
+			share.AvgDuration = groupTransactionDurationSum[key] / time.Duration(share.Count)
+			if td := groupTransactionDigests[key]; td != nil {
+				share.P50, share.P90 = time.Duration(td.Quantile(0.50)), time.Duration(td.Quantile(0.90))
+				share.P95, share.P99 = time.Duration(td.Quantile(0.95)), time.Duration(td.Quantile(0.99))
+			}
+		}
+	}
+	if len(snap.ByGroupTransaction) == 0 {
+		snap.ByGroupTransaction = nil
 	}
 	for name, am := range snap.ByDependencyTarget {
 		finalizeActionMetrics(am, dependencyDurationSum[name], dependencyDigests[name])

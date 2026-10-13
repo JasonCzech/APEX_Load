@@ -1,7 +1,7 @@
 import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { resourceImpactHistoryValues } from './generatorImpact'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
-import { transactionChartSeriesKey } from './transactionChartSeries'
+import { groupTransactionTpsSeriesKey, transactionChartSeriesKey } from './transactionChartSeries'
 import {
   executionChartMinuteRangeValue,
   type ExecutionChartTimeRange,
@@ -141,6 +141,10 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
       point[transactionChartSeriesKey(name, 'p90')] = roundedOptional(transactionMetric.p90_ms)
       point[transactionChartSeriesKey(name, 'p95')] = roundedOptional(transactionMetric.p95_ms)
       point[transactionChartSeriesKey(name, 'p99')] = roundedOptional(transactionMetric.p99_ms)
+      // Each group's own rate: its share, or the whole when one group ran it.
+      const shares = Object.entries(transactionMetric.by_group ?? {})
+      if (shares.length > 1) shares.forEach(([group, share]) => { point[groupTransactionTpsSeriesKey(group, name)] = roundedOptional(share?.tps) })
+      else if (transactionMetric.groups?.length === 1) point[groupTransactionTpsSeriesKey(transactionMetric.groups[0], name)] = roundedOptional(transactionMetric.tps)
     })
   }
 
@@ -177,12 +181,21 @@ export interface RecentMetricAverages {
   groups?: Record<string, { tps: number; requestRate: number }>
   /** Each named transaction's TPS, over the same samples; a transaction no sample carries is left out. */
   transactions?: Record<string, number>
+  /** Each named group's rate of a transaction, keyed by groupTransactionKey, over the same samples; one no sample carries is left out. */
+  groupTransactions?: Record<string, number>
 }
 
 /** The groups and transactions to average beside the run. */
 export interface RecentMetricAverageNames {
   groups?: readonly string[]
   transactions?: readonly string[]
+  /** Group and transaction pairs. */
+  groupTransactions?: ReadonlyArray<readonly [group: string, transaction: string]>
+}
+
+/** Names one group's rate of a transaction in RecentMetricAverages.groupTransactions. */
+export function groupTransactionKey(group: string, transaction: string) {
+  return `${group}\u0000${transaction}`
 }
 
 function seriesValue(point: MetricsHistoryPoint, key: string): number | undefined {
@@ -237,6 +250,9 @@ export function recentMetricAverages(
   const groupSums = groupNames.map(() => ({ tps: 0, requestRate: 0, seen: false }))
   const transactionKeys = transactionNames.map(name => transactionChartSeriesKey(name, 'tps'))
   const transactionSums = transactionNames.map(() => ({ tps: 0, seen: false }))
+  const groupTransactionPairs = names.groupTransactions ?? []
+  const groupTransactionKeys = groupTransactionPairs.map(([group, transaction]) => groupTransactionTpsSeriesKey(group, transaction))
+  const groupTransactionSums = groupTransactionPairs.map(() => ({ tps: 0, seen: false }))
   for (const point of history) {
     if (typeof point.timestampMs !== 'number' || point.timestampMs < cutoff) continue
     if (typeof point.tps === 'number') {
@@ -254,6 +270,11 @@ export function recentMetricAverages(
         const tps = seriesValue(point, key)
         transactionSums[index].tps += tps ?? 0
         transactionSums[index].seen ||= tps !== undefined
+      })
+      groupTransactionKeys.forEach((key, index) => {
+        const tps = seriesValue(point, key)
+        groupTransactionSums[index].tps += tps ?? 0
+        groupTransactionSums[index].seen ||= tps !== undefined
       })
     }
     if (typeof point.avgMs === 'number') {
@@ -275,6 +296,9 @@ export function recentMetricAverages(
     }
     if (transactionNames.length > 0) {
       result.transactions = Object.fromEntries(transactionNames.flatMap((name, index) => transactionSums[index].seen ? [[name, transactionSums[index].tps / tpsCount]] : []))
+    }
+    if (groupTransactionPairs.length > 0) {
+      result.groupTransactions = Object.fromEntries(groupTransactionPairs.flatMap(([group, transaction], index) => groupTransactionSums[index].seen ? [[groupTransactionKey(group, transaction), groupTransactionSums[index].tps / tpsCount]] : []))
     }
   }
   if (artWeight > 0) result.art = artWeightedSum / artWeight

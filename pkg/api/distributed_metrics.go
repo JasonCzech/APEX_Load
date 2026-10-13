@@ -47,6 +47,8 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	dropCounterUnavailable := false
 	groupsByName := make(map[string]int32)
 	groupMetricsByName := make(map[string][]generatorrpc.MetricAggregate)
+	// Each group's transactions, by generator, merged by name below.
+	groupTransactionsByName := make(map[string][]generatorrpc.MetricAggregate)
 	// Requests, failed requests and the request rate per group. Generators'
 	// windows can differ in length, so each rates its own window, as TPS does.
 	groupRequestsByName := make(map[string]generatorrpc.GroupMetric)
@@ -59,6 +61,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	requestCountsVersion := uint32(generatorrpc.CurrentRequestCountsVersion)
 	if len(batches) == 0 {
 		requestCountsVersion = 0
+	}
+	// Likewise the groups' transactions: a generator that does not report them
+	// leaves the fleet's transactions unattributed rather than part-attributed.
+	groupTransactionsVersion := uint32(generatorrpc.CurrentGroupTransactionsVersion)
+	if len(batches) == 0 {
+		groupTransactionsVersion = 0
 	}
 	fleetTPS := 0.0
 	groupTPS := make(map[string]float64)
@@ -172,6 +180,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		if batch.RequestCountsVersion != generatorrpc.CurrentRequestCountsVersion {
 			requestCountsVersion = 0
 		}
+		if batch.GroupTransactionsVersion != generatorrpc.CurrentGroupTransactionsVersion {
+			groupTransactionsVersion = 0
+		}
 		dimensionMetrics = append(dimensionMetrics, batch.ActionDimensionMetrics...)
 		jointMetrics = append(jointMetrics, batch.ActionPropertyMetrics...)
 		actionMetrics = append(actionMetrics, batch.ActionMetrics...)
@@ -220,6 +231,16 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				continue
 			}
 			groupsByName[name] += group.ActiveVUsers
+			for _, aggregate := range group.TransactionMetrics {
+				transaction := strings.TrimSpace(aggregate.Name)
+				if transaction == "" || aggregate.Count <= 0 {
+					continue
+				}
+				aggregate.Name = transaction
+				aggregate.Errors = boundedMetricErrors(aggregate.Count, aggregate.Errors)
+				aggregate.TPS = resolvedAggregateTPS(aggregate, windowSec)
+				groupTransactionsByName[name] = append(groupTransactionsByName[name], aggregate)
+			}
 			if group.CompletedIterations != nil {
 				groupIterationsByName[name] += max(*group.CompletedIterations, 0)
 			} else {
@@ -382,9 +403,11 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			RequestErrors:       requests.RequestErrors,
 			RequestRate:         requests.RequestRate,
 			CompletedIterations: iterations,
+			TransactionMetrics:  mergeGeneratorMetricAggregateSeries(groupTransactionsByName[name]),
 		})
 	}
 	combined.RequestCountsVersion = requestCountsVersion
+	combined.GroupTransactionsVersion = groupTransactionsVersion
 	combined.Stats = aggregateDistributedGeneratorStats(statsList)
 	return combined, fleetTPS, groupTPS
 }
@@ -1115,6 +1138,20 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 		if metrics != nil {
 			live.Transactions[metrics.Name] = metrics
 		}
+	}
+	// Each transaction's groups, once every generator in the window reports them.
+	if batch.GroupTransactionsVersion == generatorrpc.CurrentGroupTransactionsVersion {
+		groupTransactions := make(map[string]map[string]*TransactionGroupShare, len(batch.Groups))
+		for _, group := range batch.Groups {
+			shares := make(map[string]*TransactionGroupShare, len(group.TransactionMetrics))
+			for _, aggregate := range group.TransactionMetrics {
+				if share := groupTransactionShareFromAggregate(aggregate); share != nil {
+					shares[strings.TrimSpace(aggregate.Name)] = share
+				}
+			}
+			groupTransactions[group.Name] = shares
+		}
+		attributeTransactionsToGroups(live.Transactions, groupTransactions)
 	}
 	for _, aggregate := range batch.DependencyMetrics {
 		metrics := txMetricsFromAggregate(aggregate)

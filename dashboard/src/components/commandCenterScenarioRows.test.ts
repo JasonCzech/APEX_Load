@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildGroupRunRows, buildTransactionRunRows, type CommandGroup } from './commandCenterScenarioRows'
+import { groupTransactionKey } from './testExecutionMetricsModel'
 
 function commandGroup(overrides: Partial<CommandGroup> = {}): CommandGroup {
   return {
@@ -69,6 +70,29 @@ describe('run table rows', () => {
     expect(tx.attempts).toBe(2)
     expect(tx.errorPct).toBe(50)
     expect(buildTransactionRunRows(metrics)[0].tps).toBe(1)
+  })
+
+  it('gives each group that ran a transaction its own row, at its own averaged rate', () => {
+    const figures = { avg_ms: 10, p50_ms: 1, p90_ms: 1, p99_ms: 1 }
+    const metrics = { transactions: {
+      Login: { name: 'Login', tps: 7, count: 9, errors: 1, ...figures, groups: ['buyers', 'sellers'], by_group: {
+        sellers: { tps: 4, count: 4, errors: 0, ...figures, avg_ms: 30 },
+        buyers: { tps: 3, count: 5, errors: 1, ...figures },
+      } },
+      Search: { name: 'Search', tps: 2, count: 2, errors: 0, ...figures, groups: ['buyers'] },
+      Legacy: { name: 'Legacy', tps: 1, count: 1, errors: 0, ...figures },
+    } } as never
+    const rows = buildTransactionRunRows(metrics, undefined, { Search: 1.5 }, { [groupTransactionKey('buyers', 'Login')]: 2.5, [groupTransactionKey('buyers', 'Search')]: 1.8 })
+    expect(rows.map(row => [row.name, row.group, row.attempts, row.tps])).toEqual([
+      ['Login', 'buyers', 5, 2.5],
+      ['Login', 'sellers', 4, 4],
+      ['Search', 'buyers', 2, 1.8],
+      ['Legacy', undefined, 1, 1],
+    ])
+    expect(rows[1].art).toBe(30)
+    expect(new Set(rows.map(row => row.id)).size).toBe(rows.length)
+    // An unattributed transaction in a run of one group is that group's.
+    expect(buildTransactionRunRows(metrics, undefined, undefined, undefined, 'buyers').find(row => row.name === 'Legacy')?.group).toBe('buyers')
   })
 
   it('keeps the last transactions when a window completed none', () => {

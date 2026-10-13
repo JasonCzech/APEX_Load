@@ -1414,6 +1414,25 @@ type TxMetrics struct {
 	P99Ms              float64                 `json:"p99_ms"`
 	// Exemplars are this window's requests whose trace context was sent.
 	Exemplars []engine.TraceExemplar `json:"exemplars,omitempty"`
+	// Groups are the groups whose VUsers ran the transaction in the window,
+	// sorted; none when the source does not attribute transactions (a
+	// generator that predates it). ByGroup is each group's share when more
+	// than one group ran it.
+	Groups  []string                          `json:"groups,omitempty"`
+	ByGroup map[string]*TransactionGroupShare `json:"by_group,omitempty"`
+}
+
+// TransactionGroupShare is one group's part of a transaction more than one
+// group ran in the window: its attempts, failures, rate and response times.
+type TransactionGroupShare struct {
+	TPS    float64 `json:"tps"`
+	Count  int64   `json:"count"`
+	Errors int64   `json:"errors"`
+	AvgMs  float64 `json:"avg_ms"`
+	P50Ms  float64 `json:"p50_ms"`
+	P90Ms  float64 `json:"p90_ms"`
+	P95Ms  float64 `json:"p95_ms,omitempty"`
+	P99Ms  float64 `json:"p99_ms"`
 }
 
 type LiveErrorPattern struct {

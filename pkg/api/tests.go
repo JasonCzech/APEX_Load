@@ -629,6 +629,18 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 		if len(tx.Exemplars) > 0 {
 			clone.Exemplars = append([]engine.TraceExemplar(nil), tx.Exemplars...)
 		}
+		if len(tx.Groups) > 0 {
+			clone.Groups = append([]string(nil), tx.Groups...)
+		}
+		if len(tx.ByGroup) > 0 {
+			clone.ByGroup = make(map[string]*TransactionGroupShare, len(tx.ByGroup))
+			for group, share := range tx.ByGroup {
+				if share != nil {
+					copied := *share
+					clone.ByGroup[group] = &copied
+				}
+			}
+		}
 		out[key] = &clone
 	}
 	if len(out) == 0 {
