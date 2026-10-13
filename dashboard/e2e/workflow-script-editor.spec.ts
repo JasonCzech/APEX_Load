@@ -44,7 +44,7 @@ test('operator edits the failed nested browser assertion and reruns without losi
   await expect(page.getByRole('region', { name: 'Debug detail', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Edit this assertion' }).click()
   await expect(page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Author', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  const expected = page.getByLabel('Assertion 1 expected value', { exact: true })
+  const expected = page.getByLabel('Check 1 text', { exact: true })
   await expect(expected).toHaveValue('Welcome')
   await expect(expected).toBeFocused()
   await expected.fill('Hello')

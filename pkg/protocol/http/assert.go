@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -232,7 +233,12 @@ func ValidateAssertionDefinition(assertion protocol.Assertion) error {
 			return fmt.Errorf("aura_actions_success assertion: %w", err)
 		}
 	case "status_code", "status_code_not":
-		if _, ok := toInt(assertion.Expected); !ok {
+		// An expected status may come from a parameter or variable: it is
+		// resolved before the check runs, and must then be an integer.
+		if _, ok := toInt(assertion.Expected); !ok && !isTemplateText(assertion.Expected) {
+			if text, isText := assertion.Expected.(string); isText {
+				return fmt.Errorf("%s assertion: expected an integer status, got %q", assertion.Type, text)
+			}
 			return fmt.Errorf("%s assertion: expected integer, got %T", assertion.Type, assertion.Expected)
 		}
 	case "status_code_range":
@@ -305,8 +311,21 @@ func assertionNeedsResponseBody(assertion protocol.Assertion) bool {
 	}
 }
 
+// isTemplateText reports a string that holds a {{…}} reference.
+func isTemplateText(v any) bool {
+	text, ok := v.(string)
+	return ok && strings.Contains(text, "{{")
+}
+
 func toInt(v any) (int, bool) {
 	switch n := v.(type) {
+	case string:
+		// A decimal integer, as a resolved {{param.status}} reads.
+		parsed, err := strconv.ParseInt(n, 10, 32)
+		if err != nil || strconv.FormatInt(parsed, 10) != n {
+			return 0, false
+		}
+		return int(parsed), true
 	case int:
 		return n, true
 	case float64:

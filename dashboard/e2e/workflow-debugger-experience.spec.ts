@@ -80,7 +80,7 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await expectDebugOutcome(page, 'failed')
   await page.getByRole('button', { name: 'Edit this action', exact: true }).click()
-  const expected = page.getByLabel('Assertion 1 expected number', { exact: true })
+  const expected = page.getByLabel('Check 1 status', { exact: true })
   await expect(expected).toBeFocused(); await expected.fill('200')
   await page.locator('.topbar-debug-action-run').click()
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()

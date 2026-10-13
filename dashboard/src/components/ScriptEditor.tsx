@@ -14,6 +14,12 @@ import { AuthorInsertDialog, type InsertSharedData } from './AuthorInsertDialog'
 import ScriptDataUsagePanel from './ScriptDataUsagePanel'
 import { earlierVariables, scriptActionNames, scriptDataUsage, takenVariableNames, usesTableSteps, withUniqueResultPrefixes, type DataAliasStep } from './scriptDataUsageModel'
 import { useScriptScenarioBindings } from './useScriptScenarioBindings'
+import { checkFamily, lastStepEvent, replayEventStepPath, replayResolver, type ChecksReplay } from './actionChecksModel'
+import CorrelationReviewDialog from './CorrelationReviewDialog'
+import { applyValueCorrelation, laterUses, stepLayoutKey, suggestValueName, updateStep, type ValueUse } from './responseSelectionModel'
+import { boundaryExpression } from './extractorMatch'
+import type { StepPosition } from './referenceScopeModel'
+import type { ResponseActions } from './ScriptReplayDebuggerView'
 import { templateStepNames, type TemplateSpot } from './sharedDataTemplates'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
 import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
@@ -724,6 +730,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
   const [insertPhase, setInsertPhase] = useState<ScriptActionPhase>('action')
   const [insertPosition, setInsertPosition] = useState<InsertPosition>('end')
+  // A replayed value about to replace its recorded copies in later steps, under review.
+  const [correlationReview, setCorrelationReview] = useState<{ source: StepPosition; sourceName: string; value: string; boundaries: { left: string; right: string }; suggestedName: string; taken: ReadonlySet<string>; uses: ValueUse[] } | null>(null)
   // Where a linked template's user steps go, beside the step it left selected
   // (that step object: an edit to it, or the script's JSON, retires the spot).
   const [templateSpot, setTemplateSpot] = useState<{ action: Action; position: InsertPosition } | null>(null)
@@ -967,6 +975,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     notFoundCount: number
   } | null>(null)
   const [replayEditableActionsKey, setReplayEditableActionsKey] = useState<string | null>(null)
+  // Where the replayed script's steps sat, so its evidence still finds them after checks are added.
+  const [replayLayoutKey, setReplayLayoutKey] = useState<string | null>(null)
   // The fingerprint of the exact document a replay or debug run was started
   // with: its evidence is current only while the editor holds that document.
   const [replayDocumentFingerprint, setReplayDocumentFingerprint] = useState<string | null>(null)
@@ -1642,6 +1652,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setValidationSidebarResult(null)
     setReplayStartPending(false)
     setReplayEditableActionsKey(null)
+    setReplayLayoutKey(null)
     setReplayDocumentFingerprint(null)
     setActiveReplaySessionId(null)
     setUnavailableRuntimeSessionId(null)
@@ -2833,9 +2844,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }))
   }
 
-  const addPhaseAssertion = (phase: ScriptActionPhase, actionIdx: number) => {
+  const addPhaseAssertion = (phase: ScriptActionPhase, actionIdx: number, assertion?: Assertion) => {
     updatePhaseActionObject(phase, actionIdx, action => {
-      const assertions = [...(action.assertions || []), defaultAssertionForProtocol(script.protocol)]
+      const assertions = [...(action.assertions || []), assertion || defaultAssertionForProtocol(script.protocol)]
       return { ...action, assertions }
     })
   }
@@ -3334,6 +3345,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const replayDraft = resolveDraft()
       const currentScript = replayDraft.script
       setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
+      setReplayLayoutKey(stepLayoutKey(currentScript))
       setReplayDocumentFingerprint(replayDraft.fingerprint)
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const liveTableSeeds = parseLiveTableSandboxSeeds(replayOptions.liveTableSeedsText)
@@ -3541,6 +3553,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       invalidateRuntimeAuthority('Current state unavailable: debug start was rejected.')
       setReplayReport(null)
       setReplayEditableActionsKey(null)
+      setReplayLayoutKey(null)
       setReplayDocumentFingerprint(null)
       setActiveReplaySessionId(null)
       setBrowserReplaySession(null)
@@ -5776,6 +5789,69 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const dataAliases = Object.fromEntries(scenarioDataUsage.map(usage => [usage.alias, usage.columns]))
     return buildReferenceScope(script, { phase: activeInspectorScope.phase, actionIndex: activeInspectorScope.actionIndex, stepPath: inspectorStepPathKey ? inspectorStepPathKey.split('/') : undefined }, { dataAliases, unboundAliases })
   }, [activeInspectorScope?.actionIndex, activeInspectorScope?.phase, inspectorStepPathKey, scenarioDataUsage, script, unboundAliases]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The selected step's last replay: each check's and saved value's result, re-checked as they are edited.
+  const currentLayoutKey = useMemo(() => replayLayoutKey === null ? null : stepLayoutKey(script), [replayLayoutKey, script])
+  // The replay's steps are where they were and the structured script is the one being edited.
+  const replayStepsInPlace = replayLayoutKey !== null && replayLayoutKey === currentLayoutKey && !jsonDirty && !jsonParseMessage
+  // Or why a replayed script has no result for this step.
+  const checksReplay = useMemo((): { replay: ChecksReplay | null; unavailable: string } => {
+    if (!activeInspectorScope || !replayReport?.events?.length) return { replay: null, unavailable: '' }
+    if (!replayStepsInPlace) return { replay: null, unavailable: jsonDirty || jsonParseMessage ? 'Apply or discard the JSON edits to see each result here.' : 'The steps changed since the last replay: replay again to see each result here.' }
+    const at = lastStepEvent(replayReport.events, activeInspectorScope.phase, activeInspectorScope.actionIndex, inspectorStepPathKey ? inspectorStepPathKey.split('/') : [])
+    if (at < 0) return { replay: null, unavailable: 'This step did not run in the last replay.' }
+    return { replay: { event: replayReport.events[at], stale: !replayEvidenceMatchesCurrentDraft, resolve: replayResolver(mergeReplayVariables(replaySeedVariables, replayReport.events.slice(0, at))) }, unavailable: '' }
+  }, [activeInspectorScope, inspectorStepPathKey, jsonDirty, jsonParseMessage, replayEvidenceMatchesCurrentDraft, replayReport, replaySeedVariables, replayStepsInPlace])
+  // What text selected in a replayed response becomes, on the step that received it.
+  const eventStep = (event: BrowserReplayEvent): StepPosition | null => {
+    if (!['init', 'action', 'teardown'].includes(event.phase)) return null
+    const stepPath = replayEventStepPath(event)
+    return { phase: event.phase as ScriptActionPhase, actionIndex: event.action_index ?? 0, stepPath: stepPath.length ? stepPath : undefined }
+  }
+  const stepName = (position: StepPosition) => resolveAuthorJsonScopeByKey(script, authorFocusKey(position))?.action.name || 'the step'
+  // Adds to the event's step unless it already has the same check or value; says which.
+  const changeEventStep = (event: BrowserReplayEvent, has: (action: Action) => boolean, update: (action: Action) => Action, message: (name: string) => string): boolean => {
+    const position = eventStep(event)
+    const action = position ? resolveAuthorJsonScopeByKey(script, authorFocusKey(position))?.action : undefined
+    if (!position || !action || has(action)) return false
+    replaceScriptWithHistory(updateStep(script, position, update))
+    setSuccess(`${message(stepName(position))} Changes are not saved yet.`)
+    setError('')
+    return true
+  }
+  const addCheck = (event: BrowserReplayEvent, assertion: Assertion, message: (name: string) => string) => changeEventStep(event,
+    action => (action.assertions || []).some(existing => existing.type === assertion.type && String(existing.expected ?? '') === String(assertion.expected ?? '') && (existing.value ?? '') === (assertion.value ?? '') && !existing.source),
+    action => ({ ...action, assertions: [...(action.assertions || []), assertion] }), message)
+  const savedValue = (name: string, boundaries: { left: string; right: string }): ScriptExtractorDefinition => ({ name, source: 'body', type: 'boundary', expression: boundaryExpression(boundaries.left, boundaries.right) })
+  const responseActions: ResponseActions = {
+    offersStatus: checkFamily(script.protocol) === 'http',
+    disabledReason: event => !eventStep(event) ? 'This response is not from a step of the script.' : replayStepsInPlace ? '' : jsonDirty || jsonParseMessage ? 'Apply or discard the JSON edits to add from this response.' : 'The steps changed since this replay. Replay again to add from its response.',
+    laterUses: (event, text) => { const position = eventStep(event); return position ? laterUses(script, position, text).length : 0 },
+    onStatus: (event, status) => addCheck(event, { type: 'status_code', expected: status }, name => `Added the check “Status is ${status}” to ${name}.`),
+    onContains: (event, text) => addCheck(event, { type: checkFamily(script.protocol) === 'http' ? 'text_contains' : 'body_contains', value: text }, name => `Added a check that the response contains it to ${name}.`),
+    onSave: (event, selection) => {
+      if (!selection.boundaries) return false
+      const extractor = savedValue(suggestValueName(event.snapshot?.response_body || '', selection.start, takenVariableNames(script)), selection.boundaries)
+      return changeEventStep(event, action => (action.extractors || []).some(existing => existing.type === 'boundary' && (existing.source || 'body') === 'body' && existing.expression === extractor.expression), action => addCorrelationExtractorIfMissing(action, extractor), name => `Saved it as {{var.${extractor.name}}} on ${name}; it is in the step’s Saved values.`)
+    },
+    onCorrelate: (event, selection) => {
+      const position = eventStep(event)
+      if (!position || !selection.boundaries) return
+      // A value the step already saves this way keeps its name.
+      const expression = savedValue('', selection.boundaries).expression
+      const saved = resolveAuthorJsonScopeByKey(script, authorFocusKey(position))?.action.extractors?.find(existing => existing.type === 'boundary' && (existing.source || 'body') === 'body' && existing.expression === expression)?.name
+      const taken = new Set(takenVariableNames(script))
+      if (saved) taken.delete(saved)
+      setCorrelationReview({ source: position, sourceName: stepName(position), value: selection.text, boundaries: selection.boundaries, suggestedName: saved || suggestValueName(event.snapshot?.response_body || '', selection.start, taken), taken, uses: laterUses(script, position, selection.text) })
+    },
+  }
+  const applyCorrelationReview = (name: string, uses: ValueUse[]) => {
+    if (!correlationReview) return
+    const result = applyValueCorrelation(script, correlationReview.source, savedValue(name, correlationReview.boundaries), uses)
+    replaceScriptWithHistory(result.script)
+    setCorrelationReview(null)
+    setSuccess(`Saved {{var.${name}}} on ${correlationReview.sourceName} and used it in ${result.replaced} ${result.replaced === 1 ? 'place' : 'places'}.${result.skipped ? ` ${result.skipped} could not be replaced exactly and keep the recorded value.` : ''} Undo puts the recorded values back; changes are not saved yet.`)
+    setError('')
+  }
   // The reference field last focused, for "This step produces" › Insert.
   const referenceInsertTarget = useRef<((expression: string) => void) | null>(null)
   useEffect(() => { referenceInsertTarget.current = null }, [activeInspectorScope?.path])
@@ -5840,7 +5916,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           onAddExtractor={(idx) => addPhaseExtractor(activeInspectorScope.phase, idx)}
           onUpdateExtractor={(actionIdx, extIdx, field, value) => updatePhaseExtractor(activeInspectorScope.phase, actionIdx, extIdx, field, value)}
           onRemoveExtractor={(actionIdx, extIdx) => removePhaseExtractor(activeInspectorScope.phase, actionIdx, extIdx)}
-          onAddAssertion={(idx) => addPhaseAssertion(activeInspectorScope.phase, idx)}
+          onAddAssertion={(idx, assertion) => addPhaseAssertion(activeInspectorScope.phase, idx, assertion)}
           onUpdateAssertion={(actionIdx, assertionIdx, field, value) => updatePhaseAssertion(activeInspectorScope.phase, actionIdx, assertionIdx, field, value)}
           onRemoveAssertion={(actionIdx, assertionIdx) => removePhaseAssertion(activeInspectorScope.phase, actionIdx, assertionIdx)}
           onAddHeader={(idx) => addPhaseHeader(activeInspectorScope.phase, idx)}
@@ -5860,6 +5936,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           issues={(actionIssueBuckets[activeInspectorScope.phase]?.[activeInspectorScope.actionIndex] || []).filter(issue => JSON.stringify(issue.stepPath || []) === JSON.stringify(authorCodeFocus?.stepPath || []))}
           catalogContext={inspectorLiveTableContext}
           onOpenSource={() => { setShowFullScriptJson(false); openCenterTab(SCRIPT_JSON_TAB_ID) }}
+          checksReplay={checksReplay.replay}
+          checksUnavailable={checksReplay.unavailable}
         />
       </ReferenceFieldContext.Provider>
     ) : null
@@ -6355,7 +6433,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (!['init', 'action', 'teardown'].includes(event.phase)) return
     const actionIndex = event.action_index ?? 0
     const phase = event.phase as ScriptActionPhase
-    const path = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : []
+    const path = replayEventStepPath(event)
     const key = `${phase}:${actionIndex}${path.length ? `#${path.join('/')}` : ''}`
     const scope = resolveAuthorJsonScopeByKey(script, key)
     if (!scope) return
@@ -6369,9 +6447,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorRightSidebarCollapsed(false)
     setShowFullScriptJson(false)
     requestInspectorFocus({ phase, actionIndex, stepPath: path }, panel => {
+      // The first check's answer: what it expects, else what it looks for.
       const assertions = panel.querySelector('[data-action-section="assertions"]')
-      return assertions?.querySelector<HTMLElement>('input[aria-label*="expected"]')
-        || assertions?.querySelector<HTMLElement>('input')
+      const check = assertions?.querySelector('[data-check-index]') || assertions
+      return check?.querySelector<HTMLElement>('[data-check-field="expected"] input, [data-check-field="max"] input')
+        || check?.querySelector<HTMLElement>('[data-check-field="value"] input')
+        || check?.querySelector<HTMLElement>('input, select')
         || panel.querySelector<HTMLElement>('.action-editor-panel input')
     }, script, true)
   }
@@ -6379,7 +6460,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (!['init', 'action', 'teardown'].includes(event.phase)) return null
     const actionIndex = event.action_index ?? 0
     const phase = event.phase as ScriptActionPhase
-    const stepPath = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : []
+    const stepPath = replayEventStepPath(event)
     const scope = resolveAuthorJsonScopeByKey(script, `${phase}:${actionIndex}${stepPath.length ? `#${stepPath.join('/')}` : ''}`)
     return scope ? { scope, phase, actionIndex, stepPath } : null
   }
@@ -6839,6 +6920,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
     }}>
       {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onInsertMany={insertPreparedActions} sharedData={insertSharedData} onClose={() => setInsertSeed(null)} onOpenThinkTime={() => { setInsertSeed(null); openCenterTab('runtime-settings'); selectRuntimeSettingsSection('think') }} library={renderActionLibrary()} />}
+      {correlationReview && <CorrelationReviewDialog value={correlationReview.value} sourceName={correlationReview.sourceName} suggestedName={correlationReview.suggestedName} taken={correlationReview.taken} uses={correlationReview.uses} onApply={applyCorrelationReview} onClose={() => setCorrelationReview(null)} />}
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
       {showAuthorProblems && <IssueDetailsDialog title="Author Problems" issues={editorIssueDetails} onClose={() => setShowAuthorProblems(false)} />}
       {datasetChange && <DatasetChangeReview change={datasetChange} affected={(script.parameters || []).filter(parameter => parameter.data_source?.trim().toLowerCase() === datasetChange.before.name.trim().toLowerCase()).map(parameter => parameter.name)} error={datasetChangeError} onApply={applyDatasetChange} onCancel={() => setDatasetChange(null)} />}
@@ -7163,6 +7245,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             actionProblemRows={actionProblemRows}
             activeReplaySessionId={activeReplaySessionId}
             addExtractorDefinition={addExtractorDefinition}
+            responseActions={responseActions}
             api={api}
             applyReplaySuggestedLocator={applyReplaySuggestedLocator}
             breakpointSummary={breakpointSummary}

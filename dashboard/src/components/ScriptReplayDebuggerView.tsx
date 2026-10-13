@@ -1,6 +1,8 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
 import LiveTableStepResult from './LiveTableStepResult'
+import ResponseSelection, { type ResponseSelectionValue } from './ResponseSelection'
 import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
+
 import { scriptDataUsage } from './scriptDataUsageModel'
 import { liveTableSandboxError } from './liveTableSandboxModel'
 import TooltipButton from './ux/TooltipButton'
@@ -135,6 +137,19 @@ interface ReplayVariableTimelineEntry {
   previous?: string
 }
 
+/** What text selected in a replayed response can become, by the event's step. */
+export interface ResponseActions {
+  /** Whether the response's status can become a check (HTTP). */
+  offersStatus: boolean
+  disabledReason: (event: BrowserReplayEvent) => string
+  laterUses: (event: BrowserReplayEvent, text: string) => number
+  /** Each adds to the event's step and says whether it did (false: the step already had it). */
+  onContains: (event: BrowserReplayEvent, text: string) => boolean
+  onSave: (event: BrowserReplayEvent, selection: ResponseSelectionValue) => boolean
+  onCorrelate: (event: BrowserReplayEvent, selection: ResponseSelectionValue) => void
+  onStatus: (event: BrowserReplayEvent, status: number) => boolean
+}
+
 export interface ScriptReplayDebuggerViewProps {
   /** The debugger's run controls (Step, Continue, Stop…), drawn first in the session bar. */
   sessionControls?: ReactNode
@@ -204,6 +219,8 @@ export interface ScriptReplayDebuggerViewProps {
   http3UpgradeScopes?: (event: BrowserReplayEvent) => HTTP3UpgradeScope[]
   onSwitchToHTTP3Upgrade?: (event: BrowserReplayEvent, scope: HTTP3UpgradeScope) => void
   script: ScriptDefinition
+  /** What text selected in a step's replayed response can become, for that step. */
+  responseActions?: ResponseActions
   scriptId?: string | null
   scriptLevelIssues: AuthoringIssue[]
   scriptRecordingStatus: ScriptRecordingStatus | null
@@ -281,6 +298,7 @@ export function ScriptReplayDebuggerView({
   replayVariableTimeline,
   saving,
   script,
+  responseActions,
   scriptId,
   scriptLevelIssues,
   scriptRecordingStatus,
@@ -1412,13 +1430,31 @@ export function ScriptReplayDebuggerView({
                                             {copiedReplaySnapshotSection === `${index}:response` ? 'Copied' : 'Copy full response'}
                                           </button>
                                         </div>
-                                        <pre>{String(event.snapshot.response_status || event.status_code || 'n/a')}</pre>
-                                        <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.response_headers)} />
-                                        <SnapshotBodyPreview
-                                          body={event.snapshot.response_body}
-                                          headers={event.snapshot.response_headers}
-                                          emptyMessage="No response body captured"
-                                        />
+                                        {(() => {
+                                          const response = <>
+                                            <pre>{String(event.snapshot.response_status || event.status_code || 'n/a')}</pre>
+                                            <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.response_headers)} />
+                                            <SnapshotBodyPreview
+                                              body={event.snapshot.response_body}
+                                              headers={event.snapshot.response_headers}
+                                              emptyMessage="No response body captured"
+                                            />
+                                          </>
+                                          const bodyState = event.snapshot.response_body_state || event.response_body_state
+                                          // One selection per event: another event, or a new replay, starts afresh.
+                                          return responseActions ? <ResponseSelection
+                                            key={`${index}:${event.started_at}`}
+                                            body={event.snapshot.response_body}
+                                            bodyState={bodyState === 'partial' || bodyState === 'redacted' ? bodyState : 'whole'}
+                                            status={responseActions.offersStatus ? event.snapshot.response_status || event.status_code : undefined}
+                                            disabledReason={responseActions.disabledReason(event)}
+                                            laterUses={text => responseActions.laterUses(event, text)}
+                                            onContains={text => responseActions.onContains(event, text)}
+                                            onSave={selection => responseActions.onSave(event, selection)}
+                                            onCorrelate={selection => responseActions.onCorrelate(event, selection)}
+                                            onStatus={status => responseActions.onStatus(event, status)}
+                                          >{response}</ResponseSelection> : response
+                                        })()}
                                       </div>
                                     </div>
                                   ) : (

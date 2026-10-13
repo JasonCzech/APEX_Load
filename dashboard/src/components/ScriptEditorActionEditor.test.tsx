@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition } from '../types/scripts'
 import { ActionEditor, ControlBranchEditor, ControlFlowFields } from './ScriptEditorActionEditor'
-import { ProtocolAssertionsSection } from './scriptActionFields'
 import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
 
 vi.mock('./SourceCodeViewer', () => ({
@@ -280,52 +279,45 @@ describe('ActionEditor transaction field', () => {
     expect(labelInput('Transaction')!.value).toBe('Auth')
   })
 
-  it('edits imported Aura success assertions without value fields and offers them only for HTTP', () => {
+  it('shows imported Aura success checks without value fields and offers them only for HTTP', () => {
     const action: ScriptActionDefinition = { name: 'Aura batch', type: 'request', method: 'POST', target: '/aura', assertions: [{ type: 'aura_actions_success' }] }
-    const update = vi.fn()
+    const addMenu = () => container.querySelector('.action-checks-add select') as HTMLSelectElement
     for (const protocol of ['http', 'http/1.1', 'http/2']) {
-      renderEditor(action, { protocol, assertionUpdate: update })
-      const row = container.querySelector('.assertion-row')!
-      const select = row.querySelector('select') as HTMLSelectElement
-      expect(select.value).toBe('aura_actions_success')
-      expect(select.selectedOptions[0].textContent).toBe('Aura actions succeed')
-      expect(row.querySelectorAll('input')).toHaveLength(0)
-      act(() => { setSelectValue(select, 'status_code') })
-      expect(update).toHaveBeenCalledWith(0, 0, 'type', 'status_code')
+      renderEditor(action, { protocol, inspector: true })
+      const row = container.querySelector('[aria-label="Check 1: Aura actions succeed"]')!
+      expect(row.querySelectorAll('input, select')).toHaveLength(0)
+      expect([...addMenu().options].map(option => option.value)).toContain('aura_actions_success')
     }
     for (const protocol of ['browser', 'grpc', 'soap', 'database', 'network', 'websocket', 'java_http', 'kafka']) {
-      renderEditor({ ...action, assertions: [{ type: 'body_contains', value: 'ok' }] }, { protocol })
-      const select = container.querySelector('.assertion-row select') as HTMLSelectElement
-      expect([...select.options].map(option => option.value)).not.toContain('aura_actions_success')
+      renderEditor({ ...action, assertions: [{ type: 'body_contains', value: 'ok' }] }, { protocol, inspector: true })
+      expect([...addMenu().options].map(option => option.value)).not.toContain('aura_actions_success')
     }
   })
 
-  it('clears incompatible fields when switching an authored check to Aura success', () => {
-    let current: ScriptActionDefinition
-    function AuthoredCheck() {
-      const [action, setAction] = useState<ScriptActionDefinition>({ name: 'Aura request', type: 'request', target: '/aura', assertions: [{ type: 'status_code', expected: 200, value: 'recorded-id', min: 1, max: 5000, legacy_html_check: true }] })
-      current = action
-      return <ProtocolAssertionsSection action={action} index={0} protocol="http" onAddAssertion={() => {}} onRemoveAssertion={() => {}} onUpdateAssertion={(_index, assertionIndex, field, value) => setAction(previous => ({ ...previous, assertions: previous.assertions!.map((assertion, index) => index === assertionIndex ? { ...assertion, [field]: value } : assertion) }))} />
-    }
-    act(() => { root.render(<AuthoredCheck />) })
-    act(() => { setSelectValue(container.querySelector('.assertion-row select') as HTMLSelectElement, 'aura_actions_success') })
-    expect(JSON.parse(JSON.stringify(current!.assertions))).toEqual([{ type: 'aura_actions_success' }])
-    expect(container.querySelectorAll('.assertion-row input')).toHaveLength(0)
+  it('adds an Aura success check with no other fields', () => {
+    const added: unknown[] = []
+    act(() => {
+      root.render(<ActionEditor inspector action={{ name: 'Aura request', type: 'request', target: '/aura' }} index={0} parameters={[]} onUpdate={() => {}} onAddExtractor={() => {}} onUpdateExtractor={() => {}} onRemoveExtractor={() => {}}
+        onAddAssertion={(_index, assertion) => added.push(assertion)} onUpdateAssertion={() => {}} onRemoveAssertion={() => {}} onAddHeader={() => {}} onUpdateHeader={() => {}} onRemoveHeader={() => {}} onAddMetadata={() => {}} onUpdateMetadata={() => {}} onRemoveMetadata={() => {}}
+        onBeginParameterEdit={() => {}} methodColor={() => '#000'} protocol="http" isBrowserScript={false} isJmsScript={false} isSoapScript={false} issues={[]} />)
+    })
+    act(() => { setSelectValue(container.querySelector('.action-checks-add select') as HTMLSelectElement, 'aura_actions_success') })
+    expect(added).toEqual([{ type: 'aura_actions_success' }])
   })
 
-  it('offers exact HTTP header and regex-capture assertion types', () => {
+  it('offers exact HTTP header and regex-capture checks with labelled fields', () => {
     renderEditor({
       name: 'Imported request',
       type: 'POST',
       target: '/service',
       assertions: [{ type: 'header_contains', value: 'Content-Type', expected: 'text/xml' }],
-    } as unknown as ScriptActionDefinition)
+    } as unknown as ScriptActionDefinition, { inspector: true })
 
-    const assertionType = container.querySelector('.assertion-row select') as HTMLSelectElement
-    expect([...assertionType.options].map(option => option.value)).toContain('header_contains')
-    expect([...assertionType.options].map(option => option.value)).toContain('body_regex_capture_equals')
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Header name"]')?.value).toBe('Content-Type')
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Expected value"]')?.value).toBe('text/xml')
+    const kinds = [...(container.querySelector('.action-checks-add select') as HTMLSelectElement).options].map(option => option.value)
+    expect(kinds).toContain('header_contains')
+    expect(kinds).toContain('body_regex_capture_equals')
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Check 1 header"]')?.value).toBe('Content-Type')
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Check 1 contains"]')?.value).toBe('text/xml')
   })
 
   it('preserves and edits authoritative ordered header occurrences', () => {
@@ -518,10 +510,12 @@ describe('ActionEditor transaction field', () => {
       type: 'POST',
       target: '/service',
       assertions: [{ type: 'body_regex_capture_equals', value: '<code>([^<]+)</code>', expected: '500' }],
-    } as unknown as ScriptActionDefinition)
+    } as unknown as ScriptActionDefinition, { inspector: true })
 
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="RE2 pattern"]')?.value).toBe('<code>([^<]+)</code>')
-    expect(container.querySelector<HTMLInputElement>('input[placeholder="Expected value"]')?.value).toBe('500')
+    const pattern = container.querySelector<HTMLInputElement>('[aria-label="Check 1 pattern"]')!
+    expect(pattern.value).toBe('<code>([^<]+)</code>')
+    expect(pattern.placeholder).toBe('RE2 pattern')
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Check 1 equals"]')?.value).toBe('500')
   })
 
   it.each([

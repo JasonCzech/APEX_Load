@@ -1,7 +1,7 @@
 import { humanActionType } from './authorExperience'
 import NativeScriptActionFields from './NativeScriptActionFields'
 import { useActionParameterMenu } from './useActionParameterMenu'
-import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
+import { OpenActionBody } from './actionInspectorContext'
 import type { HTTP3ScriptContext } from './httpQUICModel'
 import { useState, useEffect, createContext, useContext, useId } from 'react'
 import TabList from './ux/TabList'
@@ -11,11 +11,13 @@ import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
 import { asString, httpSequenceRequests, isControlAction, isSourceFunctionAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
 import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
 import { dslActionTypesForProtocol, dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
-import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
+import { BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
 import { httpSequenceExecutionSettings, setHTTPSequenceExecutionMode, setHTTPSequenceMaxConcurrency, type HTTPSequenceExecutionMode } from './httpSequenceExecutionModel'
 import { describeHTMLStep, htmlStepOf } from './htmlSteps'
 import CatalogActionForm from './CatalogActionForm'
+import ActionChecks from './ActionChecks'
+import type { ChecksReplay } from './actionChecksModel'
 import ReferenceField from './ReferenceField'
 import { HTTP_RUNTIME_ACTION_TYPES, NO_RESPONSE_ACTION_TYPES, hasHandBuiltEditor, type LiveTableFormContext } from './catalogActionFormModel'
 
@@ -41,7 +43,7 @@ function SourceFunctionSummary({ action }: { action: Action }) {
   </div>
 }
 
-export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues, catalogContext, onOpenSource }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues, catalogContext, onOpenSource, checksReplay, checksUnavailable }: {
   inspector?: boolean
   initialSection?: string
   onOpenBody?: () => void
@@ -51,7 +53,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   onAddExtractor: (i: number) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
   onRemoveExtractor: (ai: number, ei: number) => void
-  onAddAssertion: (i: number) => void
+  onAddAssertion: (i: number, assertion?: Assertion) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onRemoveAssertion: (ai: number, ai2: number) => void
   onAddHeader: (i: number) => void
@@ -74,6 +76,10 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   catalogContext?: LiveTableFormContext
   /** Opens the action's JSON, for what a form cannot edit. */
   onOpenSource?: () => void
+  /** The step's last replay, for each check's and saved value's result. */
+  checksReplay?: ChecksReplay | null
+  /** Why a replayed script has no result for this step, or ''. */
+  checksUnavailable?: string
 }) {
   const [section, setSection] = useState(initialSection)
   const sectionIdBase = useId()
@@ -104,7 +110,6 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       </TabList>}
       <div hidden={inspector && section !== 'request'} {...sectionPanel('request')}>
       <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
-      <ManagedActionChecks.Provider value={inspector}>
       {isHTTPSequence ? (
         <HTTPSequenceFields action={action} index={index} onUpdate={onUpdate} />
       ) : (
@@ -148,76 +153,45 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             <WebSocketActionFields
               action={action}
               index={index}
-              onAddAssertion={onAddAssertion}
-              onAddExtractor={onAddExtractor}
               onAddHeader={onAddHeader}
-              onRemoveAssertion={onRemoveAssertion}
-              onRemoveExtractor={onRemoveExtractor}
               onRemoveHeader={onRemoveHeader}
               onSelectionMenu={openSelectionMenu}
               onUpdate={onUpdate}
-              onUpdateAssertion={onUpdateAssertion}
-              onUpdateExtractor={onUpdateExtractor}
               onUpdateHeader={onUpdateHeader}
             />
           ) : isGrpcScript ? (
             <GrpcActionFields
               action={action}
               index={index}
-              onAddAssertion={onAddAssertion}
-              onAddExtractor={onAddExtractor}
               onAddHeader={onAddHeader}
-              onRemoveAssertion={onRemoveAssertion}
-              onRemoveExtractor={onRemoveExtractor}
               onRemoveHeader={onRemoveHeader}
               onSelectionMenu={openSelectionMenu}
               onUpdate={onUpdate}
-              onUpdateAssertion={onUpdateAssertion}
-              onUpdateExtractor={onUpdateExtractor}
               onUpdateHeader={onUpdateHeader}
             />
           ) : isDatabaseScript ? (
             <DatabaseActionFields
               action={action}
               index={index}
-              onAddAssertion={onAddAssertion}
-              onAddExtractor={onAddExtractor}
-              onRemoveAssertion={onRemoveAssertion}
-              onRemoveExtractor={onRemoveExtractor}
               onSelectionMenu={openSelectionMenu}
               onUpdate={onUpdate}
-              onUpdateAssertion={onUpdateAssertion}
-              onUpdateExtractor={onUpdateExtractor}
             />
           ) : isNetworkScript ? (
             <NetworkActionFields
               action={action}
               index={index}
-              onAddAssertion={onAddAssertion}
-              onAddExtractor={onAddExtractor}
-              onRemoveAssertion={onRemoveAssertion}
-              onRemoveExtractor={onRemoveExtractor}
               onSelectionMenu={openSelectionMenu}
               onUpdate={onUpdate}
-              onUpdateAssertion={onUpdateAssertion}
-              onUpdateExtractor={onUpdateExtractor}
             />
           ) : isJmsScript ? (
             <JmsActionFields
               action={action}
               index={index}
-              protocol={protocol}
               onAddHeader={onAddHeader}
               onAddMetadata={onAddMetadata}
-              onAddAssertion={onAddAssertion}
-              onAddExtractor={onAddExtractor}
-              onRemoveAssertion={onRemoveAssertion}
-              onRemoveExtractor={onRemoveExtractor}
               onRemoveHeader={onRemoveHeader}
               onRemoveMetadata={onRemoveMetadata}
               onUpdate={onUpdate}
-              onUpdateAssertion={onUpdateAssertion}
-              onUpdateExtractor={onUpdateExtractor}
               onUpdateHeader={onUpdateHeader}
               onUpdateMetadata={onUpdateMetadata}
               onSelectionMenu={openSelectionMenu}
@@ -231,15 +205,9 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
               index={index}
               isBrowserScript={isBrowserScript}
               isSoapScript={isSoapScript}
-              onAddAssertion={onAddAssertion}
-              onAddExtractor={onAddExtractor}
               onAddHeader={onAddHeader}
-              onRemoveAssertion={onRemoveAssertion}
-              onRemoveExtractor={onRemoveExtractor}
               onRemoveHeader={onRemoveHeader}
               onUpdate={onUpdate}
-              onUpdateAssertion={onUpdateAssertion}
-              onUpdateExtractor={onUpdateExtractor}
               onUpdateHeader={onUpdateHeader}
               onSelectionMenu={openSelectionMenu}
             />
@@ -247,14 +215,12 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
         </>
       )}
 
-      </ManagedActionChecks.Provider>
       </OpenActionBody.Provider>
       </div>
       {inspector && (isHTTPRuntimeControl || isHTTPSequence || isControlAction(action)) && <div hidden={section !== 'checks'} className="sub-section" {...sectionPanel('checks')}><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : isHTTPRuntimeControl ? 'This action changes HTTP state and has no response to extract or check.' : 'Select a request inside this block to configure response extraction and checks.'}</p></div>}
       {inspector && NO_RESPONSE_ACTION_TYPES.has(action.type) && <div hidden={section !== 'checks'} className="sub-section" {...sectionPanel('checks')}><p>This action has no response to extract from or check{action.type === 'live_table' ? '; a live-table step’s results are the variables under its “Save results as” name' : ''}.</p></div>}
       {inspector && !isHTTPRuntimeControl && !isHTTPSequence && !isControlAction(action) && !NO_RESPONSE_ACTION_TYPES.has(action.type) && <div hidden={section !== 'checks'} {...sectionPanel('checks')}>
-        {!isBrowserScript && <ProtocolExtractorsSection action={action} index={index} protocol={protocol} onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />}
-        <ProtocolAssertionsSection action={action} index={index} protocol={protocol} onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
+        <ActionChecks action={action} index={index} protocol={protocol} isBrowserScript={isBrowserScript} replay={checksReplay} unavailable={checksUnavailable} onAddExtractor={onAddExtractor} onUpdateExtractor={onUpdateExtractor} onRemoveExtractor={onRemoveExtractor} onAddAssertion={onAddAssertion} onUpdateAssertion={onUpdateAssertion} onRemoveAssertion={onRemoveAssertion} />
       </div>}
       <div hidden={inspector && section !== 'metadata'} {...sectionPanel('metadata')}>
         {inspector && <ActionCoreFields typeOnly action={action} index={index} protocol={protocol} isBrowserScript={isBrowserScript} isJmsScript={isJmsScript} onUpdate={onUpdate} />}		  <details className="sub-section"><summary>Advanced: analytics attribution</summary>

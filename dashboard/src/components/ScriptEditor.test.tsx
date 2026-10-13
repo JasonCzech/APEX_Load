@@ -10858,7 +10858,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Database scripts model secret-backed DSNs')
     expect(container.textContent).toContain('SQL And Binds')
     expect(container.textContent).toContain('Bind Parameters')
-    expect(container.textContent).toContain('Scalar Equals')
+    expect(container.textContent).toContain('First value equals …')
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
     expect(runtimeToggle).toBeTruthy()
@@ -10914,7 +10914,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Network scripts model DNS, TCP, UDP')
     expect(container.textContent).toContain('Protocol Controls')
     expect(container.textContent).toContain('Read response')
-    expect(container.textContent).toContain('Transcript Contains')
+    expect(container.textContent).toContain('Transcript contains …')
     expect(container.textContent).not.toContain('HTTP Transport')
   })
 

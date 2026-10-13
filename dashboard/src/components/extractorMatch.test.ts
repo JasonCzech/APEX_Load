@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { evaluateExtractor } from './extractorMatch'
+import { boundaryExpression, evaluateExtractor } from './extractorMatch'
 
 describe('evaluateExtractor — regex', () => {
   it('returns the first capture group when present, else the whole match', () => {
@@ -46,10 +46,25 @@ describe('evaluateExtractor — json path', () => {
 
 describe('evaluateExtractor — non-previewable types', () => {
   it('marks boundary/xpath/css as not previewable', () => {
-    for (const type of ['boundary', 'xpath', 'css', 'jmespath', 'sse_event']) {
+    for (const type of ['xpath', 'css', 'jmespath', 'sse_event']) {
       const result = evaluateExtractor(type, 'whatever', 'body')
       expect(result.previewable).toBe(false)
       expect(result.matches).toEqual([])
     }
   })
 })
+
+describe('evaluateExtractor — boundaries', () => {
+  const body = 'a <input name="csrf" value="tok1"> b <input name="csrf" value="tok2">'
+  it('finds each value between the boundaries, the first being what is saved', () => {
+    expect(evaluateExtractor('boundary', 'value="|||"', body).matches).toEqual(['tok1', 'tok2'])
+    expect(evaluateExtractor('boundary', 'nothing|||"', body).matches).toEqual([])
+    expect(evaluateExtractor('boundary', 'no separator', body).error).toContain('left|||right')
+  })
+  it('reads the engine’s configured form, ordinal and case included', () => {
+    expect(evaluateExtractor('boundary', '__apexload_boundary_config__:{"left":"VALUE=\\"","right":"\\"","ordinal":2,"case_insensitive":true}', body).matches).toEqual(['tok2'])
+    expect(boundaryExpression('a', 'b')).toBe('a|||b')
+    expect(evaluateExtractor('boundary', boundaryExpression('x|||', '|'), 'x|||val|').matches).toEqual(['val'])
+  })
+})
+

@@ -8,7 +8,7 @@ import { issueTitle } from './importReviewIssues'
 import { collectAuthoringIssues } from './scriptAuthoringAssist'
 import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
-import { ProtocolAssertionsSection, ProtocolExtractorsSection } from './scriptActionFields'
+import ActionChecks from './ActionChecks'
 import { describeExtractorDFEs, describeExtractorScope } from './extractorScope'
 import { describeHTMLStep, htmlStepOf } from './htmlSteps'
 import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
@@ -138,7 +138,7 @@ describe('cookie extractor surface', () => {
   })
 })
 
-describe('HTTP extractor rows', () => {
+describe('HTTP saved value rows', () => {
   function selectFor(label: string) {
     return document.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement
   }
@@ -146,26 +146,26 @@ describe('HTTP extractor rows', () => {
     const select = selectFor(label)
     return select.options[select.selectedIndex]?.textContent
   }
+  const checks = (action: unknown) => <ActionChecks action={action as never} index={0} protocol="http" isBrowserScript={false} onAddExtractor={vi.fn()} onUpdateExtractor={vi.fn()} onRemoveExtractor={vi.fn()} onAddAssertion={vi.fn()} onUpdateAssertion={vi.fn()} onRemoveAssertion={vi.fn()} />
 
   it('offers the source-specific types and keeps unsupported stored values visible', () => {
-    const action = {
+    render(checks({
       name: 'a', type: 'http', method: 'GET', target: '/',
       extractors: [
         { name: 'final', source: 'url', type: '', expression: '' },
         { name: 'sid', source: 'cookies', type: 'boundary', expression: 'sid=|||;' },
         { name: 'legacy', source: 'cookie', type: 'regex', expression: 'sid=(.+)' },
       ],
-    }
-    render(<ProtocolExtractorsSection action={action as never} index={0} protocol="http" onAddExtractor={vi.fn()} onRemoveExtractor={vi.fn()} onUpdateExtractor={vi.fn()} />)
-    expect(selectedLabel('Extractor 1 source')).toBe('Final URL')
-    expect(selectedLabel('Extractor 1 type')).toBe('Whole value')
-    expect(selectedLabel('Extractor 2 source')).toBe('Set-Cookie lines')
-    expect([...selectFor('Extractor 2 type').options].map(option => option.value)).toEqual(['regex', 'boundary', 'regex_count', 'regex_ordinal'])
-    expect(selectedLabel('Extractor 3 source')).toBe('Unsupported: cookie')
+    }))
+    expect(selectedLabel('Saved value 1 from')).toBe('Final URL')
+    expect(selectedLabel('Saved value 1 how')).toBe('Whole value')
+    expect(selectedLabel('Saved value 2 from')).toBe('Set-Cookie lines')
+    expect([...selectFor('Saved value 2 how').options].map(option => option.value)).toEqual(['regex', 'boundary', 'regex_count', 'regex_ordinal'])
+    expect(selectedLabel('Saved value 3 from')).toBe('Unsupported: cookie')
   })
 
   it('shows every type the validator accepts as supported', () => {
-    const action = {
+    render(checks({
       name: 'a', type: 'http', method: 'GET', target: '/',
       extractors: [
         { name: 'location', source: 'header', type: 'header', expression: 'Location' },
@@ -173,12 +173,11 @@ describe('HTTP extractor rows', () => {
         { name: 'second', source: 'body', type: 'regex_ordinal', expression: 'id=(\\d+)' },
         { name: 'hops', source: 'header', type: 'regex_count', expression: 'Via' },
       ],
-    }
-    render(<ProtocolExtractorsSection action={action as never} index={0} protocol="http" onAddExtractor={vi.fn()} onRemoveExtractor={vi.fn()} onUpdateExtractor={vi.fn()} />)
-    expect(selectedLabel('Extractor 1 type')).toBe('Named header')
-    expect(selectedLabel('Extractor 2 type')).toBe('JSONPath')
-    expect(selectedLabel('Extractor 3 type')).toBe('Regex ordinal')
-    expect(selectedLabel('Extractor 4 type')).toBe('Regex count')
+    }))
+    expect(selectedLabel('Saved value 1 how')).toBe('Named header')
+    expect(selectedLabel('Saved value 2 how')).toBe('JSONPath')
+    expect(selectedLabel('Saved value 3 how')).toBe('Regex ordinal')
+    expect(selectedLabel('Saved value 4 how')).toBe('Regex count')
   })
 })
 
@@ -193,16 +192,16 @@ describe('extractor scope summary', () => {
   })
 })
 
-describe('HTTP text assertions', () => {
+describe('HTTP text checks', () => {
+  const checks = (action: unknown, onUpdate = vi.fn()) => <ActionChecks action={action as never} index={0} protocol="http" isBrowserScript={false} onAddExtractor={vi.fn()} onUpdateExtractor={vi.fn()} onRemoveExtractor={vi.fn()} onAddAssertion={vi.fn()} onUpdateAssertion={onUpdate} onRemoveAssertion={vi.fn()} />
+
   it('edits the source and case of a text check', () => {
     const onUpdate = vi.fn()
-    const action = { name: 'a', type: 'http', method: 'GET', target: '/', assertions: [{ type: 'text_matches', value: 'Order [0-9]+', source: 'headers', case_insensitive: true }] }
-    render(<ProtocolAssertionsSection action={action as never} index={0} protocol="http" onAddAssertion={vi.fn()} onRemoveAssertion={vi.fn()} onUpdateAssertion={onUpdate} />)
-    const type = document.querySelector('select[aria-label="Assertion 1 type"]') as HTMLSelectElement
-    expect(type.options[type.selectedIndex].textContent).toBe('Text matches pattern')
-    const source = document.querySelector('select[aria-label="Assertion 1 source"]') as HTMLSelectElement
+    render(checks({ name: 'a', type: 'http', method: 'GET', target: '/', assertions: [{ type: 'text_matches', value: 'Order [0-9]+', source: 'headers', case_insensitive: true }] }, onUpdate))
+    expect(document.querySelector('[aria-label="Check 1: Response matches the pattern …"]')).not.toBeNull()
+    const source = document.querySelector('select[aria-label="Check 1 look in"]') as HTMLSelectElement
     expect(source.value).toBe('headers')
-    const ignoreCase = document.querySelector('input[aria-label="Assertion 1 ignore case"]') as HTMLInputElement
+    const ignoreCase = document.querySelector('input[aria-label="Check 1 ignore case"]') as HTMLInputElement
     expect(ignoreCase.checked).toBe(true)
     act(() => {
       source.value = 'all'
@@ -211,18 +210,11 @@ describe('HTTP text assertions', () => {
     expect(onUpdate).toHaveBeenCalledWith(0, 0, 'source', 'all')
     act(() => { ignoreCase.click() })
     expect(onUpdate).toHaveBeenCalledWith(0, 0, 'case_insensitive', undefined)
-    act(() => {
-      type.value = 'status_code'
-      type.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    expect(onUpdate).toHaveBeenCalledWith(0, 0, 'type', 'status_code')
-    expect(onUpdate).toHaveBeenCalledWith(0, 0, 'source', undefined)
   })
 
   it('shows an explicit body source as Body', () => {
-    const action = { name: 'a', type: 'http', method: 'GET', target: '/', assertions: [{ type: 'text_contains', value: 'Welcome', source: 'body' }] }
-    render(<ProtocolAssertionsSection action={action as never} index={0} protocol="http" onAddAssertion={vi.fn()} onRemoveAssertion={vi.fn()} onUpdateAssertion={vi.fn()} />)
-    const source = document.querySelector('select[aria-label="Assertion 1 source"]') as HTMLSelectElement
+    render(checks({ name: 'a', type: 'http', method: 'GET', target: '/', assertions: [{ type: 'text_contains', value: 'Welcome', source: 'body' }] }))
+    const source = document.querySelector('select[aria-label="Check 1 look in"]') as HTMLSelectElement
     expect(source.options[source.selectedIndex].textContent).toBe('Body')
   })
 })

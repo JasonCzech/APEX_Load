@@ -314,14 +314,16 @@ HTTP responses outside 200–399 fail by default even without assertions (see th
 
 | Assertion `type` | Fields | Passes when |
 | --- | --- | --- |
-| `status_code` | `expected` (int) | Status equals `expected` |
-| `status_code_not` | `expected` (int) | Status does not equal `expected` |
+| `status_code` | `expected` (int, or a reference) | Status equals `expected` |
+| `status_code_not` | `expected` (int, or a reference) | Status does not equal `expected` |
 | `status_code_range` | `min`, `max` | Status falls in the range |
 | `response_time_ms` | `max` | Response time is at or under `max` |
 | `body_contains` | `value` | Body contains the substring |
 | `body_not_contains` | `value` | Body does not contain the substring |
 | `header_contains` | `value` (header name), `expected` (substring) | The named header contains the substring |
 | `body_regex_capture_equals` | `value` (pattern), `expected` | The first capture group equals `expected` |
+
+`expected` and `value` take references, so a status can come from a parameter or a saved value (`"expected": "{{var.expected_status}}"`). In the script editor, **Correlation & checks** adds checks by what they test and shows each one's result against the last replay; selecting text in a replayed response makes a check, a saved value, or a value later steps send in place of the recorded one. See the [Script Debugger Guide](SCRIPT_DEBUGGER_GUIDE.md#author-and-debug-workspace).
 
 ### Transactions
 

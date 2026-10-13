@@ -42,6 +42,29 @@ func TestEvaluate_StatusCode_InvalidExpected(t *testing.T) {
 	}
 }
 
+func TestStatusCodeExpectedMayComeFromAParameter(t *testing.T) {
+	r := &protocol.Result{StatusCode: 201}
+	// Resolved, a parameter reads as a decimal string.
+	if err := evaluate(protocol.Assertion{Type: "status_code", Expected: "201"}, r, ""); err != nil {
+		t.Fatalf("decimal string expected: %v", err)
+	}
+	if err := evaluate(protocol.Assertion{Type: "status_code", Expected: "200"}, r, ""); err == nil {
+		t.Fatal("a different decimal status passed")
+	}
+	for _, malformed := range []string{"0201", "+201", "201 ", "{{param.status}}"} {
+		if err := evaluate(protocol.Assertion{Type: "status_code", Expected: malformed}, r, ""); err == nil {
+			t.Fatalf("%q passed as a status", malformed)
+		}
+	}
+	// Authored, the reference is accepted; it is checked once resolved.
+	if err := ValidateAssertionDefinition(protocol.Assertion{Type: "status_code", Expected: "{{param.status}}"}); err != nil {
+		t.Fatalf("template expected rejected: %v", err)
+	}
+	if err := ValidateAssertionDefinition(protocol.Assertion{Type: "status_code", Expected: "ok"}); err == nil || !strings.Contains(err.Error(), `got "ok"`) {
+		t.Fatalf("non-numeric literal: %v", err)
+	}
+}
+
 func TestEvaluate_StatusCodeRange_Pass(t *testing.T) {
 	r := &protocol.Result{StatusCode: 204}
 	err := evaluate(protocol.Assertion{Type: "status_code_range", Min: 200, Max: 299}, r, "")

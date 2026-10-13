@@ -87,12 +87,12 @@ describe('ExtractorTester', () => {
     const typeDropdown = selects[1] as HTMLSelectElement
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
-      setter.call(typeDropdown, 'boundary')
+      setter.call(typeDropdown, 'xpath')
       typeDropdown.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const expression = container.querySelector('.extractor-tester-expression') as HTMLInputElement
-    await act(async () => { setInput(expression, 'LB::RB') })
-    expect(container.textContent).toContain('No live preview for boundary')
+    await act(async () => { setInput(expression, '//input/@value') })
+    expect(container.textContent).toContain('No live preview for xpath')
     const addButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add as extractor') as HTMLButtonElement
     expect(addButton.disabled).toBe(false)
     void typeSelect

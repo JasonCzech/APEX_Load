@@ -243,3 +243,15 @@ func TestHTTPFamilyMethodOverridesUnknownType(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPStatusAssertionTakesAReference(t *testing.T) {
+	script := &Script{Name: "status from a parameter", Protocol: "http", Config: ScriptConfig{BaseURL: "https://example.test"},
+		Parameters: []Parameter{{Name: "status", Type: "list", Values: []string{"201"}}},
+		Actions:    []Action{{Name: "request", Type: "request", Method: "GET", Target: "/", Assertions: []Assertion{{Type: "status_code", Expected: "{{param.status}}"}}}}}
+	for _, issue := range ValidateScriptIssues(script) {
+		if strings.Contains(issue, "assertion") {
+			t.Fatalf("templated status rejected: %v", issue)
+		}
+	}
+}
+

@@ -176,6 +176,16 @@ export function stepsBefore(script: ScriptDefinition, point: InsertionPoint): Pl
   return placed.filter(item => precedes(item.segments, at) !== null)
 }
 
+/**
+ * The steps that run after the step at `position`, on a path through it
+ * (another branch or lane is left out; the step's own inner steps too).
+ */
+export function stepsAfter(script: ScriptDefinition, position: StepPosition): PlacedStep[] {
+  const placed = placeSteps(script)
+  const anchor = placed.find(item => samePosition(item.position, position)) || placed.find(item => samePosition(item.position, { phase: position.phase, actionIndex: position.actionIndex }))
+  return anchor ? placed.filter(item => precedes(anchor.segments, item.segments) !== null) : []
+}
+
 export interface StepOutput { expression: string; detail: string; kind?: 'record_id' | 'record_version' | 'lease' }
 
 // Per step object: an edit replaces only the step it changes, so typing in

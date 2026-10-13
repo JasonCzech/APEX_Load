@@ -1,0 +1,34 @@
+/* A step's saved values and checks, each with its result from the last replay. */
+.action-checks { display: grid; gap: 14px; }
+.action-checks-replay, .action-checks-empty, .action-checks-note { margin: 0; color: var(--text-secondary); }
+.action-checks-list { display: grid; gap: 8px; }
+.action-checks-list > h4 { margin: 0; }
+.action-checks-list > .btn { justify-self: start; }
+.action-check-row { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.action-check-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.action-check-fields > label { display: grid; gap: 4px; min-width: 0; flex: 1 1 140px; }
+.action-check-fields > label.checkbox-inline { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.action-check-fields > label.action-check-reference { flex: 2 1 200px; }
+.action-check-fields > label.action-check-wide { flex: 3 1 220px; }
+.action-check-question { flex: 1 1 100%; font-weight: 600; }
+.action-check-fields > .btn-icon { margin-left: auto; }
+.action-check-result { font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.action-check-result.passed { color: var(--success-text); }
+.action-check-result.failed { color: var(--danger-text); }
+.action-check-result.unchecked { color: var(--text-secondary); }
+.action-checks-add { display: grid; gap: 4px; max-width: 360px; }
+
+/* Text selected in a replayed response, and what it can become. */
+.response-selection { display: grid; gap: 6px; }
+.response-selection-status { display: flex; justify-content: flex-end; }
+.response-selection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.response-selection-actions > span { flex: 1 1 100%; overflow-wrap: anywhere; }
+.response-selection-done { margin: 0; }
+
+/* Reviewing where a saved value replaces its recorded copies. */
+.correlation-review-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 24px; display: grid; gap: 10px; }
+.correlation-review-dialog > label { display: grid; gap: 4px; max-width: 320px; }
+.correlation-review-uses { display: grid; gap: 6px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; max-height: 320px; overflow: auto; }
+.correlation-review-use { display: flex; align-items: baseline; gap: 8px; }
+.correlation-review-use code { overflow-wrap: anywhere; }
+.correlation-review-use mark { background: var(--accent-soft); color: inherit; }
