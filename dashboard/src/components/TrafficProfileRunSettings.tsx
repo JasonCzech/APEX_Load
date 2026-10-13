@@ -1,4 +1,5 @@
 import type { GoalConfig, TrafficProfile } from '../types'
+import { formatUpTo } from '../utils/numberFormat'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
 import { formatTrafficProfileAxisTime, trafficProfilePeak } from './trafficProfilePreviewModel'
@@ -12,8 +13,6 @@ interface Props {
   onChangeProfile: () => void
 }
 
-const formatNumber = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-
 function sourceLabel(source: TrafficProfile['source']): string {
   if (source.kind === 'multiple') return `${source.sources?.length ?? 0} files, one per group`
   if (source.kind === 'prometheus') return 'Prometheus query'
@@ -23,8 +22,8 @@ function sourceLabel(source: TrafficProfile['source']): string {
 
 function scaleLabel(profile: TrafficProfile, unit: string): string {
   const amplitude = profile.amplitude
-  if (amplitude?.mode === 'peak' && amplitude.value !== undefined) return `Peak scaled to ${formatNumber(amplitude.value)} ${unit}`
-  return `${formatNumber(amplitude?.value ?? 1)} × the source`
+  if (amplitude?.mode === 'peak' && amplitude.value !== undefined) return `Peak scaled to ${formatUpTo(amplitude.value)} ${unit}`
+  return `${formatUpTo(amplitude?.value ?? 1)} × the source`
 }
 
 /**
@@ -49,7 +48,7 @@ export default function TrafficProfileRunSettings({ profile, goalConfig, onGoalC
         <button type="button" className="btn btn-secondary" onClick={onChangeProfile}>Change profile</button>
       </div>
       <dl className="scenario-profile-summary">
-        <div><dt>Peak</dt><dd>{formatNumber(trafficProfilePeak(profile))} {unit}</dd></div>
+        <div><dt>Peak</dt><dd>{formatUpTo(trafficProfilePeak(profile))} {unit}</dd></div>
         <div><dt>Replay length</dt><dd>{replaySeconds > 0 ? formatTrafficProfileAxisTime(replaySeconds) : profile.target_duration}</dd></div>
         <div><dt>Scale</dt><dd>{scaleLabel(profile, unit)}</dd></div>
         <div><dt>Groups</dt><dd>{profile.mappings.map(mapping => mapping.group_name).join(', ')}</dd></div>

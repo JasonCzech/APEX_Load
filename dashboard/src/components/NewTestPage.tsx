@@ -22,6 +22,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
+import { formatUpTo } from '../utils/numberFormat'
 import { formatTimeCompact, isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { SortIndicator } from './SortIndicator'
@@ -224,7 +225,7 @@ type GroupEditChanges = {
   assignment: boolean
 }
 
-const formatProfileTps = (value: number | undefined) => (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
+const formatProfileTps = (value: number | undefined) => formatUpTo(value ?? 0)
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'

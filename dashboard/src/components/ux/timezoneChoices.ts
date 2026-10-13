@@ -3,7 +3,7 @@ import { COMMON_TIMEZONES, formatTimeZoneClock, formatTimeZoneOffset } from '../
 const FALLBACK_TIMEZONES = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Tokyo', 'Asia/Kolkata', 'Australia/Sydney']
 
 /** Every IANA zone the browser knows, or a short list when it cannot say. */
-export const ALL_TIMEZONES: readonly string[] = (() => {
+const ALL_TIMEZONES: readonly string[] = (() => {
   const extendedIntl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }
   try {
     return extendedIntl.supportedValuesOf?.('timeZone') || FALLBACK_TIMEZONES

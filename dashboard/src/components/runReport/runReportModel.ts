@@ -166,7 +166,7 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
 // A goal or traffic-profile run leads with its goal: the TPS it delivered
 // against the TPS it was asked for, and how much of the run was on target.
 // This takes the peak TPS card's place; the peak stays in Performance.
-export function goalAttainmentKpi(attainment: RunArchiveOverview['goal_attainment'], history: MetricsHistoryPoint[]): ReportKpi | undefined {
+function goalAttainmentKpi(attainment: RunArchiveOverview['goal_attainment'], history: MetricsHistoryPoint[]): ReportKpi | undefined {
   if (!attainment || attainment.windows <= 0) return undefined
   const off = attainment.over_windows + attainment.under_windows
   const direction = attainment.over_windows > 0 && attainment.under_windows === 0 ? ' over'

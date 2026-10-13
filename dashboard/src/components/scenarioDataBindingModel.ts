@@ -43,7 +43,7 @@ export function scenarioDataRequirements(scripts: StoredScript[]): Map<string, S
   return requirements
 }
 /** Each problem with the bindings, tagged with the binding it belongs to. */
-export function dataBindingIssues(bindings: ScenarioDataPoolBinding[]): { index: number; message: string }[] {
+function dataBindingIssues(bindings: ScenarioDataPoolBinding[]): { index: number; message: string }[] {
   const issues: { index: number; message: string }[] = []
   const aliases = new Set<string>()
   bindings.forEach((binding, index) => {

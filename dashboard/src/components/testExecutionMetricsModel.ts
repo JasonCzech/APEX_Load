@@ -283,7 +283,7 @@ export function recentMetricAverages(
 }
 
 /** The window journeys per minute are counted over, and its label. */
-export const JOURNEY_RATE_WINDOW_MS = 60_000
+const JOURNEY_RATE_WINDOW_MS = 60_000
 export const JOURNEY_RATE_WINDOW = '1 min avg'
 const MIN_JOURNEY_RATE_SPAN_MS = 15_000
 

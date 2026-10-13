@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { formatFixed, formatPercentValue } from './numberFormat'
+import { formatFixed, formatPercentValue, formatUpTo } from './numberFormat'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -18,4 +18,11 @@ it('keeps en-US output and the below-precision marker', () => {
   expect(formatPercentValue(0)).toBe('0.00%')
   expect(formatPercentValue(0.004)).toBe('<0.01%')
   expect(formatPercentValue(12.345, 1)).toBe('12.3%')
+})
+
+it('drops trailing zeros up to the digit limit', () => {
+  expect(formatUpTo(12)).toBe('12')
+  expect(formatUpTo(12.5)).toBe('12.5')
+  expect(formatUpTo(1234.5678)).toBe('1,234.57')
+  expect(formatUpTo(0.123, 1)).toBe('0.1')
 })

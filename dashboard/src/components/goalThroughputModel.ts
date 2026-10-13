@@ -3,7 +3,7 @@
 // target once the gap reaches 5% either way. Gaps use the engine's sign —
 // (target − actual) / target, positive under the target, negative over it.
 
-export const GOAL_GAP_ALERT_PCT = 5
+const GOAL_GAP_ALERT_PCT = 5
 
 /** The gap of actual to target: positive under, negative over; undefined without a target. */
 export function throughputGapToTarget(actual: number | undefined, target: number | undefined): number | undefined {

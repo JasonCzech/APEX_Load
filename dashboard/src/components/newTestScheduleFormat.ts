@@ -21,7 +21,7 @@ export function formatScheduleTimestampInZone(value: string, timeZone?: string) 
 }
 
 /** A schedule instant in a zone with the zone's short name, e.g. "Oct 12, 2026, 1:30 AM CDT". */
-export function formatScheduleTimestampWithZone(value: string, timeZone?: string) {
+function formatScheduleTimestampWithZone(value: string, timeZone?: string) {
   try {
     return new Date(value).toLocaleString(undefined, { timeZone: timeZone || 'UTC', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
   } catch {

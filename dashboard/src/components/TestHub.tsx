@@ -32,6 +32,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
+import { formatUpTo } from '../utils/numberFormat'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import './TestHub.css'
 import './CreateTestModal.css'
@@ -422,7 +423,7 @@ function vusersForScriptGroup(group: Pick<ScenarioFormGroup, 'vusers' | 'stages'
 
 /** A traffic-profile target in its own unit: "12 TPS", "30 VUsers". */
 function formatProfileLoad(value: number, runtimeTarget?: 'tps' | 'vusers') {
-  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${runtimeTarget === 'vusers' ? 'VUsers' : 'TPS'}`
+  return `${formatUpTo(value)} ${runtimeTarget === 'vusers' ? 'VUsers' : 'TPS'}`
 }
 
 function findScriptById(scripts: StoredScript[], scriptId?: string) {
@@ -735,7 +736,6 @@ function ScenarioModelPreviewPanel({
   const groupSeries = model.series.filter(series => series.kind === 'group')
   const tpsSeries = model.series.filter(series => series.kind === 'tps')
   const includesTps = tpsSeries.length > 0
-  const formatTps = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
   // A VUser plan is drawn from the run projection, so the builder, New Test,
   // Command Center and the results show one picture. A plan the goal
   // controller sizes at runtime has only its TPS targets to draw.
@@ -789,9 +789,9 @@ function ScenarioModelPreviewPanel({
         </div>
         <div className="scenario-model-summary">
           {model.showVUsers && <span><strong>{peakVusers}</strong> peak VUsers</span>}
-          {stats.peakTps !== undefined && <span><strong>{formatTps(stats.peakTps)}</strong> peak TPS</span>}
-          {stats.minTps !== undefined && <span><strong>{formatTps(stats.minTps)}</strong> minimum TPS</span>}
-          {stats.averageTps !== undefined && <span><strong>{formatTps(stats.averageTps)}</strong> average TPS</span>}
+          {stats.peakTps !== undefined && <span><strong>{formatUpTo(stats.peakTps)}</strong> peak TPS</span>}
+          {stats.minTps !== undefined && <span><strong>{formatUpTo(stats.minTps)}</strong> minimum TPS</span>}
+          {stats.averageTps !== undefined && <span><strong>{formatUpTo(stats.averageTps)}</strong> average TPS</span>}
           {stats.estimatedPeakVusers !== undefined && <span><strong>{stats.estimatedPeakVusers.toLocaleString()}</strong> estimated peak VUsers</span>}
           {stats.recommendedGenerators !== undefined && stats.recommendedGenerators > 0 && <span><strong>{stats.recommendedGenerators}</strong> recommended generators</span>}
           <span><strong>{formatModelTimeLabel(durationSeconds)}</strong> duration</span>
