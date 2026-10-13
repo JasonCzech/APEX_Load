@@ -90,6 +90,21 @@ export function trafficProfileTpsStatistics(
   }
 }
 
+// A profile is replaced, never edited in place, so its peak is computed once:
+// lists show it for every scenario on every render and sort by it.
+const profilePeaks = new WeakMap<TrafficProfile, number>()
+
+/** The highest summed target of all mapped groups, in the profile's runtime unit (TPS or VUsers). */
+export function trafficProfilePeak(profile: TrafficProfile | undefined): number {
+  if (!profile?.mappings.length) return 0
+  const cached = profilePeaks.get(profile)
+  if (cached !== undefined) return cached
+  const lastOffsetSeconds = profile.mappings.reduce((latest, mapping) => mapping.points.reduce((value, point) => Math.max(value, point.offset_ms / 1000), latest), 0)
+  const peak = trafficProfileTpsStatistics(profile.mappings, Math.max(parseDurationToSeconds(profile.target_duration), lastOffsetSeconds + 1)).maximum
+  profilePeaks.set(profile, peak)
+  return peak
+}
+
 export function trafficProfileTimelineSeconds(profile: TrafficProfile | undefined, limit = trafficProfilePreviewPointLimit): number[] {
   if (!profile || limit < 2) return []
   const durationSeconds = Math.max(0, parseDurationToSeconds(profile.target_duration))
@@ -145,4 +160,61 @@ export function inferTimestampMode(samples: string[][] | undefined, columns: str
   if (values.every(value => RELATIVE_TIME.test(value))) return 'relative'
   if (values.every(value => !Number.isNaN(Date.parse(value)) && /\d{4}-\d{2}-\d{2}/.test(value))) return 'absolute'
   return undefined
+}
+
+// Column-name words that mean a response time or a duration, never a clock
+// time or a workload count: "response_time", "avg_rt_ms", "Latency".
+const DURATION_COLUMN_WORDS = new Set(['art', 'rt', 'latency', 'response', 'resp', 'duration', 'ms', 'millis', 'milliseconds', 'seconds', 'secs'])
+const TIME_COLUMN_WORDS = new Set(['timestamp', 'time', 'date', 'datetime', 'ts', 'elapsed', 'period'])
+
+function columnWords(column: string): string[] {
+  return column.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+}
+
+function namesDuration(column: string): boolean {
+  return columnWords(column).some(word => DURATION_COLUMN_WORDS.has(word))
+}
+
+/**
+ * The column that most likely holds the timestamps: a time- or date-named
+ * column whose samples read as times, else the first such name, else the
+ * first column whose samples read as dates or elapsed times. Empty when
+ * nothing qualifies.
+ */
+export function suggestTimestampColumn(columns: string[], samples: string[][] | undefined): string {
+  const named = columns.filter(column => !namesDuration(column) && columnWords(column).some(word => TIME_COLUMN_WORDS.has(word)))
+  return named.find(column => inferTimestampMode(samples, columns, column))
+    || named[0]
+    || columns.find(column => inferTimestampMode(samples, columns, column))
+    || ''
+}
+
+/** The numeric columns to replay as workload: not the excluded ones, and not response times or durations. */
+export function suggestValueColumns(columns: string[], samples: string[][] | undefined, exclude: string[]): string[] {
+  return columns.filter((column, index) => {
+    if (exclude.includes(column) || namesDuration(column)) return false
+    const values = (samples || []).map(row => (row[index] || '').trim()).filter(Boolean)
+    return values.length > 0 && values.every(value => Number.isFinite(Number(value)))
+  })
+}
+
+/**
+ * Each group's series: a choice that still exists stays (an empty choice is
+ * a deliberate "none"), a group named like a series takes it, and a single
+ * series goes to every group. Other groups are left for the author to
+ * choose: a guess by position would replay another group's traffic without
+ * saying so.
+ */
+export function suggestGroupSeries(groupNames: string[], series: Array<{ key: string; name: string }>, current: Record<string, string>): Record<string, string> {
+  const keys = new Set(series.map(item => item.key))
+  const next: Record<string, string> = {}
+  groupNames.forEach(name => {
+    if (Object.prototype.hasOwnProperty.call(current, name) && (current[name] === '' || keys.has(current[name]))) next[name] = current[name]
+    else if (series.length === 1) next[name] = series[0].key
+    else {
+      const match = series.find(item => [item.name, item.key].some(value => normalizedGroupName(value) === normalizedGroupName(name)))
+      if (match) next[name] = match.key
+    }
+  })
+  return next
 }

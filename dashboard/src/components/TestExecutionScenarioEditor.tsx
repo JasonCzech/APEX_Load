@@ -56,6 +56,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
         projectId={owningProjectId}
         scripts={availableScripts}
         initialScenario={initialScenario}
+        profileManaged={test.traffic_profile?.runtime_target === 'tps' && Boolean(test.traffic_profile.mappings?.length)}
         onClose={onClose}
         onCreated={(createdTest) => {
           if (createdTest?.id) {

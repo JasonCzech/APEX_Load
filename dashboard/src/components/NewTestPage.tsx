@@ -109,6 +109,7 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { effectiveGroupVUsers, maxVUsersForRole, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
+import { trafficProfileMappingForGroup, trafficProfilePeak } from './trafficProfilePreviewModel'
 import {
   canonicalThinkTimeType,
   thinkTimeConfigForType,
@@ -238,6 +239,32 @@ function totalScenarioVUsers(scenario?: StoredScenario | null) {
   return scenario?.scripts.reduce((sum, script) => sum + effectiveGroupVUsers(script), 0) || 0
 }
 
+/** A production traffic profile drives the load; its groups' VUsers are only the seed. */
+function scenarioTrafficProfile(scenario?: StoredScenario | null) {
+  return scenario?.traffic_profile?.mappings.length ? scenario.traffic_profile : undefined
+}
+
+/**
+ * The VUsers a scenario reaches: a VUser profile's peak plus the groups it
+ * leaves static, or a TPS profile's planning estimate (undefined until its
+ * ART sizing is complete, since the runtime sets the VUsers).
+ */
+function scenarioPeakVUsers(scenario?: StoredScenario | null): number | undefined {
+  const profile = scenarioTrafficProfile(scenario)
+  if (!profile) return totalScenarioVUsers(scenario)
+  if (profile.runtime_target === 'tps') return profile.sizing?.complete ? profile.sizing.estimated_peak_vusers : undefined
+  const staticVUsers = (scenario?.scripts || []).filter(script => !trafficProfileMappingForGroup(profile, script.name)).reduce((sum, script) => sum + effectiveGroupVUsers(script), 0)
+  return Math.round(trafficProfilePeak(profile)) + staticVUsers
+}
+
+/** "20 VUsers", or a profile's peak in its own unit. */
+function formatScenarioLoad(scenario: StoredScenario) {
+  const profile = scenarioTrafficProfile(scenario)
+  if (profile?.runtime_target === 'tps') return `peak ${formatProfileTps(trafficProfilePeak(profile))} TPS`
+  const vusers = scenarioPeakVUsers(scenario) ?? 0
+  return `${profile ? 'peak ' : ''}${vusers.toLocaleString()} VUser${vusers === 1 ? '' : 's'}`
+}
+
 function totalGroupVUsers(groups: ScenarioScriptGroup[]) {
   return groups.reduce((sum, script) => sum + (script.vusers || 0), 0)
 }
@@ -270,14 +297,19 @@ function groupProtocolList(groups: ScenarioScriptGroup[]) {
   return Array.from(values)
 }
 
-function formatScenarioModeShort(value?: StoredScenario['scenario_mode']) {
-  return value === 'goal_oriented' ? 'Goal' : 'VUser'
+function formatScenarioModeShort(scenario: StoredScenario) {
+  if (scenarioTrafficProfile(scenario)) return 'Traffic Profile'
+  return scenario.scenario_mode === 'goal_oriented' ? 'Goal' : 'VUser'
+}
+
+/** Goal and traffic-profile scenarios (TPS or VUser profiles alike) share the accented chip. */
+function scenarioModeChipClass(scenario: StoredScenario) {
+  return `new-test-scenario-card-mode ${scenario.scenario_mode === 'goal_oriented' || scenarioTrafficProfile(scenario) ? 'goal' : ''}`
 }
 
 function formatScenarioWorkloadSummary(scenario: StoredScenario) {
   const groupCount = scenario.scripts.length
-  const vusers = totalScenarioVUsers(scenario)
-  return `${groupCount} group${groupCount === 1 ? '' : 's'} · ${vusers} VUsers`
+  return `${groupCount} group${groupCount === 1 ? '' : 's'} · ${formatScenarioLoad(scenario)}`
 }
 
 function formatScenarioReleaseSummary(scenario: StoredScenario) {
@@ -1332,7 +1364,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const sortedScenarios = useMemo(() => {
     const valueFor = (item: StoredScenario): string | number => {
       if (scenarioSortField === 'last_run_at') return new Date(item.last_run_at || 0).getTime()
-      if (scenarioSortField === 'vusers') return totalScenarioVUsers(item)
+      if (scenarioSortField === 'vusers') return scenarioPeakVUsers(item) ?? -1
       if (scenarioSortField === 'duration') return parseDurationToSeconds(item.duration)
       if (scenarioSortField === 'groups') return item.scripts.length
       if (scenarioSortField === 'releases') return formatScenarioReleaseSummary(item).toLowerCase()
@@ -3008,7 +3040,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     })
                   }}>
                     <option value="">Select scenario</option>
-                    {[...scenarios].sort((a, b) => scenarioIdentity(a).localeCompare(scenarioIdentity(b))).filter(item => item.id === scenarioId || scenarioSearchText(item).includes(scheduleQuery.toLowerCase())).map(item => <option key={item.id} value={item.id}>{scenarioIdentity(item)} · {item.duration} · {totalScenarioVUsers(item)} VUsers</option>)}
+                    {[...scenarios].sort((a, b) => scenarioIdentity(a).localeCompare(scenarioIdentity(b))).filter(item => item.id === scenarioId || scenarioSearchText(item).includes(scheduleQuery.toLowerCase())).map(item => <option key={item.id} value={item.id}>{scenarioIdentity(item)} · {item.duration} · {formatScenarioLoad(item)}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
@@ -3075,7 +3107,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   <p>Source: {editingScheduleId ? 'saved schedule' : 'system scheduling defaults'}. These policies are submitted with this schedule.</p>
                   <dl><dt>Approval</dt><dd>{formatScheduleToken(scheduleDraft.approval_policy)}</dd><dt>Missed runs</dt><dd>{formatScheduleToken(scheduleDraft.missed_run_policy)}</dd></dl>
                   <p>To change defaults, review scheduling settings with your administrator.</p>
-                  {scenario && <p>Stored workload: <strong>{scenarioIdentity(scenario)}</strong> · {totalScenarioVUsers(scenario)} VUsers · {scenario.duration} · {scenario.scripts.length} groups. Run-only overrides do not apply.</p>}
+                  {scenario && <p>Stored workload: <strong>{scenarioIdentity(scenario)}</strong> · {formatScenarioLoad(scenario)} · {scenario.duration} · {scenario.scripts.length} groups. Run-only overrides do not apply.</p>}
                 </section>
                 <details className="schedule-policy-details"><summary>Optional schedule windows and pauses</summary>
                 <ScheduleWindowListEditor
@@ -3363,7 +3395,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             {scenario && <div className="new-test-selected" role="group" aria-label="Selected scenario">
               <div className="new-test-selected-header">
                 <div>
-                  <h4 ref={selectedScenarioHeadingRef} tabIndex={-1}>{scenarioIdentity(scenario)} <span className={`new-test-scenario-card-mode ${scenario.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(scenario.scenario_mode)}</span></h4>
+                  <h4 ref={selectedScenarioHeadingRef} tabIndex={-1}>{scenarioIdentity(scenario)} <span className={scenarioModeChipClass(scenario)}>{formatScenarioModeShort(scenario)}</span></h4>
                   <p className="new-test-selected-meta">{formatScenarioWorkloadSummary(scenario)} · {scenario.termination_mode === 'iterations' ? 'All iterations' : scenario.duration || 'Duration not set'} · Results release: {release?.name || 'Select a release'}</p>
                   <p className="new-test-selected-meta">{scenario.associated_releases?.length ? `Previously run in ${formatScenarioReleaseSummary(scenario)}` : 'Not run in a release yet'} · Most recent run: {formatDate(scenario.last_run_at)}</p>
                 </div>
@@ -3512,7 +3544,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                       >
                                         <span>{item.name}<small className="new-test-reference">{item.ref_key || item.id}</small></span>
                                       </button>
-                                      <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
+                                      <span className={scenarioModeChipClass(item)}>{formatScenarioModeShort(item)}</span>
                                     </div>
                                     <div className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</div>
                                   </td>
@@ -3525,7 +3557,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                     </div>
                                   </td>
                                   <td className="cell-muted">{formatDate(item.last_run_at)}</td>
-                                  <td>{totalScenarioVUsers(item)}</td>
+                                  <td>{scenarioPeakVUsers(item)?.toLocaleString() ?? <span className="cell-muted" title="Set at runtime by the traffic profile's TPS targets">Adaptive</span>}</td>
                                   <td>{item.termination_mode === 'iterations' ? 'All iterations' : item.duration || 'Not set'}</td>
                                   <td>{item.scripts.length}</td>
                                   <td>

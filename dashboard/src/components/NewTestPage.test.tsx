@@ -1720,6 +1720,13 @@ describe('NewTestPage', () => {
     })
     await flushPromises()
 
+    // The profile drives the load, so the scenario reads as one with its
+    // peak, not as a Goal scenario with the seed VUsers.
+    const card = container.querySelector('[aria-label="Selected scenario"]')
+    expect(card?.querySelector('.new-test-scenario-card-mode')?.textContent).toBe('Traffic Profile')
+    expect(card?.querySelector('.new-test-selected-meta')?.textContent).toContain('1 group · peak 12 TPS')
+    expect(card?.textContent).not.toContain('9 VUsers')
+
     const profileCard = container.querySelector('.new-test-profile-card')
     expect(profileCard?.textContent).toContain('Production-derived adaptive TPS targets')
     expect(profileCard?.textContent).toContain('3minimum TPS')

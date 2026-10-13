@@ -12,6 +12,8 @@ export type CompositionTimelineGroup = {
   vusers: number
   stages?: LoadStageDraft[]
   role?: 'load' | 'observer'
+  /** What sets the group's load when its VUsers do not, e.g. "peak 12 TPS" from a traffic profile. */
+  loadLabel?: string
 }
 
 type Props = {
@@ -61,7 +63,7 @@ export function ScenarioCompositionTimeline({ duration, groups, onOffsetChange, 
           <div className={`composition-track ${selectedGroupIndex === index ? 'selected' : ''}`} key={`${group.script_id || 'group'}-${index}`}>
             <button type="button" className="composition-track-label" aria-pressed={selectedGroupIndex === index} aria-controls={children ? 'scenario-active-group-panel' : undefined} onClick={() => onGroupSelect?.(index)}>
               <strong>{group.name || `Group ${index + 1}`}</strong>
-              <span>{group.vusers} VUsers · {group.role || 'load'}</span>
+              <span>{group.loadLabel || `${group.vusers} VUsers`} · {group.role || 'load'}</span>
             </button>
             <div className="composition-track-lane">
               <div className="composition-clip" style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}>

@@ -34,6 +34,8 @@ interface Props {
   onCreated: (test: TestSummary) => void
   initialScenario?: ScenarioDraft
   mode?: 'create-queued-run' | 'revise-queued-run'
+  /** The run replays a TPS traffic profile: it is the throughput target, so none is offered. */
+  profileManaged?: boolean
 }
 
 // The groups' protocols, for the goal ceilings they can produce; unknown
@@ -46,7 +48,7 @@ function knownGroupProtocols(groups: ReadonlyArray<{ scriptId: string }>, script
   return protocols.length > 0 ? protocols : undefined
 }
 
-export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
+export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run', profileManaged = false }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const registerGuard = useContext(NavigationGuardRegisterContext)
@@ -532,6 +534,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
           {scenarioMode === 'goal_oriented' && (
             <CreateTestGoalSettings
               protocols={knownGroupProtocols(groups, scripts)}
+              profileManaged={profileManaged || (scenarioDraft.trafficProfile?.runtime_target === 'tps' && scenarioDraft.trafficProfile.mappings.length > 0)}
               goalConfig={goalConfig}
               onGoalConfigChange={updateGoalConfig}
             />

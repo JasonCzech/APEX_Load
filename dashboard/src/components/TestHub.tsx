@@ -43,7 +43,7 @@ import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { formatPacing, formatThinkTime, formatErrorHandling, overrideFromRuntimeDraft } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
-import { adaptScenarioShapeDefaults, availableScenarioModelFamilies, shapeFamilyFor, type ScenarioModelFamilyId,buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, availableScenarioModelFamilies, BROWSER_DEFAULT_GROUP_VUSERS, DEFAULT_GROUP_VUSERS, shapeFamilyFor, type ScenarioModelFamilyId,buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import ReplaceScenarioScriptsModal from './ReplaceScenarioScriptsModal'
 import type { ClosedVUserConfig, ClosedVUserDefinition, GoalDrivenARTConfig, GoalDrivenConfig, GoalDrivenGroupDefinition, SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
 import { BaselineGroupOption, baselineGroupOptions, littlesLawVUsers } from './goalSizingUtils'
@@ -95,6 +95,8 @@ import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline, type CompositionTimelineGroup } from './ScenarioCompositionTimeline'
+import TrafficProfileRunSettings from './TrafficProfileRunSettings'
+import { trafficProfileMappingForGroup } from './trafficProfilePreviewModel'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
 import CSVDrivenSourcePanel from './CSVDrivenSourcePanel'
 import ScenarioDataBindings from './ScenarioDataBindings'
@@ -226,7 +228,7 @@ function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
   return {
     name: index === 0 ? '' : `Group ${index + 1}`,
     script_id: scriptId,
-    vusers: 10,
+    vusers: DEFAULT_GROUP_VUSERS,
     ramp_up: '',
 		ramp_down: '',
 		start_offset: '',
@@ -402,6 +404,23 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
     pacing: form.runtime_settings?.pacing ? { ...form.runtime_settings.pacing } as ScenarioSeed['pacing'] : undefined,
     runtime_settings: form.runtime_settings ? structuredClone(form.runtime_settings) : undefined,
   }
+}
+
+// A browser group starts lower than other groups. A group still at its
+// script kind's default count (it cannot be told from one typed to match)
+// moves to the other default when its script changes between a browser
+// script and any other; any other count, or a staged group, stays.
+function vusersForScriptGroup(group: Pick<ScenarioFormGroup, 'vusers' | 'stages'>, script: StoredScript, previousScript?: StoredScript) {
+  if (group.stages.length > 0) return group.vusers
+  const wasBrowser = previousScript?.protocol === 'browser'
+  const isBrowser = script.protocol === 'browser'
+  if (wasBrowser === isBrowser || group.vusers !== (wasBrowser ? BROWSER_DEFAULT_GROUP_VUSERS : DEFAULT_GROUP_VUSERS)) return group.vusers
+  return isBrowser ? BROWSER_DEFAULT_GROUP_VUSERS : DEFAULT_GROUP_VUSERS
+}
+
+/** A traffic-profile target in its own unit: "12 TPS", "30 VUsers". */
+function formatProfileLoad(value: number, runtimeTarget?: 'tps' | 'vusers') {
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${runtimeTarget === 'vusers' ? 'VUsers' : 'TPS'}`
 }
 
 function findScriptById(scripts: StoredScript[], scriptId?: string) {
@@ -1036,7 +1055,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
   )
-  const compositionTimelineGroups = useMemo(() => scenarioTimelineGroups(formGroups.map(scenarioDraftGroupFromForm)), [formGroups])
+  // A group a traffic profile drives shows the profile's peak, not its seed VUsers.
+  const compositionTimelineGroups = useMemo(() => scenarioTimelineGroups(formGroups.map(scenarioDraftGroupFromForm)).map((group, index) => {
+    const mapping = trafficProfileMappingForGroup(form.traffic_profile, formGroups[index]?.name || `Group ${index + 1}`)
+    return mapping ? { ...group, loadLabel: `peak ${formatProfileLoad(mapping.peak_target, form.traffic_profile?.runtime_target)}` } : group
+  }), [form.traffic_profile, formGroups])
   const allScenarioGroupsHaveScripts = formGroups.every(group => Boolean(group.script_id.trim()))
   const duplicateGroupNameIndexes = useMemo(
     () => duplicateScenarioGroupNameIndexes(formGroups.map(group => group.name)),
@@ -1176,7 +1199,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 		}
 		return ''
 	}, [closedVUserConfig, form.duration, formGroups, isGuidedClosedVUser])
-  const activeProfileMapping = form.traffic_profile?.mappings.find(mapping => mapping.group_name === (activeStageGroup?.name || `Group ${activeGroupIndex + 1}`))
+  const activeProfileMapping = trafficProfileMappingForGroup(form.traffic_profile, activeStageGroup?.name || `Group ${activeGroupIndex + 1}`)
   const activeStageTimeline = useMemo(
     () => validateStageTimeline(form.duration, activeStageGroup?.stages || []),
     [activeStageGroup?.stages, form.duration],
@@ -1884,6 +1907,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       setSelectedCloneScenarioId('')
       setSelectedLoadModelTemplateId('')
       setSelectedShapeId('')
+      // A profile belongs to the source it was built from: another source starts without one.
+      setForm(previous => previous.traffic_profile ? { ...previous, traffic_profile: undefined } : previous)
     }
     setModelFamilyChoice('')
     setWizardStep(mode === 'existing' ? 'scripts' : 'source')
@@ -1988,6 +2013,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       const seededGoal: GoalConfig = { ...authoredGuardrails, ...structuredClone(seed.goal || {}) }
       return {
       ...prev,
+      // A shape or template sets the load itself: a traffic profile no longer applies.
+      traffic_profile: undefined,
       duration: seed.duration || prev.duration,
       scenario_mode: seed.scenario_mode || 'vuser_driven',
       script_shakeout: seed.script_shakeout ?? prev.script_shakeout,
@@ -2032,6 +2059,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
     const preset = getScenarioShapePreset(shapeId)
     const shapeChanged = shapeId !== selectedShapeId
+    // Any other shape sets the load itself, so an applied traffic profile goes.
+    setForm(previous => previous.traffic_profile ? { ...previous, traffic_profile: undefined } : previous)
     setSelectedShapeId(shapeId)
     setSelectedCloneScenarioId('')
     setSelectedLoadModelTemplateId('')
@@ -2486,6 +2515,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         ...prev.groups,
         {
           ...emptyScenarioGroup(script.id, prev.groups.length),
+          vusers: vusersForScriptGroup(emptyScenarioGroup(script.id, prev.groups.length), script),
           name: scenarioGroupNameAfterScriptSelection(
             '',
             prev.groups.length,
@@ -2514,9 +2544,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (scriptSelectionTargetIndex !== null && formGroups[scriptSelectionTargetIndex]) {
       const targetIndex = scriptSelectionTargetIndex
       const targetGroup = formGroups[targetIndex]
-      const previousScriptName = findScriptById(scripts, targetGroup.script_id)?.name || ''
+      const previousScript = findScriptById(scripts, targetGroup.script_id)
+      const previousScriptName = previousScript?.name || ''
       updateScenarioGroup(targetIndex, {
         script_id: script.id,
+        vusers: vusersForScriptGroup(targetGroup, script, previousScript),
         name: scenarioGroupNameAfterScriptSelection(
           targetGroup.name,
           targetIndex,
@@ -3539,7 +3571,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       const emptyIndex = groups.findIndex(group => !group.script_id)
                       const index = emptyIndex >= 0 ? emptyIndex : groups.length
                       const group = emptyIndex >= 0 ? groups[index] : emptyScenarioGroup('', index)
-                      groups[index] = { ...group, script_id: script.id, name: scenarioGroupNameAfterScriptSelection(group.name, index, script.name, '', groups.map(item => item.name)) }
+                      groups[index] = { ...group, script_id: script.id, vusers: vusersForScriptGroup(group, script, findScriptById(scripts, group.script_id)), name: scenarioGroupNameAfterScriptSelection(group.name, index, script.name, '', groups.map(item => item.name)) }
                     }
                     return { ...current, groups: ensureScenarioGroups(groups) }
                   })
@@ -3928,7 +3960,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               const groupLabel = group.name || `Group ${index + 1}`
               const readiness = selectedScript ? scriptReadiness.get(selectedScript.id) : undefined
               const vusersSizedBy = form.traffic_profile
-                ? form.traffic_profile.mappings.some(mapping => mapping.group_name === group.name) ? 'the traffic profile' : ''
+                ? trafficProfileMappingForGroup(form.traffic_profile, group.name) ? 'the traffic profile' : ''
                 : form.scenario_mode === 'goal_oriented' ? 'the goal' : ''
               return (
                 <div
@@ -4005,9 +4037,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         title="Observer canaries are small browser groups that continuously report Web Vitals and stay pinned during goal-based scaling."
                       >
                         <option value="load">Load</option>
-                        <option value="observer" disabled={selectedScript?.protocol !== 'browser'}>
-                          Observer canary{selectedScript?.protocol !== 'browser' ? ' (browser scripts only)' : ''}
-                        </option>
+                        {/* Observer canaries are browser groups: other scripts are not offered the role. */}
+                        {(selectedScript?.protocol === 'browser' || group.role === 'observer') && <option value="observer">Observer canary</option>}
                       </select>
                       {group.role === 'observer' && <small>Observer canaries are capped at {OBSERVER_MAX_VUSERS} VUsers.</small>}
                     </label>
@@ -4289,7 +4320,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <div className="scenario-assignment-header">
               <div>
                 <h4>Load per group</h4>
-                <p>{form.scenario_mode === 'goal_oriented' ? 'Review the current runtime seed estimate. Goal-oriented demand is controlled by throughput and guardrails.' : 'Set the VUser count and simple ramp for each script group participating in this scenario.'}</p>
+                <p>{form.traffic_profile?.mappings.length ? 'The traffic profile sets the load of each group it maps; other groups keep their own VUsers.' : form.scenario_mode === 'goal_oriented' ? 'Each group starts with these VUsers; the goal controller adds or removes VUsers to reach the throughput target.' : 'Set the VUser count and simple ramp for each script group participating in this scenario.'}</p>
               </div>
             </div>
             <div className="scenario-script-group-list scenario-load-group-panel">
@@ -4299,7 +4330,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     <span className="scenario-assignment-copy secondary">{activeGroupScript?.name || 'Unassigned script'}</span>
                   </div>
                   <div className="settings-grid scenario-group-grid">
-                    {form.scenario_mode === 'goal_oriented' ? <div className="scenario-field"><span>Current seed estimate</span><strong>{activeStageGroup.vusers} VUsers</strong><small>Read-only compatibility seed; adaptive runtime demand is governed by the goal controller.</small></div> : <label className="scenario-field">
+                    {activeProfileMapping ? <div className="scenario-field"><span>Profile peak</span><strong>{formatProfileLoad(activeProfileMapping.peak_target, form.traffic_profile?.runtime_target)}</strong><small>{form.traffic_profile?.runtime_target === 'tps' ? `Starts with ${activeStageGroup.vusers} VUsers; the controller adds or removes VUsers to follow the profile.` : 'The profile sets this group’s VUsers over time.'}</small></div> : form.scenario_mode === 'goal_oriented' ? <div className="scenario-field"><span>Starting VUsers</span><strong>{activeStageGroup.vusers} VUsers</strong><small>The goal controller adds or removes VUsers from here to reach the throughput target.</small></div> : <label className="scenario-field">
                       <span>VUsers</span>
                       <div className="scenario-vuser-field">
                         <input
@@ -4331,7 +4362,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 </div>
             </div>
           </ScenarioCompositionTimeline>
-          {form.scenario_mode === 'goal_oriented' && (
+          {form.traffic_profile?.mappings.length ? (
+            <TrafficProfileRunSettings
+              profile={form.traffic_profile}
+              goalConfig={form.scenario_mode === 'goal_oriented' ? goalConfigFromForm(form) : undefined}
+              protocols={groupProtocols}
+              onGoalConfigChange={(field, value) => setForm(previous => scenarioFormWithGoalField(previous, field, value))}
+              onChangeProfile={() => setWizardStep('source')}
+            />
+          ) : form.scenario_mode === 'goal_oriented' && (
             <div className="scenario-subpanel">
               <div className="scenario-assignment-header">
                 <div>

@@ -1,5 +1,5 @@
 import { confirmAction } from './ux/confirmAction'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import type {
@@ -18,7 +18,7 @@ import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
-import { formatTrafficProfileAxisTime, trafficProfileTargetAt, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
+import { formatTrafficProfileAxisTime, inferTimestampMode, suggestGroupSeries, suggestTimestampColumn, suggestValueColumns, trafficProfileTargetAt, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 import TimezoneSelect from './ux/TimezoneSelect'
 
 interface Props {
@@ -30,7 +30,6 @@ interface Props {
 }
 
 const previewLimit = 1000
-const allGroupsMapping = '__all_groups__'
 const profileLineColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)']
 
 interface GroupUploadSelection {
@@ -48,6 +47,73 @@ function savedARTSelection(profile: TrafficProfile | undefined, groupName: strin
   const unit: ARTUnit = art.source_unit === 'seconds' ? 'seconds' : 'milliseconds'
   if (art.basis === 'source_series') return { basis: 'source_series', seriesKey: art.series_key, unit }
   return { basis: 'operator_peak', value: unit === 'seconds' ? art.peak_art_ms / 1000 : art.peak_art_ms, unit }
+}
+
+/** Each group's series in a saved profile, keyed by this scenario's group names; a group it left out follows none. */
+function savedGroupSeries(profile: TrafficProfile | undefined, groupNames: string[]): Record<string, string> {
+  if (!profile) return {}
+  return Object.fromEntries(groupNames.map(groupName => [
+    groupName,
+    profile.mappings.find(item => item.group_name.trim().toLowerCase() === groupName.trim().toLowerCase())?.series_key || '',
+  ]))
+}
+
+interface ColumnChoice {
+  /** The timestamp column already chosen, or empty to suggest one. */
+  timestampColumn: string
+  /** The value columns already chosen, or none to suggest them. */
+  valueColumns: string[]
+  /** Columns in another role (series, ART) that cannot be value columns. */
+  exclude: string[]
+  setTimestampColumn: (column: string) => void
+  setTimestampMode: (mode: 'absolute' | 'relative') => void
+  setValueColumns: (columns: string[]) => void
+}
+
+/**
+ * A file's first analysis lists its columns: preselect the likely timestamp
+ * column (and its time mode) and the numeric workload columns not chosen yet.
+ */
+function applyColumnSuggestions(sheet: { columns: string[]; samples?: string[][] } | undefined, choice: ColumnChoice) {
+  if (!sheet) return
+  const suggestedTimestamp = choice.timestampColumn ? '' : suggestTimestampColumn(sheet.columns, sheet.samples)
+  if (!choice.timestampColumn) {
+    choice.setTimestampColumn(suggestedTimestamp)
+    const mode = suggestedTimestamp ? inferTimestampMode(sheet.samples, sheet.columns, suggestedTimestamp) : undefined
+    if (mode) choice.setTimestampMode(mode)
+  }
+  if (!choice.valueColumns.length) {
+    choice.setValueColumns(suggestValueColumns(sheet.columns, sheet.samples, [choice.timestampColumn || suggestedTimestamp, ...choice.exclude].filter(Boolean)))
+  }
+}
+
+interface ColumnChecklistProps {
+  legend: string
+  hint?: string
+  columns: string[]
+  selected: string[]
+  /** Columns another list already uses: one column cannot be both. */
+  taken?: string[]
+  onChange: (columns: string[]) => void
+}
+
+/** Checkboxes for picking several columns, kept in the sheet's order. */
+function ColumnChecklist({ legend, hint, columns, selected, taken = [], onChange }: ColumnChecklistProps) {
+  const hintId = useId()
+  return (
+    <fieldset className="traffic-profile-column-list" aria-describedby={hint ? hintId : undefined}>
+      <legend>{legend}</legend>
+      {hint && <small id={hintId}>{hint}</small>}
+      <div>
+        {columns.map(column => (
+          <label key={column} className="checkbox-label">
+            <input type="checkbox" checked={selected.includes(column)} disabled={taken.includes(column) && !selected.includes(column)} onChange={event => onChange(columns.filter(item => item === column ? event.target.checked : selected.includes(item)))} />
+            <span>{column}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
 }
 
 function samplePreservingExtrema<T>(values: T[], limit = previewLimit, valueOf: (value: T) => number): T[] {
@@ -150,7 +216,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   const [targetDuration, setTargetDuration] = useState(existingProfile?.target_duration || '')
   const [amplitudeMode, setAmplitudeMode] = useState<'factor' | 'peak'>(existingProfile?.amplitude?.mode || 'factor')
   const [amplitude, setAmplitude] = useState(existingProfile?.amplitude?.value ?? 1)
-  const [mappings, setMappings] = useState<Record<string, string>>(() => Object.fromEntries((existingProfile?.mappings || []).map(mapping => [mapping.series_key, mapping.group_name])))
+  const [groupSeries, setGroupSeries] = useState<Record<string, string>>(() => savedGroupSeries(existingProfile, groupNames))
   const [groupART, setGroupART] = useState<Record<string, GroupARTSelection>>(() => Object.fromEntries(groupNames.map(name => [name, savedARTSelection(existingProfile, name)])))
   const [derived, setDerived] = useState<TrafficProfileDeriveResponse | null>(null)
   const [busy, setBusy] = useState(false)
@@ -165,7 +231,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
   useEffect(() => {
     setDerived(null)
-  }, [amplitude, amplitudeMode, assignmentMode, gapPolicy, groupART, groupUploads, mappings, peakDuration, semantics, targetDuration, windowEnd, windowEndOffset, windowMode, windowStart, windowStartOffset])
+  }, [amplitude, amplitudeMode, assignmentMode, gapPolicy, groupART, groupSeries, groupUploads, peakDuration, semantics, targetDuration, windowEnd, windowEndOffset, windowMode, windowStart, windowStartOffset])
 
   const selectedSheet = analysis?.sheets?.find(candidate => candidate.name === sheet) || analysis?.sheets?.[0]
   const usesRelativeWindow = assignmentMode === 'per_group'
@@ -208,6 +274,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     const firstSheet = result.sheets?.find(candidate => candidate.name === sheet) || result.sheets?.[0]
     if (firstSheet && !sheet) setSheet(firstSheet.name)
     if (result.series?.length) seedMappings(result.series.map(item => item.series))
+    else applyColumnSuggestions(firstSheet, { timestampColumn, valueColumns, exclude: [seriesColumn, ...artColumns], setTimestampColumn, setTimestampMode, setValueColumns })
   }
 
   const querySource = (): TrafficProfileSource => {
@@ -222,14 +289,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   }
 
   const seedMappings = (series: TrafficProfileSeries[]) => {
-    setMappings(current => {
-      if (assignmentMode === 'shared' && groupNames.length > 1) {
-        return series[0] ? { [series[0].key]: allGroupsMapping } : {}
-      }
-      const next = { ...current }
-      series.forEach((item, position) => { if (!next[item.key] && groupNames[position]) next[item.key] = groupNames[position] })
-      return next
-    })
+    setGroupSeries(current => suggestGroupSeries(groupNames, series, current))
   }
 
   const analyze = async () => {
@@ -271,23 +331,19 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       source = analysis?.source || querySource()
       series = (analysis?.series || []).map(item => item.series)
       artSeries = (analysis?.art_series || []).map(item => item.series)
-      selectedMappings = series.flatMap(item => {
-        const target = mappings[item.key]
-        if (!target) return []
-        const mapped = target === allGroupsMapping ? groupNames : [target]
-        return mapped.map(groupName => {
-          const selection = groupART[groupName]
-          const art = selection?.basis === 'source_series' && selection.seriesKey
-            ? { basis: 'source_series' as const, series_key: selection.seriesKey, unit: selection.unit }
-            : selection?.basis === 'operator_peak'
-              ? { basis: 'operator_peak' as const, value: selection.value, unit: selection.unit }
-              : undefined
-          return { series_key: item.key, group_name: groupName, ...(art ? { art } : {}) }
-        })
+      selectedMappings = groupNames.flatMap(groupName => {
+        const seriesKey = groupSeries[groupName]
+        if (!seriesKey || !series.some(item => item.key === seriesKey)) return []
+        const selection = groupART[groupName]
+        const art = selection?.basis === 'source_series' && selection.seriesKey
+          ? { basis: 'source_series' as const, series_key: selection.seriesKey, unit: selection.unit }
+          : selection?.basis === 'operator_peak'
+            ? { basis: 'operator_peak' as const, value: selection.value, unit: selection.unit }
+            : undefined
+        return [{ series_key: seriesKey, group_name: groupName, ...(art ? { art } : {}) }]
       })
     }
-    if (!selectedMappings.length) { setError('Map at least one series to a scenario group.'); return }
-    if (new Set(selectedMappings.map(item => item.group_name)).size !== selectedMappings.length) { setError('Each scenario group can be mapped from only one series.'); return }
+    if (!selectedMappings.length) { setError('Choose a series for at least one group.'); return }
     const mappedGroups = new Set(selectedMappings.map(item => item.group_name))
     const conflicts = scenarioDraft.groups.filter((group, position) => mappedGroups.has(group.name || groupNames[position] || '') && ((group.stages?.length || 0) > 0 || Boolean(group.start_offset) || Boolean(group.ramp_up) || Boolean(group.ramp_down)))
     if (conflicts.length && !(await confirmAction('Applying this profile will clear manual stages, simple ramps, and start offsets for mapped groups. Continue?', { title: 'Replace manual load settings', confirmLabel: 'Apply profile', destructive: true }))) return
@@ -338,11 +394,10 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
         const candidateGroups = candidateMappings
           .filter(mapping => mapping.series_key === item.series.key)
           .map(mapping => mapping.group_name)
-        const configuredTarget = mappings[item.series.key]
-        const groupName = candidateGroups.length > 1
-          ? 'All groups'
-          : candidateGroups[0] || (configuredTarget === allGroupsMapping ? 'All groups' : configuredTarget)
-        return groupName ? [{ groupName, series: item.series }] : []
+        const groups = candidateGroups.length ? candidateGroups : groupNames.filter(name => groupSeries[name] === item.series.key)
+        if (!groups.length) return []
+        const groupName = groups.length > 1 && groups.length === groupNames.length ? 'All groups' : groups.join(', ')
+        return [{ groupName, series: item.series }]
       })
 
     if (!rawSeries.length && !candidateMappings.length && !savedMappings.length) return { data: [] as ChartRow[], lines: [] as ChartLine[], selections: [] as ChartSelection[], fullSpan: 1 }
@@ -440,7 +495,28 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
     const projectionEnd = [...candidateProjections, ...savedProjections].reduce((maximum, projection) => Math.max(maximum, projection.end), 0)
     return { data: Array.from(rows.values()).sort((left, right) => left.elapsed - right.elapsed), lines, selections, fullSpan: Math.max(1, rawDuration, projectionEnd) }
-  }, [analysis, assignmentMode, derived, existingProfile, groupNames, groupUploads, mappings])
+  }, [analysis, assignmentMode, derived, existingProfile, groupNames, groupSeries, groupUploads])
+  // How long a 1:1 replay runs: the selected window, else the longest
+  // source (its last point plus one bucket, as the server measures it).
+  const replayLength = useMemo(() => {
+    const format = (milliseconds: number) => milliseconds > 0 ? formatTrafficProfileAxisTime(milliseconds / 1000) : ''
+    if (windowMode === 'peak') return format(durationMilliseconds(peakDuration))
+    if (windowMode === 'explicit') {
+      return usesRelativeWindow
+        ? format(durationMilliseconds(windowEndOffset) - durationMilliseconds(windowStartOffset))
+        : format(Date.parse(windowEnd) - Date.parse(windowStart))
+    }
+    // Only the series groups follow set the length; before any is chosen, all count.
+    const followed = new Set(groupNames.map(name => groupSeries[name]).filter(Boolean))
+    const sharedSeries = (analysis?.series || []).filter(item => followed.has(item.series.key))
+    const stats = assignmentMode === 'per_group'
+      ? Object.values(groupUploads).flatMap(upload => upload.analysis.series?.filter(item => item.series.key === upload.seriesKey).map(item => item.stats) || [])
+      : (sharedSeries.length ? sharedSeries : analysis?.series || []).map(item => item.stats)
+    return format(stats.reduce((longest, item) => {
+      const span = Date.parse(item.end) - Date.parse(item.start)
+      return Number.isFinite(span) ? Math.max(longest, span + item.detected_bucket / 1e6) : longest
+    }, 0))
+  }, [analysis, assignmentMode, groupNames, groupSeries, groupUploads, peakDuration, usesRelativeWindow, windowEnd, windowEndOffset, windowMode, windowStart, windowStartOffset])
   const derivedTpsStatistics = useMemo(() => {
     if (derived?.traffic_profile.runtime_target !== 'tps') return undefined
     return trafficProfileTpsStatistics(
@@ -486,10 +562,10 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       {groupNames.length > 1 && <div className="traffic-profile-assignment-mode">
         <span className="traffic-profile-section-label">Workload assignment</span>
         <div className="scenario-source-toggle" aria-label="Workload assignment mode">
-          <button type="button" className={`mode-chip ${assignmentMode === 'shared' ? 'active' : ''}`} onClick={() => setAssignmentMode('shared')}>One profile for all groups</button>
-          <button type="button" className={`mode-chip ${assignmentMode === 'per_group' ? 'active' : ''}`} onClick={() => setAssignmentMode('per_group')}>Separate file per group</button>
+          <button type="button" className={`mode-chip ${assignmentMode === 'shared' ? 'active' : ''}`} aria-pressed={assignmentMode === 'shared'} onClick={() => setAssignmentMode('shared')}>One source for all groups</button>
+          <button type="button" className={`mode-chip ${assignmentMode === 'per_group' ? 'active' : ''}`} aria-pressed={assignmentMode === 'per_group'} onClick={() => setAssignmentMode('per_group')}>Separate file per group</button>
         </div>
-        <p className="secondary">{assignmentMode === 'shared' ? `The selected series will be copied to all ${groupNames.length} groups.` : 'Upload and select an independent production series for each group.'}</p>
+        <p className="secondary">{assignmentMode === 'shared' ? 'Analyze one source, then choose the series each group follows. Groups can share a series.' : 'Upload and select an independent production series for each group.'}</p>
       </div>}
 
       {assignmentMode === 'per_group' ? (
@@ -525,41 +601,45 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
               setSeriesColumn(refreshesSavedFile ? savedSource?.file?.series_column || '' : '')
               setError('')
             }} dropHint="Drop a production traffic CSV or XLSX file" onError={setError} disabled={busy} />
-            {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
-              <label><span>Worksheet</span><select value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setARTColumns([]); setSeriesColumn(''); invalidateFileAnalysis() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
-              <label><span>Timestamp column</span><select value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateFileAnalysis() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Timestamp values</span><select aria-label="Timestamp values" value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateFileAnalysis() }}><option value="absolute">Absolute date/time</option><option value="relative">Relative elapsed time</option></select></label>
-              {timestampMode === 'relative' && <label><span>Relative 0:00 starts at</span><input aria-label="Relative 0:00 starts at" type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateFileAnalysis() }} /></label>}
-              <label><span>Value columns (select one or more)</span><select multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => { setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateFileAnalysis() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Optional ART columns</span><select aria-label="Optional ART columns" multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={artColumns} onChange={event => { setARTColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateFileAnalysis() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Optional series column</span><select value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateFileAnalysis() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Timezone</span><TimezoneSelect ariaLabel="Timezone" note="Timestamps without an offset are read in this zone; exports are usually UTC" value={timezone} onChange={value => { setTimezone(value); invalidateFileAnalysis() }} /></label>
+            {analysis?.sheets?.length ? <div className="traffic-profile-fields">
+              {analysis.sheets.length > 1 && <label className="scenario-field"><span>Worksheet</span><select className="settings-input" value={sheet} onChange={event => { setSheet(event.target.value); setARTColumns([]); setSeriesColumn(''); applyColumnSuggestions(analysis.sheets?.find(item => item.name === event.target.value), { timestampColumn: '', valueColumns: [], exclude: [], setTimestampColumn, setTimestampMode, setValueColumns }); invalidateFileAnalysis() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>}
+              <label className="scenario-field"><span>Timestamp column</span><select className="settings-input" value={timestampColumn} onChange={event => { const next = event.target.value; setTimestampColumn(next); const inferred = selectedSheet ? inferTimestampMode(selectedSheet.samples, selectedSheet.columns, next) : undefined; if (inferred) setTimestampMode(inferred); invalidateFileAnalysis() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label className="scenario-field"><span>Timestamp values</span><select className="settings-input" aria-label="Timestamp values" value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateFileAnalysis() }}><option value="absolute">Absolute date/time</option><option value="relative">Relative elapsed time</option></select></label>
+              {timestampMode === 'relative' && <label className="scenario-field"><span>Relative 0:00 starts at</span><input className="settings-input" aria-label="Relative 0:00 starts at" type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateFileAnalysis() }} /></label>}
+              <label className="scenario-field"><span>Optional series column</span><select className="settings-input" value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateFileAnalysis() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label className="scenario-field"><span>Timezone</span><TimezoneSelect className="settings-input" ariaLabel="Timezone" note="Timestamps without an offset are read in this zone; exports are usually UTC" value={timezone} onChange={value => { setTimezone(value); invalidateFileAnalysis() }} /></label>
+              <ColumnChecklist legend="Value columns" hint="The workload to replay. Each column becomes a series." columns={selectedSheet?.columns || []} selected={valueColumns} taken={[timestampColumn, seriesColumn, ...artColumns]} onChange={next => { setValueColumns(next); invalidateFileAnalysis() }} />
+              <ColumnChecklist legend="Optional ART columns" hint="Average response times, used to estimate VUsers." columns={selectedSheet?.columns || []} selected={artColumns} taken={[timestampColumn, seriesColumn, ...valueColumns]} onChange={next => { setARTColumns(next); invalidateFileAnalysis() }} />
             </div> : null}
           </>
         ) : sourceKind === 'prometheus' ? (
-          <div className="settings-grid compact-grid"><label className="span-2"><span>PromQL</span><textarea value={query} onChange={event => setQuery(event.target.value)} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
+          <div className="traffic-profile-fields"><label className="scenario-field span-2"><span>PromQL</span><textarea className="settings-input" value={query} onChange={event => setQuery(event.target.value)} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
         ) : (
-          <div className="settings-grid compact-grid"><label><span>Index</span><input value={index} onChange={event => setIndex(event.target.value)} /></label><label><span>Timestamp field</span><input value={timestampField} onChange={event => setTimestampField(event.target.value)} /></label><label><span>Metric</span><select value={metric} onChange={event => setMetric(event.target.value as typeof metric)}><option value="count">Count</option><option value="sum">Sum</option><option value="avg">Average</option></select></label>{metric !== 'count' && <label><span>Metric field</span><input value={metricField} onChange={event => setMetricField(event.target.value)} /></label>}<label className="span-2"><span>Optional filter Query DSL</span><textarea value={openSearchFilter} onChange={event => setOpenSearchFilter(event.target.value)} placeholder={'{"term":{"environment":"production"}}'} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
+          <div className="traffic-profile-fields"><label className="scenario-field"><span>Index</span><input className="settings-input" value={index} onChange={event => setIndex(event.target.value)} /></label><label className="scenario-field"><span>Timestamp field</span><input className="settings-input" value={timestampField} onChange={event => setTimestampField(event.target.value)} /></label><label className="scenario-field"><span>Metric</span><select className="settings-input" value={metric} onChange={event => setMetric(event.target.value as typeof metric)}><option value="count">Count</option><option value="sum">Sum</option><option value="avg">Average</option></select></label>{metric !== 'count' && <label className="scenario-field"><span>Metric field</span><input className="settings-input" value={metricField} onChange={event => setMetricField(event.target.value)} /></label>}<label className="scenario-field span-2"><span>Optional filter Query DSL</span><textarea className="settings-input" value={openSearchFilter} onChange={event => setOpenSearchFilter(event.target.value)} placeholder={'{"term":{"environment":"production"}}'} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
         )}
         <button type="button" className="btn btn-secondary" onClick={() => void analyze()} disabled={busy || !sourceAvailable(sourceKind) || (sourceKind === 'file' && !file)}>{busy ? 'Working…' : analysis?.series?.length ? 'Re-analyze' : 'Analyze source'}</button>
       </>}
 
       {hasAnalyzedData ? <>
-        <div className="settings-grid compact-grid">
-          <label><span>Values represent</span><select value={semantics} onChange={event => setSemantics(event.target.value as TrafficProfileValueSemantics)}><option value="transactions_per_bucket">Transactions per bucket</option><option value="cumulative_counter">Cumulative counter</option><option value="tps">TPS</option><option value="vusers">VUsers</option></select></label>
-          <label><span>Gap policy</span><select value={gapPolicy} onChange={event => setGapPolicy(event.target.value as TrafficProfileGapPolicy)}><option value="hold">Hold previous</option><option value="zero">Insert zero</option><option value="drop">Drop missing</option></select></label>
-          <label><span>Window</span><select value={windowMode} onChange={event => setWindowMode(event.target.value as typeof windowMode)}><option value="full">Full range</option><option value="explicit">Explicit range</option><option value="peak">Peak window</option></select></label>
-          {windowMode === 'peak' && <><label><span>Peak selection</span><select aria-label="Peak selection" value={peakScope} onChange={event => setPeakScope(event.target.value as typeof peakScope)}><option value="overall">Overall across all groups</option><option value="per_group">Each group separately</option></select></label><label><span>Peak window duration</span><input value={peakDuration} onChange={event => setPeakDuration(event.target.value)} /></label></>}
+        <div className="traffic-profile-fields">
+          <label className="scenario-field"><span>Values represent</span><select className="settings-input" value={semantics} onChange={event => setSemantics(event.target.value as TrafficProfileValueSemantics)}><option value="transactions_per_bucket">Transactions per bucket</option><option value="cumulative_counter">Cumulative counter</option><option value="tps">TPS</option><option value="vusers">VUsers</option></select></label>
+          <label className="scenario-field"><span>Gap policy</span><select className="settings-input" value={gapPolicy} onChange={event => setGapPolicy(event.target.value as TrafficProfileGapPolicy)}><option value="hold">Hold previous</option><option value="zero">Insert zero</option><option value="drop">Drop missing</option></select></label>
+          <label className="scenario-field"><span>Window</span><select className="settings-input" value={windowMode} onChange={event => setWindowMode(event.target.value as typeof windowMode)}><option value="full">Full range</option><option value="explicit">Explicit range</option><option value="peak">Peak window</option></select></label>
+          {windowMode === 'peak' && <><label className="scenario-field"><span>Peak selection</span><select className="settings-input" aria-label="Peak selection" value={peakScope} onChange={event => setPeakScope(event.target.value as typeof peakScope)}><option value="overall">Overall across all groups</option><option value="per_group">Each group separately</option></select></label><label className="scenario-field"><span>Peak window duration</span><input className="settings-input" value={peakDuration} onChange={event => setPeakDuration(event.target.value)} /></label></>}
           {windowMode === 'explicit' && (usesRelativeWindow
-            ? <><label><span>Window start offset</span><input aria-label="Window start offset" value={windowStartOffset} onChange={event => setWindowStartOffset(event.target.value)} placeholder="0s" /></label><label><span>Window end offset</span><input aria-label="Window end offset" value={windowEndOffset} onChange={event => setWindowEndOffset(event.target.value)} placeholder="1h" /></label></>
-            : <><label><span>Window start</span><input type="datetime-local" value={windowStart} onChange={event => setWindowStart(event.target.value)} /></label><label><span>Window end</span><input type="datetime-local" value={windowEnd} onChange={event => setWindowEnd(event.target.value)} /></label></>)}
-          <label><span>Test duration (blank = 1:1)</span><input value={targetDuration} onChange={event => setTargetDuration(event.target.value)} placeholder="8h" /></label>
-          <label><span>Amplitude</span><select value={amplitudeMode} onChange={event => setAmplitudeMode(event.target.value as typeof amplitudeMode)}><option value="factor">Multiply by</option><option value="peak">Scale peak to</option></select><input type="number" min={0} step="any" value={amplitude} onChange={event => setAmplitude(Number(event.target.value))} /></label>
+            ? <><label className="scenario-field"><span>Window start offset</span><input className="settings-input" aria-label="Window start offset" value={windowStartOffset} onChange={event => setWindowStartOffset(event.target.value)} placeholder="0s" /></label><label className="scenario-field"><span>Window end offset</span><input className="settings-input" aria-label="Window end offset" value={windowEndOffset} onChange={event => setWindowEndOffset(event.target.value)} placeholder="1h" /></label></>
+            : <><label className="scenario-field"><span>Window start</span><input className="settings-input" type="datetime-local" value={windowStart} onChange={event => setWindowStart(event.target.value)} /></label><label className="scenario-field"><span>Window end</span><input className="settings-input" type="datetime-local" value={windowEnd} onChange={event => setWindowEnd(event.target.value)} /></label></>)}
+          <label className="scenario-field"><span>Test duration</span><input className="settings-input" value={targetDuration} onChange={event => setTargetDuration(event.target.value)} placeholder={replayLength || undefined} aria-describedby="traffic-profile-duration-hint" /><small id="traffic-profile-duration-hint">{replayLength ? `Leave blank to replay at the ${windowMode === 'full' ? 'source' : 'window'}'s own length (${replayLength}).` : `Leave blank to replay at the ${windowMode === 'full' ? 'source' : 'window'}'s own length.`}</small></label>
+          <label className="scenario-field"><span>Scale load</span><select className="settings-input" value={amplitudeMode} onChange={event => setAmplitudeMode(event.target.value as typeof amplitudeMode)}><option value="factor">Multiply by a factor</option><option value="peak">Scale the peak to</option></select></label>
+          <label className="scenario-field"><span>{amplitudeMode === 'factor' ? 'Factor' : semantics === 'vusers' ? 'Peak VUsers' : 'Peak TPS'}</span><input className="settings-input" type="number" min={0} step="any" value={amplitude} onChange={event => setAmplitude(Number(event.target.value))} /></label>
         </div>
-        {assignmentMode === 'shared' && analysis?.series?.length ? <div className="data-table"><table><thead><tr><th>Series</th><th>Points</th><th>Cadence</th><th>Source peak</th><th>Apply to</th></tr></thead><tbody>{analysis.series.map(item => <tr key={item.series.key}><td>{item.series.name}</td><td>{item.stats.count.toLocaleString()}</td><td>{Math.round(item.stats.detected_bucket / 1e9)}s</td><td>{item.stats.max}</td><td><select aria-label={`Apply ${item.series.name} to`} value={mappings[item.series.key] || ''} onChange={event => setMappings(current => ({ ...current, [item.series.key]: event.target.value }))}><option value="">Ignore</option>{groupNames.length > 1 && <option value={allGroupsMapping}>All groups</option>}{groupNames.map(name => <option key={name}>{name}</option>)}</select></td></tr>)}</tbody></table></div> : null}
+        {assignmentMode === 'shared' && analysis?.series?.length ? <div className="data-table"><table aria-label="Series for each group"><thead><tr><th>Group</th><th>Follows series</th><th>Source peak</th><th>Cadence</th><th>Points</th></tr></thead><tbody>{groupNames.map(groupName => {
+          const chosen = analysis.series?.find(item => item.series.key === groupSeries[groupName])
+          return <tr key={groupName}><td>{groupName}</td><td><select className="settings-input" aria-label={`Series for ${groupName}`} value={chosen?.series.key || ''} onChange={event => setGroupSeries(current => ({ ...current, [groupName]: event.target.value }))}><option value="">None (keeps its own load)</option>{analysis.series?.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name}</option>)}</select></td><td>{chosen ? chosen.stats.max : '—'}</td><td>{chosen ? `${Math.round(chosen.stats.detected_bucket / 1e9)}s` : '—'}</td><td>{chosen ? chosen.stats.count.toLocaleString() : '—'}</td></tr>
+        })}</tbody></table></div> : null}
         {assignmentMode === 'shared' && semantics !== 'vusers' ? <div className="data-table"><table><thead><tr><th>Group</th><th>ART basis</th><th>ART value or series</th><th>Unit</th></tr></thead><tbody>{groupNames.map(groupName => {
           const selection = groupART[groupName] || { basis: 'none', unit: 'milliseconds' as const }
-          return <tr key={groupName}><td>{groupName}</td><td><select aria-label={`ART basis for ${groupName}`} value={selection.basis} onChange={event => setGroupART(current => ({ ...current, [groupName]: { basis: event.target.value as GroupARTSelection['basis'], unit: current[groupName]?.unit || 'milliseconds' } }))}><option value="none">Not provided</option>{analysis?.art_series?.length ? <option value="source_series">File ART series</option> : null}<option value="operator_peak">Estimated peak ART</option></select></td><td>{selection.basis === 'source_series' ? <select aria-label={`ART series for ${groupName}`} value={selection.seriesKey || ''} onChange={event => setGroupART(current => ({ ...current, [groupName]: { ...selection, seriesKey: event.target.value } }))}><option value="">Select…</option>{analysis?.art_series?.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · peak {item.stats.max}</option>)}</select> : selection.basis === 'operator_peak' ? <input aria-label={`Estimated peak ART for ${groupName}`} type="number" min={0.001} step="any" value={selection.value ?? ''} onChange={event => setGroupART(current => ({ ...current, [groupName]: { ...selection, value: Number(event.target.value) } }))} /> : <span className="secondary">Sizing remains incomplete</span>}</td><td>{selection.basis !== 'none' ? <select aria-label={`ART unit for ${groupName}`} value={selection.unit} onChange={event => setGroupART(current => ({ ...current, [groupName]: { ...selection, unit: event.target.value as ARTUnit } }))}><option value="milliseconds">Milliseconds</option><option value="seconds">Seconds</option></select> : '—'}</td></tr>
+          return <tr key={groupName}><td>{groupName}</td><td><select className="settings-input" aria-label={`ART basis for ${groupName}`} value={selection.basis} onChange={event => setGroupART(current => ({ ...current, [groupName]: { basis: event.target.value as GroupARTSelection['basis'], unit: current[groupName]?.unit || 'milliseconds' } }))}><option value="none">Not provided</option>{analysis?.art_series?.length ? <option value="source_series">File ART series</option> : null}<option value="operator_peak">Estimated peak ART</option></select></td><td>{selection.basis === 'source_series' ? <select className="settings-input" aria-label={`ART series for ${groupName}`} value={selection.seriesKey || ''} onChange={event => setGroupART(current => ({ ...current, [groupName]: { ...selection, seriesKey: event.target.value } }))}><option value="">Select…</option>{analysis?.art_series?.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · peak {item.stats.max}</option>)}</select> : selection.basis === 'operator_peak' ? <input className="settings-input" aria-label={`Estimated peak ART for ${groupName}`} type="number" min={0.001} step="any" value={selection.value ?? ''} onChange={event => setGroupART(current => ({ ...current, [groupName]: { ...selection, value: Number(event.target.value) } }))} /> : <span className="secondary">Sizing remains incomplete</span>}</td><td>{selection.basis !== 'none' ? <select className="settings-input" aria-label={`ART unit for ${groupName}`} value={selection.unit} onChange={event => setGroupART(current => ({ ...current, [groupName]: { ...selection, unit: event.target.value as ARTUnit } }))}><option value="milliseconds">Milliseconds</option><option value="seconds">Seconds</option></select> : '—'}</td></tr>
         })}</tbody></table></div> : null}
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void derive()}>Build profile preview</button>
       </> : null}
@@ -667,6 +747,7 @@ function GroupFileUploadCard({ groupName, projectId, savedFile, savedART, onRead
       setAnalysisDirty(false)
       const firstSheet = result.sheets?.find(candidate => candidate.name === sheet) || result.sheets?.[0]
       if (firstSheet && !sheet) setSheet(firstSheet.name)
+      if (!result.series?.length) applyColumnSuggestions(firstSheet, { timestampColumn, valueColumns, exclude: [seriesColumn, ...artColumns], setTimestampColumn, setTimestampMode, setValueColumns })
       const firstSeries = result.series?.[0]?.series.key || ''
       setSeriesKey(firstSeries)
       const availableARTKey = result.art_series?.some(item => item.series.key === artSeriesKey) ? artSeriesKey : result.art_series?.[0]?.series.key || ''
@@ -694,18 +775,18 @@ function GroupFileUploadCard({ groupName, projectId, savedFile, savedART, onRead
       {ready ? <span className="status-badge success">Ready</span> : <span className="status-badge">File required</span>}
     </div>
     <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => { setFile(next); clearSelection(Boolean(!next || !savedFile || next.name !== savedFile.filename)) }} dropHint={`Drop CSV/XLSX for ${groupName}`} onError={setError} disabled={busy} />
-    {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
-      <label><span>{groupName} worksheet</span><select aria-label={`${groupName} worksheet`} value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setARTColumns([]); setSeriesColumn(''); invalidateColumns() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
-      <label><span>{groupName} timestamp column</span><select aria-label={`${groupName} timestamp column`} value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateColumns() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-      <label><span>{groupName} timestamp values</span><select aria-label={`${groupName} timestamp values`} value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateColumns() }}><option value="absolute">Absolute date/time</option><option value="relative">Relative elapsed time</option></select></label>
-      {timestampMode === 'relative' && <label><span>{groupName} relative 0:00 starts at</span><input aria-label={`${groupName} relative 0:00 starts at`} type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateColumns() }} /></label>}
-      <label><span>{groupName} value columns</span><select aria-label={`${groupName} value columns`} multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => { setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateColumns() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-      <label><span>{groupName} optional ART columns</span><select aria-label={`${groupName} optional ART columns`} multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={artColumns} onChange={event => { setARTColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateColumns() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-      <label><span>{groupName} optional series column</span><select aria-label={`${groupName} optional series column`} value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateColumns() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-      <label><span>{groupName} timezone</span><TimezoneSelect ariaLabel={`${groupName} timezone`} note="Timestamps without an offset are read in this zone; exports are usually UTC" value={timezone} onChange={value => { setTimezone(value); invalidateColumns() }} /></label>
+    {analysis?.sheets?.length ? <div className="traffic-profile-fields">
+      {analysis.sheets.length > 1 && <label className="scenario-field"><span>{groupName} worksheet</span><select className="settings-input" aria-label={`${groupName} worksheet`} value={sheet} onChange={event => { setSheet(event.target.value); setARTColumns([]); setSeriesColumn(''); applyColumnSuggestions(analysis.sheets?.find(item => item.name === event.target.value), { timestampColumn: '', valueColumns: [], exclude: [], setTimestampColumn, setTimestampMode, setValueColumns }); invalidateColumns() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>}
+      <label className="scenario-field"><span>{groupName} timestamp column</span><select className="settings-input" aria-label={`${groupName} timestamp column`} value={timestampColumn} onChange={event => { const next = event.target.value; setTimestampColumn(next); const inferred = selectedSheet ? inferTimestampMode(selectedSheet.samples, selectedSheet.columns, next) : undefined; if (inferred) setTimestampMode(inferred); invalidateColumns() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+      <label className="scenario-field"><span>{groupName} timestamp values</span><select className="settings-input" aria-label={`${groupName} timestamp values`} value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateColumns() }}><option value="absolute">Absolute date/time</option><option value="relative">Relative elapsed time</option></select></label>
+      {timestampMode === 'relative' && <label className="scenario-field"><span>{groupName} relative 0:00 starts at</span><input className="settings-input" aria-label={`${groupName} relative 0:00 starts at`} type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateColumns() }} /></label>}
+      <ColumnChecklist legend={`${groupName} value columns`} hint="The workload to replay. Each column becomes a series." columns={selectedSheet?.columns || []} selected={valueColumns} taken={[timestampColumn, seriesColumn, ...artColumns]} onChange={next => { setValueColumns(next); invalidateColumns() }} />
+      <ColumnChecklist legend={`${groupName} optional ART columns`} hint="Average response times, used to estimate VUsers." columns={selectedSheet?.columns || []} selected={artColumns} taken={[timestampColumn, seriesColumn, ...valueColumns]} onChange={next => { setARTColumns(next); invalidateColumns() }} />
+      <label className="scenario-field"><span>{groupName} optional series column</span><select className="settings-input" aria-label={`${groupName} optional series column`} value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateColumns() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+      <label className="scenario-field"><span>{groupName} timezone</span><TimezoneSelect className="settings-input" ariaLabel={`${groupName} timezone`} note="Timestamps without an offset are read in this zone; exports are usually UTC" value={timezone} onChange={value => { setTimezone(value); invalidateColumns() }} /></label>
     </div> : null}
     <button type="button" className="btn btn-secondary" onClick={() => void analyze()} disabled={busy || !file}>{busy ? 'Working…' : analysis?.series?.length ? `Re-analyze ${groupName}` : `Analyze ${groupName}`}</button>
-    {analysis?.series?.length && !analysisDirty ? <><label className="traffic-profile-group-series"><span>Workload series for {groupName}</span><select aria-label={`Workload series for ${groupName}`} value={seriesKey} onChange={event => { const next = event.target.value; setSeriesKey(next); onReady(next ? { analysis, seriesKey: next, art: artRequest() } : null) }}><option value="">Select…</option>{analysis.series.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · {item.stats.count.toLocaleString()} points · peak {item.stats.max}</option>)}</select></label><div className="settings-grid compact-grid"><label><span>ART basis for {groupName}</span><select aria-label={`ART basis for ${groupName}`} value={artBasis} onChange={event => { const next = event.target.value as GroupARTSelection['basis']; setARTBasis(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest(next) }) }}><option value="none">Not provided</option>{analysis.art_series?.length ? <option value="source_series">File ART series</option> : null}<option value="operator_peak">Estimated peak ART</option></select></label>{artBasis === 'source_series' ? <label><span>ART series for {groupName}</span><select aria-label={`ART series for ${groupName}`} value={artSeriesKey} onChange={event => { const next = event.target.value; setARTSeriesKey(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest('source_series', next) }) }}><option value="">Select…</option>{analysis.art_series?.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · peak {item.stats.max}</option>)}</select></label> : artBasis === 'operator_peak' ? <label><span>Estimated peak ART for {groupName}</span><input aria-label={`Estimated peak ART for ${groupName}`} type="number" min={0.001} step="any" value={artValue ?? ''} onChange={event => { const next = Number(event.target.value); setARTValue(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest('operator_peak', '', next) }) }} /></label> : null}{artBasis !== 'none' ? <label><span>ART unit for {groupName}</span><select aria-label={`ART unit for ${groupName}`} value={artUnit} onChange={event => { const next = event.target.value as ARTUnit; setARTUnit(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest(artBasis, artSeriesKey, artValue, next) }) }}><option value="milliseconds">Milliseconds</option><option value="seconds">Seconds</option></select></label> : null}</div></> : null}
+    {analysis?.series?.length && !analysisDirty ? <><label className="traffic-profile-group-series"><span>Workload series for {groupName}</span><select className="settings-input" aria-label={`Workload series for ${groupName}`} value={seriesKey} onChange={event => { const next = event.target.value; setSeriesKey(next); onReady(next ? { analysis, seriesKey: next, art: artRequest() } : null) }}><option value="">Select…</option>{analysis.series.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · {item.stats.count.toLocaleString()} points · peak {item.stats.max}</option>)}</select></label><div className="traffic-profile-fields"><label className="scenario-field"><span>ART basis for {groupName}</span><select className="settings-input" aria-label={`ART basis for ${groupName}`} value={artBasis} onChange={event => { const next = event.target.value as GroupARTSelection['basis']; setARTBasis(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest(next) }) }}><option value="none">Not provided</option>{analysis.art_series?.length ? <option value="source_series">File ART series</option> : null}<option value="operator_peak">Estimated peak ART</option></select></label>{artBasis === 'source_series' ? <label className="scenario-field"><span>ART series for {groupName}</span><select className="settings-input" aria-label={`ART series for ${groupName}`} value={artSeriesKey} onChange={event => { const next = event.target.value; setARTSeriesKey(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest('source_series', next) }) }}><option value="">Select…</option>{analysis.art_series?.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · peak {item.stats.max}</option>)}</select></label> : artBasis === 'operator_peak' ? <label className="scenario-field"><span>Estimated peak ART for {groupName}</span><input className="settings-input" aria-label={`Estimated peak ART for ${groupName}`} type="number" min={0.001} step="any" value={artValue ?? ''} onChange={event => { const next = Number(event.target.value); setARTValue(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest('operator_peak', '', next) }) }} /></label> : null}{artBasis !== 'none' ? <label className="scenario-field"><span>ART unit for {groupName}</span><select className="settings-input" aria-label={`ART unit for ${groupName}`} value={artUnit} onChange={event => { const next = event.target.value as ARTUnit; setARTUnit(next); if (seriesKey) onReady({ analysis, seriesKey, art: artRequest(artBasis, artSeriesKey, artValue, next) }) }}><option value="milliseconds">Milliseconds</option><option value="seconds">Seconds</option></select></label> : null}</div></> : null}
     {error && <div className="form-error" role="alert">{error}</div>}
   </section>
 }
@@ -725,8 +806,8 @@ interface QueryRangeFieldsProps {
 
 function QueryRangeFields({ mode, setMode, lookback, setLookback, start, setStart, end, setEnd, stepSeconds, setStepSeconds }: QueryRangeFieldsProps) {
   return <>
-    <label><span>Range</span><select value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="relative">Relative</option><option value="absolute">Absolute</option></select></label>
-    {mode === 'relative' ? <label><span>Lookback</span><input value={lookback} onChange={event => setLookback(event.target.value)} /></label> : <><label><span>Start</span><input type="datetime-local" value={start} onChange={event => setStart(event.target.value)} /></label><label><span>End</span><input type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} /></label></>}
-    <label><span>Step seconds</span><input type="number" min={1} value={stepSeconds} onChange={event => setStepSeconds(Number(event.target.value))} /></label>
+    <label className="scenario-field"><span>Range</span><select className="settings-input" value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="relative">Relative</option><option value="absolute">Absolute</option></select></label>
+    {mode === 'relative' ? <label className="scenario-field"><span>Lookback</span><input className="settings-input" value={lookback} onChange={event => setLookback(event.target.value)} /></label> : <><label className="scenario-field"><span>Start</span><input className="settings-input" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} /></label><label className="scenario-field"><span>End</span><input className="settings-input" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} /></label></>}
+    <label className="scenario-field"><span>Step seconds</span><input className="settings-input" type="number" min={1} value={stepSeconds} onChange={event => setStepSeconds(Number(event.target.value))} /></label>
   </>
 }

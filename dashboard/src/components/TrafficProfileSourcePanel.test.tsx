@@ -276,6 +276,13 @@ describe('TrafficProfileSourcePanel', () => {
     await act(async () => { prometheus?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
     await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    // Two series and no name match: the group follows nothing until chosen.
+    const seriesSelect = container.querySelector('[aria-label="Series for Checkout"]') as HTMLSelectElement
+    expect(seriesSelect.value).toBe('')
+    await act(async () => {
+      seriesSelect.value = 'requests'
+      seriesSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
 
     expect(Array.from(container.querySelectorAll('[data-testid="profile-preview-line"]')).map(line => line.getAttribute('data-name'))).toEqual([
       'Checkout production source',
@@ -464,7 +471,9 @@ describe('TrafficProfileSourcePanel', () => {
     await act(async () => { prometheus?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
     await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    expect((container.querySelector('[aria-label="Apply requests to"]') as HTMLSelectElement).value).toBe('__all_groups__')
+    // A single series goes to every group; each group can still pick its own.
+    expect((container.querySelector('[aria-label="Series for Checkout"]') as HTMLSelectElement).value).toBe('requests')
+    expect((container.querySelector('[aria-label="Series for Search"]') as HTMLSelectElement).value).toBe('requests')
     const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
     await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(apiMock.deriveTrafficProfile).toHaveBeenCalledWith(expect.objectContaining({
@@ -473,6 +482,114 @@ describe('TrafficProfileSourcePanel', () => {
         { series_key: 'requests', group_name: 'Search' },
       ],
     }))
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('preselects the timestamp and numeric columns, and maps each group to its own series', async () => {
+    const stats = (max: number) => ({ count: 60, start: '2026-08-26T00:00:00Z', end: '2026-08-26T00:09:50Z', min: 1, max, mean: max / 2, detected_bucket: 10_000_000_000, gaps: 0 })
+    const fileSource = { kind: 'file' as const, file: { filename: 'traffic.csv', sheet: 'CSV', timestamp_column: '', value_columns: [], timezone: 'UTC' } }
+    apiMock.analyzeTrafficProfile
+      .mockResolvedValueOnce({
+        source: fileSource,
+        sheets: [{ name: 'CSV', columns: ['timestamp', 'browse', 'checkout', 'avg_response_ms', 'region'], samples: [['2026-08-26T00:00:00Z', '12', '4', '180', 'east'], ['2026-08-26T00:00:10Z', '14', '5', '175', 'east']] }],
+        series: [],
+      })
+      .mockResolvedValueOnce({
+        source: fileSource,
+        sheets: [{ name: 'CSV', columns: ['timestamp', 'browse', 'checkout', 'avg_response_ms', 'region'] }],
+        series: [
+          { series: { key: 'browse', name: 'browse', points: [point] }, stats: stats(14) },
+          { series: { key: 'checkout', name: 'checkout', points: [point] }, stats: stats(5) },
+        ],
+      })
+    apiMock.deriveTrafficProfile.mockResolvedValue({ traffic_profile: { version: 1, source: fileSource, value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '10m', target_duration: '10m', mappings: [], refreshed_at: '2026-08-27T00:00:00Z' }, preview: [], scenario_draft: { name: 'Replay', duration: '10m', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [] } } satisfies TrafficProfileDeriveResponse)
+    const draft = { name: 'Replay', duration: '10m', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'checkout', vusers: 5 }, { name: 'Browse', script_id: 'browse', vusers: 5 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout', 'Browse']} scenarioDraft={draft} onApply={vi.fn()} />) })
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['data'], 'traffic.csv')] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    const analyze = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze()?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    // The timestamp-named column and the numeric workload columns are
+    // chosen; a response-time column and a text column are not.
+    const timestampSelect = Array.from(container.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent === 'Timestamp column')?.querySelector('select') as HTMLSelectElement
+    expect(timestampSelect.value).toBe('timestamp')
+    expect((container.querySelector('[aria-label="Timestamp values"]') as HTMLSelectElement).value).toBe('absolute')
+    const valueList = Array.from(container.querySelectorAll('fieldset')).find(fieldset => fieldset.querySelector('legend')?.textContent === 'Value columns') as HTMLFieldSetElement
+    const checked = (fieldset: HTMLFieldSetElement) => Array.from(fieldset.querySelectorAll('label')).filter(label => label.querySelector('input')?.checked).map(label => label.textContent)
+    expect(checked(valueList)).toEqual(['browse', 'checkout'])
+    // The timestamp column cannot also be a value column.
+    expect(Array.from(valueList.querySelectorAll('label')).find(label => label.textContent === 'timestamp')?.querySelector('input')?.disabled).toBe(true)
+    // Only one worksheet, so no worksheet picker.
+    expect(Array.from(container.querySelectorAll('label span')).some(span => span.textContent === 'Worksheet')).toBe(false)
+
+    await act(async () => { analyze()?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const upload = apiMock.analyzeTrafficProfile.mock.calls[1]?.[0] as FormData
+    expect(upload.get('timestamp_column')).toBe('timestamp')
+    expect(upload.getAll('value_column')).toEqual(['browse', 'checkout'])
+
+    // Each group follows the series named like it, not the first series.
+    expect((container.querySelector('[aria-label="Series for Checkout"]') as HTMLSelectElement).value).toBe('checkout')
+    expect((container.querySelector('[aria-label="Series for Browse"]') as HTMLSelectElement).value).toBe('browse')
+    // Blank duration replays at the source's own length.
+    const duration = Array.from(container.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent === 'Test duration')?.querySelector('input') as HTMLInputElement
+    expect(duration.placeholder).toBe('10m')
+    expect(container.querySelector('#traffic-profile-duration-hint')?.textContent).toBe("Leave blank to replay at the source's own length (10m).")
+
+    const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
+    await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(apiMock.deriveTrafficProfile).toHaveBeenCalledWith(expect.objectContaining({
+      mappings: [
+        { series_key: 'checkout', group_name: 'Checkout' },
+        { series_key: 'browse', group_name: 'Browse' },
+      ],
+    }))
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('suggests the columns of the worksheet the author switches to', async () => {
+    apiMock.analyzeTrafficProfile.mockResolvedValueOnce({
+      source: { kind: 'file' as const, file: { filename: 'traffic.xlsx', timestamp_column: '', value_columns: [], timezone: 'UTC' } },
+      sheets: [
+        { name: 'Summary', columns: ['note', 'total'], samples: [['all', '10']] },
+        { name: 'Hourly', columns: ['when', 'orders', 'art_ms'], samples: [['2026-08-26T00:00:00Z', '12', '180']] },
+      ],
+      series: [],
+    })
+    const draft = { name: 'Replay', duration: '10m', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'checkout', vusers: 5 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['data'], 'traffic.xlsx')] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const field = (label: string) => Array.from(container.querySelectorAll('label')).find(item => item.querySelector('span')?.textContent === label)?.querySelector('select') as HTMLSelectElement
+    // The first sheet has no time column; its numeric column is suggested.
+    expect(field('Timestamp column').value).toBe('')
+    const valueList = () => Array.from(container.querySelectorAll('fieldset')).find(fieldset => fieldset.querySelector('legend')?.textContent === 'Value columns') as HTMLFieldSetElement
+    const checked = () => Array.from(valueList().querySelectorAll('label')).filter(label => label.querySelector('input')?.checked).map(label => label.textContent)
+    expect(checked()).toEqual(['total'])
+    expect(valueList().getAttribute('aria-describedby')).toBe(valueList().querySelector('small')?.id)
+
+    await act(async () => {
+      field('Worksheet').value = 'Hourly'
+      field('Worksheet').dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    // A column of dates is the timestamp; the response-time column is not workload.
+    expect(field('Timestamp column').value).toBe('when')
+    expect(checked()).toEqual(['orders'])
 
     await act(async () => root.unmount())
     container.remove()

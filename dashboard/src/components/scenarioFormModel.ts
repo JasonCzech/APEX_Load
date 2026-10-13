@@ -6,7 +6,7 @@ import type {
   StoredScenario,
 } from '../types'
 import type { ScenarioFormGroup, ScenarioFormState } from './TestHub'
-import type { ScenarioSeed } from './scenarioWizardUtils'
+import { DEFAULT_GROUP_VUSERS, type ScenarioSeed } from './scenarioWizardUtils'
 import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
 import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
 
@@ -28,7 +28,7 @@ function emptyScenarioGroup(): ScenarioFormGroup {
   return {
     name: '',
     script_id: '',
-    vusers: 10,
+    vusers: DEFAULT_GROUP_VUSERS,
     ramp_up: '',
 		ramp_down: '',
 		start_offset: '',
@@ -72,7 +72,7 @@ export function reseedScenarioGroups(
   seedGroups: ScenarioSeed['groups'],
   previousGroups: ScenarioFormGroup[],
 ): ScenarioFormGroup[] {
-  const groups = seedGroups && seedGroups.length > 0 ? seedGroups : [{ name: '', vusers: 10 }]
+  const groups = seedGroups && seedGroups.length > 0 ? seedGroups : [{ name: '', vusers: DEFAULT_GROUP_VUSERS }]
   const seededGroups = groups.map((group, index) => {
     const previous = previousGroups[index]
     return {
@@ -82,7 +82,7 @@ export function reseedScenarioGroups(
       // executable duplicate workload.
       script_id: previous?.script_id || '',
       role: previous?.role,
-      vusers: group.vusers || previous?.vusers || 10,
+      vusers: group.vusers || previous?.vusers || DEFAULT_GROUP_VUSERS,
       ramp_up: group.ramp_up || '',
 			ramp_down: group.ramp_down || '',
 			start_offset: previous?.start_offset || '',

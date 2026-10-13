@@ -8,13 +8,15 @@ interface Props {
   advancedOnly?: boolean
   /** The scenario's group protocols: only ceilings they can produce are offered. Omitted, all are. */
   protocols?: readonly string[]
+  /** A traffic profile sets the throughput, so there is no target to enter: only the limits and guardrails. */
+  profileManaged?: boolean
 }
 
 function optionalNumber(value: string): number | undefined {
   return value === '' ? undefined : Number(value)
 }
 
-export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange, advancedOnly = false, protocols }: Props) {
+export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange, advancedOnly = false, protocols, profileManaged = false }: Props) {
   // A ceiling the groups cannot produce is not offered; one already set stays, so it can be cleared.
   const ceilings = GOAL_CEILINGS.filter(ceiling => goalCeilingApplies(ceiling.scope, protocols) || goalConfig[ceiling.field] !== undefined)
   const renderCeiling = (ceiling: (typeof GOAL_CEILINGS)[number], withPlaceholder: boolean) => (
@@ -46,11 +48,13 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange,
   return (
     <div className="goal-settings">
       <div className="goal-settings-header">
-        <h4>Goal Settings</h4>
-        <p>Define the target and guardrails. The script groups below still provide the starting seed load and script mix for the scenario.</p>
+        <h4>{profileManaged ? 'Limits and guardrails' : 'Goal Settings'}</h4>
+        <p>{profileManaged
+          ? 'The traffic profile sets the throughput. Set how many VUsers the controller may use and the ceilings it watches.'
+          : 'Define the target and guardrails. The script groups below still provide the starting seed load and script mix for the scenario.'}</p>
       </div>
       <div className="goal-settings-grid">
-        <label>
+        {!profileManaged && <label>
           <span>Target Avg TPS</span>
           <input
             type="number"
@@ -60,7 +64,7 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange,
             onChange={(event) => onGoalConfigChange('target_average_tps', optionalNumber(event.target.value))}
             placeholder="e.g. 300"
           />
-        </label>
+        </label>}
         <label>
           <span>P95 Latency Ceiling (ms)</span>
           <input

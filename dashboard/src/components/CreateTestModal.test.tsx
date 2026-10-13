@@ -569,6 +569,24 @@ describe('CreateTestModal', () => {
     expect(labels).not.toContain('Max Partition Skew %')
   })
 
+  it('offers a traffic-profile run its limits and guardrails, not a throughput target', async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, scenario_mode: 'goal_oriented', goal_config: { min_vusers: 1, max_vusers: 20 } } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} profileManaged mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const labels = Array.from(container.querySelectorAll('.goal-settings label > span')).map(span => span.textContent)
+    expect(labels).not.toContain('Target Avg TPS')
+    expect(labels).toContain('Max VUsers')
+    expect(container.querySelector('.goal-settings h4')?.textContent).toBe('Limits and guardrails')
+  })
+
+  it('treats a draft carrying a TPS traffic profile as profile-managed', async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, scenario_mode: 'goal_oriented', goal_config: { min_vusers: 1, max_vusers: 20 } } as TestSummary
+    const profile = { version: 1, runtime_target: 'tps', mappings: [{ series_key: 'orders', group_name: 'orders', peak_target: 4, points: [{ offset_ms: 0, target: 4 }] }] } as unknown as NonNullable<ScenarioDraft['trafficProfile']>
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={{ ...buildScenarioDraftFromTest(source), trafficProfile: profile }} onClose={vi.fn()} onCreated={vi.fn()} />))
+    const labels = Array.from(container.querySelectorAll('.goal-settings label > span')).map(span => span.textContent)
+    expect(labels).not.toContain('Target Avg TPS')
+    expect(labels).toContain('Min VUsers')
+  })
+
   const captureScripts = [{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]
   function captureSource(): TestSummary {
     return { id: 'capture-source', project_id: 'project-original', name: 'Capture source', status: 'QUEUED', created_at: '2026-10-05T00:00:00Z', duration: '1m', total_vusers: 1, elk_capture: { connection_id: 'source-elk', connection_name: 'Source logs' }, dynatrace_capture: { connection_id: 'source-dt', connection_name: 'Source SaaS' }, groups: [{ name: 'orders', script_id: 'script-1', vusers: 1 }] } as TestSummary

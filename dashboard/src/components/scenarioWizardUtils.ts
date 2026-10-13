@@ -29,6 +29,11 @@ export interface ScenarioModelFamily {
   variantShapeIds: string[]
 }
 
+/** VUsers a new script group starts with: the Fixed VUsers model's own default, so the grid and its plan agree. */
+export const DEFAULT_GROUP_VUSERS = 5
+/** A new browser group starts lower: each browser VUser runs its own browser (about 100 MB). */
+export const BROWSER_DEFAULT_GROUP_VUSERS = 2
+
 // The picker groups the support matrix into the four load contracts the runtime
 // actually distinguishes. Variants are preset bundles over their family's contract;
 // they keep their own workload_shape_id and feature gate, so stored scenarios,
@@ -579,7 +584,7 @@ function scenarioDurationSeconds(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptCon
 
 function seedGroups(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext): ScenarioSeedGroup[] {
   const groups = seed.groups?.length ? seed.groups : ctx?.groups
-  return groups?.length ? groups : [{ vusers: 10 }]
+  return groups?.length ? groups : [{ vusers: DEFAULT_GROUP_VUSERS }]
 }
 
 function targetTpsFor(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext, fallback = 25): number {
@@ -611,11 +616,11 @@ export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, 
       const sustain = formatTimeCompact(Math.max(1, durationSeconds - rampUpSeconds - rampDownSeconds))
       return {
         ...group,
-        vusers: normalizePeak(group.vusers || 5),
+        vusers: normalizePeak(group.vusers || DEFAULT_GROUP_VUSERS),
         ramp_up: rampUp,
         ramp_down: rampDown,
         stages: buildClosedVUserPlan({
-          peakVusers: normalizePeak(group.vusers || 5),
+          peakVusers: normalizePeak(group.vusers || DEFAULT_GROUP_VUSERS),
           rampUp,
           sustain,
           rampDownEnabled: Boolean(rampDown),
@@ -723,9 +728,9 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
     duration: '5m',
     scenarioMode: 'vuser_driven',
     groups: [{
-      vusers: 5,
+      vusers: DEFAULT_GROUP_VUSERS,
       ramp_up: '2m',
-      stages: buildClosedVUserPlan({ peakVusers: 5, rampUp: '2m', sustain: '3m', rampDownEnabled: false, rampDown: '2m' }).stages,
+      stages: buildClosedVUserPlan({ peakVusers: DEFAULT_GROUP_VUSERS, rampUp: '2m', sustain: '3m', rampDownEnabled: false, rampDown: '2m' }).stages,
     }],
     guidance: 'Ramp continuously to a fixed VUser load, measure steady-state performance, and optionally ramp down before the run ends.',
   },

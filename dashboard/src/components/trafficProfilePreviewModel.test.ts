@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrafficProfile } from '../types'
-import { formatTrafficProfileAxisTime, inferTimestampMode, trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
+import { formatTrafficProfileAxisTime, inferTimestampMode, suggestGroupSeries, suggestTimestampColumn, suggestValueColumns, trafficProfileMappingForGroup, trafficProfilePeak, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 
 function profile(pointCount = 4): TrafficProfile {
   return {
@@ -95,5 +95,55 @@ describe('inferTimestampMode', () => {
     expect(inferTimestampMode([['0s', '1'], ['2026-01-01T00:01:00Z', '2']], columns, 'time')).toBeUndefined()
     expect(inferTimestampMode([['0s', '1']], columns, 'missing')).toBeUndefined()
     expect(inferTimestampMode(undefined, columns, 'time')).toBeUndefined()
+  })
+})
+
+describe('trafficProfilePeak', () => {
+  it('sums the groups at the moment they peak together', () => {
+    const base = profile(4)
+    const second = { ...base.mappings[0], series_key: 'search', group_name: 'Search', points: [{ offset_ms: 0, target: 5 }, { offset_ms: 120_000, target: 1 }] }
+    // Checkout steps 0,1,2,3 a minute apart; Search holds 5 for two minutes.
+    expect(trafficProfilePeak({ ...base, mappings: [base.mappings[0], second] })).toBe(6)
+    expect(trafficProfilePeak(base)).toBe(3)
+    expect(trafficProfilePeak(undefined)).toBe(0)
+    // Computed once per profile object.
+    const once = profile(4)
+    expect(trafficProfilePeak(once)).toBe(3)
+    once.mappings[0].points[3].target = 99
+    expect(trafficProfilePeak(once)).toBe(3)
+  })
+  it('counts points past a short or missing target duration', () => {
+    expect(trafficProfilePeak({ ...profile(4), target_duration: '' })).toBe(3)
+  })
+})
+
+describe('column suggestions', () => {
+  const samples = [['2026-01-01T00:00:00Z', '12', '180', 'east', '3'], ['2026-01-01T00:00:10Z', '14', '175', 'west', '']]
+  const columns = ['Event Time', 'orders', 'avg_response_ms', 'region', 'refunds']
+  it('takes a time-named column over response times, else a column of timestamps', () => {
+    expect(suggestTimestampColumn(columns, samples)).toBe('Event Time')
+    expect(suggestTimestampColumn(['ResponseTime', 'when', 'orders'], [['120', '2026-01-01T00:00:00Z', '1']])).toBe('when')
+    expect(suggestTimestampColumn(['elapsed', 'orders'], [['0:00', '1']])).toBe('elapsed')
+    expect(suggestTimestampColumn(['a', 'b'], [['x', '1']])).toBe('')
+  })
+  it('picks numeric workload columns, never durations, text or excluded ones', () => {
+    expect(suggestValueColumns(columns, samples, ['Event Time'])).toEqual(['orders', 'refunds'])
+    expect(suggestValueColumns(columns, samples, ['Event Time', 'refunds'])).toEqual(['orders'])
+    expect(suggestValueColumns(columns, undefined, [])).toEqual([])
+  })
+})
+
+describe('suggestGroupSeries', () => {
+  const series = [{ key: 'browse', name: 'Browse' }, { key: 'checkout', name: 'Checkout' }]
+  it('matches groups to series by name and leaves the rest for the author', () => {
+    expect(suggestGroupSeries(['checkout', 'browse'], series, {})).toEqual({ checkout: 'checkout', browse: 'browse' })
+    // No guess by position: Cart and Search follow nothing until chosen.
+    expect(suggestGroupSeries(['Cart', 'Checkout', 'Search'], series, {})).toEqual({ Checkout: 'checkout' })
+  })
+  it('keeps choices that still exist and fans a single series out to every group', () => {
+    expect(suggestGroupSeries(['A', 'B'], series, { A: 'checkout', B: 'gone' })).toEqual({ A: 'checkout' })
+    expect(suggestGroupSeries(['A', 'B'], [{ key: 'all', name: 'Requests' }], {})).toEqual({ A: 'all', B: 'all' })
+    // A group the author set to none stays none.
+    expect(suggestGroupSeries(['A', 'B'], [{ key: 'all', name: 'Requests' }], { B: '' })).toEqual({ A: 'all', B: '' })
   })
 })

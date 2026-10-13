@@ -1878,8 +1878,9 @@ describe('TestHub', () => {
     const groupRows = Array.from(container.querySelectorAll('.composition-track-label'))
     expect(groupRows).toHaveLength(2)
     expect(groupRows.map(row => row.textContent)).toEqual([
-      'Checkout Flow10 VUsers · load',
-      'Group 210 VUsers · load',
+      // A new group starts at the Fixed VUsers default, so grid and plan agree.
+      'Checkout Flow5 VUsers · load',
+      'Group 25 VUsers · load',
     ])
     expect(groupRows[1].getAttribute('aria-pressed')).toBe('true')
 
@@ -3439,6 +3440,37 @@ describe('TestHub', () => {
     ])
   })
 
+  it('offers the observer role and a lower starting count only to browser groups', async () => {
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [
+        { id: 'script-browser', name: 'Mobile Checkout', protocol: 'browser', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' },
+        { id: 'script-http', name: 'Orders API', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' },
+      ],
+      count: 2,
+    })
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup('Orders API')
+    const roleOptions = () => Array.from(container.querySelectorAll('select')).filter(select => Array.from(select.options).some(option => option.value === 'load')).map(select => Array.from(select.options).map(option => option.textContent))
+    const vusers = () => Array.from(container.querySelectorAll('.scenario-group-vusers strong')).map(cell => cell.textContent)
+    expect(roleOptions()).toEqual([['Load']])
+    expect(vusers()[0]).toBe('5')
+    await clickButton('Add group')
+    await chooseLibraryScriptForGroup('Mobile Checkout', 1)
+    expect(roleOptions()).toEqual([['Load'], ['Load', 'Observer canary']])
+    // Each browser VUser runs a browser: an untouched group starts lower.
+    expect(vusers()).toEqual(['5', '2'])
+    // Swapping that group to an HTTP script takes the default back up.
+    const change = Array.from(container.querySelectorAll('.scenario-script-group-card button')).filter(button => button.getAttribute('aria-label')?.startsWith('Mobile Checkout: change the script'))[0]
+    await act(async () => { change?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushTimeouts()
+    const use = Array.from(document.body.querySelectorAll('.scenario-existing-script-library button')).find(button => button.textContent?.includes('Use for') && button.closest('tr')?.textContent?.includes('Orders API'))
+    await act(async () => { use?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushTimeouts()
+    expect(vusers()).toEqual(['5', '5'])
+    expect(roleOptions()).toEqual([['Load'], ['Load']])
+  })
+
   it('creates a browser scenario with mobile runtime overrides', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScripts.mockResolvedValue({
@@ -4070,6 +4102,79 @@ describe('TestHub', () => {
     expect(cells[0].getAttribute('title')).toBe('Sized from the traffic profile on the Run settings step')
   })
 
+  it('gives a traffic-profile scenario profile settings, not a throughput target to enter', async () => {
+    const stored = {
+      id: 'profile-settings', name: 'Profile settings', duration: '10m', workload_shape_id: 'production-replay', scenario_mode: 'goal_oriented',
+      goal_config: { min_vusers: 1, max_vusers: 20 },
+      scripts: [{ order: 0, name: 'Checkout', script_id: 'script-1', vusers: 5 }, { order: 1, name: 'Static', script_id: 'script-1', vusers: 3 }],
+      traffic_profile: {
+        version: 1, runtime_target: 'tps', interpolation: 'step', value_semantics: 'tps', source_duration: '10m0s', target_duration: '10m0s', amplitude: { mode: 'factor', value: 2 },
+        source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'timestamp', value_columns: ['checkout'] } },
+        mappings: [{ series_key: 'checkout', series_name: 'checkout', group_name: 'Checkout', points: [{ offset_ms: 0, target: 4 }, { offset_ms: 300_000, target: 12 }], peak_target: 12 }],
+      },
+      created_at: '', updated_at: '', script_count: 2,
+    } as unknown as StoredScenario
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Target load')
+
+    const panel = Array.from(container.querySelectorAll('.scenario-subpanel')).find(item => item.querySelector('h4')?.textContent === 'Traffic profile')!
+    expect(panel).toBeTruthy()
+    const summary = Object.fromEntries(Array.from(panel.querySelectorAll('.scenario-profile-summary > div')).map(item => [item.querySelector('dt')?.textContent, item.querySelector('dd')?.textContent]))
+    expect(summary).toMatchObject({ Peak: '12 TPS', 'Replay length': '10m', Scale: '2 × the source', Groups: 'Checkout', Source: 'traffic.csv' })
+    // The profile is the target: limits and guardrails only.
+    expect(panel.textContent).toContain('Limits and guardrails')
+    expect(panel.textContent).not.toContain('Target Avg TPS')
+    expect(panel.textContent).toContain('Min VUsers')
+    expect(container.textContent).not.toContain('Goal controller')
+    expect(container.textContent).not.toContain('compatibility seed')
+    // The mapped group shows the profile's peak; the timeline says so too.
+    expect(container.querySelector('#scenario-active-group-panel')?.textContent).toContain('Profile peak12 TPS')
+    expect(Array.from(container.querySelectorAll('.composition-track-label span')).map(span => span.textContent)).toEqual(['peak 12 TPS · load', '3 VUsers · load'])
+
+    await clickButton('Change profile')
+    expect(container.querySelector('[aria-label="Scenario step: source"]')).not.toBeNull()
+
+    // Another load model sets the load itself: the profile goes with it.
+    await selectManualShapeByName('Closed VUser')
+    await clickScenarioSettingsSection('Target load')
+    expect(Array.from(container.querySelectorAll('.scenario-subpanel h4')).map(heading => heading.textContent)).not.toContain('Traffic profile')
+    expect(Array.from(container.querySelectorAll('.composition-track-label span')).map(span => span.textContent)).not.toContain('peak 12 TPS · load')
+    expect(container.textContent).not.toContain('Profile peak')
+    apiMock.updateScenario.mockResolvedValue({ ...stored, traffic_profile: undefined, workload_shape_id: 'closed-vuser' })
+    await clickButton('Save draft')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledOnce()
+    const [, payload] = apiMock.updateScenario.mock.calls[0]
+    expect(payload.traffic_profile).toBeUndefined()
+    expect(payload.scenario_mode).toBe('vuser_driven')
+  })
+
+  it('drops an applied profile when the author switches to another profile source', async () => {
+    const stored = {
+      id: 'profile-source', name: 'Profile source', duration: '10m', workload_shape_id: 'production-replay', scenario_mode: 'goal_oriented',
+      goal_config: { min_vusers: 1, max_vusers: 20 },
+      scripts: [{ order: 0, name: 'Checkout', script_id: 'script-1', vusers: 5 }],
+      traffic_profile: { version: 1, runtime_target: 'tps', interpolation: 'step', value_semantics: 'tps', source_duration: '10m0s', target_duration: '10m0s', source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'timestamp', value_columns: ['checkout'] } }, mappings: [{ series_key: 'checkout', series_name: 'checkout', group_name: 'Checkout', points: [{ offset_ms: 0, target: 12 }], peak_target: 12 }] },
+      created_at: '', updated_at: '', script_count: 1,
+    } as unknown as StoredScenario
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Model & shape')
+    await clickButton('Exact CSV schedule')
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Target load')
+    expect(Array.from(container.querySelectorAll('.scenario-subpanel h4')).map(heading => heading.textContent)).not.toContain('Traffic profile')
+    expect(container.textContent).not.toContain('peak 12 TPS')
+  })
+
   it('keeps the scenario library to one toolbar row, one row action and rows that tell apart', async () => {
     const scenario = (id: string, ref: string, shape?: string): StoredScenario => ({ id, ref_key: ref, name: 'Checkout peak hour', duration: '5m', workload_shape_id: shape, scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 })
     apiMock.listScenarios.mockResolvedValue({ scenarios: [scenario('a', 'SCN-0001', 'closed-vuser'), scenario('b', 'SCN-0002')], count: 2 })
@@ -4670,7 +4775,7 @@ describe('TestHub', () => {
       enableStagesButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Peak staged VUsers: 10')
+    expect(container.textContent).toContain('Peak staged VUsers: 5')
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
@@ -4685,10 +4790,10 @@ describe('TestHub', () => {
       name: 'Staged Checkout Scenario',
       groups: [expect.objectContaining({
         script_id: 'script-1',
-        vusers: 10,
+        vusers: 5,
         stages: [
-          { name: 'Warmup', type: 'ramp_up', duration: '24s', target_vusers: 10 },
-          { name: 'Steady', type: 'hold', duration: '24s', target_vusers: 10 },
+          { name: 'Warmup', type: 'ramp_up', duration: '24s', target_vusers: 5 },
+          { name: 'Steady', type: 'hold', duration: '24s', target_vusers: 5 },
           { name: 'Cooldown', type: 'ramp_down', duration: '12s', target_vusers: 1 },
         ],
       })],

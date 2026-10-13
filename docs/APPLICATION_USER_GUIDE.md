@@ -609,6 +609,18 @@ then come **Data** and **Review**. Every step it has been through is marked done
 and **Save draft** is on every step. The builder warns, without stopping you, when
 another scenario already has the name you type.
 
+A Traffic Profile replays production demand from a CSV or XLSX file, a Prometheus
+query or OpenSearch. After a file's first analysis the builder picks the timestamp
+column and the numeric workload columns (never response-time columns), which you
+can change. Then each group chooses the series it follows: a group named like a
+series follows it, a single series goes to every group, and a group set to none
+keeps its own load. Leave **Test duration** blank to replay at the source's own
+length, which the field shows. On **Run settings**, the profile is the throughput
+target: the panel shows its peak, replay length, scale and source, with the VUser
+limits and guardrails the controller keeps, and no target to enter. Picking another
+load model or source drops the profile. **New run** labels these scenarios
+**Traffic Profile** and shows their peak.
+
 The scenario library has one row of controls: search, **Source**, and **Filters**,
 which hold the archive state and the application and release filters (it shows how
 many are set). Each row's action is **New run**; **More** holds **View runs** (or
@@ -621,9 +633,12 @@ A scenario brings together:
 
 - **Groups** — each group runs one script with its own VUser count, ramp-up, ramp-down,
   and optional iteration cap. Use multiple groups to model a realistic mix, for example
-  80% browse and 20% checkout. A group's `role` distinguishes a normal **load** group
-  from an **observer** group (shown as **Observer canary**) — a browser experience
-  canary that measures what a real user sees while the load groups generate the pressure.
+  80% browse and 20% checkout. A new group starts at 5 VUsers, the Fixed VUsers
+  default, and a browser group at 2, since each browser VUser runs its own browser. A
+  group's `role` distinguishes a normal **load** group from an **observer** group
+  (shown as **Observer canary**, and offered only for browser scripts) — a browser
+  experience canary that measures what a real user sees while the load groups
+  generate the pressure.
 - **Load model** — total VUsers, ramp pattern, and duration. Multi-stage groups let you
   express step loads (ramp to 100, hold, ramp to 300, hold) rather than a single slope.
   The load chart draws the plan as the engine runs it, one VUser at a time: a ramp-up
