@@ -3847,6 +3847,56 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/scenario-drafts",
+      "operationId": "handleListScenarioDrafts",
+      "summary": "List Scenario Drafts",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/scenario-drafts",
+      "operationId": "handleCreateScenarioDraft",
+      "summary": "Create Scenario Draft",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/scenario-drafts/{draftID}",
+      "operationId": "handleDeleteScenarioDraft",
+      "summary": "Delete Scenario Draft",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/scenario-drafts/{draftID}",
+      "operationId": "handleGetScenarioDraft",
+      "summary": "Get Scenario Draft",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/scenario-drafts/{draftID}",
+      "operationId": "handleUpdateScenarioDraft",
+      "summary": "Update Scenario Draft",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/secrets",
       "operationId": "handleListProjectSecrets",
       "summary": "List Project Secrets",

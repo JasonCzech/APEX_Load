@@ -88,6 +88,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 59, Name: "distributed-rendezvous-outcomes", Fingerprint: "82b6b57eda589317b2edd663d6107e94d398915425011e2bc30420548e08133b"},
 	{Version: 60, Name: "execution-plan-release-overlap-run-link", Fingerprint: "82da9011bb48e4da2a3ce95271a71994bd96e99977b578401677122012746567"},
 	{Version: 61, Name: "data-pool-column-order", Fingerprint: "9caa31d488e14bcf56f24c3f132115228103051f8686ec45de56f1806859a33b"},
+	{Version: 62, Name: "scenario-drafts", Fingerprint: "237838e015ad61c6e521a6af793e7cb5193528938640b54b1a0d63a17aba52cc"},
 }
 
 type SchemaMigrationRecord struct {

@@ -24,6 +24,12 @@ import { applyEffectiveRuntimeSettingsToGroups, copyRuntimeSettingsForProtocol }
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  // Drafts saved to the project; by default the project has none.
+  listScenarioDrafts: vi.fn(async () => ({ drafts: [] as Array<Record<string, unknown>>, count: 0 })),
+  getScenarioDraft: vi.fn(),
+  createScenarioDraft: vi.fn(async (projectId: string, draft: { name?: string; scenario_id?: string; document?: unknown }) => ({ id: 'scenario-draft-1', project_id: projectId, name: draft.name || 'Untitled scenario', scenario_id: draft.scenario_id, revision: 1, created_at: '', updated_at: '', document: draft.document })),
+  updateScenarioDraft: vi.fn(async (projectId: string, id: string, draft: { name?: string; revision: number; document?: unknown }) => ({ id, project_id: projectId, name: draft.name || 'Untitled scenario', revision: draft.revision + 1, created_at: '', updated_at: '', document: draft.document })),
+  deleteScenarioDraft: vi.fn(async (_projectId: string, id: string) => ({ deleted: id })),
   listScenarios: vi.fn(),
   listScripts: vi.fn(),
   listDataPools: vi.fn(),
@@ -124,6 +130,11 @@ describe('scenarioGroupNameAfterScriptSelection', () => {
     expect([...duplicateScenarioGroupNameIndexes([' Buyers  East ', 'buyers east', 'Sellers'])]).toEqual([0, 1])
   })
 })
+
+// A minimal builder form a draft document can carry.
+function emptyFormForDraft(name: string) {
+  return { name, duration: '5m', start_delay: '', groups: [], scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false }
+}
 
 describe('TestHub', () => {
   let container: HTMLDivElement
@@ -723,6 +734,8 @@ describe('TestHub', () => {
     projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
 
     apiMock.listScenarios.mockResolvedValue({ scenarios: [], count: 0 })
+    // A test that lists drafts sets its own; the rest start with none.
+    apiMock.listScenarioDrafts.mockResolvedValue({ drafts: [], count: 0 })
     // clearAllMocks keeps implementations: no test inherits another's script.
     apiMock.getScript.mockReset()
     apiMock.listScripts.mockResolvedValue({
@@ -951,11 +964,44 @@ describe('TestHub', () => {
       root = createRoot(container)
       await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
       await flushPromises()
-      const recovery = container.querySelector('[aria-label="Saved browser draft"]')
+      const recovery = container.querySelector('[aria-label="Unsaved work in this browser"]')
       expect(recovery?.textContent).toContain('Autosaved scenario')
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('resumes unsaved work on a project draft as that draft, so its Save updates it', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Linked draft'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledTimes(1)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Linked draft edited'))
+      await act(async () => { vi.advanceTimersByTime(2000) })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(container.querySelector('.scenario-builder-progress')?.textContent).toContain('Draft · Unsaved changes')
+    expect(JSON.parse(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1') || '{}').projectDraft).toEqual({ id: 'scenario-draft-1', revision: 1 })
+
+    // A reload offers the unsaved work back; resumed, it still continues the draft.
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await clickButton('Resume draft')
+    await flushPromises()
+    expect(container.querySelector('.scenario-builder-progress')?.textContent).toContain('Draft · Unsaved changes')
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-1', expect.objectContaining({ name: 'Linked draft edited', revision: 1 }))
+    expect(container.querySelector('.scenario-builder-progress')?.textContent).toContain('Draft · Saved in the project')
   })
 
   it('removes the autosaved checkpoint when the builder work is discarded with Start over', async () => {
@@ -980,9 +1026,13 @@ describe('TestHub', () => {
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()
     await chooseLibraryScriptForGroup()
-    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Yesterday draft'))
-    await clickButton('Save draft')
-    await flushPromises()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Yesterday draft'))
+      await act(async () => { vi.advanceTimersByTime(2000) })
+    } finally {
+      vi.useRealTimers()
+    }
     expect(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')).toContain('Yesterday draft')
 
     // A later session starts other work without resuming that draft.
@@ -1003,14 +1053,17 @@ describe('TestHub', () => {
     expect(stored).not.toContain('Other work')
   })
 
-  it('puts an explicitly saved draft back when later autosaved edits are discarded', async () => {
+  it('keeps a saved project draft when later unsaved edits are discarded', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Explicit draft'))
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledTimes(1)
+    // The project holds the saved work, so this browser keeps no copy of it.
+    expect(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')).toBeNull()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Explicit draft with later edits'))
@@ -1021,29 +1074,41 @@ describe('TestHub', () => {
     expect(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')).toContain('Explicit draft with later edits')
     await clickButton('Start over')
     await flushPromises()
-    const stored = window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')
-    expect(stored).toContain('Explicit draft')
-    expect(stored).not.toContain('later edits')
+    expect(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')).toBeNull()
+    expect(apiMock.deleteScenarioDraft).not.toHaveBeenCalled()
   })
 
-  it('keeps a new scenario as a browser draft until its load has been set', async () => {
+  it('keeps a new scenario as a project draft until its load has been set, then saves it as a scenario', async () => {
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Checkpoint probe'))
-    expect(container.querySelector('.ux-draft-help')?.textContent).toContain('until its load is set')
+    expect(container.querySelector('.ux-draft-help')?.textContent).toContain('Save keeps it as a draft in this project')
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Draft progress saved in this browser')
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledWith('project-1', expect.objectContaining({ name: 'Checkpoint probe', document: expect.objectContaining({ version: 3, projectId: 'project-1' }) }))
+    expect(container.textContent).toContain('Saved “Checkpoint probe” as a draft in this project')
+    expect(container.querySelector('.scenario-builder-progress')?.textContent).toContain('Draft · Saved in the project')
+    expect(container.textContent).toContain('choose a load model in Model & shape.')
 
+    // Saving again updates that draft rather than adding another.
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Checkpoint probe 2'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-1', expect.objectContaining({ name: 'Checkpoint probe 2', revision: 1 }))
+
+    // Complete, it saves as a scenario, and the draft has served its purpose.
     await clickWizardStep('Run settings')
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
+    // Only at the revision this builder saved, so later work by others is kept.
+    expect(apiMock.deleteScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-1', 2)
   })
 
   it('creates a scenario from the typed form payload', async () => {
@@ -1094,7 +1159,7 @@ describe('TestHub', () => {
       setInputValue(durationInput, '5')
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
@@ -1251,7 +1316,7 @@ describe('TestHub', () => {
     expect(document.body.querySelector('[role="dialog"][aria-labelledby="scenario-script-library-dialog-title"]')).toBeNull()
 
     await clickWizardStep('Run settings') // a new scenario is saved to the project only once its load is set
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
@@ -1613,7 +1678,7 @@ describe('TestHub', () => {
     expect(getDurationFieldByLabel(container, 'Ramp-down')?.input.value).toBe('3')
     expect(container.textContent).toContain('10m total')
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
     expect(payload).toMatchObject({
@@ -1675,7 +1740,7 @@ describe('TestHub', () => {
     expect(stageRows.length).toBe(6)
     expect(container.textContent).toContain('20m each')
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
@@ -1997,7 +2062,7 @@ describe('TestHub', () => {
     if (!logLevelSelect) return
     await act(async () => { setSelectValue(logLevelSelect, 'extended') })
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -2036,14 +2101,14 @@ describe('TestHub', () => {
     await act(async () => setInputValue(dimensions(), '{'))
     await clickWizardStep('Review')
     expect(dimensions().closest('[hidden]')).not.toBeNull()
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(apiMock.updateScenario).not.toHaveBeenCalled()
     expect(container.textContent).toContain('before saving or launching')
     expect(container.textContent).toContain('Editing · Unsaved changes')
     await clickWizardStep('Data')
     expect(dimensions().value).toBe('{')
     await act(async () => setInputValue(dimensions(), '{"host":"corrected"}'))
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(apiMock.updateScenario).toHaveBeenCalledWith('criterion-draft', expect.objectContaining({ goal_config: expect.objectContaining({ monitor_rules: [expect.objectContaining({ dimensions: { host: 'corrected' } })] }) }), taggedBaseline())
   })
 
@@ -2064,7 +2129,7 @@ describe('TestHub', () => {
     const name = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
     expect(name).not.toBeNull()
     await act(async () => setInputValue(name!, 'Renamed only'))
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenCalledOnce()
     const [identity, payload] = apiMock.updateScenario.mock.calls[0]
@@ -2098,7 +2163,7 @@ describe('TestHub', () => {
     const load = findControlByLabel<HTMLInputElement>(container, shape === 'closed-vuser' ? 'Peak VUsers' : 'Ending load level', 'input')
     expect(load).toBeDefined()
     await act(async () => setInputValue(load!, '14'))
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenCalledOnce()
     const [identity, payload] = apiMock.updateScenario.mock.calls[0]
@@ -2137,7 +2202,7 @@ describe('TestHub', () => {
       expect(art).not.toBeNull()
       await act(async () => setInputValue(art!, '400'))
     }
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     const writer = operation === 'edit' ? apiMock.updateScenario : apiMock.createScenario
     expect(writer).toHaveBeenCalledOnce()
@@ -2172,7 +2237,7 @@ describe('TestHub', () => {
     const art = container.querySelector<HTMLInputElement>('input[aria-label^="Average response time for "]')
     expect(art).not.toBeNull()
     await act(async () => setInputValue(art!, '400'))
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenCalledOnce()
     const payload = apiMock.updateScenario.mock.calls[0][1]
@@ -2206,7 +2271,7 @@ describe('TestHub', () => {
     const load = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
     expect(load).toBeDefined()
     await act(async () => setInputValue(load!, '16'))
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     const writer = operation === 'edit' ? apiMock.updateScenario : apiMock.createScenario
     expect(writer).toHaveBeenCalledOnce()
@@ -2375,7 +2440,7 @@ describe('TestHub', () => {
       setInputValue(iterationsInput, '5')
     })
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-compact-iterations', expect.any(Object), taggedBaseline())
@@ -2573,7 +2638,7 @@ describe('TestHub', () => {
     await act(async () => setInputValue(nameInput, 'Project B Scenario'))
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Review')
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
@@ -2879,7 +2944,7 @@ describe('TestHub', () => {
     expect(Array.from(container.querySelectorAll('input')).some(input => input.value === 'Payments Against Checkout Model')).toBe(true)
     expect(container.textContent).not.toContain('Existing scripts library')
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -3101,7 +3166,7 @@ describe('TestHub', () => {
       setInputValue(secondGroupVUsers, '15')
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
@@ -3217,7 +3282,7 @@ describe('TestHub', () => {
       editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     const fidelityPayload = expect.objectContaining({
@@ -3300,7 +3365,7 @@ describe('TestHub', () => {
       setInputValue(eastWeight, '85')
       tolerateLoss.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
       assignment: {
@@ -3328,7 +3393,7 @@ describe('TestHub', () => {
     await act(async () => {
       autoRadio?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
       assignment: { mode: 'auto' },
@@ -3344,7 +3409,7 @@ describe('TestHub', () => {
     await act(async () => {
       duplicateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -3430,7 +3495,7 @@ describe('TestHub', () => {
       setSelectValue(poolSelect, '')
     })
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     const payload = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-multi-pool')?.[1]
@@ -3530,7 +3595,7 @@ describe('TestHub', () => {
       setSelectValue(headlessSelect, 'false')
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
@@ -3701,7 +3766,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Script shakeout gate')
     expect(container.textContent).toContain('Snapshot on error')
 
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -3990,7 +4055,7 @@ describe('TestHub', () => {
     expect(actions.firstElementChild?.classList.contains('scenario-builder-actions-note')).toBe(true)
     expect(actions.querySelector('#scenario-next-reason')).toBe(reason)
     expect(reason?.textContent).toBe('')
-    expect(actions.querySelector('.scenario-builder-actions-note')?.textContent).toContain('drafts are saved in this browser')
+    expect(actions.querySelector('.scenario-builder-actions-note')?.textContent).toContain('Save keeps it as a draft in this project')
   })
 
   it('keeps one scenario name field when a scenario is copied', async () => {
@@ -4054,7 +4119,7 @@ describe('TestHub', () => {
     for (const step of ['Model & shape', 'Run settings', 'Data']) expect(wizardStepComplete(step), step).toBe(true)
     expect(wizardStepMarker('Start')).toBe('1')
     // Save is on the step the user is on.
-    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-builder-actions button')).find(button => button.textContent === 'Save draft')?.disabled).toBe(false)
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-builder-actions button')).find(button => button.textContent === 'Save scenario')?.disabled).toBe(false)
   })
 
   it('opens a saved scenario at the step asked for from its row', async () => {
@@ -4188,7 +4253,7 @@ describe('TestHub', () => {
     expect(Array.from(container.querySelectorAll('.composition-track-label span')).map(span => span.textContent)).not.toContain('peak 12 TPS · load')
     expect(container.textContent).not.toContain('Profile peak')
     apiMock.updateScenario.mockResolvedValue({ ...stored, traffic_profile: undefined, workload_shape_id: 'closed-vuser' })
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenCalledOnce()
     const [, payload] = apiMock.updateScenario.mock.calls[0]
@@ -4334,10 +4399,10 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Group names must be unique. Rename duplicate groups before continuing.')
     expect(addGroupButton?.disabled).toBe(true)
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save draft'))
+      .find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton?.disabled).toBe(false)
-    await clickButton('Save draft')
-    expect(container.textContent).toContain('Draft progress saved in this browser')
+    await clickButton('Save scenario')
+    expect(container.textContent).toContain('as a draft in this project')
   })
 
   it.each(['Required variables are missing', 'Controller unavailable'])('retains a failed save error: %s', async message => {
@@ -4354,7 +4419,7 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Scenario was saved')
     expect(handoff).not.toHaveBeenCalled()
     expect(container.querySelector('.scenario-builder')).not.toBeNull()
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(apiMock.createScenario).toHaveBeenCalledTimes(2)
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Saved Failure recovery')
   })
@@ -4367,7 +4432,7 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Single save'))
     await clickWizardStep('Run settings') // a new scenario is saved to the project only once its load is set
-    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')!
+    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save scenario')!
     await act(async () => { save.click(); save.click() })
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
@@ -4383,7 +4448,7 @@ describe('TestHub', () => {
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Keep editing'))
     await clickWizardStep('Review')
     changeView.mockClear()
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(container.querySelector('.scenario-builder')).not.toBeNull()
     expect(container.textContent).toContain('Review and validate')
     expect(changeView).not.toHaveBeenCalled()
@@ -4391,7 +4456,7 @@ describe('TestHub', () => {
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Scenario name"]')?.value).toBe('Keep editing')
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[aria-label="Scenario name"]')!, 'Updated draft'))
     expect(container.textContent).toContain('Editing · Unsaved changes')
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
     expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-1', expect.objectContaining({ name: 'Updated draft' }), taggedBaseline())
     expect(container.textContent).toContain('Review and validate')
@@ -4433,40 +4498,50 @@ describe('TestHub', () => {
       expect(panel()).toBeNull()
     })
 
-    // A browser checkpoint of an edit records the baseline its form was
-    // loaded from. Resuming adopts a durable baseline only for that same
-    // revision, never because the listed row's update time matches.
+    // A draft of an edit records the baseline its form was loaded from.
+    // Continuing it adopts a durable baseline only for that same revision,
+    // never because the listed row's update time matches.
+    const lastSavedDraft = () => {
+      // The latest draft save, whether it created or updated the draft.
+      const calls: unknown[][] = [...apiMock.createScenarioDraft.mock.calls, ...apiMock.updateScenarioDraft.mock.calls]
+      const latest = calls[calls.length - 1]
+      return latest[latest.length - 1] as { name: string; scenario_id?: string; document: Record<string, any> }
+    }
     const checkpointBlockedEdit = async () => {
       const listed = await apiMock.listScripts()
       apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, authoring_health: { status: 'blocked', inputs: [] } })) })
       await openConflictScenario()
       await act(async () => setInputValue(nameInput(), 'Local name'))
-      await clickButton('Save draft')
-      expect(container.textContent).toContain('Draft progress saved in this browser')
+      await clickButton('Save scenario')
+      await flushPromises()
+      expect(container.textContent).toContain('as a draft in this project')
       expect(apiMock.updateScenario).not.toHaveBeenCalled()
-      const key = 'apexload.scenario.authoring.v1.project-1'
-      const draft = JSON.parse(window.localStorage.getItem(key)!)
+      // An edit's draft names the scenario it changes, which keeps its saved version.
+      expect(lastSavedDraft().scenario_id).toBe(conflictScenario.id)
+      const draft = lastSavedDraft().document
       expect(draft.baselineTag).toBe(tagFor('a'))
       expect(draft.baselineForm.name).toBe('Checkout')
-      return { key, draft }
+      return { draft }
     }
-    const resumeAfter = async (listed: StoredScenario, revisionChar: string) => {
+    const resumeAfter = async (listed: StoredScenario, revisionChar: string, draft: Record<string, any>) => {
       await act(async () => root.unmount())
       root = createRoot(container)
       apiMock.listScenarios.mockResolvedValue({ scenarios: [listed], count: 1 })
       apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...listed }, revisionChar))
+      const summary = { id: 'scenario-draft-1', project_id: 'project-1', scenario_id: listed.id, scenario_name: listed.name, name: draft.form.name, revision: 3, created_at: '', updated_at: '' }
+      apiMock.listScenarioDrafts.mockResolvedValue({ drafts: [summary], count: 1 })
+      apiMock.getScenarioDraft.mockResolvedValueOnce({ ...summary, document: draft })
       await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
       await flushPromises()
-      await clickButton('Resume draft')
+      await act(async () => container.querySelector<HTMLButtonElement>(`[aria-label="Continue the draft ${draft.form.name}"]`)!.click())
       await flushPromises()
     }
 
     it('reconciles a resumed edit whose scenario changed after the checkpoint, even when the listed time matches', async () => {
-      const { key, draft } = await checkpointBlockedEdit()
+      const { draft } = await checkpointBlockedEdit()
       // The list had refreshed to the newer row before the checkpoint.
       const changed = { ...conflictScenario, duration: '10m', updated_at: '2026-05-13T00:00:00Z' }
-      window.localStorage.setItem(key, JSON.stringify({ ...draft, editingUpdatedAt: changed.updated_at }))
-      await resumeAfter(changed, 'b')
+      await resumeAfter(changed, 'b', { ...draft, editingUpdatedAt: changed.updated_at })
       expect(nameInput().value).toBe('Local name')
       expect(panel()?.textContent).toContain('changed after this draft was saved')
       expect(container.textContent).not.toContain('Resumed as a new scenario')
@@ -4481,21 +4556,23 @@ describe('TestHub', () => {
     })
 
     it('keeps the recorded baseline when a blocked resumed edit is checkpointed again', async () => {
-      const { key, draft } = await checkpointBlockedEdit()
+      const { draft } = await checkpointBlockedEdit()
       const changed = { ...conflictScenario, duration: '10m', updated_at: '2026-05-13T00:00:00Z' }
-      window.localStorage.setItem(key, JSON.stringify(draft))
-      await resumeAfter(changed, 'b')
+      await resumeAfter(changed, 'b', draft)
       expect(panel()?.textContent).toContain('changed after this draft was saved')
       await act(async () => setInputValue(nameInput(), 'Later name'))
-      await clickButton('Save draft')
-      expect(container.textContent).toContain('Draft progress saved in this browser')
+      await clickButton('Save scenario')
+      await flushPromises()
+      expect(container.textContent).toContain('as a draft in this project')
       expect(apiMock.updateScenario).not.toHaveBeenCalled()
-      const again = JSON.parse(window.localStorage.getItem(key)!)
+      // The draft that was continued is updated, from the revision it was opened at.
+      expect(apiMock.updateScenarioDraft).toHaveBeenLastCalledWith('project-1', 'scenario-draft-1', expect.objectContaining({ revision: 3 }))
+      const again = lastSavedDraft().document
       expect(again.form.name).toBe('Later name')
       expect(again.baselineTag).toBe(tagFor('a'))
       expect(again.baselineForm.name).toBe('Checkout')
-      // Resuming that checkpoint still reconciles against the recorded revision.
-      await resumeAfter(changed, 'b')
+      // Continuing that draft still reconciles against the recorded revision.
+      await resumeAfter(changed, 'b', again)
       expect(nameInput().value).toBe('Later name')
       expect(panel()?.textContent).toContain('changed after this draft was saved')
     })
@@ -4507,19 +4584,19 @@ describe('TestHub', () => {
       apiMock.getScenario.mockResolvedValueOnce({ ...conflictScenario })
       await openConflictScenario({ ...conflictScenario, updated_at: '2026-05-13T00:00:00Z' })
       await act(async () => setInputValue(nameInput(), 'Local name'))
-      await clickButton('Save draft')
-      expect(container.textContent).toContain('Draft progress saved in this browser')
-      const draft = JSON.parse(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')!)
+      await clickButton('Save scenario')
+      await flushPromises()
+      expect(container.textContent).toContain('as a draft in this project')
+      const draft = lastSavedDraft().document
       expect(draft.baselineTag).toBeUndefined()
       expect(draft.editingUpdatedAt).toBe(conflictScenario.updated_at)
     })
 
     it('adopts the durable baseline for a resumed edit whose revision is unchanged', async () => {
-      const { key, draft } = await checkpointBlockedEdit()
+      const { draft } = await checkpointBlockedEdit()
       // The listed time moved (an unauthored change) but the revision did not.
       const touched = { ...conflictScenario, updated_at: '2026-05-13T00:00:00Z' }
-      window.localStorage.setItem(key, JSON.stringify(draft))
-      await resumeAfter(touched, 'a')
+      await resumeAfter(touched, 'a', draft)
       expect(nameInput().value).toBe('Local name')
       expect(panel()).toBeNull()
       expect(container.textContent).not.toContain('Resumed as a new scenario')
@@ -4529,7 +4606,7 @@ describe('TestHub', () => {
       await openConflictScenario()
       await act(async () => setInputValue(nameInput(), 'Local name'))
       apiMock.updateScenario.mockRejectedValueOnce(new ApiError('scenario authored content changed; reload before applying changes', 412))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
       expect(apiMock.updateScenario.mock.calls[0][2]).toMatchObject({ etag: tagFor('a') })
@@ -4539,7 +4616,7 @@ describe('TestHub', () => {
       expect(panelButton('Reapply draft')?.disabled).toBe(true)
 
       // A new conditioned save requires the reloaded baseline.
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
       expect(container.textContent).toContain('Resolve the scenario revision review')
@@ -4559,7 +4636,7 @@ describe('TestHub', () => {
       await clickPanel('Reapply draft')
       expect(panel()).toBeNull()
       expect(nameInput().value).toBe('Local name')
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(apiMock.updateScenario).toHaveBeenCalledTimes(2)
       expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-conflict', expect.objectContaining({ name: 'Local name', duration: '10m' }), expect.objectContaining({ etag: tagFor('b') }))
@@ -4569,7 +4646,7 @@ describe('TestHub', () => {
       await openConflictScenario()
       await act(async () => setInputValue(nameInput(), 'Local name'))
       apiMock.updateScenario.mockRejectedValueOnce(new ApiError('If-Match is required for scenario saves in this project', 428))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(panel()?.textContent).toContain('requires revision-checked scenario saves')
       apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...conflictScenario, name: 'Server name', updated_at: '2026-05-13T00:00:00Z' }, 'c'))
@@ -4580,7 +4657,7 @@ describe('TestHub', () => {
       expect(nameInput().value).toBe('Server name')
       expect(container.textContent).toContain('Editing · Saved')
       await act(async () => setInputValue(nameInput(), 'Second edit'))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-conflict', expect.objectContaining({ name: 'Second edit' }), expect.objectContaining({ etag: tagFor('c') }))
     })
@@ -4588,13 +4665,13 @@ describe('TestHub', () => {
     it('treats an unverified outcome as a reconciliation and other failures as ordinary errors', async () => {
       await openConflictScenario()
       apiMock.updateScenario.mockRejectedValueOnce(new ApiError('invalid scenario', 400))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(panel()).toBeNull()
       expect(container.querySelector('.page-error-banner')?.textContent).toBeTruthy()
 
       apiMock.updateScenario.mockRejectedValueOnce(new ApiError('scenario save outcome requires verification; reload the scenario before retrying', 503, { error: 'scenario save outcome requires verification; reload the scenario before retrying', code: 'scenario_save_outcome_unknown', ref: 'ref-1' }))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(panel()).not.toBeNull()
       expect(apiMock.updateScenario).toHaveBeenCalledTimes(2)
@@ -4605,7 +4682,7 @@ describe('TestHub', () => {
       await openConflictScenario()
       expect(panel()?.textContent).toContain('did not return a supported scenario revision')
       await act(async () => setInputValue(nameInput(), 'Unprotected'))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(apiMock.updateScenario).not.toHaveBeenCalled()
       expect(apiMock.createScenario).not.toHaveBeenCalled()
@@ -4619,13 +4696,13 @@ describe('TestHub', () => {
       await chooseLibraryScriptForGroup()
       await act(async () => setInputValue(nameInput(), 'Created'))
       await clickWizardStep('Run settings') // a new scenario is saved to the project only once its load is set
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
       expect(panel()).toBeNull()
       await clickWizardStep('Start')
       await act(async () => setInputValue(nameInput(), 'Edited after create'))
-      await clickButton('Save draft')
+      await clickButton('Save scenario')
       await flushPromises()
       expect(panel()?.textContent).toContain('no current scenario baseline')
       expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
@@ -4646,7 +4723,7 @@ describe('TestHub', () => {
     })
   })
 
-  it('saves blocked composition locally, resumes it after remount, and never creates a runnable scenario', async () => {
+  it('saves blocked composition as a project draft, continues it from the library, and never creates a runnable scenario', async () => {
     const listed = await apiMock.listScripts()
     apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, authoring_health: { status: 'blocked', inputs: [] } })) })
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
@@ -4654,27 +4731,45 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Blocked authoring checkpoint'))
     expect(container.querySelector('[aria-label="Start needs attention"]')).not.toBeNull()
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
+    await flushPromises()
     expect(apiMock.createScenario).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Draft progress saved in this browser')
+    expect(container.textContent).toContain('as a draft in this project')
+    expect(container.textContent).toContain("Drafts can't be launched")
+    const [, saved] = apiMock.createScenarioDraft.mock.calls[0]
     await act(async () => root.unmount())
     root = createRoot(container)
-    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    const summary = { id: 'scenario-draft-1', project_id: 'project-1', name: 'Blocked authoring checkpoint', revision: 1, created_at: '', updated_at: '2026-10-13T10:00:00Z', updated_by: 'Ada' }
+    apiMock.listScenarioDrafts.mockResolvedValue({ drafts: [summary], count: 1 })
+    apiMock.getScenarioDraft.mockResolvedValueOnce({ ...summary, document: saved.document })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
     await flushPromises()
-    await clickButton('Resume draft')
+    // The library lists it as a draft of a new scenario.
+    const drafts = container.querySelector('[aria-label="Scenario drafts"]')!
+    expect(drafts.textContent).toContain('Blocked authoring checkpoint')
+    expect(drafts.textContent).toContain('New scenario')
+    expect(drafts.textContent).toContain('by Ada')
+    await act(async () => drafts.querySelector<HTMLButtonElement>('[aria-label="Continue the draft Blocked authoring checkpoint"]')!.click())
+    await flushPromises()
+    expect(apiMock.getScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-1')
     expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Blocked authoring checkpoint')
     await clickWizardStep('Review')
     expect(container.textContent).toContain('Script review required')
     expect(apiMock.createScenario).not.toHaveBeenCalled()
-    await clickButton('Clear saved draft')
-    expect(container.querySelector('[aria-label="Saved browser draft"]')).toBeNull()
   })
 
   it('does not erase an unrelated browser checkpoint when another scenario is saved', async () => {
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()
     await chooseLibraryScriptForGroup()
-    await clickButton('Save draft')
+    // Unsaved work this browser keeps (autosaved), not saved to the project.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Unsaved work'))
+      await act(async () => { vi.advanceTimersByTime(2000) })
+    } finally {
+      vi.useRealTimers()
+    }
     await act(async () => root.unmount())
     root = createRoot(container)
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
@@ -4682,9 +4777,9 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Different scenario'))
     await selectManualShapeByName('Closed VUser')
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(apiMock.createScenario).toHaveBeenCalled()
-    expect(container.querySelector('[aria-label="Saved browser draft"]')?.textContent).toContain('Untitled draft')
+    expect(container.querySelector('[aria-label="Unsaved work in this browser"]')?.textContent).toContain('Unsaved work')
   })
 
   it('retains a validation report when saving refreshes equivalent script definitions', async () => {
@@ -4698,7 +4793,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Closed workload uses 10 VUsers.')
     const listed = await apiMock.listScripts()
     apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, associated_scenarios: [{ id: 'new', name: 'New scenario' }] })) })
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(container.textContent).toContain('Closed workload uses 10 VUsers.')
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[aria-label="Scenario name"]')!, 'Changed input'))
     expect(container.textContent).not.toContain('Closed workload uses 10 VUsers.')
@@ -4711,7 +4806,7 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Incomplete response'))
     await clickWizardStep('Run settings') // a new scenario is saved to the project only once its load is set
-    await clickButton('Save draft')
+    await clickButton('Save scenario')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Check the scenario library before retrying')
     expect(container.querySelector('.scenario-builder')).not.toBeNull()
   })
@@ -4727,7 +4822,7 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Model')).toBe(false)
     expect(wizardStepComplete('Run settings')).toBe(false)
     expect(container.textContent).toContain('Choose and apply a workload source')
-    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')?.disabled).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save scenario')?.disabled).toBe(false)
     await clickModelFamily('Fixed VUsers')
     await selectManualShapeByName('Closed VUser')
     expect(container.querySelector('.scenario-builder-preview')).not.toBeNull()
@@ -4818,7 +4913,7 @@ describe('TestHub', () => {
     })
 
     expect(container.textContent).toContain('Peak staged VUsers: 5')
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
@@ -4886,10 +4981,10 @@ describe('TestHub', () => {
     })
 
     expect(container.textContent).toContain('longer than')
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft')) as HTMLButtonElement | undefined
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario')) as HTMLButtonElement | undefined
     expect(saveButton?.disabled).toBe(false)
-    await clickButton('Save draft')
-    expect(container.textContent).toContain('Draft progress saved in this browser')
+    await clickButton('Save scenario')
+    expect(container.textContent).toContain('as a draft in this project')
   })
 
   it('persists once-only init and teardown scope from the scenario form', async () => {
@@ -4918,7 +5013,7 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run settings') // a new scenario is saved to the project only once its load is set
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save scenario'))
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
@@ -4935,6 +5030,57 @@ describe('TestHub', () => {
         initialization: 'at_once',
       })],
     }))
+  })
+
+  it('deletes a project draft from the library after confirming, and says when someone else saved it first', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const summary = { id: 'scenario-draft-7', project_id: 'project-1', scenario_id: 'scenario-1', scenario_name: 'Checkout', name: 'Checkout changes', revision: 2, created_at: '', updated_at: '' }
+    apiMock.listScenarioDrafts.mockResolvedValue({ drafts: [summary], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    const drafts = container.querySelector('[aria-label="Scenario drafts"]')!
+    expect(drafts.textContent).toContain('Changes to Checkout')
+    await act(async () => drafts.querySelector<HTMLButtonElement>('[aria-label="Delete the draft Checkout changes"]')!.click())
+    await flushPromises()
+    expect(apiMock.deleteScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-7')
+
+    // A save that lost a race to another person keeps the edits and says why.
+    apiMock.getScenarioDraft.mockResolvedValueOnce({ ...summary, scenario_id: undefined, scenario_name: undefined, document: { version: 3, projectId: 'project-1', savedAt: '2026-10-13T10:00:00Z', editingId: null, editingUpdatedAt: '', form: emptyFormForDraft('Checkout changes'), source: 'shape', startChoice: '', shapeId: '', templateId: '', cloneId: '', step: 'scripts', visited: 0 } })
+    await act(async () => drafts.querySelector<HTMLButtonElement>('[aria-label="Continue the draft Checkout changes"]')!.click())
+    await flushPromises()
+    apiMock.updateScenarioDraft.mockRejectedValueOnce(new ApiError('the draft was saved by someone else', 409))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-7', expect.objectContaining({ revision: 2 }))
+    expect(container.textContent).toContain('Someone saved this draft after you opened it, so it was not changed.')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Checkout changes')
+    // Saving again keeps these edits as a draft of their own; theirs is untouched.
+    apiMock.updateScenarioDraft.mockClear()
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenarioDraft).not.toHaveBeenCalled()
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledWith('project-1', expect.objectContaining({ name: 'Checkout changes' }))
+  })
+
+  it('refuses a draft this builder cannot read, and shows a viewer the drafts with nothing to change', async () => {
+    const summary = { id: 'scenario-draft-8', project_id: 'project-1', name: 'Future draft', revision: 1, created_at: '', updated_at: '' }
+    apiMock.listScenarioDrafts.mockResolvedValue({ drafts: [summary], count: 1 })
+    apiMock.getScenarioDraft.mockResolvedValueOnce({ ...summary, document: { version: 99 } })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Continue the draft Future draft"]')!.click())
+    await flushPromises()
+    expect(container.textContent).toContain('The draft “Future draft” cannot be opened by this version of the builder.')
+    expect(container.querySelector('input[placeholder="Scenario name"]')).toBeNull()
+
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({ enabled: false, authenticated: true, resources: [{ id: 'tests_and_scenarios', name: 'Tests and Scenarios', description: '', operations: [{ id: 'manage_tests', label: 'Manage tests', allowed: false }] }] })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    const drafts = container.querySelector('[aria-label="Scenario drafts"]')!
+    expect(drafts.textContent).toContain('Future draft')
+    expect(drafts.querySelector('button')).toBeNull()
   })
 
   it('renders scenarios as read-only when manage_tests is denied', async () => {
@@ -5018,7 +5164,7 @@ describe('TestHub', () => {
     await clickWizardStep('Start')
     await chooseLibraryScriptForGroup()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save scenario')
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
@@ -5030,7 +5176,7 @@ describe('TestHub', () => {
     // An unnamed checkpoint remains recoverable without becoming a runnable scenario.
     expect(apiMock.createScenario).not.toHaveBeenCalled()
     expect(container.textContent).not.toContain('required')
-    expect(container.textContent).toContain('Draft progress saved in this browser')
+    expect(container.textContent).toContain('as a draft in this project')
     await clickWizardStep('Review')
     const promptInput = container.querySelector('.scenario-name-prompt input') as HTMLInputElement | null
     expect(promptInput).toBeTruthy()
@@ -5041,7 +5187,7 @@ describe('TestHub', () => {
     })
 
     await selectManualShapeByName('Closed VUser')
-    const saveButtonAfter = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')
+    const saveButtonAfter = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save scenario')
     await act(async () => {
       saveButtonAfter?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

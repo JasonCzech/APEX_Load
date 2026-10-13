@@ -76,6 +76,6 @@ test('a linked lease workflow is inserted, replayed against sandbox rows and bou
   await page.getByRole('radio', { name: /^Live table for this run/ }).check()
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
   const savedScenario = mutation(page, 'PUT', `/api/v1/scenarios/${scenario}`)
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   expect((await savedScenario).request().postDataJSON().data_pools[0]).toMatchObject({ alias: 'jobs', access_mode: 'live', scope: 'run', pool_id: pool, live_options: { seed_policy: 'current_at_start', profile: 'native_queue' } })
 })

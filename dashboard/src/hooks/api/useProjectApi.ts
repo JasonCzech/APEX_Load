@@ -8,6 +8,7 @@ import {
   type ProjectSecretsWriteResponse,
   type ProjectSecretWrite,
 } from '../../types/secrets'
+import type { ScenarioDraft, ScenarioDraftSave, ScenarioDraftSummary } from '../../types/scenarioDrafts'
 import type { SharedAssetUsage, SharedAssetUsageKind } from '../../types/sharedAssets'
 import { request } from '../apiClient'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
@@ -85,6 +86,32 @@ export function useProjectApi() {
     [],
   )
 
+  // Scenario-builder drafts saved to the project (never launchable).
+  const listScenarioDrafts = useCallback(
+    (projectId: string, options?: ApiCallOptions) => request<{ drafts: ScenarioDraftSummary[]; count: number }>(`/projects/${encodeURIComponent(projectId)}/scenario-drafts`, withCallOptions(undefined, options)),
+    [],
+  )
+  const getScenarioDraft = useCallback(
+    (projectId: string, draftId: string, options?: ApiCallOptions) => request<ScenarioDraft>(`/projects/${encodeURIComponent(projectId)}/scenario-drafts/${encodeURIComponent(draftId)}`, withCallOptions(undefined, options)),
+    [],
+  )
+  const createScenarioDraft = useCallback(
+    (projectId: string, draft: ScenarioDraftSave, options?: ApiCallOptions) =>
+      request<ScenarioDraft>(`/projects/${encodeURIComponent(projectId)}/scenario-drafts`, withCallOptions({ method: 'POST', body: JSON.stringify(draft) }, options)),
+    [],
+  )
+  const updateScenarioDraft = useCallback(
+    (projectId: string, draftId: string, draft: ScenarioDraftSave & { revision: number }, options?: ApiCallOptions) =>
+      request<ScenarioDraft>(`/projects/${encodeURIComponent(projectId)}/scenario-drafts/${encodeURIComponent(draftId)}`, withCallOptions({ method: 'PUT', body: JSON.stringify(draft) }, options)),
+    [],
+  )
+  // With a revision, the draft is deleted only if nobody has saved it since (409 otherwise).
+  const deleteScenarioDraft = useCallback(
+    (projectId: string, draftId: string, revision?: number, options?: ApiCallOptions) =>
+      request<{ deleted: string }>(`/projects/${encodeURIComponent(projectId)}/scenario-drafts/${encodeURIComponent(draftId)}${revision ? `?revision=${revision}` : ''}`, withCallOptions({ method: 'DELETE' }, options)),
+    [],
+  )
+
   const createProjectSecrets = useCallback(
     (projectId: string, secrets: ProjectSecretWrite[], options?: ApiCallOptions) =>
       request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, withCallOptions({
@@ -135,6 +162,11 @@ export function useProjectApi() {
       getProjectSecretStatuses,
       getProjectSecretUsage,
       getSharedAssetUsage,
+      listScenarioDrafts,
+      getScenarioDraft,
+      createScenarioDraft,
+      updateScenarioDraft,
+      deleteScenarioDraft,
       createProjectSecrets,
       rotateProjectSecret,
       listFolders,
@@ -142,6 +174,6 @@ export function useProjectApi() {
       updateFolder,
       deleteFolder,
     }),
-    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, getProjectSecretUsage, getSharedAssetUsage, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
+    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, getProjectSecretUsage, getSharedAssetUsage, listScenarioDrafts, getScenarioDraft, createScenarioDraft, updateScenarioDraft, deleteScenarioDraft, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
   )
 }

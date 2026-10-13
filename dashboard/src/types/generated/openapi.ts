@@ -40430,6 +40430,75 @@ export interface operations {
       };
     };
   };
+  "handleCreateScenarioDraft": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "document"?: unknown;
+          "name"?: string;
+          "revision"?: number;
+          "scenario_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "created_by"?: string;
+            "document": unknown;
+            "id": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "scenario_id"?: string;
+            "scenario_name"?: string;
+            "updated_at": string;
+            "updated_by"?: string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateScenarioSchedule": {
     parameters: {
       "path": {
@@ -49482,6 +49551,58 @@ export interface operations {
             "error": string;
             "ref"?: string;
           };
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteScenarioDraft": {
+    parameters: {
+      "path": {
+        "draftID": string;
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: number;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, string>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "default": {
@@ -78325,6 +78446,57 @@ export interface operations {
       };
     };
   };
+  "handleGetScenarioDraft": {
+    parameters: {
+      "path": {
+        "draftID": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "created_by"?: string;
+            "document": unknown;
+            "id": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "scenario_id"?: string;
+            "scenario_name"?: string;
+            "updated_at": string;
+            "updated_by"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetScenarioRuntimeSettingsReport": {
     parameters: {
       "path": {
@@ -96681,6 +96853,53 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListScenarioDrafts": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "count": number;
+            "drafts": Array<{
+              "created_at": string;
+              "created_by"?: string;
+              "id": string;
+              "name": string;
+              "project_id": string;
+              "revision": number;
+              "scenario_id"?: string;
+              "scenario_name"?: string;
+              "updated_at": string;
+              "updated_by"?: string;
+            }>;
+          };
         };
       };
       "401": {
@@ -169674,6 +169893,81 @@ export interface operations {
       };
     };
   };
+  "handleUpdateScenarioDraft": {
+    parameters: {
+      "path": {
+        "draftID": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "document"?: unknown;
+          "name"?: string;
+          "revision"?: number;
+          "scenario_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "created_by"?: string;
+            "document": unknown;
+            "id": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "scenario_id"?: string;
+            "scenario_name"?: string;
+            "updated_at": string;
+            "updated_by"?: string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUpdateScenarioSchedule": {
     parameters: {
       "path": {
@@ -180342,6 +180636,15 @@ export interface paths {
   "/api/v1/projects/{id}/releases": {
     "get": operations["handleListProjectReleases"];
     "post": operations["handleCreateProjectRelease"];
+  };
+  "/api/v1/projects/{id}/scenario-drafts": {
+    "get": operations["handleListScenarioDrafts"];
+    "post": operations["handleCreateScenarioDraft"];
+  };
+  "/api/v1/projects/{id}/scenario-drafts/{draftID}": {
+    "get": operations["handleGetScenarioDraft"];
+    "put": operations["handleUpdateScenarioDraft"];
+    "delete": operations["handleDeleteScenarioDraft"];
   };
   "/api/v1/projects/{id}/secrets": {
     "get": operations["handleListProjectSecrets"];

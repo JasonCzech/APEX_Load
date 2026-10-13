@@ -26,6 +26,11 @@ export interface ScenarioAuthoringDraft {
   cloneId: string
   step: ScenarioWizardStep
   visited: number
+  /**
+   * In a browser checkpoint only: the project draft this work continues, so
+   * its next Save updates that draft rather than adding another.
+   */
+  projectDraft?: { id: string; revision: number }
 }
 const key = (project: string) => `apexload.scenario.authoring.v1.${encodeURIComponent(project)}`
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -71,7 +76,7 @@ export function assertDraftHasNoInlineCredentials(value: unknown): void {
   const stack: unknown[] = [value]
   let count = 0
   while (stack.length) {
-    if (++count > 100_000) throw new Error('The authoring draft is too large to save in this browser.')
+    if (++count > 100_000) throw new Error('The draft is too large to save.')
     const item = stack.pop()
     if (Array.isArray(item)) { stack.push(...item); continue }
     if (!record(item)) continue
@@ -82,11 +87,11 @@ export function assertDraftHasNoInlineCredentials(value: unknown): void {
         && !reference && (typeof child !== 'object' || Object.keys(child).length > 0)) {
         // Environment maps containing only named secret references are retained.
         if (name === 'env' && record(child) && Object.values(child).every(v => typeof v === 'string' && /^\{\{secret\.[\w.-]+\}\}$/.test(v))) continue
-        throw new Error('This draft contains inline runtime credentials or environment values. Use project-secret references before saving browser progress; your edits remain here.')
+        throw new Error('This draft contains inline runtime credentials or environment values. Use project-secret references before saving; your edits remain here.')
       }
       if (typeof child === 'string' && /^https?:\/\//i.test(child)) {
         const url = new URL(child)
-        if (url.username || url.password || url.search) throw new Error('Remove credentials and query values from runtime URLs before saving browser progress. Your edits remain here.')
+        if (url.username || url.password || url.search) throw new Error('Remove credentials and query values from runtime URLs before saving. Your edits remain here.')
       }
       if (child && typeof child === 'object') stack.push(child)
     }
@@ -107,7 +112,19 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
   try {
     const raw = window.localStorage.getItem(key(project))
     if (!raw || raw.length > 2_000_000) return null
-    const parsed: unknown = JSON.parse(raw)
+    return parseScenarioAuthoringDraft(JSON.parse(raw), project)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A draft document, from this browser or saved to the project, upgraded to the
+ * current version, or null when it is not a usable draft for the project.
+ */
+export function parseScenarioAuthoringDraft(parsed: unknown, project: string): ScenarioAuthoringDraft | null {
+  if (!project) return null
+  try {
     const d = record(parsed) ? migrateScenarioAuthoringDraft(parsed) : null
     if (!d || d.projectId !== project || !record(d.form)) return null
     if (!['savedAt', 'editingUpdatedAt', 'shapeId', 'templateId', 'cloneId'].every(k => typeof d[k] === 'string')) return null
@@ -143,6 +160,8 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
     if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && (binding.access_mode === 'live' ? ['manual', 'next', 'pop', 'lease'] : ['sequential', 'random', 'unique']).includes(String(binding.selection_strategy))))) return null
     if (['runtime_settings', 'goal_config', 'traffic_profile', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
     assertDraftHasNoInlineCredentials(f)
+    const link = d.projectDraft
+    if (link !== undefined && !(record(link) && typeof link.id === 'string' && link.id && Number.isInteger(link.revision) && (link.revision as number) > 0)) delete d.projectDraft
     // A recorded baseline that does not look like one is dropped: the draft
     // then resumes like an older checkpoint.
     const b = d.baselineForm

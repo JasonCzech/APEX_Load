@@ -97,7 +97,7 @@ test('Scenario builder preserves controller continuity and the recovery spare bu
   await expect(spareBudget).toHaveValue('200')
   await steps.getByRole('button', { name: /^Review/ }).click()
   const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/scenarios')
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   const response = await saved
   expect(response.ok(), await response.text()).toBeTruthy()
   expect(response.request().postDataJSON().assignment).toMatchObject({ failover_policy: 'continue', tolerate_generator_loss: true, recovery_spare_vusers: 200 })
@@ -269,7 +269,7 @@ test(`Java group profile survives placement edits and scenario persistence (faca
   await group.getByText('Inherit scenario default', { exact: true }).click()
   await steps.getByRole('button', { name: /^Review/ }).click()
   const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/scenarios')
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   const response = await saved
   expect(response.ok(), await response.text()).toBeTruthy()
   expect(response.request().postDataJSON().groups[0].assignment.mode).toBe('inherit')

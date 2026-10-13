@@ -650,8 +650,20 @@ Goal-Driven asks for its targets in a sizing dialog, and Traffic Profile for its
 demand source. **Run settings** has one row of tabs for target load, ramp pattern, run
 phases, advanced settings, the browser and script runtime, and generator assignment;
 then come **Data** and **Review**. Every step it has been through is marked done,
-and **Save draft** is on every step. The builder warns, without stopping you, when
+and **Save scenario** is on every step. The builder warns, without stopping you, when
 another scenario already has the name you type.
+
+There is one Save. A complete scenario saves to the project's scenarios. Anything
+not complete yet (no load model chosen, no name, a group without a script, a blocked
+script or setting) saves as a **draft** in the project, and the notice says what is
+still missing. A draft is not a scenario, so no run, plan or schedule can use it. The
+library lists drafts above the scenarios, with who saved each and when; **Continue**
+opens one in the builder, and its next Save updates it (or, once complete, saves it as
+a scenario and removes the draft). An unfinished edit of a saved scenario becomes a
+draft of changes, and the scenario keeps its saved version meanwhile. Drafts are
+visible to the whole project, so one with inline credentials is refused: use
+project-secret references. Work you have not saved yet is also kept in this browser,
+which offers it back after a reload.
 
 A Traffic Profile replays production demand from a CSV or XLSX file, a Prometheus
 query or OpenSearch. After a file's first analysis the builder picks the timestamp

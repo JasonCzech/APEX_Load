@@ -50,6 +50,7 @@ var modularAPIRouteCatalogs = []apiRouteCatalog{
 	elasticAPIRouteCatalog,
 	objectActivityAPIRouteCatalog,
 	sharedAssetsAPIRouteCatalog,
+	scenarioDraftsAPIRouteCatalog,
 	executionRecoveryAPIRouteCatalog,
 	analysisAPIRouteCatalog,
 	runMonitoringAPIRouteCatalog,

@@ -111,7 +111,7 @@ test('[U09] the five-step scenario builder preserves the draft and reviews the s
   await expect(reviewRow.getByRole('cell', { name: '17', exact: true })).toBeVisible()
 
   const createResponsePromise = page.waitForResponse(isScenarioCreate)
-  await page.getByRole('button', { name: 'Save draft' }).click()
+  await page.getByRole('button', { name: 'Save scenario' }).click()
   const createResponse = await createResponsePromise
   expect(createResponse.ok(), await createResponse.text()).toBeTruthy()
 
@@ -167,7 +167,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await page.getByRole('button', { name: /^Traffic Profile/ }).click()
   await page.getByRole('button', { name: 'Exact CSV schedule', exact: true }).click()
   await expect(page.locator('.scenario-builder-preview')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Save scenario', exact: true })).toBeEnabled()
   await expect(steps.getByRole('button', { name: /^Model/ })).not.toHaveClass(/complete/)
   await page.getByRole('button', { name: /^Fixed VUsers/ }).click()
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
@@ -190,7 +190,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await expect(page.getByRole('alert')).not.toContainText('Scenario was saved')
   await expect(page.getByRole('textbox', { name: 'Scenario name', exact: true })).toHaveValue('Scenario audit regression')
   await page.unroute('**/api/v1/scenarios')
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scenarios', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Scenario builder', pressed: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Review and validate', level: 4 })).toBeVisible()
@@ -203,7 +203,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await page.getByRole('tablist', { name: 'Run settings sections' }).getByRole('tab', { name: 'Run phases' }).click()
   await expect(page.getByLabel('Sustained load', { exact: true })).toHaveValue('3')
   await page.setViewportSize({ width: 600, height: 900 })
-  const save = page.getByRole('button', { name: 'Save draft', exact: true })
+  const save = page.getByRole('button', { name: 'Save scenario', exact: true })
   await save.scrollIntoViewIfNeeded()
   const bounds = await save.boundingBox()
   expect(bounds).not.toBeNull()
@@ -276,25 +276,32 @@ test('[U09] script groups are one row each and stack their fields on narrow scre
   }
 })
 
-test('[U09] incomplete browser drafts survive reload without creating scenarios', async ({ page, request }) => {
+test('[U09] incomplete scenarios save as project drafts that survive reload without creating scenarios', async ({ page, request }) => {
   const workspace = await createWorkspace(request)
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
   const steps = page.locator('[aria-label="Scenario builder steps"]')
   await expect(page.getByRole('heading', { name: 'Scripts and groups' })).toBeVisible()
-  // Visiting the model step is progress worth checkpointing even before anything is chosen.
+  // Visiting the model step is progress worth saving even before anything is chosen.
   await steps.getByRole('button', { name: /^Model/ }).click()
   await steps.getByRole('button', { name: /^Start/ }).click()
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Saved browser draft' })).toContainText('Untitled draft')
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
+  await expect(page.locator('.scenario-save-notice')).toContainText('Saved “Untitled scenario” as a draft in this project')
+  // The project keeps it, so a reload (or another person) finds it in the library.
+  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.getByRole('button', { name: 'Resume draft', exact: true }).click()
+  const drafts = page.getByRole('region', { name: 'Scenario drafts' })
+  await expect(drafts).toContainText('Untitled scenario')
+  await expect(drafts).toContainText('New scenario')
+  await drafts.getByRole('button', { name: 'Continue the draft Untitled scenario', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scripts and groups' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Add script to Group 1' })).toBeVisible()
   const response = await request.get(`/api/v1/scenarios?project_id=${workspace.projectId}`)
   expect(response.ok()).toBeTruthy()
   expect((await response.json()).scenarios || []).toHaveLength(0)
-  await page.getByRole('button', { name: 'Clear saved draft', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Saved browser draft' })).toHaveCount(0)
+  await page.getByRole('group', { name: 'Scenario page view' }).getByRole('button', { name: 'Scenario library', exact: true }).click()
+  await drafts.getByRole('button', { name: 'Delete the draft Untitled scenario', exact: true }).click()
+  await page.getByRole('alertdialog', { name: 'Delete draft' }).getByRole('button', { name: 'Delete draft', exact: true }).click()
+  await expect(drafts).toHaveCount(0)
 })
 
 test('[U09] CSV schedule suggestions round-trip through preview and scenario storage', async ({ page, request }) => {
@@ -318,7 +325,7 @@ test('[U09] CSV schedule suggestions round-trip through preview and scenario sto
   await page.getByRole('button', { name: 'Apply CSV schedule', exact: true }).click()
   await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Review/ }).click()
   const savedResponse = page.waitForResponse(isScenarioCreate)
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   const saved = await savedResponse
   expect(saved.ok(), await saved.text()).toBeTruthy()
   const scenario = await saved.json()

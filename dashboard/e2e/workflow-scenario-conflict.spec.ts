@@ -34,7 +34,7 @@ test('two scenario editors reconcile a stale save without losing either change',
 
     await page.getByPlaceholder('Scenario name').fill(`${name} first`)
     const firstSave = mutation(page, 'PUT', `/api/v1/scenarios/${id}`)
-    await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+    await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
     const firstResponse = await firstSave
     expect(firstResponse.request().headers()['if-match']).toBe(initialTag)
     expect(firstResponse.headers()['x-apex-scenario-save-mode']).toBe('conditioned')
@@ -46,7 +46,7 @@ test('two scenario editors reconcile a stale save without losing either change',
     const staleName = other.getByPlaceholder('Scenario name')
     await staleName.fill(`${name} retained`)
     const rejected = mutation(other, 'PUT', `/api/v1/scenarios/${id}`)
-    await other.getByRole('button', { name: 'Save draft', exact: true }).click()
+    await other.getByRole('button', { name: 'Save scenario', exact: true }).click()
     const conflictResponse = await rejected
     expect(conflictResponse.status()).toBe(412)
     expect(conflictResponse.request().headers()['if-match']).toBe(initialTag)
@@ -56,7 +56,7 @@ test('two scenario editors reconcile a stale save without losing either change',
     await expect(staleName).toHaveValue(`${name} retained`)
 
     // A new conditioned save requires the reloaded baseline.
-    await other.getByRole('button', { name: 'Save draft', exact: true }).click()
+    await other.getByRole('button', { name: 'Save scenario', exact: true }).click()
     await expect(other.locator('.page-error-banner')).toContainText('Resolve the scenario revision review')
     expect(writes).toBe(1)
 
@@ -83,7 +83,7 @@ test('two scenario editors reconcile a stale save without losing either change',
     await expect(conflict).toHaveCount(0)
     await expect(staleName).toHaveValue(`${name} retained`)
     const reapplied = mutation(other, 'PUT', `/api/v1/scenarios/${id}`)
-    await other.getByRole('button', { name: 'Save draft', exact: true }).click()
+    await other.getByRole('button', { name: 'Save scenario', exact: true }).click()
     const reappliedResponse = await reapplied
     expect(reappliedResponse.request().headers()['if-match']).toBe(firstResponse.headers().etag)
     expect(reappliedResponse.request().headers()['if-match']).not.toBe(initialTag)
@@ -97,7 +97,7 @@ test('two scenario editors reconcile a stale save without losing either change',
     // (clean) draft and adopts the second editor's save.
     await page.getByPlaceholder('Scenario name').fill(`${name} first again`)
     const stale = mutation(page, 'PUT', `/api/v1/scenarios/${id}`)
-    await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+    await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
     expect((await stale).status()).toBe(412)
     const firstConflict = page.getByRole('region', { name: 'Scenario save reconciliation' })
     await firstConflict.getByRole('button', { name: 'Load current baseline', exact: true }).click()

@@ -1719,6 +1719,20 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		// Scenario-builder drafts saved to the project: not scenarios, so nothing
+		// can launch one. scenario_id names the scenario an edit draft changes.
+		`CREATE TABLE IF NOT EXISTS scenario_drafts (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			scenario_id TEXT,
+			name TEXT NOT NULL,
+			document_json TEXT NOT NULL,
+			revision INTEGER NOT NULL DEFAULT 1,
+			created_by TEXT,
+			updated_by TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		// The `enabled INTEGER DEFAULT 1` fragment is written byte-for-byte to match a
 		// rewriteSQL boolean-column entry (see sqlite.go), so Postgres gets BOOLEAN with
 		// zero new rewrite rules; TestPostgresSchemaBooleanColumnsRewriteToBoolean guards
@@ -2313,6 +2327,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_import_sessions_project_expiry ON grafana_import_sessions(project_id, expires_at)`, "idx_grafana_import_sessions_project_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboard_snapshots_project ON grafana_dashboard_snapshots(project_id)`, "idx_grafana_dashboard_snapshots_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_scenario_drafts_project ON scenario_drafts(project_id, updated_at)`, "idx_scenario_drafts_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_artifacts_project_hash ON bruno_source_artifacts(project_id, artifact_kind, sha256)`, "idx_bruno_artifacts_project_hash"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_script_created ON bruno_source_revisions(script_id, created_at)`, "idx_bruno_revisions_script_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_project_active ON bruno_source_revisions(project_id, active_flag)`, "idx_bruno_revisions_project_active"},

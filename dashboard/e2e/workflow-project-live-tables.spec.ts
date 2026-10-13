@@ -145,7 +145,7 @@ test('scenario explicitly references a project table while existing pool binding
   await expect(binding.getByLabel('When the run ends', { exact: true })).toHaveCount(0)
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
   const saved = mutation(page, 'PUT', `/api/v1/scenarios/${scenario}`)
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   const response = await json(await saved)
   expect(response).toMatchObject({ authoring_projection: { scenario: { data_pools: [{ scope: 'project', project_table_id: table, access_mode: 'live' }] } } })
   await open()

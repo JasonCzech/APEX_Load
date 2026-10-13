@@ -21,7 +21,8 @@ import { confirmAction } from './ux/confirmAction'
 import { handleTabKey } from './tabKeyboard'
 import DialogLayer from './ux/DialogLayer'
 import ScriptsPage from './ScriptsPage'
-import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, parseScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import type { ScenarioDraftSummary } from '../types/scenarioDrafts'
 import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -894,6 +895,18 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const autosaveReplacedRef = useRef<ScenarioAuthoringDraft | null>(null)
   const buildBrowserDraftRef = useRef<(() => ScenarioAuthoringDraft) | null>(null)
   const saveAuthoringRef = useRef<() => Promise<boolean>>(async () => false)
+  // Drafts saved to the project: the library lists them; the builder's own
+  // (opened or saved in this session) is updated by its next Save.
+  const [loadedProjectDrafts, setLoadedProjectDrafts] = useState<{ projectId: string; drafts: ScenarioDraftSummary[] }>({ projectId: '', drafts: [] })
+  // Another project's drafts are never shown while this project's load.
+  const projectDrafts = loadedProjectDrafts.projectId === activeProjectId ? loadedProjectDrafts.drafts : []
+  // savedFingerprint is the builder state the project holds ('' when unknown).
+  const projectDraftRef = useRef<{ id: string; revision: number; savedFingerprint: string } | null>(null)
+  const projectDraftsGenerationRef = useRef(0)
+  const openProjectDraftGenerationRef = useRef(0)
+  // Advances whenever the builder starts other work, so a reply to a request
+  // made for earlier work does not attach to it.
+  const builderSessionRef = useRef(0)
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
   const currentDraftRef = useRef({ form, activeProjectId, showForm })
   currentDraftRef.current = { form, activeProjectId, showForm }
@@ -1353,10 +1366,24 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     scenarioUpsertPayload(scenarioDraftFromForm(draftForm), { projectId: activeProjectId, workloadShapeId: shapeId, fallbackName: 'Draft scenario' })
   ), [activeProjectId, form, selectedShapeId])
 
+  const loadProjectDrafts = useCallback(async () => {
+    const projectId = activeProjectId
+    const generation = ++projectDraftsGenerationRef.current
+    if (!projectId) return
+    try {
+      const response = await api.listScenarioDrafts(projectId)
+      if (generation === projectDraftsGenerationRef.current && currentProjectIdRef.current === projectId) setLoadedProjectDrafts({ projectId, drafts: response.drafts || [] })
+    } catch {
+      // The library still works without its drafts; the next refresh retries.
+      if (generation === projectDraftsGenerationRef.current && currentProjectIdRef.current === projectId) setLoadedProjectDrafts({ projectId, drafts: [] })
+    }
+  }, [activeProjectId, api])
   const refresh = useCallback(async () => {
     const projectId = activeProjectId
     const requestGeneration = ++refreshGenerationRef.current
     if (!projectId) return
+    // The drafts list follows the library (a deleted scenario, others' drafts).
+    void loadProjectDrafts()
     try {
       const [scenarioRes, scriptRes, dataPoolRes, templateRes, supportRes] = await Promise.all([
         api.listScenarios(projectId, 'all'),
@@ -1386,7 +1413,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         setError(getErrorMessage(err, 'Unable to load scenarios'))
       }
     }
-  }, [activeProjectId, api])
+  }, [activeProjectId, api, loadProjectDrafts])
 
   useEffect(() => { void refresh() }, [featurePolicySignal, refresh])
 
@@ -1664,6 +1691,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // Reset every builder field to a pristine "new scenario" state. Does not touch
   // showForm/view or the persisted draft — callers decide those.
   const resetBuilderToBlank = useCallback(() => {
+    // Leaving the builder's work leaves its project draft in the library.
+    projectDraftRef.current = null
+    builderSessionRef.current += 1
     activeCheckpointSavedAtRef.current = ''
     autosaveSavedAtRef.current = ''
     autosaveReplacedRef.current = null
@@ -2988,24 +3018,71 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     step: wizardStep, visited: maxVisitedWizardIndex,
   })
   buildBrowserDraftRef.current = buildBrowserDraft
-  const saveBrowserProgress = () => {
-    if (!canManageTests) return false
-    if (monitorEditorError) { setError(monitorEditorError); return false }
+  // Saves the builder's work as a project draft (creating it, or updating the
+  // one this session opened or saved), never as a launchable scenario.
+  const saveProjectDraft = async (reason: string): Promise<boolean> => {
+    const projectId = activeProjectId
+    if (!canManageTests || !projectId || savingRef.current) return false
+    let document: ScenarioAuthoringDraft
     try {
-      const draft = buildBrowserDraft()
-      saveScenarioAuthoringDraft(draft)
-      autosaveSavedAtRef.current = ''
-      autosaveReplacedRef.current = null
-      setAuthoringDraft(draft)
-      activeCheckpointSavedAtRef.current = draft.savedAt
-      checkpointBaselineRef.current = checkpointFingerprint
-      setError('')
-      setSavedNotice('Draft progress saved in this browser for this project. It is not a runnable scenario. Resume it here to finish authoring and validate.')
-      return true
+      document = buildBrowserDraft()
+      assertDraftHasNoInlineCredentials(document.form)
     } catch (cause) {
-      setError(getErrorMessage(cause, 'Unable to save browser progress. Your edits remain here.'))
+      setError(getErrorMessage(cause, 'Unable to save the draft. Your edits remain here.'))
       return false
     }
+    const body = { name: form.name.trim(), ...(editingId ? { scenario_id: editingId } : {}), document }
+    const session = builderSessionRef.current
+    const savedFingerprint = checkpointFingerprint
+    savingRef.current = true
+    setSavePending(true)
+    try {
+      const current = projectDraftRef.current
+      let saved
+      if (current) {
+        try {
+          saved = await api.updateScenarioDraft(projectId, current.id, { ...body, revision: current.revision })
+        } catch (cause) {
+          // Deleted elsewhere since: save it again as a new draft.
+          if (!(cause instanceof ApiError && cause.status === 404)) throw cause
+          saved = await api.createScenarioDraft(projectId, body)
+        }
+      } else saved = await api.createScenarioDraft(projectId, body)
+      if (currentProjectIdRef.current !== projectId) return false
+      // Unless the builder has moved on to other work meanwhile, it now
+      // continues this draft, and the project holds its work.
+      if (builderSessionRef.current === session) {
+        projectDraftRef.current = { id: saved.id, revision: saved.revision, savedFingerprint }
+        checkpointBaselineRef.current = savedFingerprint
+        try { clearResolvedCheckpoint() } catch { /* The project draft is authoritative. */ }
+      }
+      setError('')
+      setSavedNotice(`Saved “${saved.name}” as a draft in this project${editingId ? '; the scenario keeps its saved version until these changes are complete' : ''}. Drafts can't be launched. To finish: ${reason}`)
+      void loadProjectDrafts()
+      return true
+    } catch (cause) {
+      if (currentProjectIdRef.current !== projectId) return false
+      const conflict = cause instanceof ApiError && cause.status === 409
+      // Their version stays as it is; the next Save keeps these edits as a draft of their own.
+      if (conflict && builderSessionRef.current === session) projectDraftRef.current = null
+      setError(conflict
+        ? 'Someone saved this draft after you opened it, so it was not changed. Save again to keep your edits as a separate draft; theirs stays in the library.'
+        : getErrorMessage(cause, 'Unable to save the draft. Your edits remain here.'))
+      return false
+    } finally {
+      savingRef.current = false
+      setSavePending(false)
+    }
+  }
+  // Once the work is saved as a scenario, its draft has served its purpose.
+  const settleProjectDraft = async () => {
+    const projectId = activeProjectId
+    const draft = projectDraftRef.current
+    projectDraftRef.current = null
+    if (!projectId || !draft) return
+    // Only the revision this builder saved or opened: anything saved to it since stays in the library.
+    try { await api.deleteScenarioDraft(projectId, draft.id, draft.revision) } catch { /* It stays in the library to delete there. */ }
+    void loadProjectDrafts()
   }
   const clearResolvedCheckpoint = () => {
     // Saving another scenario must not erase a different checkpoint, including
@@ -3019,14 +3096,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       activeCheckpointSavedAtRef.current = ''
     } else setAuthoringDraft(latest)
   }
+  // One Save: a complete scenario saves as a scenario; anything else saves as a
+  // draft in the project, which nothing can launch.
   const saveScenario = async (): Promise<boolean> => {
     if (monitorEditorError) { setError(monitorEditorError); return false }
-    if (newScenarioLoadUnconfigured || sourcePending || goalSizingIncomplete || blockedScriptGroups.length || !form.name.trim() || !(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))
-      || form.groups.some(group => !group.script_id) || blockingStageTimelineMessage || steppedRampBlockingMessage
-      || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError
-      || assignmentValidationError || scenarioGroupNameError || bindingErrors.length) return saveBrowserProgress()
+    if (scenarioIncompleteReason) return saveProjectDraft(scenarioIncompleteReason)
     const saved = await persistScenario()
     if (!saved) return false
+    void settleProjectDraft()
     setEditingId(saved.id)
     editingBaselineFormRef.current = JSON.stringify(form)
     resumedBaselineTagRef.current = ''
@@ -3149,8 +3226,16 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
   const resumeAuthoringDraft = () => {
     if (!authoringDraft || authoringDraft.projectId !== activeProjectId || !canManageTests) return
-    const draft = authoringDraft
+    // Unsaved work on a project draft still continues that draft.
+    resumeDraftDocument(authoringDraft, authoringDraft.projectDraft || null)
+  }
+  // Opens a draft document in the builder: this browser's unsaved work, or a
+  // draft saved to the project (openedName; its next Save then updates it).
+  const resumeDraftDocument = (draft: ScenarioAuthoringDraft, projectDraft: { id: string; revision: number } | null, openedName?: string) => {
     resetBuilderToBlank()
+    const resumedFingerprint = JSON.stringify([draft.form, draft.source, draft.startChoice, draft.shapeId, draft.templateId, draft.cloneId])
+    // Work from this browser may differ from what the project holds.
+    projectDraftRef.current = projectDraft && { id: projectDraft.id, revision: projectDraft.revision, savedFingerprint: openedName === undefined ? '' : resumedFingerprint }
     activeCheckpointSavedAtRef.current = draft.savedAt
     setForm(draft.form)
     const storedGoal = draft.form.goal_config?.workload_shape_config?.goal_driven
@@ -3175,13 +3260,47 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setSelectedShapeId(draft.shapeId); setSelectedLoadModelTemplateId(draft.templateId); setSelectedCloneScenarioId(draft.cloneId)
     setWizardStep(draft.step); setMaxVisitedWizardIndex(draft.visited)
     setShowForm(true); onScenarioViewChange?.('builder')
-    checkpointBaselineRef.current = JSON.stringify([draft.form, draft.source, draft.startChoice, draft.shapeId, draft.templateId, draft.cloneId])
-    setSavedNotice(draft.editingId && !canResumeEdit ? 'Resumed as a new scenario because the original changed or is unavailable. Review before saving.' : 'Resumed browser draft. Validate the current scripts before configuring a run.')
+    checkpointBaselineRef.current = resumedFingerprint
+    setSavedNotice(draft.editingId && !canResumeEdit ? 'Resumed as a new scenario because the original changed or is unavailable. Review before saving.'
+      : openedName !== undefined ? `Opened the draft “${openedName}”. Save keeps it as a draft until it is complete, then saves it as a scenario.`
+        : 'Resumed unsaved work from this browser. Validate the current scripts before configuring a run.')
+  }
+  const openProjectDraft = async (summary: ScenarioDraftSummary) => {
+    const projectId = activeProjectId
+    if (!projectId || !canManageTests) return
+    const session = builderSessionRef.current
+    const generation = ++openProjectDraftGenerationRef.current
+    try {
+      const stored = await api.getScenarioDraft(projectId, summary.id)
+      // Something else was opened meanwhile.
+      if (currentProjectIdRef.current !== projectId || builderSessionRef.current !== session || openProjectDraftGenerationRef.current !== generation) return
+      const draft = parseScenarioAuthoringDraft(stored.document, projectId)
+      if (!draft) {
+        setError(`The draft “${summary.name}” cannot be opened by this version of the builder. Delete it, or open it where it was saved.`)
+        return
+      }
+      resumeDraftDocument(draft, { id: stored.id, revision: stored.revision }, stored.name)
+    } catch (cause) {
+      if (currentProjectIdRef.current === projectId) setError(getErrorMessage(cause, 'Unable to open the draft.'))
+    }
+  }
+  const deleteProjectDraft = async (summary: ScenarioDraftSummary) => {
+    const projectId = activeProjectId
+    if (!projectId || !canManageTests) return
+    if (!(await confirmAction(`Delete the draft “${summary.name}”? ${summary.scenario_id ? 'The scenario it changes keeps its saved version. ' : ''}This cannot be undone.`, { title: 'Delete draft', confirmLabel: 'Delete draft', destructive: true }))) return
+    try {
+      await api.deleteScenarioDraft(projectId, summary.id)
+      if (projectDraftRef.current?.id === summary.id) projectDraftRef.current = null
+    } catch (cause) {
+      if (currentProjectIdRef.current === projectId) setError(getErrorMessage(cause, 'Unable to delete the draft.'))
+    }
+    void loadProjectDrafts()
   }
 
   const saveScenarioAndCreateTest = async () => {
     const saved = await persistScenario()
     if (!saved) return
+    void settleProjectDraft()
     try { clearResolvedCheckpoint() } catch { /* The server save is authoritative. */ }
     // Publish the saved state before the parent evaluates navigation guards.
     flushSync(resetScenarioBuilder)
@@ -3333,7 +3452,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         const latest = readScenarioAuthoringDraft(activeProjectId)
         if (latest && latest.savedAt !== activeCheckpointSavedAtRef.current) return
         if (!autosaveSavedAtRef.current) autosaveReplacedRef.current = latest
-        const draft = build()
+        const link = projectDraftRef.current
+        const draft: ScenarioAuthoringDraft = { ...build(), ...(link ? { projectDraft: { id: link.id, revision: link.revision } } : {}) }
         saveScenarioAuthoringDraft(draft)
         activeCheckpointSavedAtRef.current = draft.savedAt
         autosaveSavedAtRef.current = draft.savedAt
@@ -3398,12 +3518,21 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
   // A new scenario's VUsers and duration start from builder defaults. Until the
   // author has chosen a model (shape, template, goal or cloned scenario) or
-  // reached Run settings, Save draft keeps a browser checkpoint rather than
-  // creating a launchable project scenario with load the author never set.
+  // reached Run settings, Save keeps a project draft rather than creating a
+  // launchable scenario with load the author never set.
   const newScenarioLoadUnconfigured = !editingId && !sourceStepComplete && maxVisitedWizardIndex < RUN_SETTINGS_STEP_INDEX
-  const draftSaveHelp = newScenarioLoadUnconfigured
-    ? 'Save draft keeps this scenario in this browser until its load is set in Model & shape or Run settings; it is not added to the project or launchable yet.'
-    : 'Incomplete or blocked drafts are saved in this browser. Configured scenarios are saved to the project; neither launches a run.'
+  // What still keeps the builder's work from being a scenario ('' once it can
+  // be one); until then Save keeps it as a draft in the project.
+  const scenarioIncompleteReason = newScenarioLoadUnconfigured ? 'choose a load model in Model & shape.'
+    : !form.name.trim() ? 'name the scenario.'
+      : form.groups.some(group => !group.script_id) ? 'choose a script for every group.'
+        : blockedScriptGroups.length ? 'replace or fix the scripts that are not ready.'
+          : !(form.termination_mode === 'iterations' || isValidDurationInput(form.duration)) ? 'set a valid duration.'
+            : sourcePending ? 'apply the workload source.'
+              : goalSizingIncomplete ? 'size every goal-driven group.'
+                : bindingErrors[0] || blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage
+                  || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || (scenarioGroupNameError ? 'give each group its own name.' : '')
+  const draftSaveHelp = scenarioIncompleteReason ? 'Not complete yet: Save keeps it as a draft in this project, which can’t be launched.' : ''
   // Only offer "Start over" for a new build (not an edit) once there's progress to discard.
   const builderHasProgress = !editingId && hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
 
@@ -4848,11 +4977,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">{error}</div>}
       {savedNotice && <p className="scenario-save-notice" role="status">{savedNotice}</p>}
 
-      {authoringDraft && canManageTests && <section className="scenario-draft-recovery" aria-label="Saved browser draft">
+      {authoringDraft && canManageTests && <section className="scenario-draft-recovery" aria-label="Unsaved work in this browser">
         <strong>{authoringDraft.form.name || 'Untitled draft'}</strong>
-        <p>Saved {formatDisplayDateTime(authoringDraft.savedAt)} on this browser, in this project. This checkpoint cannot run.</p>
+        <p>Unsaved builder work from {formatDisplayDateTime(authoringDraft.savedAt)}, kept in this browser. Resume it to save it to the project.</p>
         <button type="button" className="btn btn-secondary" onClick={() => { if (scenarioBuilderDirty) runGuarded(resumeAuthoringDraft); else resumeAuthoringDraft() }}>Resume draft</button>
-        <button type="button" className="btn btn-ghost" onClick={() => { try { clearScenarioAuthoringDraft(activeProjectId || ''); setAuthoringDraft(null); checkpointBaselineRef.current = '' } catch (cause) { setError(getErrorMessage(cause, 'Unable to clear browser draft.')) } }}>Clear saved draft</button>
+        <button type="button" className="btn btn-ghost" onClick={() => { try { clearScenarioAuthoringDraft(activeProjectId || ''); setAuthoringDraft(null); checkpointBaselineRef.current = '' } catch (cause) { setError(getErrorMessage(cause, 'Unable to discard the unsaved work.')) } }}>Discard</button>
       </section>}
       {showPlans && (
         <div className="page-section">
@@ -4878,7 +5007,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 : <p className="page-subtitle">Choose scripts, pick a load model, tune run settings, attach data, and validate the planned model.</p>}
             </div>
             <div className="scenario-builder-progress">
-              <span>{editingId ? (scenarioBuilderDirty ? 'Editing · Unsaved changes' : 'Editing · Saved') : (checkpointBaselineRef.current === checkpointFingerprint ? 'Browser draft · Saved locally' : 'New scenario · Unsaved')}</span>
+              <span>{projectDraftRef.current
+                ? (projectDraftRef.current.savedFingerprint === checkpointFingerprint ? 'Draft · Saved in the project' : 'Draft · Unsaved changes')
+                : editingId ? (scenarioBuilderDirty ? 'Editing · Unsaved changes' : 'Editing · Saved') : (checkpointBaselineRef.current === checkpointFingerprint ? 'Browser draft · Saved locally' : 'New scenario · Unsaved')}</span>
               <details className="ux-builder-readiness"><summary>Readiness</summary><p>{sourceStepComplete ? 'Model configured' : 'Model incomplete'} · {validationLabel}</p></details>
             </div>
           </div>
@@ -5027,7 +5158,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             {wizardStep === 'review' && onCreateTestFromScenario && (
               <button className="btn btn-primary" onClick={saveScenarioAndCreateTest} disabled={savePending || !requiredDraftReady || goalSizingIncomplete || sourcePending || loadModelValidationLoading || !!loadModelValidationError || loadModelValidation?.status === 'blocked' || blockedScriptGroups.length > 0 || bindingErrors.length > 0 || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save and configure run</button>
             )}
-            <button className="btn btn-secondary" onClick={saveScenario} disabled={!canManageTests || savePending || (!builderHasProgress && !editingId)}>{savePending ? 'Saving…' : 'Save draft'}</button>
+            <button className="btn btn-secondary" onClick={saveScenario} disabled={!canManageTests || savePending || (!builderHasProgress && !editingId)}>{savePending ? 'Saving…' : 'Save scenario'}</button>
           </div>
 
         </fieldset>
@@ -5083,6 +5214,33 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             </>
           )}
         />
+
+        {projectDrafts.length > 0 && (
+          <section className="scenario-drafts" aria-label="Scenario drafts">
+            <h3>Drafts</h3>
+            <p className="scenario-drafts-note">Saved in this project before they were complete, so they can’t be launched. Continue one to finish it.</p>
+            <ul>
+              {projectDrafts.map(draft => (
+                <li key={draft.id} className="scenario-draft-row">
+                  <div className="scenario-draft-summary">
+                    <strong>{draft.name}</strong>
+                    <span className="scenario-draft-badge">Draft</span>
+                    <span className="scenario-draft-meta">
+                      {draft.scenario_id ? (draft.scenario_name ? `Changes to ${draft.scenario_name}` : 'Changes to a scenario that no longer exists; continues as a new scenario') : 'New scenario'}
+                      {` · Saved ${formatDisplayDateTime(draft.updated_at)}${draft.updated_by ? ` by ${draft.updated_by}` : ''}`}
+                    </span>
+                  </div>
+                  {canManageTests && (
+                    <div className="scenario-draft-actions">
+                      <button type="button" className="btn btn-secondary btn-sm" aria-label={`Continue the draft ${draft.name}`} onClick={() => void openProjectDraft(draft)}>Continue</button>
+                      <button type="button" className="btn btn-ghost btn-sm" aria-label={`Delete the draft ${draft.name}`} onClick={() => void deleteProjectDraft(draft)}>Delete</button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {canManageTests && selectedVisibleScenarioIds.length > 0 && (
           <BulkActions count={selectedVisibleScenarioIds.length}>

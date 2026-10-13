@@ -121,7 +121,7 @@ test('scenario rename and reopen retain Results, WebSocket, named shape and grou
   await page.getByPlaceholder('Scenario name').fill('Fidelity renamed only')
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   const response = await saved
   expect(response.ok(), await response.text()).toBeTruthy()
   const sent = response.request().postDataJSON()
@@ -159,7 +159,7 @@ test('changing a saved workload shape retains the authored root SLA and rules', 
   await page.getByRole('spinbutton', { name: 'Ending load level VUsers', exact: true }).fill('14')
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
   const response = await saved
   const submitted = response.request().postDataJSON()
   await testInfo.attach('shape-guardrail-save', { body: JSON.stringify({ submitted, status: response.status(), response: await response.text() }, null, 2), contentType: 'application/json' })

@@ -84,6 +84,17 @@ describe('explicit scenario authoring checkpoints', () => {
       expect(readScenarioAuthoringDraft('project-a')).toBeNull()
     }
   })
+  it('keeps the project draft a checkpoint continues, and drops a malformed link', () => {
+    saveScenarioAuthoringDraft({ ...draft(), projectDraft: { id: 'scenario-draft-1', revision: 2 } })
+    expect(readScenarioAuthoringDraft('project-a')?.projectDraft).toEqual({ id: 'scenario-draft-1', revision: 2 })
+    const storageKey = localStorage.key(0)!
+    for (const malformed of [{ id: '', revision: 1 }, { id: 'x', revision: 0 }, { id: 'x', revision: 1.5 }, { id: 7, revision: 1 }, 'scenario-draft-1']) {
+      localStorage.setItem(storageKey, JSON.stringify({ ...draft(), projectDraft: malformed }))
+      const read = readScenarioAuthoringDraft('project-a')
+      expect(read, JSON.stringify(malformed)).not.toBeNull()
+      expect(read).not.toHaveProperty('projectDraft')
+    }
+  })
   it('keeps a well-formed recorded baseline and drops a malformed one', () => {
     const recorded = { ...draft(), editingId: 'scenario-1', baselineTag: '"tag-a"', baselineForm: draft().form, baselineShapeId: 'constant' }
     saveScenarioAuthoringDraft(recorded)

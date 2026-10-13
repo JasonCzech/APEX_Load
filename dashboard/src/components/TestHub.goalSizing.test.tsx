@@ -9,6 +9,12 @@ import TestHub from './TestHub'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  // Drafts saved to the project; by default the project has none.
+  listScenarioDrafts: vi.fn(async () => ({ drafts: [] as Array<Record<string, unknown>>, count: 0 })),
+  getScenarioDraft: vi.fn(),
+  createScenarioDraft: vi.fn(async (projectId: string, draft: { name?: string; scenario_id?: string; document?: unknown }) => ({ id: 'scenario-draft-1', project_id: projectId, name: draft.name || 'Untitled scenario', scenario_id: draft.scenario_id, revision: 1, created_at: '', updated_at: '', document: draft.document })),
+  updateScenarioDraft: vi.fn(async (projectId: string, id: string, draft: { name?: string; revision: number; document?: unknown }) => ({ id, project_id: projectId, name: draft.name || 'Untitled scenario', revision: draft.revision + 1, created_at: '', updated_at: '', document: draft.document })),
+  deleteScenarioDraft: vi.fn(async (_projectId: string, id: string) => ({ deleted: id })),
   listScenarios: vi.fn(),
   listScripts: vi.fn(),
   listDataPools: vi.fn(),

@@ -1135,6 +1135,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(sharedAssetsAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(scenarioDraftsAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(executionRecoveryAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScenarioRuntimeSettingsReport)))))

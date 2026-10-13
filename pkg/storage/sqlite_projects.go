@@ -1721,6 +1721,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM shared_data_pools WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM authoring_sessions WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM reusable_blocks WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM scenario_drafts WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM object_repositories WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM correlation_rulesets WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM monitoring_collectors WHERE project_id = ?`, []any{id}},
