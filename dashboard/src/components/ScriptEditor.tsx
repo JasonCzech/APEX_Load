@@ -14,7 +14,7 @@ import { AuthorInsertDialog, type InsertSharedData } from './AuthorInsertDialog'
 import ScriptDataUsagePanel from './ScriptDataUsagePanel'
 import { earlierVariables, scriptActionNames, scriptDataUsage, takenVariableNames, usesTableSteps, withUniqueResultPrefixes, type DataAliasStep } from './scriptDataUsageModel'
 import { useScriptScenarioBindings } from './useScriptScenarioBindings'
-import { checkFamily, lastStepEvent, replayEventStepPath, replayResolver, type ChecksReplay } from './actionChecksModel'
+import { checkFamily, lastStepEvent, replayEventStepKey, replayEventStepPath, replayResolver, type ChecksReplay } from './actionChecksModel'
 import CorrelationReviewDialog from './CorrelationReviewDialog'
 import { applyValueCorrelation, laterUses, stepLayoutKey, suggestValueName, updateStep, type ValueUse } from './responseSelectionModel'
 import { boundaryExpression } from './extractorMatch'
@@ -6430,13 +6430,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   ))
 
   const editReplayAction = (event: BrowserReplayEvent) => {
-    if (!['init', 'action', 'teardown'].includes(event.phase)) return
+    const key = replayEventStepKey(event)
+    const scope = key ? resolveAuthorJsonScopeByKey(script, key) : null
+    if (!key || !scope) return
     const actionIndex = event.action_index ?? 0
     const phase = event.phase as ScriptActionPhase
     const path = replayEventStepPath(event)
-    const key = `${phase}:${actionIndex}${path.length ? `#${path.join('/')}` : ''}`
-    const scope = resolveAuthorJsonScopeByKey(script, key)
-    if (!scope) return
     setInspectorFocusSection(scope.action.assertions?.length ? 'checks' : 'request')
     setNarrowAuthorPane('editor')
     setSelectedOutlineParameterName(null)
@@ -6457,12 +6456,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }, script, true)
   }
   const replayEventRequestScope = (event: BrowserReplayEvent) => {
-    if (!['init', 'action', 'teardown'].includes(event.phase)) return null
-    const actionIndex = event.action_index ?? 0
-    const phase = event.phase as ScriptActionPhase
-    const stepPath = replayEventStepPath(event)
-    const scope = resolveAuthorJsonScopeByKey(script, `${phase}:${actionIndex}${stepPath.length ? `#${stepPath.join('/')}` : ''}`)
-    return scope ? { scope, phase, actionIndex, stepPath } : null
+    const key = replayEventStepKey(event)
+    const scope = key ? resolveAuthorJsonScopeByKey(script, key) : null
+    return scope ? { scope, phase: event.phase as ScriptActionPhase, actionIndex: event.action_index ?? 0, stepPath: replayEventStepPath(event) } : null
   }
   const http3UpgradeScopes = (event: BrowserReplayEvent): HTTP3UpgradeScope[] => {
     const resolved = replayEventRequestScope(event)

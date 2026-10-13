@@ -286,17 +286,37 @@ export function buildReferenceScope(script: ScriptDefinition, position: StepPosi
     for (const column of columns) items.push({ group: 'data', expression: `data.${alias}.${column}`, detail: `Column of ${alias}, ${binding}` })
   }
   const placed = placeSteps(script)
-  const current = placed.find(item => item.position.phase === position.phase && item.position.actionIndex === position.actionIndex && (item.position.stepPath || []).join('/') === (position.stepPath || []).join('/'))
+  let current = placed.find(item => samePosition(item.position, position))
+  // A sequence's request is not a step of its own: it runs where its sequence
+  // does, after the sequence's earlier requests when they run in order.
+  const path = position.stepPath || []
+  const request = current ? null : /^requests\[(\d+)\]$/.exec(path[path.length - 1] || '')
+  const siblings: Array<{ action: Action; position: StepPosition; order: 'before' | null }> = []
+  if (request) {
+    current = placed.find(item => samePosition(item.position, { ...position, stepPath: path.length > 1 ? path.slice(0, -1) : undefined }))
+    const sequence = current
+    const params = isRecord(sequence?.action.params) ? sequence!.action.params : {}
+    const inOrder = params.execution_mode !== 'concurrent'
+    const at = Number(request[1])
+    if (sequence) (Array.isArray(params.requests) ? params.requests : []).forEach((child, index) => {
+      if (index === at || !isRecord(child)) return
+      siblings.push({ action: child as unknown as Action, position: { ...sequence.position, stepPath: [...(sequence.position.stepPath || []), `requests[${index}]`] }, order: inOrder && index < at ? 'before' : null })
+    })
+  }
   const laterVariables = new Map<string, StepPosition & { name: string }>()
   const seen = new Map<string, ReferenceItem>()
-  for (const producer of placed) {
+  // In execution order; a request's own sequence is its other requests, one by one.
+  const producers = placed.flatMap((producer): Array<{ action: Action; position: StepPosition; order: 'before' | 'maybe' | null; self: boolean }> => producer === current && request
+    ? siblings.map(sibling => ({ ...sibling, self: false }))
+    : [{ action: producer.action, position: producer.position, order: current ? precedes(producer.segments, current.segments) : 'before', self: producer === current }])
+  for (const producer of producers) {
     const outputs = stepOutputs(producer.action)
     if (!outputs.length) continue
-    const order = current ? precedes(producer.segments, current.segments) : 'before'
-    const source = { ...producer.position, name: producer.action.name || producer.action.type }
+    const { order } = producer
+    const source = { ...producer.position, name: producer.action.name || producer.action.type || 'Request' }
     for (const output of outputs) {
       if (order === null) {
-        if (current && !laterVariables.has(output.expression) && producer !== current) laterVariables.set(output.expression, source)
+        if (current && !laterVariables.has(output.expression) && !producer.self) laterVariables.set(output.expression, source)
         continue
       }
       const existing = seen.get(output.expression)

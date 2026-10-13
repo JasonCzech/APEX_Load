@@ -7,6 +7,8 @@ import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptActionDefinition as Action } from '../types/scripts'
 import ActionChecks from './ActionChecks'
 import { replayResolver, type ChecksReplay } from './actionChecksModel'
+import { ReferenceFieldContext } from './referenceFieldContext'
+import { buildReferenceScope } from './referenceScopeModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -127,6 +129,19 @@ describe('ActionChecks', () => {
     const section = container.querySelector('[data-action-section="assertions"]')!
     expect(section.querySelector('[data-check-index="0:0"] [data-check-field="value"] input')).not.toBeNull()
     expect(section.querySelector('[data-check-index="0:1"] [data-check-field="expected"] input')).not.toBeNull()
+  })
+
+  it('offers to make a text a parameter, but not a status the script holds as a number', async () => {
+    const scope = buildReferenceScope({ name: 's', version: '1', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Login', type: 'POST', target: '/login' }] }, { phase: 'action', actionIndex: 0 })
+    await act(async () => root.render(<ReferenceFieldContext.Provider value={{ scope, onMakeParameter: () => {} }}>
+      <Harness initial={{ name: 'Login', type: 'POST', target: '/login', assertions: [{ type: 'status_code', expected: 200 }, { type: 'text_contains', value: 'Welcome' }] }} />
+    </ReferenceFieldContext.Provider>))
+    const openPicker = async (label: string) => act(async () => byLabel<HTMLButtonElement>(`Insert a reference into ${label}`).click())
+    await openPicker('Check 1 status')
+    expect(container.querySelector('.reference-make-parameter')).toBeNull()
+    await openPicker('Check 1 status')
+    await openPicker('Check 2 text')
+    expect(container.querySelector('.reference-make-parameter')!.textContent).toBe('Make this a parameter')
   })
 
   it('says why a replayed script has no result for the step', async () => {

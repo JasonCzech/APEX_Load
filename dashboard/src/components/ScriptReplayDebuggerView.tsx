@@ -2,6 +2,7 @@ import LiveTableSandboxEditor from './LiveTableSandboxEditor'
 import LiveTableStepResult from './LiveTableStepResult'
 import ResponseSelection, { type ResponseSelectionValue } from './ResponseSelection'
 import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
+import { replayEventStepKey } from './actionChecksModel'
 
 import { scriptDataUsage } from './scriptDataUsageModel'
 import { liveTableSandboxError } from './liveTableSandboxModel'
@@ -1346,8 +1347,8 @@ export function ScriptReplayDebuggerView({
                                     />
                                   </div>
                                 )}
-                                {event.action_type === 'live_table' && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && ['init', 'action', 'teardown'].includes(event.phase) && typeof event.action_index === 'number'
-                                  ? resolveAuthorJsonScopeByKey(script, `${event.phase}:${event.action_index}${event.step_path?.length ? `#${event.step_path.join('/')}` : ''}`)?.action
+                                {event.action_type === 'live_table' && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && replayEventStepKey(event)
+                                  ? resolveAuthorJsonScopeByKey(script, replayEventStepKey(event)!)?.action
                                   : undefined} />}
                                 {event.extractions && Object.keys(event.extractions).length > 0 && event.action_type !== 'live_table' && (
                                   <div className="replay-code-block">

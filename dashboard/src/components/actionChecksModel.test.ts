@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { BrowserReplayEvent } from '../types/replay'
-import { bodyIsWhole, checkKindOf, checkKinds, checkResult, lastStepEvent, replayEventStepPath, replayResolver, savedValueResult, statusExpectation, type ChecksReplay } from './actionChecksModel'
+import { bodyIsWhole, checkKindOf, checkKinds, checkResult, lastStepEvent, replayEventStepKey, replayEventStepPath, replayResolver, savedValueResult, statusExpectation, type ChecksReplay } from './actionChecksModel'
 import { boundaryExpression } from './extractorMatch'
 
 function event(overrides: Partial<BrowserReplayEvent> = {}): BrowserReplayEvent {
@@ -173,6 +173,13 @@ describe('the replay of a step', () => {
     expect(lastStepEvent(events, 'action', 1, ['requests[0]'])).toBe(2)
     expect(lastStepEvent(events, 'action', 1)).toBe(-1)
     expect(lastStepEvent(events, 'init', 0)).toBe(-1)
+  })
+
+  it('keys an event by its step, a missing action index as zero', () => {
+    expect(replayEventStepKey(event({ action_index: undefined }))).toBe('action:0')
+    expect(replayEventStepKey(event({ phase: 'init', action_index: 2, step_path: ['loop[0]', 'then[1]'] }))).toBe('init:2#loop[0]/then[1]')
+    expect(replayEventStepKey(event({ action_index: 3, request_index: 1 }))).toBe('action:3#requests[1]')
+    expect(replayEventStepKey(event({ phase: 'session' }))).toBeNull()
   })
 
   it('reads a sequence request’s place from its index when it has no path', () => {

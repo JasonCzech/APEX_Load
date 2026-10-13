@@ -159,6 +159,14 @@ export function replayEventStepPath(event: BrowserReplayEvent): string[] {
   return event.request_index != null ? [`requests[${event.request_index}]`] : []
 }
 
+/** The key of the script step a replay event ran (phase:index#path), or null outside the script's phases. */
+export function replayEventStepKey(event: BrowserReplayEvent): string | null {
+  if (!['init', 'action', 'teardown'].includes(event.phase)) return null
+  const path = replayEventStepPath(event)
+  // The API leaves out a zero action index.
+  return `${event.phase}:${event.action_index ?? 0}${path.length ? `#${path.join('/')}` : ''}`
+}
+
 /** The last replay event of the step at phase, index and path. */
 export function lastStepEvent(events: BrowserReplayEvent[], phase: string, actionIndex: number, stepPath: string[] = []): number {
   const path = stepPath.join('/')

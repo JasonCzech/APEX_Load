@@ -78,6 +78,30 @@ describe('buildReferenceScope', () => {
   })
 })
 
+describe('buildReferenceScope in a sequence request', () => {
+  const sequence = (mode?: string) => script({
+    actions: [
+      step('Login', extract('sid')),
+      { name: 'Batch', type: 'http_sequence', target: '', params: { ...(mode ? { execution_mode: mode } : {}), requests: [{ method: 'GET', target: '/a', ...extract('a') }, { method: 'GET', target: '/b', ...extract('b') }, { method: 'GET', target: '/c', ...extract('c') }] } },
+      step('Later', extract('late')),
+    ],
+  })
+  const at = { phase: 'action' as const, actionIndex: 1, stepPath: ['requests[1]'] }
+
+  it('sees the steps before its sequence and, in order, the earlier requests', () => {
+    const scope = buildReferenceScope(sequence(), at)
+    expect(expressions(scope, 'steps')).toEqual(['var.sid', 'var.a'])
+    expect(scope.byExpression.get('var.a')!.source).toMatchObject({ actionIndex: 1, stepPath: ['requests[0]'] })
+    expect([...scope.laterVariables.keys()].sort()).toEqual(['var.c', 'var.late'])
+  })
+
+  it('sees none of a concurrent sequence’s other requests as earlier', () => {
+    const scope = buildReferenceScope(sequence('concurrent'), at)
+    expect(expressions(scope, 'steps')).toEqual(['var.sid'])
+    expect([...scope.laterVariables.keys()].sort()).toEqual(['var.a', 'var.c', 'var.late'])
+  })
+})
+
 describe('unresolvedReferences', () => {
   const subject = script({
     parameters: [{ name: 'user', type: 'list', values: ['a'] }],

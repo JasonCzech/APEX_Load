@@ -104,12 +104,14 @@ function Check({ assertion, at, index, protocol, result, onUpdate, onRemove }: {
     const path = ['assertions', at, spec.key]
     // Each field is named for its check, as several checks share the labels.
     const name = `${label} ${spec.label.toLowerCase()}`
+    // A number in the script (a status) is not text a parameter can stand in for.
+    const makesParameter = typeof current !== 'number'
     switch (spec.input) {
       case 'reference':
-        return <label key={spec.key} className="action-check-reference" data-check-field={spec.key}>{spec.label}<ReferenceField value={text} onChange={value => { onUpdate(spec.key, value); if (titleInExpected) onUpdate('expected', undefined) }} field={path} label={name} /></label>
+        return <label key={spec.key} className="action-check-reference" data-check-field={spec.key}>{spec.label}<ReferenceField value={text} onChange={value => { onUpdate(spec.key, value); if (titleInExpected) onUpdate('expected', undefined) }} field={path} label={name} makesParameter={makesParameter} /></label>
       case 'status':
         // A number, or a reference that resolves to one.
-        return <label key={spec.key} className="action-check-reference" data-check-field={spec.key}>{spec.label}<ReferenceField value={text} onChange={value => onUpdate(spec.key, statusExpectation(value))} field={path} label={name} inputProps={{ inputMode: 'numeric' }} /></label>
+        return <label key={spec.key} className="action-check-reference" data-check-field={spec.key}>{spec.label}<ReferenceField value={text} onChange={value => onUpdate(spec.key, statusExpectation(value))} field={path} label={name} makesParameter={makesParameter} inputProps={{ inputMode: 'numeric' }} /></label>
       case 'number':
         return <label key={spec.key} data-check-field={spec.key}>{spec.label}<input aria-label={name} type="number" min={0} value={text} onChange={event => onUpdate(spec.key, event.target.value === '' ? undefined : Number(event.target.value))} /></label>
       case 'source':

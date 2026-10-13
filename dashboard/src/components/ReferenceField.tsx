@@ -46,6 +46,8 @@ interface Props {
   onChange: (value: string) => void
   /** The field's path in the selected step, for "Make this a parameter". */
   field: FieldPath
+  /** False where the script holds the value as a number, which a parameter cannot replace in place. */
+  makesParameter?: boolean
   /** What the field is called, for its Insert reference button. */
   label: string
   multiline?: boolean
@@ -58,7 +60,7 @@ interface Props {
  * {{) lists what exists before this step; the editor writes the syntax. A
  * reference nothing defines is flagged under the field, with fixes.
  */
-export default function ReferenceField({ value, onChange, field, label, multiline = false, rows = 3, inputProps = {} }: Props) {
+export default function ReferenceField({ value, onChange, field, label, multiline = false, rows = 3, inputProps = {}, makesParameter = true }: Props) {
   const id = useId()
   const { scope, onMakeParameter, registerInsertTarget, releaseInsertTarget } = useReferenceFieldContext()
   const element = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
@@ -163,7 +165,7 @@ export default function ReferenceField({ value, onChange, field, label, multilin
             {picker.mode === 'search' && <input ref={focusOnMount} type="search" className="reference-picker-search" role="combobox" aria-expanded="true" aria-controls={`${id}-listbox`} aria-activedescendant={options[active] ? `${id}-option-${active}` : undefined} aria-label="Find a reference" placeholder="Find a reference" value={picker.query}
               onChange={event => setPicker({ mode: 'search', query: event.target.value })} onKeyDown={event => { pickerKeys(event) }} />}
             <ReferenceOptions id={id} options={options} active={active} onPick={pick} onHover={setActive} />
-            {picker.mode === 'search' && onMakeParameter && value.trim() && (
+            {picker.mode === 'search' && onMakeParameter && makesParameter && value.trim() && (
               <button type="button" className="btn btn-secondary btn-sm reference-make-parameter" onClick={() => {
                 const { from, to } = selection.current
                 const whole = from === to

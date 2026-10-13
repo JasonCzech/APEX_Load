@@ -113,6 +113,15 @@ describe('ReferenceField', () => {
     expect(makeParameter).toHaveBeenCalledWith({ field: ['target'], value: '/orders/12345', from: 8, to: 13 })
   })
 
+  it('offers no parameter for a value the script holds as a number', async () => {
+    await act(async () => { root.render(<ReferenceFieldContext.Provider value={{ scope, onMakeParameter: vi.fn() }}>
+      <ReferenceField value="200" onChange={() => {}} field={['assertions', 0, 'expected']} label="Status" makesParameter={false} />
+    </ReferenceFieldContext.Provider>) })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Insert a reference into Status"]')!.click() })
+    expect(container.querySelector('.reference-picker')).not.toBeNull()
+    expect(container.querySelector('.reference-make-parameter')).toBeNull()
+  })
+
   it('inserts from the outputs panel into the field as it is now, not as it was on focus', async () => {
     let handle: ((expression: string) => void) | null = null
     const release = vi.fn()
