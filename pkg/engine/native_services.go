@@ -258,7 +258,7 @@ func (b *nativeServices) execute(ctx context.Context, request protocol.NativeDat
 		vu.liveTables.mu.Unlock()
 		defer func() { vu.liveTables.mu.Lock(); vu.liveTables.nativeLeasePending--; vu.liveTables.mu.Unlock() }()
 	}
-	core := livetable.Request{Operation: livetable.Operation(parsed.Operation), RecordID: parsed.RecordID, Position: parsed.Position, Columns: parsed.Columns, Values: parsed.Values, Expected: parsed.Expected, Delta: parsed.Delta, Wait: time.Duration(parsed.WaitMS) * time.Millisecond, Limit: parsed.Limit, Cursor: parsed.Cursor}
+	core := livetable.Request{Operation: livetable.Operation(parsed.Operation), RecordID: parsed.RecordID, Position: parsed.Position, Columns: parsed.Columns, Values: parsed.Values, Expected: parsed.Expected, Delta: int64(parsed.Delta), Wait: time.Duration(parsed.WaitMS) * time.Millisecond, Limit: parsed.Limit, Cursor: parsed.Cursor}
 	if parsed.ExpectedVersion != "" {
 		version, _ := strconv.ParseUint(parsed.ExpectedVersion, 10, 64)
 		core.ExpectedVersion = &version

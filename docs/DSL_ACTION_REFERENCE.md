@@ -168,7 +168,7 @@ Execution posture: `supported` — Requires an admitted live-table binding. Unma
 | `params.values` | object |  | Column-to-string values. Missing keys remain absent; empty strings remain present. Managed secrets are prohibited. |
 | `params.expected` | object |  | Expected column values for supported conditional operations. |
 | `params.expected_version` | string |  | Required native update version as a positive decimal string or template. |
-| `params.delta` | int |  | Signed 64-bit increment; overflow and nonnumeric cells fail. |
+| `params.delta` | int64 |  | Signed 64-bit increment, as a number or a decimal string; overflow and nonnumeric cells fail. |
 | `params.lease_ref` | string |  | Private lease reference created by an earlier lease action's result_prefix. Tokens are never exposed as variables. |
 | `params.lease_ms` | int |  | Lease/renew duration, at most 300000 ms; zero uses the admitted binding duration. |
 | `params.wait_ms` | int |  | Bounded empty-table wait for read/next/pop/lease, at most 60000 ms. |
@@ -176,6 +176,25 @@ Execution posture: `supported` — Requires an admitted live-table binding. Unma
 | `params.cursor` | string |  | Named shared sequential cursor for next; omitted uses the table-wide cursor. |
 | `params.on_empty` | enum |  | Empty/missing result policy; defaults to error. Outputs are cleared in either case. One of: `error`, `skip`. |
 | `params.on_condition` | enum |  | Failed comparison policy; defaults to error. One of: `error`, `skip`. |
+
+Operations (`params.operation`):
+
+| Value | Operation | Requires | Also accepts |
+|-------|-----------|----------|--------------|
+| `read` | Read a row by ID or position | one of `params.record_id` or `params.position` | `params.result_prefix`, `params.columns`, `params.limit`, `params.wait_ms`, `params.on_empty` |
+| `next` | Read the next row |  | `params.result_prefix`, `params.columns`, `params.cursor`, `params.wait_ms`, `params.on_empty` |
+| `read_column` | Read a column | `params.columns` | `params.result_prefix`, `params.position`, `params.limit`, `params.on_empty` |
+| `push` | Add a row | `params.values` | `params.result_prefix` |
+| `update` | Update a row | `params.values`, one of `params.record_id` + `params.expected_version` or `params.position` | `params.result_prefix`, `params.expected`, `params.on_condition` |
+| `increment` | Add to a number | `params.columns`, one of `params.record_id` or `params.position` | `params.result_prefix`, `params.delta`, `params.expected`, `params.on_condition` |
+| `clear` | Clear cells in a row | `params.position` | `params.result_prefix`, `params.columns`, `params.expected`, `params.on_condition` |
+| `pop` | Remove the next row |  | `params.result_prefix`, `params.columns`, `params.wait_ms`, `params.on_empty` |
+| `lease` | Lease a row | `params.result_prefix` | `params.lease_ms`, `params.wait_ms`, `params.on_empty` |
+| `renew` | Renew a lease | `params.lease_ref` | `params.result_prefix`, `params.lease_ms` |
+| `ack` | Acknowledge a lease | `params.lease_ref` | `params.result_prefix` |
+| `release` | Release a lease | `params.lease_ref` | `params.result_prefix` |
+| `create_column` | Add a column | `params.columns` | `params.result_prefix` |
+| `rotate` | Rotate columns |  | `params.result_prefix`, `params.columns`, `params.on_empty` |
 
 ### `native_javascript`
 

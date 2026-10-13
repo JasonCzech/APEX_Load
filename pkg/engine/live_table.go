@@ -448,7 +448,7 @@ func (vu *VUser) executeLiveTableAction(ctx context.Context, action dsl.Action) 
 	if err := vu.liveTableLeaseError(); err != nil {
 		return err
 	}
-	request := livetable.Request{Operation: livetable.Operation(parsed.Operation), RecordID: vu.interpolate(parsed.RecordID), Position: parsed.Position, Columns: parsed.Columns, Delta: parsed.Delta, Wait: time.Duration(parsed.WaitMS) * time.Millisecond, Limit: parsed.Limit, Cursor: vu.interpolate(parsed.Cursor)}
+	request := livetable.Request{Operation: livetable.Operation(parsed.Operation), RecordID: vu.interpolate(parsed.RecordID), Position: parsed.Position, Columns: parsed.Columns, Delta: int64(parsed.Delta), Wait: time.Duration(parsed.WaitMS) * time.Millisecond, Limit: parsed.Limit, Cursor: vu.interpolate(parsed.Cursor)}
 	if parsed.Operation == "lease" || parsed.Operation == "renew" {
 		request.LeaseDuration = binding.LeaseDuration
 	}

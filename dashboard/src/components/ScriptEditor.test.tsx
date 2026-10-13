@@ -1,4 +1,6 @@
 import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
+import { setCachedDslActionCatalog } from './dslActionCatalog'
+import { LIVE_TABLE_SPEC } from './catalogActionFormFixture'
 import type { ScriptSaveOptions, StoredScript } from '../types/storedContent'
 // @vitest-environment jsdom
 
@@ -2076,6 +2078,36 @@ describe('ScriptEditor', () => {
       expect(document.activeElement).toBe(group())
     } finally {
       Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height)
+    }
+  })
+
+  it('edits a live-table action from the catalog, never with HTTP fields, and its JSON keeps the keys in order', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [LIVE_TABLE_SPEC] })
+    try {
+      const tableScript = { ...initialScript, actions: [{ name: 'Read work', type: 'live_table', target: '', params: { alias: 'work', operation: 'read', position: 1, result_prefix: 'row' } }] } as unknown as ScriptDefinition
+      await act(async () => { root.render(<ScriptEditor initialScript={tableScript} />) })
+      await flushReact()
+      const form = container.querySelector<HTMLElement>('.catalog-action-form')!
+      expect(form).not.toBeNull()
+      const labels = Array.from(container.querySelectorAll('.action-editor-panel label > span')).map(span => span.textContent)
+      expect(labels).not.toContain('Target (URL or path)')
+      expect(labels).not.toContain('HTTP method')
+      expect(Array.from(container.querySelectorAll('[role="tab"]')).map(tab => tab.textContent)).toContain('Settings')
+      // A live-table step has no response: its checks tab says so instead of offering HTTP checks.
+      await act(async () => { Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find(tab => tab.textContent?.startsWith('Correlation & checks'))!.click() })
+      const checks = Array.from(container.querySelectorAll<HTMLElement>('[role="tabpanel"]')).find(panel => !panel.hidden && panel.textContent?.includes('no response'))
+      expect(checks?.textContent).toContain('results are the variables under its “Save results as” name')
+      await act(async () => { Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find(tab => tab.textContent === 'Settings')!.click() })
+      const position = Array.from(form.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent?.startsWith('Position') && label.querySelector('input[type="number"]'))!.querySelector<HTMLInputElement>('input')!
+      await act(async () => { changeInputValue(position, '3') })
+      await act(async () => { findButtonByText(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { findButtonByText(container, 'Full Script JSON')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const source = JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value)
+      const params = (source.script || source).actions[0].params
+      expect(Object.keys(params)).toEqual(['alias', 'operation', 'position', 'result_prefix'])
+      expect(params.position).toBe(3)
+    } finally {
+      setCachedDslActionCatalog(null)
     }
   })
 

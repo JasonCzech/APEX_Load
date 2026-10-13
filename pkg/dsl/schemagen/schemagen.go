@@ -188,6 +188,12 @@ func fieldSchema(field dsl.FieldSpec) map[string]any {
 		schema["type"] = "string"
 	case dsl.FieldKindInt:
 		schema["type"] = "integer"
+	case dsl.FieldKindInt64:
+		// A number, or a canonical decimal string for values past 2^53.
+		schema["anyOf"] = []any{
+			map[string]any{"type": "integer"},
+			map[string]any{"type": "string", "pattern": "^(0|-?[1-9][0-9]{0,18})$"},
+		}
 	case dsl.FieldKindFloat:
 		schema["type"] = "number"
 	case dsl.FieldKindBool:
@@ -367,6 +373,52 @@ func writeActionSpec(b *strings.Builder, spec dsl.ActionSpec) {
 	if len(spec.Fields) > 0 {
 		writeFieldTable(b, spec.Fields)
 	}
+	if len(spec.Variants) > 0 {
+		writeVariantTable(b, spec)
+	}
+}
+
+// writeVariantTable lists each operation of a discriminated action with the
+// fields it requires and accepts.
+func writeVariantTable(b *strings.Builder, spec dsl.ActionSpec) {
+	fmt.Fprintf(b, "Operations (`%s`):\n\n", spec.Discriminator)
+	b.WriteString("| Value | Operation | Requires | Also accepts |\n")
+	b.WriteString("|-------|-----------|----------|--------------|\n")
+	for _, variant := range spec.Variants {
+		required := append([]string(nil), variant.Required...)
+		// Fields every operation requires are in the field table already.
+		named := map[string]bool{spec.Discriminator: true}
+		for _, field := range spec.Fields {
+			if field.Required {
+				named[field.Name] = true
+			}
+		}
+		for _, field := range required {
+			named[field] = true
+		}
+		choices := make([]string, 0, len(variant.Choices))
+		for _, choice := range variant.Choices {
+			for _, field := range choice {
+				named[field] = true
+			}
+			choices = append(choices, "`"+strings.Join(choice, "` + `")+"`")
+		}
+		requires := make([]string, 0, len(required)+1)
+		for _, field := range required {
+			requires = append(requires, "`"+field+"`")
+		}
+		if len(choices) > 0 {
+			requires = append(requires, "one of "+strings.Join(choices, " or "))
+		}
+		var also []string
+		for _, field := range variant.Allowed {
+			if !named[field] {
+				also = append(also, "`"+field+"`")
+			}
+		}
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", variant.Value, tableCell(variant.Label), tableCell(strings.Join(requires, ", ")), tableCell(strings.Join(also, ", ")))
+	}
+	b.WriteString("\n")
 }
 
 func writeFieldTable(b *strings.Builder, fields []dsl.FieldSpec) {

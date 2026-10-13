@@ -15,14 +15,14 @@ import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFiel
 import { type AuthoringIssue } from './scriptAuthoringAssist'
 import { httpSequenceExecutionSettings, setHTTPSequenceExecutionMode, setHTTPSequenceMaxConcurrency, type HTTPSequenceExecutionMode } from './httpSequenceExecutionModel'
 import { describeHTMLStep, htmlStepOf } from './htmlSteps'
+import CatalogActionForm from './CatalogActionForm'
+import { HTTP_RUNTIME_ACTION_TYPES, NO_RESPONSE_ACTION_TYPES, hasHandBuiltEditor, type LiveTableFormContext } from './catalogActionFormModel'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ParameterConfig = ScriptParameterDefinition
 type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai_guardrails' | 'authoring_health'>
 const ActionProtocolContext = createContext('http')
-const HTTP_RUNTIME_ACTION_TYPES = new Set(['cookie_clear', 'cache_clear', 'http_connections_close'])
-
 function isHTTPRuntimeAction(action: Action): boolean {
   return HTTP_RUNTIME_ACTION_TYPES.has(action.type)
 }
@@ -40,7 +40,7 @@ function SourceFunctionSummary({ action }: { action: Action }) {
   </div>
 }
 
-export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues, catalogContext, onOpenSource }: {
   inspector?: boolean
   initialSection?: string
   onOpenBody?: () => void
@@ -69,6 +69,10 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   isJmsScript: boolean
   isSoapScript: boolean
   issues: AuthoringIssue[]
+  /** What the script offers a catalog-edited action's live-table fields. */
+  catalogContext?: LiveTableFormContext
+  /** Opens the action's JSON, for what a form cannot edit. */
+  onOpenSource?: () => void
 }) {
   const [section, setSection] = useState(initialSection)
   const sectionIdBase = useId()
@@ -83,6 +87,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   const isSourceFunction = isSourceFunctionAction(action)
   const isNativeScript = action.type === 'native_javascript'
   const isNativeRendezvous = action.type === 'rendezvous' && !action.params?.function && !Array.isArray(action.params?.args)
+  const catalogDriven = !hasHandBuiltEditor(action)
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
     onBeginParameterEdit,
@@ -94,7 +99,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
       {inspector && <TabList className="inspector-section-tabs ux-underline-tabs" aria-label="Action property sections">
-        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" role="tab" key={value} id={`${sectionIdBase}-${value}-tab`} aria-controls={`${sectionIdBase}-${value}-panel`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isNativeRendezvous ? 'Rendezvous' : isNativeScript ? 'Host JavaScript' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
+        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" role="tab" key={value} id={`${sectionIdBase}-${value}-tab`} aria-controls={`${sectionIdBase}-${value}-panel`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? catalogDriven ? 'Settings' : isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isNativeRendezvous ? 'Rendezvous' : isNativeScript ? 'Host JavaScript' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
       </TabList>}
       <div hidden={inspector && section !== 'request'} {...sectionPanel('request')}>
       <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
@@ -109,8 +114,11 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             protocol={protocol}
             isBrowserScript={isBrowserScript}
             isJmsScript={isJmsScript}
+            catalogDriven={catalogDriven}
             onUpdate={onUpdate}
           />
+
+          {catalogDriven && <CatalogActionForm action={action} index={index} onUpdate={onUpdate} context={catalogContext} onOpenSource={onOpenSource} />}
 
 
           {isHTTPRuntimeControl ? (
@@ -135,7 +143,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
           )}
 
           {(isNativeScript || isNativeRendezvous) && <NativeScriptActionFields action={action} onChange={params => onUpdate(index, 'params', params)} />}
-          {!isNativeScript && !isHTTPRuntimeControl && !isControlAction(action) && !isSourceFunction && (isWebSocketScript ? (
+          {!catalogDriven && !isNativeScript && !isHTTPRuntimeControl && !isControlAction(action) && !isSourceFunction && (isWebSocketScript ? (
             <WebSocketActionFields
               action={action}
               index={index}
@@ -242,7 +250,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       </OpenActionBody.Provider>
       </div>
       {inspector && (isHTTPRuntimeControl || isHTTPSequence || isControlAction(action)) && <div hidden={section !== 'checks'} className="sub-section" {...sectionPanel('checks')}><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : isHTTPRuntimeControl ? 'This action changes HTTP state and has no response to extract or check.' : 'Select a request inside this block to configure response extraction and checks.'}</p></div>}
-      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && !isControlAction(action) && <div hidden={section !== 'checks'} {...sectionPanel('checks')}>
+      {inspector && NO_RESPONSE_ACTION_TYPES.has(action.type) && <div hidden={section !== 'checks'} className="sub-section" {...sectionPanel('checks')}><p>This action has no response to extract from or check{action.type === 'live_table' ? '; a live-table step’s results are the variables under its “Save results as” name' : ''}.</p></div>}
+      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && !isControlAction(action) && !NO_RESPONSE_ACTION_TYPES.has(action.type) && <div hidden={section !== 'checks'} {...sectionPanel('checks')}>
         {!isBrowserScript && <ProtocolExtractorsSection action={action} index={index} protocol={protocol} onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />}
         <ProtocolAssertionsSection action={action} index={index} protocol={protocol} onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
       </div>}
@@ -441,6 +450,8 @@ interface ActionCoreFieldsProps {
   protocol: string
   isBrowserScript: boolean
   isJmsScript: boolean
+  /** The catalog form edits the action's own fields (target included). */
+  catalogDriven?: boolean
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
 }
 
@@ -799,7 +810,7 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
   )
 }
 
-function ActionCoreFields({ hideActionType = false, typeOnly = false, action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
+function ActionCoreFields({ hideActionType = false, typeOnly = false, action, index, protocol, isBrowserScript, isJmsScript, catalogDriven = false, onUpdate }: ActionCoreFieldsProps) {
   const showSelector = isBrowserScript && dslActionUsesSelector(action.type)
   const showValue = isBrowserScript && dslActionUsesValue(action.type)
   const isWebSocketScript = protocol === 'websocket'
@@ -940,7 +951,7 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
             </>
           )}
         </>
-      ) : action.type === 'native_javascript' || (action.type === 'rendezvous' && !action.params?.function && !Array.isArray(action.params?.args)) ? (
+      ) : catalogDriven ? null : action.type === 'native_javascript' || (action.type === 'rendezvous' && !action.params?.function && !Array.isArray(action.params?.args)) ? (
         <div className="form-hint full-width">This native action runs on the load generator and has no request target.</div>
       ) : isSourceFunctionAction(action) ? (
         <SourceFunctionSummary action={action} />

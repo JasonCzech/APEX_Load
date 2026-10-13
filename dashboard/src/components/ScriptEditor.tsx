@@ -7,6 +7,7 @@ import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
 import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
+import { liveTableFormContext } from './catalogActionFormModel'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
 import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
@@ -5701,6 +5702,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const renderStructuredCenterDocument = (title: string, content: ReactNode) => {
     return jsonParseMessage ? renderBlockedCenterDocument(title) : content
   }
+  // Only a live-table step's form reads the script's aliases, columns and earlier outputs.
+  const inspectorLiveTableContext = useMemo(() => activeInspectorScope?.action.type === 'live_table'
+    ? liveTableFormContext(script, activeInspectorScope.phase, activeInspectorScope.actionIndex)
+    : undefined, [activeInspectorScope?.action.type, activeInspectorScope?.actionIndex, activeInspectorScope?.phase, script])
   const renderActionInspectorContent = (): ReactNode => (
     activeInspectorScope ? (
       <>
@@ -5732,6 +5737,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           isJmsScript={isJmsScript}
           isSoapScript={isSoapScript}
           issues={(actionIssueBuckets[activeInspectorScope.phase]?.[activeInspectorScope.actionIndex] || []).filter(issue => JSON.stringify(issue.stepPath || []) === JSON.stringify(authorCodeFocus?.stepPath || []))}
+          catalogContext={inspectorLiveTableContext}
+          onOpenSource={() => { setShowFullScriptJson(false); openCenterTab(SCRIPT_JSON_TAB_ID) }}
         />
       </>
     ) : null

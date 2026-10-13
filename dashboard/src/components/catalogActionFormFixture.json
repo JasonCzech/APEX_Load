@@ -1,0 +1,467 @@
+{
+  "type": "live_table",
+  "protocols": [
+    "*"
+  ],
+  "summary": "Performs an atomic operation on an explicitly bound run-scoped live table. Existing variables remain snapshots until read again.",
+  "execution_posture": "supported",
+  "execution_note": "Requires an admitted live-table binding. Unmanaged runs and replay fail closed without an explicit isolated seed. Leases permit redelivery; they do not make external work exactly once.",
+  "fields": [
+    {
+      "name": "params.alias",
+      "required": true,
+      "kind": "string",
+      "doc": "Static alias of a trusted run binding; never a remote URL or table credential.",
+      "label": "Table alias",
+      "widget": "alias",
+      "placeholder": "orders"
+    },
+    {
+      "name": "params.operation",
+      "required": true,
+      "kind": "enum",
+      "enum": [
+        "read",
+        "next",
+        "push",
+        "pop",
+        "lease",
+        "renew",
+        "ack",
+        "release",
+        "update",
+        "increment",
+        "clear",
+        "rotate",
+        "create_column",
+        "read_column"
+      ],
+      "schema_enum": true,
+      "label": "Operation"
+    },
+    {
+      "name": "params.result_prefix",
+      "kind": "string",
+      "doc": "Static var namespace prefix. Row fields appear under \u003cprefix\u003e.values.\u003ccolumn\u003e; metadata includes status, revision, record_id and record_version. Bounded ranges use JSON rows/cells/columns. Missing results clear prior outputs. For lease, also identifies the private lease reference.",
+      "label": "Save results as",
+      "widget": "text",
+      "placeholder": "order"
+    },
+    {
+      "name": "params.record_id",
+      "kind": "string",
+      "doc": "Stable native record ID; templates allowed.",
+      "label": "Record ID",
+      "widget": "output-ref",
+      "output_kind": "record_id"
+    },
+    {
+      "name": "params.position",
+      "kind": "int",
+      "maximum": 1000000,
+      "doc": "One-based position for operations supporting positional access.",
+      "label": "Position",
+      "placeholder": "1"
+    },
+    {
+      "name": "params.columns",
+      "kind": "array",
+      "doc": "Distinct static column identifiers. Required for column operations.",
+      "label": "Columns",
+      "widget": "columns"
+    },
+    {
+      "name": "params.values",
+      "kind": "object",
+      "doc": "Column-to-string values. Missing keys remain absent; empty strings remain present. Managed secrets are prohibited.",
+      "label": "Values",
+      "widget": "values"
+    },
+    {
+      "name": "params.expected",
+      "kind": "object",
+      "doc": "Expected column values for supported conditional operations.",
+      "label": "Only when the row has",
+      "widget": "values"
+    },
+    {
+      "name": "params.expected_version",
+      "kind": "string",
+      "doc": "Required native update version as a positive decimal string or template.",
+      "label": "Expected version",
+      "widget": "output-ref",
+      "output_kind": "record_version"
+    },
+    {
+      "name": "params.delta",
+      "kind": "int64",
+      "doc": "Signed 64-bit increment, as a number or a decimal string; overflow and nonnumeric cells fail.",
+      "label": "Add",
+      "widget": "int64",
+      "placeholder": "1"
+    },
+    {
+      "name": "params.lease_ref",
+      "kind": "string",
+      "doc": "Private lease reference created by an earlier lease action's result_prefix. Tokens are never exposed as variables.",
+      "label": "Lease",
+      "widget": "output-ref",
+      "output_kind": "lease"
+    },
+    {
+      "name": "params.lease_ms",
+      "kind": "int",
+      "maximum": 300000,
+      "doc": "Lease/renew duration, at most 300000 ms; zero uses the admitted binding duration.",
+      "label": "Lease for",
+      "widget": "duration-ms",
+      "advanced": true
+    },
+    {
+      "name": "params.wait_ms",
+      "kind": "int",
+      "maximum": 60000,
+      "doc": "Bounded empty-table wait for read/next/pop/lease, at most 60000 ms.",
+      "label": "Wait for a row up to",
+      "widget": "duration-ms",
+      "advanced": true
+    },
+    {
+      "name": "params.limit",
+      "kind": "int",
+      "maximum": 1000,
+      "doc": "Maximum range rows or column cells returned, at most 1000.",
+      "label": "Rows to return",
+      "advanced": true
+    },
+    {
+      "name": "params.cursor",
+      "kind": "string",
+      "doc": "Named shared sequential cursor for next; omitted uses the table-wide cursor.",
+      "label": "Shared cursor",
+      "widget": "text",
+      "advanced": true
+    },
+    {
+      "name": "params.on_empty",
+      "kind": "enum",
+      "enum": [
+        "error",
+        "skip"
+      ],
+      "schema_enum": true,
+      "doc": "Empty/missing result policy; defaults to error. Outputs are cleared in either case.",
+      "label": "When no row is found",
+      "widget": "enum",
+      "enum_labels": {
+        "error": "End the iteration with an error",
+        "skip": "Skip and continue"
+      }
+    },
+    {
+      "name": "params.on_condition",
+      "kind": "enum",
+      "enum": [
+        "error",
+        "skip"
+      ],
+      "schema_enum": true,
+      "doc": "Failed comparison policy; defaults to error.",
+      "label": "When the row does not match",
+      "widget": "enum",
+      "enum_labels": {
+        "error": "End the iteration with an error",
+        "skip": "Skip and continue"
+      }
+    }
+  ],
+  "discriminator": "params.operation",
+  "variants": [
+    {
+      "value": "read",
+      "label": "Read a row by ID or position",
+      "group": "Read",
+      "summary": "Reads one row, or a range from a position, without changing the table.",
+      "choices": [
+        [
+          "params.record_id"
+        ],
+        [
+          "params.position"
+        ]
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.record_id",
+        "params.position",
+        "params.columns",
+        "params.limit",
+        "params.wait_ms",
+        "params.on_empty"
+      ],
+      "defaults": {
+        "position": 1
+      }
+    },
+    {
+      "value": "next",
+      "label": "Read the next row",
+      "group": "Read",
+      "summary": "Reads the row after the shared cursor and moves the cursor on, leaving the row in the table.",
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.columns",
+        "params.cursor",
+        "params.wait_ms",
+        "params.on_empty"
+      ]
+    },
+    {
+      "value": "read_column",
+      "label": "Read a column",
+      "group": "Read",
+      "summary": "Reads the cells of one column.",
+      "required": [
+        "params.columns"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.columns",
+        "params.position",
+        "params.limit",
+        "params.on_empty"
+      ],
+      "counts": {
+        "params.columns": 1
+      },
+      "table_kind": "vts_columns"
+    },
+    {
+      "value": "push",
+      "label": "Add a row",
+      "group": "Change",
+      "summary": "Adds a row with the values given.",
+      "mutates": true,
+      "required": [
+        "params.values"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.values"
+      ]
+    },
+    {
+      "value": "update",
+      "label": "Update a row",
+      "group": "Change",
+      "summary": "Changes a row's values, if it still has the version (or, by position, the cells) you expect.",
+      "mutates": true,
+      "required": [
+        "params.values"
+      ],
+      "choices": [
+        [
+          "params.record_id",
+          "params.expected_version"
+        ],
+        [
+          "params.position"
+        ]
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.record_id",
+        "params.position",
+        "params.values",
+        "params.expected",
+        "params.expected_version",
+        "params.on_condition"
+      ]
+    },
+    {
+      "value": "increment",
+      "label": "Add to a number",
+      "group": "Change",
+      "summary": "Adds to an integer cell, atomically.",
+      "mutates": true,
+      "required": [
+        "params.columns"
+      ],
+      "choices": [
+        [
+          "params.record_id"
+        ],
+        [
+          "params.position"
+        ]
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.record_id",
+        "params.position",
+        "params.columns",
+        "params.delta",
+        "params.expected",
+        "params.on_condition"
+      ],
+      "counts": {
+        "params.columns": 1
+      },
+      "defaults": {
+        "delta": "1"
+      }
+    },
+    {
+      "value": "clear",
+      "label": "Clear cells in a row",
+      "group": "Change",
+      "summary": "Removes the given cells (or all of them) from the row at a position.",
+      "mutates": true,
+      "required": [
+        "params.position"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.position",
+        "params.columns",
+        "params.expected",
+        "params.on_condition"
+      ]
+    },
+    {
+      "value": "pop",
+      "label": "Remove the next row",
+      "group": "Take work",
+      "summary": "Takes the next row out of the table; no other VUser gets it.",
+      "mutates": true,
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.columns",
+        "params.wait_ms",
+        "params.on_empty"
+      ]
+    },
+    {
+      "value": "lease",
+      "label": "Lease a row",
+      "group": "Take work",
+      "summary": "Takes the next row for a while; acknowledge it when done, or it is delivered again.",
+      "mutates": true,
+      "required": [
+        "params.result_prefix"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.lease_ms",
+        "params.wait_ms",
+        "params.on_empty"
+      ],
+      "table_kind": "native_queue"
+    },
+    {
+      "value": "renew",
+      "label": "Renew a lease",
+      "group": "Take work",
+      "summary": "Extends a lease taken by an earlier step.",
+      "mutates": true,
+      "required": [
+        "params.lease_ref"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.lease_ref",
+        "params.lease_ms"
+      ],
+      "table_kind": "native_queue"
+    },
+    {
+      "value": "ack",
+      "label": "Acknowledge a lease",
+      "group": "Take work",
+      "summary": "Finishes the leased row's work; the row leaves the table.",
+      "mutates": true,
+      "required": [
+        "params.lease_ref"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.lease_ref"
+      ],
+      "table_kind": "native_queue"
+    },
+    {
+      "value": "release",
+      "label": "Release a lease",
+      "group": "Take work",
+      "summary": "Gives the leased row back for another VUser.",
+      "mutates": true,
+      "required": [
+        "params.lease_ref"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.lease_ref"
+      ],
+      "table_kind": "native_queue"
+    },
+    {
+      "value": "create_column",
+      "label": "Add a column",
+      "group": "Columns",
+      "summary": "Adds an empty column to the table.",
+      "mutates": true,
+      "required": [
+        "params.columns"
+      ],
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.columns"
+      ],
+      "counts": {
+        "params.columns": 1
+      },
+      "table_kind": "vts_columns"
+    },
+    {
+      "value": "rotate",
+      "label": "Rotate columns",
+      "group": "Columns",
+      "summary": "Reads the first row and moves it to the end of its columns, so the next VUser reads the next one.",
+      "mutates": true,
+      "allowed": [
+        "params.alias",
+        "params.operation",
+        "params.result_prefix",
+        "params.columns",
+        "params.on_empty"
+      ],
+      "table_kind": "vts_columns"
+    }
+  ]
+}

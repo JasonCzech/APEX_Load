@@ -51363,6 +51363,8 @@ paths:
                           type: array
                           items:
                             type: string
+                        discriminator:
+                          type: string
                         execution_note:
                           type: string
                         execution_posture:
@@ -51372,6 +51374,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              advanced:
+                                type: boolean
                               doc:
                                 type: string
                               enum:
@@ -51388,19 +51392,31 @@ paths:
                                 type: boolean
                               enum_case_fold:
                                 type: boolean
+                              enum_labels:
+                                type: object
+                                additionalProperties:
+                                  type: string
                               enum_trim_space:
                                 type: boolean
                               kind:
+                                type: string
+                              label:
                                 type: string
                               maximum:
                                 type: integer
                                 format: int64
                               name:
                                 type: string
+                              output_kind:
+                                type: string
+                              placeholder:
+                                type: string
                               required:
                                 type: boolean
                               schema_enum:
                                 type: boolean
+                              widget:
+                                type: string
                             required:
                               - kind
                               - name
@@ -51418,6 +51434,51 @@ paths:
                           type: string
                         type:
                           type: string
+                        variants:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              allowed:
+                                type: array
+                                items:
+                                  type: string
+                              choices:
+                                type: array
+                                items:
+                                  type: array
+                                  items:
+                                    type: string
+                              counts:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              defaults:
+                                type: object
+                                additionalProperties: {}
+                              group:
+                                type: string
+                              label:
+                                type: string
+                              mutates:
+                                type: boolean
+                              required:
+                                type: array
+                                items:
+                                  type: string
+                              summary:
+                                type: string
+                              table_kind:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - allowed
+                              - group
+                              - label
+                              - summary
+                              - value
                       required:
                         - protocols
                         - summary
@@ -51427,6 +51488,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        advanced:
+                          type: boolean
                         doc:
                           type: string
                         enum:
@@ -51443,19 +51506,31 @@ paths:
                           type: boolean
                         enum_case_fold:
                           type: boolean
+                        enum_labels:
+                          type: object
+                          additionalProperties:
+                            type: string
                         enum_trim_space:
                           type: boolean
                         kind:
+                          type: string
+                        label:
                           type: string
                         maximum:
                           type: integer
                           format: int64
                         name:
                           type: string
+                        output_kind:
+                          type: string
+                        placeholder:
+                          type: string
                         required:
                           type: boolean
                         schema_enum:
                           type: boolean
+                        widget:
+                          type: string
                       required:
                         - kind
                         - name

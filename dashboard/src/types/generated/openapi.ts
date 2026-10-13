@@ -94893,40 +94893,66 @@ export interface operations {
           "application/json": {
             "actions": Array<{
               "aliases"?: Array<string>;
+              "discriminator"?: string;
               "execution_note"?: string;
               "execution_posture"?: string;
               "fields"?: Array<{
+                "advanced"?: boolean;
                 "doc"?: string;
                 "enum"?: Array<string>;
                 "enum_aliases"?: Array<string>;
                 "enum_allow_blank"?: boolean;
                 "enum_allow_empty"?: boolean;
                 "enum_case_fold"?: boolean;
+                "enum_labels"?: Record<string, string>;
                 "enum_trim_space"?: boolean;
                 "kind": string;
+                "label"?: string;
                 "maximum"?: number;
                 "name": string;
+                "output_kind"?: string;
+                "placeholder"?: string;
                 "required"?: boolean;
                 "schema_enum"?: boolean;
+                "widget"?: string;
               }>;
               "protocols": Array<string>;
               "require_one_of"?: Array<Array<string>>;
               "summary": string;
               "type": string;
+              "variants"?: Array<{
+                "allowed": Array<string>;
+                "choices"?: Array<Array<string>>;
+                "counts"?: Record<string, number>;
+                "defaults"?: Record<string, unknown>;
+                "group": string;
+                "label": string;
+                "mutates"?: boolean;
+                "required"?: Array<string>;
+                "summary": string;
+                "table_kind"?: string;
+                "value": string;
+              }>;
             }>;
             "common_fields": Array<{
+              "advanced"?: boolean;
               "doc"?: string;
               "enum"?: Array<string>;
               "enum_aliases"?: Array<string>;
               "enum_allow_blank"?: boolean;
               "enum_allow_empty"?: boolean;
               "enum_case_fold"?: boolean;
+              "enum_labels"?: Record<string, string>;
               "enum_trim_space"?: boolean;
               "kind": string;
+              "label"?: string;
               "maximum"?: number;
               "name": string;
+              "output_kind"?: string;
+              "placeholder"?: string;
               "required"?: boolean;
               "schema_enum"?: boolean;
+              "widget"?: string;
             }>;
             "protocol"?: string;
             "protocols": Array<string>;

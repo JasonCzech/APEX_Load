@@ -7,6 +7,8 @@
 // built-in lists when the catalog has not loaded (offline, tests), matching
 // the editor's pre-catalog behavior.
 
+import { useEffect, useState } from 'react'
+
 import { request } from '../hooks/apiClient'
 
 export interface DslCatalogField {
@@ -15,6 +17,30 @@ export interface DslCatalogField {
   kind: string
   enum?: string[]
   doc?: string
+  maximum?: number
+  /** Presentation for catalog-driven forms; all optional. */
+  label?: string
+  widget?: string
+  advanced?: boolean
+  placeholder?: string
+  enum_labels?: Record<string, string>
+  output_kind?: string
+}
+
+/** One operation of an action whose fields depend on a discriminator field. */
+export interface DslCatalogVariant {
+  value: string
+  label: string
+  group: string
+  summary: string
+  mutates?: boolean
+  required?: string[]
+  /** Alternative field sets: exactly one is given, whole. */
+  choices?: string[][]
+  allowed: string[]
+  counts?: Record<string, number>
+  defaults?: Record<string, unknown>
+  table_kind?: string
 }
 
 export interface DslCatalogAction {
@@ -24,6 +50,8 @@ export interface DslCatalogAction {
   summary: string
   fields?: DslCatalogField[]
   require_one_of?: string[][]
+  discriminator?: string
+  variants?: DslCatalogVariant[]
 }
 
 export interface DslActionCatalog {
@@ -62,6 +90,27 @@ export function ensureDslActionCatalog(): Promise<DslActionCatalog | null> {
       return null
     })
   return pendingLoad
+}
+
+export type DslCatalogStatus = 'loading' | 'ready' | 'failed'
+
+/**
+ * The catalog for a component that cannot work without it: loading until it
+ * arrives, failed (with a retry) when it cannot be fetched.
+ */
+export function useDslActionCatalog(): { catalog: DslActionCatalog | null; status: DslCatalogStatus; retry: () => void } {
+  const [state, setState] = useState<{ catalog: DslActionCatalog | null; status: DslCatalogStatus }>(() => cachedCatalog ? { catalog: cachedCatalog, status: 'ready' } : { catalog: null, status: 'loading' })
+  const [attempt, setAttempt] = useState(0)
+  const ready = state.status === 'ready'
+  useEffect(() => {
+    if (ready) return undefined
+    let cancelled = false
+    void ensureDslActionCatalog().then(catalog => {
+      if (!cancelled) setState(catalog ? { catalog, status: 'ready' } : { catalog: null, status: 'failed' })
+    })
+    return () => { cancelled = true }
+  }, [attempt, ready])
+  return { ...state, retry: () => { setState({ catalog: null, status: 'loading' }); setAttempt(value => value + 1) } }
 }
 
 /** Map a script protocol to its catalog family (jms-solace → jms). */

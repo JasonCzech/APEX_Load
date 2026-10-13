@@ -1,0 +1,24 @@
+/* The catalog action form: an action's fields as the controller describes them. */
+.catalog-action-form { display: grid; gap: 10px; }
+.catalog-operation { display: grid; gap: 4px; }
+.catalog-operation label { display: grid; gap: 4px; }
+.catalog-operation .form-hint { margin: 0; }
+.catalog-operation-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--warning); border-radius: 8px; background: color-mix(in srgb, var(--warning) 8%, transparent); }
+.catalog-operation-switch p { flex: 1 1 100%; margin: 0; }
+.catalog-choice, .catalog-enum { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; border: 0; }
+.catalog-enum { display: grid; }
+.catalog-choice legend, .catalog-enum legend { margin-bottom: 4px; padding: 0; color: var(--text-secondary); font-size: 12px; }
+.catalog-required { color: var(--text-secondary); font-weight: 400; }
+.catalog-number { display: flex; align-items: center; gap: 6px; }
+.catalog-number input { flex: 1 1 auto; min-width: 0; }
+.catalog-unit { color: var(--text-secondary); font-size: 12px; }
+.catalog-columns, .catalog-values { display: grid; gap: 6px; }
+.catalog-column-chips, .catalog-values-set { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.catalog-column-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; border: 1px solid var(--border); border-radius: 999px; }
+.catalog-column-chip .btn { min-height: 22px; padding: 0 6px; }
+.catalog-column-add { display: flex; gap: 6px; }
+.catalog-column-add input { flex: 1 1 auto; min-width: 0; }
+.catalog-stray h4 { margin: 0 0 4px; }
+.catalog-stray ul { margin: 0; padding-left: 18px; }
+.catalog-stray-value { color: var(--text-secondary); overflow-wrap: anywhere; }
+.catalog-form-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

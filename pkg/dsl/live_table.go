@@ -22,7 +22,7 @@ type LiveTableAction struct {
 	Values          map[string]string `json:"values,omitempty"`
 	Expected        map[string]string `json:"expected,omitempty"`
 	ExpectedVersion string            `json:"expected_version,omitempty"`
-	Delta           int64             `json:"delta,omitempty"`
+	Delta           LiveTableDelta    `json:"delta,omitempty"`
 	LeaseRef        string            `json:"lease_ref,omitempty"`
 	LeaseMS         int               `json:"lease_ms,omitempty"`
 	WaitMS          int               `json:"wait_ms,omitempty"`
@@ -30,6 +30,33 @@ type LiveTableAction struct {
 	Cursor          string            `json:"cursor,omitempty"`
 	OnEmpty         string            `json:"on_empty,omitempty"`
 	OnCondition     string            `json:"on_condition,omitempty"`
+}
+
+// LiveTableDelta is an increment written as a JSON number or as a canonical
+// decimal string ("-42"), so editors never round a 64-bit value through a
+// JavaScript number.
+type LiveTableDelta int64
+
+// UnmarshalJSON accepts an integer or a canonical decimal string.
+func (d *LiveTableDelta) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var text string
+		if err := json.Unmarshal(data, &text); err != nil {
+			return err
+		}
+		value, err := strconv.ParseInt(text, 10, 64)
+		if err != nil || strconv.FormatInt(value, 10) != text {
+			return fmt.Errorf("live_table delta must be a signed 64-bit decimal integer")
+		}
+		*d = LiveTableDelta(value)
+		return nil
+	}
+	var value int64
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*d = LiveTableDelta(value)
+	return nil
 }
 
 var liveAliasPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,127}$`)

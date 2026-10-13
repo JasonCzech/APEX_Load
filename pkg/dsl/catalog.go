@@ -18,6 +18,10 @@ type FieldKind string
 const (
 	FieldKindString FieldKind = "string"
 	FieldKindInt    FieldKind = "int"
+	// FieldKindInt64 is a signed 64-bit integer written either as a JSON number
+	// or as a canonical decimal string, so editors never round it through a
+	// float (JavaScript numbers lose precision past 2^53).
+	FieldKindInt64 FieldKind = "int64"
 	FieldKindFloat  FieldKind = "float"
 	FieldKindBool   FieldKind = "bool"
 	FieldKindEnum   FieldKind = "enum"
@@ -44,6 +48,76 @@ type FieldSpec struct {
 	EnumAllowBlank bool      `json:"enum_allow_blank,omitempty"`
 	Maximum        int64     `json:"maximum,omitempty"`
 	Doc            string    `json:"doc,omitempty"`
+	// Presentation for editors that render the field from the catalog. All
+	// optional; the validator never reads them.
+	//
+	// Label names the field in plain words ("Record ID"). Widget says how to
+	// edit it (see FieldWidget). Advanced fields sit behind one disclosure.
+	// EnumLabels gives each enum value a plain label ("End the iteration with
+	// an error"). OutputKind says which earlier step output an output-ref
+	// field takes ("record_id", "record_version" or "lease").
+	Label       string            `json:"label,omitempty"`
+	Widget      FieldWidget       `json:"widget,omitempty"`
+	Advanced    bool              `json:"advanced,omitempty"`
+	Placeholder string            `json:"placeholder,omitempty"`
+	EnumLabels  map[string]string `json:"enum_labels,omitempty"`
+	OutputKind  string            `json:"output_kind,omitempty"`
+}
+
+// FieldWidget hints how an editor renders a field. An editor that does not
+// know a hint falls back to the field's Kind.
+type FieldWidget string
+
+const (
+	// FieldWidgetText is a single-line text field that takes references.
+	FieldWidgetText FieldWidget = "text"
+	// FieldWidgetAlias picks one of the script's data aliases or names a new one.
+	FieldWidgetAlias FieldWidget = "alias"
+	// FieldWidgetColumns is an ordered list of column names.
+	FieldWidgetColumns FieldWidget = "columns"
+	// FieldWidgetValues is one row of column values; an absent column and an
+	// empty value stay distinct.
+	FieldWidgetValues FieldWidget = "values"
+	// FieldWidgetOutputRef picks an earlier step's output of OutputKind.
+	FieldWidgetOutputRef FieldWidget = "output-ref"
+	// FieldWidgetInt64 edits a signed 64-bit integer as a decimal string.
+	FieldWidgetInt64 FieldWidget = "int64"
+	// FieldWidgetDurationMS is a duration in milliseconds, bounded by Maximum.
+	FieldWidgetDurationMS FieldWidget = "duration-ms"
+	// FieldWidgetEnum is a choice among Enum values with EnumLabels.
+	FieldWidgetEnum FieldWidget = "enum"
+)
+
+// ActionVariant is one operation of an action whose fields depend on a
+// discriminator field (a live table's params.operation). The validator stays
+// authoritative; a parity test checks every variant against it, so an editor
+// built from variants cannot offer a combination the server rejects.
+type ActionVariant struct {
+	// Value is the discriminator value ("read").
+	Value string `json:"value"`
+	// Label is the plain verb an author picks ("Read a row by ID or position").
+	Label string `json:"label"`
+	// Group gathers related verbs ("Read", "Change", "Take work", "Columns").
+	Group   string `json:"group"`
+	Summary string `json:"summary"`
+	// Mutates is true when the operation changes data.
+	Mutates bool `json:"mutates,omitempty"`
+	// Required fields, always needed besides the discriminator.
+	Required []string `json:"required,omitempty"`
+	// Choices are alternative field sets: exactly one set is given, whole
+	// (a record ID with its expected version, or a position).
+	Choices [][]string `json:"choices,omitempty"`
+	// Allowed lists every field the operation accepts, the discriminator,
+	// Required and Choices included. Any other field is rejected.
+	Allowed []string `json:"allowed"`
+	// Counts fixes how many items an array or object field holds
+	// ("params.columns": 1).
+	Counts map[string]int `json:"counts,omitempty"`
+	// Defaults pre-fill a new action of this operation.
+	Defaults map[string]any `json:"defaults,omitempty"`
+	// TableKind names the kind of bound table the operation needs, when not
+	// any: "work_queue" or "shared_columns".
+	TableKind string `json:"table_kind,omitempty"`
 }
 
 // ActionSpec is the declarative contract for one DSL action type: which
@@ -68,6 +142,10 @@ type ActionSpec struct {
 	// Groups mirror the one-of rules the Validate funcs enforce, expressed
 	// as data so the generated schema (anyOf) and editor can consume them.
 	RequireOneOf [][]string `json:"require_one_of,omitempty"`
+	// Discriminator names the field whose value selects one of Variants
+	// ("params.operation"); empty when the action has no variants.
+	Discriminator string          `json:"discriminator,omitempty"`
+	Variants      []ActionVariant `json:"variants,omitempty"`
 	// Validate holds residual per-type rules. Issues are labelled with the
 	// "actions[<index>]" prefix convention used across validate.go.
 	Validate func(index int, action Action) []string `json:"-"`
