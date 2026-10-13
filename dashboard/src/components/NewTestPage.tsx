@@ -126,6 +126,7 @@ import {
   SECONDS_INPUT_STEP,
 } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import { isLegacyApplicationId, isLegacyReleaseId } from '../utils/legacyPlacement'
 import { pacingConfigForSelection, pacingFromEdit, randomPacingDraft } from './pacingEditModel'
 import {
   clearNewTestQueueAttempt,
@@ -595,6 +596,9 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [releaseCatalogRefresh, setReleaseCatalogRefresh] = useState(0)
   const [launchReleaseState, setLaunchReleaseState] = useState<{ applicationId: string; releases: Release[] }>({ applicationId: '', releases: [] })
   const releases = (launchReleaseState.applicationId === activeApplication?.id ? launchReleaseState.releases : activeApplication?.id === workspaceApplication?.id ? workspaceReleases : []).filter(release => !release.archived_at)
+  // The legacy bucket files runs that name no release: a select does not offer
+  // it as a choice, though a selection already on it stays (and names resolve).
+  const releaseChoices = (selected: string) => releases.filter(release => !isLegacyReleaseId(release.id) || release.id === selected)
   const [releaseId, setReleaseId] = useState('')
   const launchProjectRef = useRef(activeProjectID)
   const launchPlacementPinnedRef = useRef(false)
@@ -2866,7 +2870,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const showStartNow = true
   const startNowAllowed = Boolean(immediatePreflight?.start_now_allowed)
   const showQueueRun = Boolean(immediatePreflight?.queue_allowed)
-  // Said beside Start Now, so a disabled button always carries its reason.
+  // Said beside Start now, so a disabled button always carries its reason.
   // While the same scenario is re-checked, its last reason stays (and stays
   // quiet): nothing flashes or is re-announced for a run that could start
   // before, and another scenario's reason is never shown for this one.
@@ -2884,7 +2888,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       className="new-test-view-toggle topbar-page-section-toggle"
       onChange={nextMode => runGuarded(() => setPageMode(nextMode), ['new-test-run-setup'])}
       options={[
-        { value: 'launch', label: 'Run Setup' },
+        { value: 'launch', label: 'Run setup' },
         { value: 'schedules', label: 'Schedules' },
       ]}
     />
@@ -2913,7 +2917,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       </div>
 
       <div className="new-test-draft-toolbar">
-        <span>Run Setup and Schedules keep your edits when switching tabs.</span>
+        <span>Run setup and Schedules keep your edits when switching tabs.</span>
         <button type="button" className="btn btn-secondary" onClick={() => saveDraftRef.current()} disabled={!scenario || !canManageTests} title={canManageTests ? undefined : 'Your role cannot create runs in this project.'}>Save draft</button>
         {savedDraft && <button type="button" className="btn btn-secondary" disabled={!scenarioCatalogReady} aria-describedby={!scenarioCatalogReady ? 'new-test-restore-help' : undefined} onClick={() => runGuarded(() => {
           if (!scenarios.some(item => item.id === savedDraft.scenarioId && (item.updated_at || '') === savedDraft.scenarioUpdatedAt)) {
@@ -2979,25 +2983,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               <div className="new-test-step-header">
                 <span className="new-test-step-index">1</span>
                 <div className="new-test-step-header-content">
-                  <h3>Scenario Schedule</h3>
-                  <p>Choose when the stored scenario runs. Run Setup overrides are not used by recurring schedules.</p>
-                </div>
-                <div className="new-test-step-header-actions">
-                  {editingScheduleId && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setEditingScheduleId(null)
-                        replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
-                      }}
-                    >
-                      Cancel Edit
-                    </button>
-                  )}
-                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageSchedules || schedulePreviewPending || Boolean(scheduleFormError) || (!editingScheduleId && !scheduleDraft.release_id)}>
-                    {editingScheduleId ? 'Save schedule' : 'Create schedule'}
-                  </button>
+                  <h3>Scenario schedule</h3>
+                  <p>Choose when the stored scenario runs. Run setup overrides are not used by recurring schedules.</p>
                 </div>
               </div>
               <div className="settings-group new-test-schedule-fields">
@@ -3026,8 +3013,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label" id="schedule-name-label">Schedule Name</span>
-                    <span className="setting-desc">Human-friendly label for the recurring trigger</span>
+                    <span className="setting-label" id="schedule-name-label">Schedule name</span>
+                    <span className="setting-desc">A name to tell this schedule apart</span>
                   </div>
                   <input className="settings-input" required aria-invalid={!scheduleDraft.name.trim()} aria-describedby={!scheduleDraft.name.trim() ? "new-test-schedule-name-error" : undefined} aria-labelledby="schedule-name-label" value={scheduleDraft.name} onChange={(event) => setScheduleDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Nightly smoke" />
                   {!scheduleDraft.name.trim() && <span id="new-test-schedule-name-error" role="alert">Enter a schedule name.</span>}
@@ -3035,7 +3022,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label">Frequency and time</span>
-                    <span className="setting-desc">Build a schedule below, or type a five-field cron (supports `MON-FRI`, `@daily`, `L`, `15W`, `5#3`).</span>
+                    <span className="setting-desc">Build a schedule below, or type a five-field cron expression; it also takes <code>MON-FRI</code>, <code>@daily</code>, <code>L</code>, <code>15W</code> and <code>5#3</code>.</span>
                     {scheduleDraft.cron_expr.trim() && describeCron(scheduleDraft.cron_expr) && (
                       <span className="setting-desc cron-preview">{describeCron(scheduleDraft.cron_expr)}{scheduleDraft.timezone ? ` (${scheduleDraft.timezone})` : ''}</span>
                     )}
@@ -3057,17 +3044,17 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label" id="schedule-release-label">Release Context</span>
-                    <span className="setting-desc">Choose a release for new scheduled runs</span>
+                    <span className="setting-label" id="schedule-release-label">Release</span>
+                    <span className="setting-desc">Where the schedule's runs are filed</span>
                   </div>
                   <select className="settings-input" aria-labelledby="schedule-release-label" value={scheduleDraft.release_id} onChange={(event) => { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setScheduleDraft(prev => ({ ...prev, release_id: event.target.value })) }}>
                     <option value="">Select release</option>
-                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
+                    {releaseChoices(scheduleDraft.release_id).map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label" id="schedule-timeslot-label">Default Timeslot</span>
+                    <span className="setting-label" id="schedule-timeslot-label">Default timeslot</span>
                     <span className="setting-desc">Optional approved capacity timeslot each scheduled run binds at materialization. If the slot is unavailable, that run is recorded as blocked instead of launching unprotected.</span>
                   </div>
                   <select className="settings-input" aria-labelledby="schedule-timeslot-label" value={scheduleDraft.timeslot_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timeslot_id: event.target.value }))}>
@@ -3077,7 +3064,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label" id="schedule-run-name-label">Run Name Template</span>
+                    <span className="setting-label" id="schedule-run-name-label">Run name template</span>
                     <span className="setting-desc">Default run name used when the schedule fires</span>
                   </div>
                   <input className="settings-input" aria-labelledby="schedule-run-name-label" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
@@ -3144,9 +3131,27 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
                     <span className="setting-label">Enabled</span>
-                    <span className="setting-desc">Disabled schedules stay saved but do not trigger</span>
+                    <span className="setting-desc">Turned off, the schedule stays saved but starts no runs</span>
                   </div>
                 </label>
+                {/* The form's submit sits at its end, after everything it saves. */}
+                <div className="new-test-schedule-actions">
+                  {editingScheduleId && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setEditingScheduleId(null)
+                        replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+                      }}
+                    >
+                      Cancel edit
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageSchedules || schedulePreviewPending || Boolean(scheduleFormError) || (!editingScheduleId && !scheduleDraft.release_id)}>
+                    {editingScheduleId ? 'Save schedule' : 'Create schedule'}
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -3154,7 +3159,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               <div className="new-test-step-header">
                 <span className="new-test-step-index">2</span>
                 <div>
-                  <h3>Recurring Triggers</h3>
+                  <h3>Saved schedules</h3>
                   <p>Schedules for {scenario ? scenarioIdentity(scenario) : 'the selected scenario'}</p>
                   <p>Review next run times, recent executions, and disable or remove stale schedules.</p>
                 </div>
@@ -3558,12 +3563,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               <div className="new-test-step-header">
                 <span className={`new-test-step-index${step2Complete ? ' complete' : ''}`}>{step2Complete ? '✓' : '2'}</span>
                 <div>
-                  <h3>Run Setup</h3>
+                  <h3>Run setup</h3>
                   <p>Name the run and attach it to a release.</p>
                 </div>
               </div>
               <div className="settings-group new-test-setup-grid">
-                <label className="settings-filter-field">Launch application<select ref={applicationSelectRef} aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                <label className="settings-filter-field">Launch application<select ref={applicationSelectRef} aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.filter(item => !isLegacyApplicationId(item.id) || item.id === activeApplication?.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <div className="setting-row new-test-release-row">
                   <div className="setting-info">
                     <span className="setting-label" id="new-test-release-label">Release</span>
@@ -3571,7 +3576,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   </div>
                   <select ref={releaseSelectRef} className="settings-input" aria-labelledby="new-test-release-label" value={releaseId} onChange={(event) => { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; releaseChosenRef.current = true; setReleaseId(event.target.value) }}>
                     <option value="">Select release</option>
-                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
+                    {releaseChoices(releaseId).map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
                   </select>
                   {showNewRelease ? (
                     <div className="new-test-release-create-row">
@@ -3619,7 +3624,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       <span className="setting-desc">Optional controller-side polling; load generators are unaffected</span>
                     </div>
                     <select className="settings-input" aria-labelledby="new-test-elk-label" value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
-                      <option value="">Off for this test</option>
+                      <option value="">Off for this run</option>
                       {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
                       {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                     </select>
@@ -3631,7 +3636,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       <span className="setting-desc">Optional Metrics, Problems, and Grail log polling from the controller</span>
                     </div>
                     <select className="settings-input" aria-labelledby="new-test-dynatrace-label" value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
-                      <option value="">Off for this test</option>
+                      <option value="">Off for this run</option>
                       {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
                       {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                     </select>
@@ -3764,12 +3769,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               )}
               {showStartNow && (
                 <>
-                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchDescribedBy}>Start Now</button>
-                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchDescribedBy} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
+                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchDescribedBy}>Start now</button>
+                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchDescribedBy} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for manual start</button>
                 </>
               )}
               {showQueueRun && (
-                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)} aria-describedby={launchDescribedBy}>Create Queued Run</button>
+                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)} aria-describedby={launchDescribedBy}>Create queued run</button>
               )}
               {launchBlockers.length > 0 && !creating && (
                 <div id="new-test-launch-blockers" className="new-test-launch-feedback warning" role="status">
@@ -3823,8 +3828,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             <p>{generatorInventoryError || (inventoryCheckedAt ? (generatorInventory.length > 0 ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : `No live generator inventory (local or static mode); capacity uses the configured generator count · checked ${inventoryCheckedAt}`) : 'Live inventory not yet verified')}</p>
             <button type="button" className="btn btn-secondary btn-sm" disabled={generatorInventoryLoading} onClick={() => { setInventoryRefresh(value => value + 1); void refreshBindableTimeslots() }}>Refresh capacity and inventory</button>
             <dl className="new-test-summary-list" aria-label="Run settings summary">
-              <div><dt>Elastic capture</dt><dd>{elkConnections.find(c => c.id === elkConnectionId)?.name || (elkConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>
-              <div><dt>Dynatrace capture</dt><dd>{dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name || (dynatraceConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>
+              <div><dt>Elastic capture</dt><dd>{elkConnections.find(c => c.id === elkConnectionId)?.name || (elkConnectionId ? 'Selected connection unavailable — review required' : 'Off for this run')}</dd></div>
+              <div><dt>Dynatrace capture</dt><dd>{dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name || (dynatraceConnectionId ? 'Selected connection unavailable — review required' : 'Off for this run')}</dd></div>
               <div className={traceContextNeedsReview ? 'warning' : undefined}><dt>Trace context</dt><dd>{traceContextNeedsReview ? 'Origins need review' : traceContextSummary(traceContext)}</dd></div>
               {launchSummaryItems.map(item => (
                 <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>

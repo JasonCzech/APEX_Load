@@ -2192,7 +2192,36 @@ describe('MonitoringPage', () => {
     expect(advisoryBadge?.getAttribute('title')).toContain('Missing sweep evidence: scenario')
   })
 
+  it('opens on the current week, counts each run once and keeps the run count neutral', async () => {
+    const now = new Date()
+    now.setHours(9, 0, 0, 0)
+    const later = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+    apiMock.getRunCalendar.mockResolvedValue({
+      generated_at: new Date().toISOString(),
+      range: { from: now.toISOString(), to: later.toISOString(), requested_from: now.toISOString(), requested_to: later.toISOString(), future_ceiling: later.toISOString() },
+      events: [
+        { id: 'test:failed', source: 'cron', run_type: 'scheduled', title: 'Nightly failed', status: 'FAILED', start_at: now.toISOString(), end_at: new Date(now.getTime() + 30 * 60 * 1000).toISOString(), test_id: 'failed', workload: { total_vusers: 1, duration: '30m' }, user: { display_name: 'Scheduler', attribution: 'schedule_owner' }, topology: { source: 'planned' } },
+        { id: 'projected:plan', source: 'execution_plan', run_type: 'scheduled', title: 'Nightly plan', status: 'scheduled', start_at: later.toISOString(), end_at: new Date(later.getTime() + 30 * 60 * 1000).toISOString(), projected: true, workload: { total_vusers: 1, duration: '30m' }, user: { display_name: 'Scheduler', attribution: 'schedule_owner' }, topology: { source: 'planned' } },
+      ],
+      count: 2,
+      status_counts: { FAILED: 1, scheduled: 1 },
+      source_counts: { cron: 1, execution_plan: 1 },
+    })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+    await clickMonitorTab('Schedules')
+    expect(container.querySelector('.run-calendar-period-label')?.textContent).toMatch(/^Week of /)
+    const metrics = Object.fromEntries([...container.querySelectorAll('.run-calendar-metric')].map(metric => [metric.lastElementChild?.textContent, metric.firstElementChild?.textContent]))
+    // The projected plan run is upcoming, not also a plan run.
+    expect(metrics).toEqual({ Cron: '1', 'Ad-hoc': '0', Plans: '0', Upcoming: '1', Current: '0' })
+    const badge = [...container.querySelectorAll('.monitor-header-badge')].find(element => element.textContent === '2 runs')
+    expect(badge?.className).not.toContain('danger')
+  })
+
   it('renders run calendar events and opens test details', async () => {
+    // The month view's layout: days, continuations and the month label.
+    window.sessionStorage.setItem('apexload.monitoring.calendar.project-1', JSON.stringify({ view: 'month', filter: 'all', anchor: new Date().toISOString(), showQueued: true }))
     const onSelectTest = vi.fn()
     const onScheduleForDate = vi.fn()
     const eventStart = new Date()

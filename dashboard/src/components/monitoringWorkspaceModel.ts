@@ -4,7 +4,8 @@ export type CalendarPreferences = { view: CalendarView; filter: CalendarFilter; 
 const key = (project?: string) => `apexload.monitoring.calendar.${project || 'none'}`
 
 export function readCalendarPreferences(project?: string): CalendarPreferences {
-  const fallback: CalendarPreferences = { view: 'month', filter: 'all', anchor: new Date(), showQueued: true }
+  // The calendar opens on the current week; month and day are a click away.
+  const fallback: CalendarPreferences = { view: 'week', filter: 'all', anchor: new Date(), showQueued: true }
   try {
     const value = JSON.parse(sessionStorage.getItem(key(project)) || 'null')
     if (!value || typeof value !== 'object') return fallback

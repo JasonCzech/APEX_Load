@@ -81,7 +81,7 @@ test('[U10] preflight and estimate lead to an immediate launch that reaches RUNN
   const dynatraceSelector = page.getByRole('combobox', { name: 'Dynatrace SaaS capture', exact: true })
   await expect(dynatraceSelector).toContainText('Tier-0 Dynatrace')
   await dynatraceSelector.selectOption(dynatraceConnectionId)
-  const startNow = page.getByRole('button', { name: 'Start Now' })
+  const startNow = page.getByRole('button', { name: 'Start now' })
   await expect(startNow, 'launch stays disabled until preflight has made a start-now decision').toBeEnabled({ timeout: 30_000 })
   expect(estimateResponses.some(response => response.ok()), 'the UI must obtain a successful capacity estimate').toBeTruthy()
   expect(preflightResponses.some(response => response.ok()), 'the UI must obtain a successful launch preflight').toBeTruthy()

@@ -785,7 +785,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     () => (selectedCalendarEventId ? (runCalendar?.events ?? []).find(event => event.id === selectedCalendarEventId) ?? null : null),
     [runCalendar, selectedCalendarEventId],
   )
-  const calendarHeaderSeverity: MonitorSeverity = !runCalendar ? 'unknown' : runCalendar.truncated ? 'warning' : calendarEvents.some(event => isRunCalendarProblemStatus(event.status)) ? 'danger' : 'healthy'
+  // The badge counts runs; it is not a verdict on them (failed runs show as such in the calendar).
+  const calendarHeaderSeverity: MonitorSeverity = !runCalendar ? 'unknown' : runCalendar.truncated ? 'warning' : 'healthy'
   const calendarHeaderLabel = !runCalendar
     ? 'checking'
     : runCalendar.truncated
@@ -2430,11 +2431,14 @@ function RunCalendarPanel({
   onScheduleForDate?: (prefillStartLocal: string) => void
 }) {
   const [detailCollapsed, setDetailCollapsed] = useState(false)
-  const cronCount = events.filter(event => event.source === 'cron').length
-  const adHocCount = events.filter(event => event.source === 'ad_hoc').length
-  const planCount = events.filter(event => event.source === 'execution_plan').length
-  const currentCount = events.filter(event => isRunCalendarActiveStatus(event.status)).length
-  const projectedCount = events.filter(event => event.projected).length
+  // Each event is counted once: runs by where they came from, projected runs
+  // as upcoming. Current (queued to stopping) is a part of the runs, said as such.
+  const runs = events.filter(event => !event.projected)
+  const cronCount = runs.filter(event => event.source === 'cron').length
+  const adHocCount = runs.filter(event => event.source === 'ad_hoc').length
+  const planCount = runs.filter(event => event.source === 'execution_plan').length
+  const currentCount = runs.filter(event => isRunCalendarActiveStatus(event.status)).length
+  const projectedCount = events.length - runs.length
   const rangeNotice = formatRunCalendarNotice(calendar)
   const selectedRunId = selectedEvent?.id
   const capacityByDate = useMemo(() => {
@@ -2500,13 +2504,13 @@ function RunCalendarPanel({
             <label><input type="checkbox" checked={showQueued} onChange={event => onShowQueuedChange(event.target.checked)} /> Show queued runs</label>
             {onScheduleForDate && <button type="button" className="btn btn-primary btn-sm" onClick={() => onScheduleForDate(formatDatetimeLocalValue(new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 9)))}>Schedule run</button>}
           </div>
-          <p className="monitor-hint">Counts reflect this range and filter. Current and Projected overlap the Cron, Ad-hoc, and Plans totals. Bookings reserve capacity; scheduling a run creates work.</p>
+          <p className="monitor-hint">Counts reflect this range and filter. Cron, Ad-hoc and Plans count runs, Upcoming counts runs a schedule or plan will start, and Current (queued to stopping) is part of the runs. Bookings reserve capacity; scheduling a run creates work.</p>
           <div className="run-calendar-summary" aria-label="Run calendar summary">
             <RunCalendarMetric label="Cron" value={cronCount} />
             <RunCalendarMetric label="Ad-hoc" value={adHocCount} />
             <RunCalendarMetric label="Plans" value={planCount} />
+            <RunCalendarMetric label="Upcoming" value={projectedCount} />
             <RunCalendarMetric label="Current" value={currentCount} />
-            <RunCalendarMetric label="Projected" value={projectedCount} />
           </div>
         </div>
         {capacityReservations && (
@@ -2882,10 +2886,6 @@ function runCalendarEventClass(event: RunCalendarEvent) {
 
 function isRunCalendarActiveStatus(status: string) {
   return ['QUEUED', 'PENDING', 'RESERVED', 'INITIALIZING', 'RUNNING', 'STOPPING', 'PAUSED'].includes(status.toUpperCase())
-}
-
-function isRunCalendarProblemStatus(status: string) {
-  return ['FAILED', 'ABORTED', 'BLOCKED'].includes(status.toUpperCase())
 }
 
 function formatRunCalendarNotice(calendar: RunCalendarResponse | null) {

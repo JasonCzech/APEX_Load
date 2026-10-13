@@ -46,7 +46,7 @@ export function traceContextPayload(value: RunTraceContextSettings | undefined):
 
 export function traceContextSummary(value: RunTraceContextSettings | undefined): string {
   const payload = traceContextPayload(value)
-  if (!payload) return 'Off for this test'
+  if (!payload) return 'Off for this run'
   const carriers = [payload.enabled ? 'traceparent' : '', payload.transaction_marker ? 'transaction markers' : ''].filter(Boolean).join(' and ')
   const origins = payload.origins ?? []
   return `${carriers} to ${origins.length} approved origin${origins.length === 1 ? '' : 's'}`

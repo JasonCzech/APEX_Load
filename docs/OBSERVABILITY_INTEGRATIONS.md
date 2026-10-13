@@ -302,7 +302,7 @@ every action.
 ### Run-level trace context
 
 A run can opt into correlation headers for operator-approved origins with the
-`trace_context` run setting (Run Setup → Trace context, or `trace_context` on
+`trace_context` run setting (Run setup → Trace context, or `trace_context` on
 `POST /api/v1/tests`): `{"enabled": true, "transaction_marker": true,
 "origins": ["https://shop.example.com"]}`. Origins are `scheme://host[:port]`
 only, at most 32, shared with supported provider run-header origins bound to the

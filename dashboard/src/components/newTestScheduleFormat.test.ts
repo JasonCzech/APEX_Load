@@ -222,9 +222,9 @@ describe('startNowBlocker', () => {
     expect(startNowBlocker({ ...base, blocking_conflicts: [{ code: 'exceeds_project_vuser_cap', severity: 'blocking', message: 'Too big.' } as LaunchConflict] })).toEqual({ message: 'Too big.', overCap: true, queueable: false })
     expect(startNowBlocker({ ...base, blocking_conflicts: [{ code: 'capacity_shortfall', severity: 'blocking', message: 'Short.' } as LaunchConflict] })).toEqual({ message: 'Short.', overCap: false, queueable: false })
   })
-  it('explains a queueable wait and is silent when Start Now is available', () => {
-    expect(startNowBlocker({ ...base, queue_allowed: true, queue_reason: 'waiting for project VUser capacity (5 max vusers)' })?.message).toBe('Not enough capacity right now: waiting for project VUser capacity (5 max VUsers). Create Queued Run starts it as soon as capacity frees up.')
-    // No pointer to Create Queued Run while that button can't be used.
+  it('explains a queueable wait and is silent when Start now is available', () => {
+    expect(startNowBlocker({ ...base, queue_allowed: true, queue_reason: 'waiting for project VUser capacity (5 max vusers)' })?.message).toBe('Not enough capacity right now: waiting for project VUser capacity (5 max VUsers). Create queued run starts it as soon as capacity frees up.')
+    // No pointer to Create queued run while that button can't be used.
     expect(startNowBlocker({ ...base, queue_allowed: true, queue_reason: 'waiting for a global test slot.' }, { queueAvailable: false })?.message).toBe('Not enough capacity right now: waiting for a global test slot.')
     expect(startNowBlocker({ ...base, start_now_allowed: true })).toBeNull()
     expect(startNowBlocker(null)).toBeNull()

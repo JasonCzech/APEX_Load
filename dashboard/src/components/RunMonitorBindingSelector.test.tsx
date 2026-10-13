@@ -52,3 +52,22 @@ it('reports how many scenario bindings an inheriting run keeps', async () => {
   await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" value={[]} onChange={vi.fn()} onInheritedCountChange={onInheritedCountChange} />))
   expect(onInheritedCountChange).toHaveBeenLastCalledWith(0)
 })
+
+it('asks for a scenario\'s bindings only while run monitoring is on', async () => {
+  request.mockImplementation(async (path: string) => path.includes('/analysis/capabilities') ? { monitoring_enabled: false } : { sources: [] })
+  await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" value={undefined} onChange={vi.fn()} />))
+  expect(request.mock.calls.map(([path]) => path)).toEqual(['/analysis/capabilities?project_id=p'])
+  expect(container.textContent).toBe('')
+})
+
+it('still reads a scenario\'s bindings, and offers a retry, when monitoring could not be checked', async () => {
+  request.mockImplementation(async (path: string) => {
+    if (path.includes('/analysis/capabilities')) throw new Error('capabilities unavailable')
+    return { sources: [{ source_id: 'a', required: true }] }
+  })
+  const onInheritedCountChange = vi.fn()
+  await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" value={undefined} onChange={vi.fn()} onInheritedCountChange={onInheritedCountChange} />))
+  expect(request.mock.calls.map(([path]) => path)).toContain('/scenarios/scenario/monitor-bindings')
+  expect(onInheritedCountChange).toHaveBeenLastCalledWith(1)
+  expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Retry monitor sources')).toBe(true)
+})

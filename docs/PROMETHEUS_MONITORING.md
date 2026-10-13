@@ -100,7 +100,7 @@ Review each unit, semantic declaration, retained label and datasource mapping. A
 
 ## Attach sources and prepare a test
 
-Editors select approved sources in Run Setup or reusable scenario bindings. Omitted per-test `monitor_bindings` inherits the scenario's bindings; an empty array disables monitoring for that test; a nonempty array replaces the scenario selection. Mark a source required only when its readiness and retained evidence should gate acceptance.
+Editors select approved sources in Run setup or reusable scenario bindings. Omitted per-test `monitor_bindings` inherits the scenario's bindings; an empty array disables monitoring for that test; a nonempty array replaces the scenario selection. Mark a source required only when its readiness and retained evidence should gate acceptance.
 
 Preparation verifies connection revision, credentials, capability permissions, budgets, storage readiness and collector enrollment without sending SUT traffic. A preparation freezes its source and connection revisions, resolved bindings and acceptance rules. Changes invalidate unconsumed preparations and affect future tests. Runtime outages update monitoring health while load execution, pause/resume and stop controls continue to work.
 
@@ -122,7 +122,7 @@ The run report's **Baseline Comparison → Resources** view reads frozen canonic
 
 ## Terminal performance criteria
 
-Use **Monitoring performance criteria** in Run Setup. A criterion selects an exact source/query/series, unit, window offsets, comparator, threshold, minimum coverage and `fail` or `warning` severity. The default minimum is 95% and at least one eligible observation.
+Use **Monitoring performance criteria** in Run setup. A criterion selects an exact source/query/series, unit, window offsets, comparator, threshold, minimum coverage and `fail` or `warning` severity. The default minimum is 95% and at least one eligible observation.
 
 `series_points` evaluates settled compatible expression results on the frozen grid. Average, minimum and maximum describe those evaluations. They are not request-weighted latency statistics. Raw counter levels remain overlays; a sum over rolling rates or cumulative counters is not a run total. Quantile rules describe the minimum, maximum or mean of grid quantile estimates, and never a whole-run request percentile.
 

@@ -82,8 +82,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   const { name, duration, terminationMode, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings, revisionContext } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
-  const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
-  const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
+  const modalTitle = isReviseMode ? 'Create revised queued run' : 'Create queued run'
+  const submitLabel = isReviseMode ? 'Create revised copy' : 'Create queued run'
   const loadingLabel = isReviseMode ? 'Creating revised copy…' : 'Creating queued run…'
   const errorMessage = isReviseMode ? 'Failed to create revised queued run' : 'Failed to create queued run'
 
@@ -431,7 +431,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
               <label>
                 <span>Elastic log capture</span>
                 <select value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
-                  <option value="">Off for this test</option>
+                  <option value="">Off for this run</option>
                   {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
                   {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                 </select>
@@ -440,7 +440,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
               <label>
                 <span>Dynatrace SaaS capture</span>
                 <select value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
-                  <option value="">Off for this test</option>
+                  <option value="">Off for this run</option>
                   {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
                   {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                 </select>

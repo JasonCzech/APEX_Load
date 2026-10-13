@@ -36,7 +36,7 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   expect(blocked.ok()).toBe(false); expect(await blocked.text()).toContain('archived')
   await page.goto(`/#/new-test?scenarioId=${scenarioId}&${scopeQuery(workspace)}`)
   await expect(page.getByRole('alert').filter({ hasText: 'blocks execution' })).toContainText(name)
-  await expect(page.getByRole('button', { name: 'Start Now', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Start now', exact: true })).toBeDisabled()
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`)
   await showLibraryFilters(page)
   await page.getByLabel('Script archive state').selectOption('archived')

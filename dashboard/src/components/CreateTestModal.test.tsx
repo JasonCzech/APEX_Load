@@ -87,7 +87,7 @@ describe('CreateTestModal', () => {
     const initialScenario = weightedScenarioDraft()
     initialScenario.revisionContext = { projectId: 'p', sourceTestId: 'original', folderId: null, dataPools: [], monitorBindings: bindings?.map(binding => ({ ...binding })) }
     await act(async () => root.render(<CreateTestModal mode="revise-queued-run" scripts={[{ id: 'script-1', name: 'Checkout', protocol: 'http', created_at: '' } as never]} initialScenario={initialScenario} onClose={vi.fn()} onCreated={vi.fn()} />))
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     const payload = apiMock.createTest.mock.calls[0][0]
     if (bindings === undefined) expect(payload).not.toHaveProperty('monitor_bindings')
     else expect(payload.monitor_bindings).toEqual(bindings)
@@ -109,7 +109,7 @@ describe('CreateTestModal', () => {
     await check('Elastic metrics (elastic)')
     await check('OpenSearch logs (elastic)')
     await check('Require Elastic metrics readiness and complete evidence')
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({ monitor_bindings: [{ source_id: 'elastic-metrics', required: true }, { source_id: 'opensearch-logs', required: false }] }))
   })
 
@@ -197,7 +197,7 @@ describe('CreateTestModal', () => {
     })
 
     const submitButton = Array.from(container.querySelectorAll('button')).find(
-      button => button.textContent?.includes('Create Queued Run'),
+      button => button.textContent?.includes('Create queued run'),
     ) as HTMLButtonElement | undefined
 
     expect(submitButton).toBeTruthy()
@@ -312,7 +312,7 @@ describe('CreateTestModal', () => {
     expect(auto?.querySelector('input')?.checked).toBe(false)
     expect(container.textContent).toContain('east=70, west=30')
 
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       assignment: {
         mode: 'region_weighted',
@@ -356,7 +356,7 @@ describe('CreateTestModal', () => {
       setInputValue(eastWeight, '80')
       lossTolerance.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await click('Create Queued Run')
+    await click('Create queued run')
 
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       assignment: {
@@ -379,7 +379,7 @@ describe('CreateTestModal', () => {
     })
 
     await clickPlacementMode('Automatic placement')
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       assignment: { mode: 'auto', tolerate_generator_loss: true },
     }))
@@ -421,7 +421,7 @@ describe('CreateTestModal', () => {
       )
     })
 
-    await click('Create Revised Copy')
+    await click('Create revised copy')
 
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       application_id: 'application-original',
@@ -453,7 +453,7 @@ describe('CreateTestModal', () => {
     const name = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Scenario Name'))?.querySelector('input')
     expect(name).toBeDefined()
     await act(async () => setInputValue(name!, 'Revised name only'))
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     expect(container.querySelector('[role="alert"]')?.textContent || Array.from(container.querySelectorAll<HTMLInputElement>('input')).filter(input => !input.checkValidity()).map(input => `${input.outerHTML}:${input.validationMessage}`).join('\n')).toBe('')
     expect(apiMock.createTest).toHaveBeenCalledTimes(1)
     const sent = JSON.parse(JSON.stringify(apiMock.createTest.mock.calls[0][0]))
@@ -476,7 +476,7 @@ describe('CreateTestModal', () => {
     expect(captureSelect('Dynatrace SaaS capture').selectedOptions[0].textContent).toBe('Source SaaS')
     expect(apiMock.listELKConnections).toHaveBeenCalledWith('project-original')
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Renamed capture copy'))
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     expect(apiMock.createTest).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ elk_capture: { connection_id: 'source-elk' }, dynatrace_capture: { connection_id: 'source-dt' } }))
     expect(source).toEqual(before)
   })
@@ -487,7 +487,7 @@ describe('CreateTestModal', () => {
       apiMock.listDynatraceConnections.mockRejectedValue(new Error('List unavailable'))
     }
     await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(captureSource())} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
-    const submit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Create Revised Copy'))!
+    const submit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Create revised copy'))!
     for (const label of ['Elastic log capture', 'Dynatrace SaaS capture']) {
       const select = captureSelect(label)
       expect(select.value).not.toBe('')
@@ -497,7 +497,7 @@ describe('CreateTestModal', () => {
     expect(apiMock.createTest).not.toHaveBeenCalled()
     for (const label of ['Elastic log capture', 'Dynatrace SaaS capture']) await act(async () => { const select = captureSelect(label); select.value = ''; select.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(submit.disabled).toBe(false)
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     expect(apiMock.createTest).toHaveBeenCalledOnce()
     expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('elk_capture')
     expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('dynatrace_capture')
@@ -513,7 +513,7 @@ describe('CreateTestModal', () => {
       expect(captureSelect('Elastic log capture').value).toBe('source-elk')
       expect(captureSelect('Dynatrace SaaS capture').value).toBe('source-dt')
       expect(container.textContent).toContain('review required')
-      expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Create Revised Copy'))?.disabled).toBe(true)
+      expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Create revised copy'))?.disabled).toBe(true)
       expect(apiMock.createTest).not.toHaveBeenCalled()
     } finally {
       Reflect.set(apiMock, 'listELKConnections', originalELK)
@@ -539,7 +539,7 @@ describe('CreateTestModal', () => {
     expect(captureSelect('Dynatrace SaaS capture').value).toBe('')
     await act(async () => finishOld({ connections: [{ id: 'old-elk', name: 'Stale old logs', status: 'ready' }], count: 1 }))
     expect(container.textContent).not.toContain('Stale old logs')
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(apiMock.createTest.mock.calls[0][0].project_id).toBe('project-new')
     expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('elk_capture')
     expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('dynatrace_capture')
@@ -552,7 +552,7 @@ describe('CreateTestModal', () => {
     if (!p95) throw new Error('P95 latency control not found')
     if (hadConfig) { expect(p95.value).toBe('1000'); await act(async () => setInputValue(p95, '')) }
     await click('VUser-Driven')
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     expect(apiMock.createTest).toHaveBeenCalledOnce()
     const sent = JSON.parse(JSON.stringify(apiMock.createTest.mock.calls[0][0]))
     if (hadConfig) expect(sent.goal_config).toEqual({})
@@ -633,12 +633,12 @@ describe('CreateTestModal', () => {
     await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
     const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
     await act(async () => setInputValue(input, 'Saved queued draft'))
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(apiMock.createTest).toHaveBeenCalledOnce()
     if (otherDirty) {
       expect(selected).not.toHaveBeenCalled()
       expect(container.textContent).toContain('Other draft has unsaved changes')
-      expect(container.textContent).not.toContain('Create Queued Run has unsaved changes')
+      expect(container.textContent).not.toContain('Create queued run has unsaved changes')
     } else {
       expect(selected).toHaveBeenCalledExactlyOnceWith('test-1')
       expect(container.textContent).not.toContain('Unsaved Changes')
@@ -656,7 +656,7 @@ describe('CreateTestModal', () => {
     await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
     const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
     await act(async () => setInputValue(input, 'Submitted name'))
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(apiMock.createTest.mock.calls[0][0].name).toBe('Submitted name')
     expect(input.disabled).toBe(false)
     await act(async () => setInputValue(input, 'Later unsaved name'))
@@ -667,7 +667,7 @@ describe('CreateTestModal', () => {
     expect(container.textContent).toContain('Edits made while saving remain unsaved')
     await click('Leave draft')
     expect(selected).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+    expect(container.textContent).toContain('Create queued run has unsaved changes')
     expect(apiMock.createTest).toHaveBeenCalledOnce()
   })
 
@@ -687,10 +687,10 @@ describe('CreateTestModal', () => {
     await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
     const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
     await act(async () => setInputValue(input, 'Submitted once'))
-    await click('Create Queued Run')
+    await click('Create queued run')
     await act(async () => setInputValue(input, 'Later guarded edits'))
     await act(async () => window.dispatchEvent(new PopStateEvent('popstate')))
-    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+    expect(container.textContent).toContain('Create queued run has unsaved changes')
     await click('Save changes')
     try {
       expect(apiMock.createTest).toHaveBeenCalledOnce()
@@ -716,7 +716,7 @@ describe('CreateTestModal', () => {
     expect(duration.value).toBe('')
     await act(async () => vi.advanceTimersByTimeAsync(300))
     expect(apiMock.estimateTest).toHaveBeenCalledWith(expect.objectContaining({ termination_mode: 'iterations', duration: '', groups: [expect.objectContaining({ iterations: 3 })] }))
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     const sent = apiMock.createTest.mock.calls[0][0]
     expect(sent).toMatchObject({ termination_mode: 'iterations', duration: '', revision_source_test_id: 'capture-source', groups: [expect.objectContaining({ iterations: 3 })] })
     expect(sent).not.toHaveProperty('start_delay')
@@ -730,7 +730,7 @@ describe('CreateTestModal', () => {
     const delay = container.querySelector<HTMLInputElement>('input[aria-label="Global Start Delay"]')!
     expect(delay.value).toBe('10')
     await act(async () => setInputValue(delay, ''))
-    await click('Create Revised Copy')
+    await click('Create revised copy')
     const sent = apiMock.createTest.mock.calls[0][0]
     expect(sent).toMatchObject({ termination_mode: 'iterations', duration: '', start_delay: '0s', revision_source_test_id: 'capture-source', groups: [expect.objectContaining({ iterations: 3 })] })
     expect(sent).not.toHaveProperty('goal_config')
@@ -748,7 +748,7 @@ describe('CreateTestModal', () => {
     const render = async (incarnation: number) => { await act(async () => root.render(<NavigationGuardProvider><Harness incarnation={incarnation} /></NavigationGuardProvider>)) }
     await render(1)
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Submitted old draft'))
-    await click('Create Queued Run')
+    await click('Create queued run')
     await render(2)
     const current = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
     await act(async () => setInputValue(current, 'Replacement unsaved draft'))
@@ -757,7 +757,7 @@ describe('CreateTestModal', () => {
     expect(current.value).toBe('Replacement unsaved draft')
     await click('Leave draft')
     expect(selected).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+    expect(container.textContent).toContain('Create queued run has unsaved changes')
   })
 
   it('retains its navigation guard and draft after a refused create', async () => {
@@ -770,12 +770,12 @@ describe('CreateTestModal', () => {
     await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
     const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
     await act(async () => setInputValue(input, 'Refused draft'))
-    await click('Create Queued Run')
+    await click('Create queued run')
     expect(container.textContent).toContain('Source has started')
     expect(input.value).toBe('Refused draft')
     await click('Leave draft')
     expect(selected).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+    expect(container.textContent).toContain('Create queued run has unsaved changes')
   })
 
   it('prompts before closing a dirty queued-run draft', async () => {
@@ -857,7 +857,7 @@ describe('CreateTestModal', () => {
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
     const scenarioName = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Create Queued Run')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Create queued run')
     expect(document.activeElement).toBe(scenarioName)
 
     await act(async () => {

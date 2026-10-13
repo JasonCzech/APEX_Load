@@ -675,7 +675,7 @@ scenario).
    reason you can fix on the page links to its field. The launch review lists each
    data binding: a read-only pool, or a live table with where it starts and what
    happens to it at the end. A live table that writes back to its pool is flagged,
-   because that run changes the pool. When Start Now is unavailable, the reason sits
+   because that run changes the pool. When Start now is unavailable, the reason sits
    right under it. If other runs are only using the capacity for now, **Create Queued
    Run** starts this one as soon as capacity frees up. A run larger on its own than the
    project's VUser limit (or its pool's quota) can never start, so it can't be queued

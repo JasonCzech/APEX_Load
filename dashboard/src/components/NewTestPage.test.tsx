@@ -286,7 +286,7 @@ describe('NewTestPage', () => {
     await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }} releases={[]} initialScenarioId="scenario-1" onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
     await flushPromises()
     expect(container.textContent).toContain('This scenario is archived')
-    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')!
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start now')!
     expect(start.disabled).toBe(true)
     await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Schedules')!.click())
     expect(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')?.disabled).toBe(true)
@@ -311,6 +311,24 @@ describe('NewTestPage', () => {
     // The workspace's release is the user's own choice of context.
     await act(async () => setSelectValue(application, 'app-1'))
     expect(release.value).toBe('release-1')
+  })
+
+  it('does not offer the legacy application or release, but keeps a selection already on them', async () => {
+    const initial = await apiMock.listScenarios()
+    apiMock.listScenarios.mockResolvedValue(initial)
+    apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'legacy-8c5e77bc13a2', name: 'Legacy', project_id: 'project-1' }, { id: 'app-1', name: 'Storefront', project_id: 'project-1' }] })
+    const releases = [{ id: 'release-1', name: 'R1', application_id: 'app-1', created_at: '', updated_at: '' }, { id: 'legacy-imported', name: 'Imported Legacy', application_id: 'app-1', created_at: '', updated_at: '' }]
+    apiMock.listReleases.mockResolvedValue({ releases })
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'Storefront', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={releases[0]} releases={releases} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await flushPromises()
+    const application = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Launch application'))!
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
+    expect(Array.from(application.options).map(option => option.textContent)).toEqual(['Select application', 'Storefront'])
+    expect(Array.from(release.options).map(option => option.textContent)).toEqual(['Select release', 'R1'])
+    // The schedule form offers the same releases.
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Schedules')!.click())
+    const scheduleRelease = container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!
+    expect(Array.from(scheduleRelease.options).map(option => option.textContent)).toEqual(['Select release', 'R1'])
   })
 
   it('leaves the release to the user when the scenario is assigned to another release of the application', async () => {
@@ -358,7 +376,7 @@ describe('NewTestPage', () => {
     await flushPromises()
     const blockers = container.querySelector('#new-test-launch-blockers')
     expect(blockers?.textContent).toContain('Select or create a release')
-    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')!
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start now')!
     expect(start.getAttribute('aria-describedby')?.split(' ')).toContain('new-test-launch-blockers')
     await selectLaunchRelease()
     expect(container.querySelector('#new-test-launch-blockers')?.textContent ?? '').not.toContain('release')
@@ -565,7 +583,7 @@ describe('NewTestPage', () => {
     expect(openScenarioBuilder).toHaveBeenCalledTimes(1)
   })
 
-  it('shows a first-run scenario state and does not complete Run Setup without a name', async () => {
+  it('shows a first-run scenario state and does not complete Run setup without a name', async () => {
     apiMock.listScenarios.mockResolvedValue({ scenarios: [] })
 
     await act(async () => {
@@ -585,7 +603,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('No scenarios are available yet. Create the first reusable workload in the scenario builder.')
     expect(container.textContent).not.toContain('No scenarios match this search.')
     const runSetupStep = Array.from(container.querySelectorAll<HTMLElement>('.new-test-step'))
-      .find(step => step.querySelector('h3')?.textContent === 'Run Setup')
+      .find(step => step.querySelector('h3')?.textContent === 'Run setup')
     const stepIndicator = runSetupStep?.querySelector('.new-test-step-index')
     expect(stepIndicator?.textContent).toBe('2')
     expect(stepIndicator?.classList.contains('complete')).toBe(false)
@@ -674,7 +692,7 @@ describe('NewTestPage', () => {
     })
 
     expect(container.textContent).not.toContain('Unsaved Changes')
-    expect(container.textContent).toContain('Scenario Schedule')
+    expect(container.textContent).toContain('Scenario schedule')
   })
 
   it('preserves a run name entered before the scenario catalog finishes loading', async () => {
@@ -711,7 +729,7 @@ describe('NewTestPage', () => {
     const tab = (name: string) => Array.from(container.querySelectorAll('button')).find(button => button.textContent === name)!
     await act(async () => tab('Schedules').click())
     await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-scenario-label"]')!, ''))
-    await act(async () => tab('Run Setup').click())
+    await act(async () => tab('Run setup').click())
     const row = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')!
     await act(async () => row.click())
     expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Multi-group (3 groups)')
@@ -751,8 +769,8 @@ describe('NewTestPage', () => {
     })
 
     expect(container.textContent).not.toContain('Unsaved Changes')
-    expect(container.textContent).toContain('Scenario Schedule')
-    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run Setup')?.click())
+    expect(container.textContent).toContain('Scenario schedule')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run setup')?.click())
     expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Dirty run setup')
     expect(apiMock.createTest).not.toHaveBeenCalled()
     expect(apiMock.startTest).not.toHaveBeenCalled()
@@ -1026,7 +1044,7 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    const runSetupButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Run Setup')
+    const runSetupButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Run setup')
     const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
     expect(runSetupButton).toBeTruthy()
     expect(schedulesButton).toBeTruthy()
@@ -1043,7 +1061,11 @@ describe('NewTestPage', () => {
     await act(async () => setSelectValue(scheduleRelease, 'release-1'))
     const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create schedule')
     expect(saveButton).toBeTruthy()
-    expect(saveButton?.closest('.new-test-step-header')).toBeTruthy()
+    // The form's submit sits at its end, after the fields it saves.
+    expect(saveButton?.closest('.new-test-schedule-actions')).toBeTruthy()
+    expect(saveButton?.closest('.new-test-schedule-fields')?.lastElementChild?.contains(saveButton!)).toBe(true)
+    const scheduleStepHeader = Array.from(container.querySelectorAll('.new-test-step-header')).find(header => header.querySelector('h3')?.textContent === 'Scenario schedule')
+    expect(scheduleStepHeader?.querySelector('button')).toBeNull()
     expect(container.textContent).not.toContain('Calendar Windows')
     expect(container.textContent).not.toContain('Missed Run Policy')
 
@@ -1285,7 +1307,7 @@ describe('NewTestPage', () => {
       if (scheduleNameInput) setInputValue(scheduleNameInput, 'Dirty recurring schedule')
     })
 
-    const runSetupButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run Setup')
+    const runSetupButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run setup')
     await act(async () => runSetupButton?.click())
     expect(container.textContent).not.toContain('Unsaved Changes')
     await act(async () => schedulesButton?.click())
@@ -1509,7 +1531,7 @@ describe('NewTestPage', () => {
 
     const headers = Array.from(container.querySelectorAll('.new-test-step-header h3'))
     const scenarioHeader = headers.find(element => element.textContent === 'Scenario')
-    const setupHeader = headers.find(element => element.textContent === 'Run Setup')
+    const setupHeader = headers.find(element => element.textContent === 'Run setup')
     const defaultsHeader = headers.find(element => element.textContent === 'Global Run Settings')
     const groupsHeader = headers.find(element => element.textContent === 'Script Groups')
     expect(scenarioHeader).toBeTruthy()
@@ -1565,7 +1587,7 @@ describe('NewTestPage', () => {
     expect(readinessCard.textContent).toContain('Run Summary')
     expect(readinessCard.querySelector('.readiness-list')).toBeNull()
     expect(readinessCard.querySelector('.new-test-summary-grid')).toBeNull()
-    expect(readinessCard.textContent).not.toContain('Hold for Manual Start')
+    expect(readinessCard.textContent).not.toContain('Hold for manual start')
     expect(readinessCard.textContent).not.toContain('Schedule run')
     const summaryList = readinessCard.querySelector('.new-test-summary-list')
     expect(summaryList).toBeTruthy()
@@ -1589,7 +1611,7 @@ describe('NewTestPage', () => {
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,1200')
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
     expect(launchCard.textContent).toContain('Run timing')
-    expect(launchCard.textContent).toContain('Hold for Manual Start')
+    expect(launchCard.textContent).toContain('Hold for manual start')
     expect(launchCard.textContent).toContain('Schedule run')
     expect(profileCard.compareDocumentPosition(launchCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(launchCard.compareDocumentPosition(readinessCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -1646,7 +1668,7 @@ describe('NewTestPage', () => {
     expect(overriddenLogLevelCard?.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1784,7 +1806,7 @@ describe('NewTestPage', () => {
     expect(container.querySelector('.new-test-summary-list')?.textContent).toContain('traceparent to 1 approved origin')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1903,7 +1925,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1998,7 +2020,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2088,7 +2110,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2178,7 +2200,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2286,7 +2308,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2457,7 +2479,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2562,7 +2584,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2721,7 +2743,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2814,7 +2836,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2902,7 +2924,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -3000,7 +3022,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -3128,7 +3150,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Saved script settings for this run only.')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -3210,7 +3232,7 @@ describe('NewTestPage', () => {
     })
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -3353,7 +3375,7 @@ describe('NewTestPage', () => {
     expect(modal.textContent).toContain('fixed at its peak stage target of 30 VUsers')
     expect(modal.textContent).toContain('Edit the scenario stages to change it')
     expect(container.textContent).toContain('Scenario: group 1 VUsers must match its peak stage target of 30')
-    const holdButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Hold for Manual Start')
+    const holdButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Hold for manual start')
     expect(holdButton?.disabled).toBe(true)
   })
 
@@ -3540,7 +3562,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('1 sharded group')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -3643,7 +3665,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -3831,8 +3853,9 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Capacity service unavailable')
-    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')
+    // Other parts of the page may report their own failures; the preflight's is among them.
+    expect(Array.from(container.querySelectorAll('[role="alert"]')).some(alert => alert.textContent?.includes('Capacity service unavailable'))).toBe(true)
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start now')
     expect(start?.disabled).toBe(true)
     expect(apiMock.createTest).not.toHaveBeenCalled()
   })
@@ -3871,14 +3894,14 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start') as HTMLButtonElement | undefined
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start') as HTMLButtonElement | undefined
     expect(startNowButton).toBeTruthy()
     expect(startNowButton?.disabled).toBe(true)
-    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create queued run')
     expect(queuedButton).toBeTruthy()
     // The reason sits beside the disabled buttons and describes them.
     const reason = container.querySelector('#new-test-start-blocker')
-    expect(reason?.textContent).toBe('Not enough capacity right now: Controller concurrency is currently full. Create Queued Run starts it as soon as capacity frees up.')
+    expect(reason?.textContent).toBe('Not enough capacity right now: Controller concurrency is currently full. Create queued run starts it as soon as capacity frees up.')
     expect(startNowButton?.getAttribute('aria-describedby')).toContain('new-test-start-blocker')
 
     await act(async () => {
@@ -3895,7 +3918,7 @@ describe('NewTestPage', () => {
     expect(selectTest).not.toHaveBeenCalled()
   })
 
-  it('says beside Start Now why a run larger than the project cap can never start, without offering a queue', async () => {
+  it('says beside Start now why a run larger than the project cap can never start, without offering a queue', async () => {
     apiMock.preflightTest.mockResolvedValue({
       decision: 'blocked',
       start_now_allowed: false,
@@ -3919,9 +3942,9 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start now')
     expect(start?.disabled).toBe(true)
-    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Create Queued Run')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Create queued run')).toBe(false)
     const reason = container.querySelector('#new-test-start-blocker')
     expect(reason?.textContent).toContain('needs 20 VUsers at its peak, but the project allows 5 at a time')
     expect(start?.getAttribute('aria-describedby')).toContain('new-test-start-blocker')
@@ -3976,7 +3999,7 @@ describe('NewTestPage', () => {
 
     let queuedButton: HTMLButtonElement | undefined
     await vi.waitFor(() => {
-      queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+      queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create queued run')
       expect(queuedButton).toBeTruthy()
       expect(queuedButton?.disabled).toBe(false)
     })
@@ -4038,7 +4061,7 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create queued run')
     await vi.waitFor(() => expect(queuedButton?.disabled).toBe(false))
     await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
@@ -4073,7 +4096,7 @@ describe('NewTestPage', () => {
       await act(async () => setInputValue(remountedRunName, 'Different replacement draft'))
     }
     await flushDebouncedPreflight()
-    const remountedQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
+    const remountedQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create queued run') as HTMLButtonElement | undefined
     expect(remountedQueuedButton?.disabled).toBe(true)
     const resumeButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Resume queued run')
     await act(async () => resumeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -4132,7 +4155,7 @@ describe('NewTestPage', () => {
     await flushDebouncedPreflight()
 
     expect(container.textContent).toContain('Existing Queue Run')
-    const queuedButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create queued run') as HTMLButtonElement | undefined
     expect(queuedButton?.disabled).toBe(true)
 
     const createAnother = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create another run')
@@ -4198,7 +4221,7 @@ describe('NewTestPage', () => {
     })
     await flushDebouncedPreflight()
 
-    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create queued run')
     await act(async () => {
       queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -4244,10 +4267,10 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    expect(container.textContent).toContain('Hold for Manual Start')
+    expect(container.textContent).toContain('Hold for manual start')
     expect(container.textContent).toContain('Proposed launch window')
 
-    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
     await act(async () => {
       reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -4294,7 +4317,7 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const startButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
+    const startButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start now')
     expect(startButton).toBeTruthy()
     await act(async () => {
       startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4447,7 +4470,7 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     await flushDebouncedPreflight()
-    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start') as HTMLButtonElement | undefined
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start') as HTMLButtonElement | undefined
     const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule run') as HTMLButtonElement | undefined
     expect(startNowButton?.disabled).toBe(true)
     expect(scheduleButton?.disabled).toBe(true)
@@ -4716,19 +4739,19 @@ describe('NewTestPage', () => {
     const rule = { source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, dimensions: { host: 'inherited' } }
     apiMock.listScenarios.mockResolvedValue({ ...catalog, scenarios: catalog.scenarios.map((scenario: Record<string, unknown>) => ({ ...scenario, goal_config: { monitor_rules: [rule] } })) })
     const left = vi.fn()
-    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run Setup</button> }
+    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run setup</button> }
     await renderAuditPage(<LeaveRunSetup />)
     const dimensions = () => container.querySelector<HTMLInputElement>('[aria-label="Criterion 1 entity dimensions"]')!
     expect(dimensions().value).toBe('{"host":"inherited"}')
     await act(async () => setInputValue(dimensions(), '{'))
     await act(async () => auditButton('Schedules')?.click())
     expect(dimensions().closest('[hidden]')).not.toBeNull()
-    await act(async () => auditButton('Run Setup')?.click())
+    await act(async () => auditButton('Run setup')?.click())
     expect(dimensions().value).toBe('{')
     await act(async () => auditButton('Save draft')?.click())
     expect(readNewTestDraft('project-1', 'app-1')).toBeNull()
     expect(container.textContent).toContain('before saving or launching')
-    await act(async () => auditButton('Leave Run Setup')?.click())
+    await act(async () => auditButton('Leave Run setup')?.click())
     expect(left).not.toHaveBeenCalled()
     await act(async () => auditButton('Discard changes')?.click())
     expect(left).toHaveBeenCalledOnce()
@@ -4786,7 +4809,7 @@ describe('NewTestPage', () => {
     await act(async () => auditButton('Restore saved draft')?.click())
     await flushPromises()
     expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-timeslot-label"]')?.value).toBe('missing-reservation')
-    expect(auditButton('Start Now')?.disabled).toBe(true)
+    expect(auditButton('Start now')?.disabled).toBe(true)
     expect(container.textContent).toContain('saved capacity reservation is unavailable')
     await act(async () => auditButton('Schedules')?.click())
     expect(container.querySelector('[aria-label="Effective schedule policies"]')?.textContent).toContain('manual review')
@@ -4888,7 +4911,7 @@ describe('NewTestPage', () => {
     const releases = [{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }, { id: 'release-2', name: 'PI30', application_id: 'app-1', created_at: '', updated_at: '' }]
     apiMock.listReleases.mockResolvedValue({ releases })
     const left = vi.fn()
-    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run Setup</button> }
+    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run setup</button> }
     const renderWith = (activeRelease: typeof releases[number]) => root.render(<NavigationGuardProvider><NewTestPage
       activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
       activeRelease={activeRelease} releases={releases} initialScenarioId="scenario-1"
@@ -4906,7 +4929,7 @@ describe('NewTestPage', () => {
     expect(release.value).toBe('release-2')
     await act(async () => auditButton('Schedules')?.click())
     expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')?.value).toBe('release-2')
-    await act(async () => auditButton('Leave Run Setup')?.click())
+    await act(async () => auditButton('Leave Run setup')?.click())
     expect(left).toHaveBeenCalledOnce()
   })
 
@@ -4928,7 +4951,7 @@ describe('NewTestPage', () => {
     apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'ACC', project_id: 'project-1' }, { id: 'app-2', name: 'Other App', project_id: 'project-1' }] })
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [{ ...scheduleWithDistinctWindowTimezones(), release_id: 'release-1' }], count: 1 })
     const left = vi.fn()
-    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run Setup</button> }
+    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run setup</button> }
     await renderAuditPage(<LeaveRunSetup />)
     await act(async () => auditButton('Schedules')?.click())
     await flushPromises()
@@ -4936,14 +4959,14 @@ describe('NewTestPage', () => {
     const scheduleRelease = () => container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!
     expect(scheduleRelease().value).toBe('release-1')
 
-    await act(async () => auditButton('Run Setup')?.click())
+    await act(async () => auditButton('Run setup')?.click())
     await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')!, 'app-2'))
     await flushPromises()
     await act(async () => auditButton('Schedules')?.click())
     expect(scheduleRelease().value).toBe('')
     // The schedule lost its release: the user saves or discards that, it is
     // not dropped silently.
-    await act(async () => auditButton('Leave Run Setup')?.click())
+    await act(async () => auditButton('Leave Run setup')?.click())
     expect(left).not.toHaveBeenCalled()
     expect(auditButton('Discard changes')).toBeTruthy()
   })
@@ -4977,7 +5000,9 @@ describe('NewTestPage', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input instanceof Request ? input.url : input)
       if (url.includes('/monitor-bindings')) return respond({ sources: [{ source_id: 'elastic', required: false }, { source_id: 'dynatrace', required: true }] })
-      if (url.includes('/analysis/capabilities')) return respond({ monitoring_enabled: false })
+      // Bindings are read only while run monitoring is on.
+      if (url.includes('/analysis/capabilities')) return respond({ monitoring_enabled: true })
+      if (url.includes('/monitor-sources')) return respond([])
       return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } })
     }))
     onTestFinished(() => { vi.unstubAllGlobals() })

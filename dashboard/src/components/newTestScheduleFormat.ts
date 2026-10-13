@@ -183,7 +183,7 @@ export function firstLaunchConflict(preflight?: LaunchPreflightResponse | null):
 const OVER_CAP_CONFLICTS = new Set(['exceeds_project_vuser_cap', 'exceeds_pool_vuser_cap'])
 
 /**
- * Why Start Now is unavailable, to say beside it, or null while it is
+ * Why Start now is unavailable, to say beside it, or null while it is
  * available or not yet checked. overCap marks a run larger than a VUser cap,
  * which no amount of waiting fixes; queueable marks a run that will start
  * once other runs free capacity.
@@ -196,8 +196,8 @@ export function startNowBlocker(preflight?: LaunchPreflightResponse | null, opti
     const reason = (preflight.queue_reason || '').trim().replace(/\bvusers\b/gi, 'VUsers').replace(/[.\s]+$/, '')
     const wait = reason ? `Not enough capacity right now: ${reason}.` : 'Other runs are using the capacity this run needs.'
     return {
-      // Only point at Create Queued Run while that button can be used.
-      message: options.queueAvailable === false ? wait : `${wait} Create Queued Run starts it as soon as capacity frees up.`,
+      // Only point at Create queued run while that button can be used.
+      message: options.queueAvailable === false ? wait : `${wait} Create queued run starts it as soon as capacity frees up.`,
       overCap: false,
       queueable: true,
     }

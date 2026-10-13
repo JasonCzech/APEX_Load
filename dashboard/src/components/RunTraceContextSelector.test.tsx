@@ -30,7 +30,7 @@ describe('trace context helpers', () => {
   it('omits the setting from the payload unless a carrier is on', () => {
     expect(traceContextPayload({ enabled: false, origins: ['https://a.test'] })).toBeUndefined()
     expect(traceContextPayload({ enabled: true, origins: ['https://a.test'] })).toEqual({ enabled: true, transaction_marker: false, origins: ['https://a.test'] })
-    expect(traceContextSummary(undefined)).toBe('Off for this test')
+    expect(traceContextSummary(undefined)).toBe('Off for this run')
     expect(traceContextSummary({ enabled: true, transaction_marker: true, origins: ['https://a.test'] })).toBe('traceparent and transaction markers to 1 approved origin')
   })
 })

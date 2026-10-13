@@ -12,12 +12,17 @@ export default function RunMonitorBindingSelector({ projectId, value, onChange, 
   const [retry, setRetry] = useState(0)
   const [custom, setCustom] = useState(Boolean(value?.length))
   const [inherited, setInherited] = useState<MonitorBinding[]>([])
+  // Whether run monitoring is on could not be learned (the check failed).
+  const capabilityUnknown = Boolean(error) && !enabled
+  // A scenario's bindings are not asked for once run monitoring is known to be
+  // off (the controller refuses them, 409); they are while it is on, or could
+  // not be checked, since the run inherits them either way.
   useEffect(() => {
     const controller = new AbortController()
     setInherited([])
-    if (value === undefined && scenarioId) void request<{ sources: MonitorBinding[] }>(`/scenarios/${encodeURIComponent(scenarioId)}/monitor-bindings`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) setInherited(result.sources || []) }).catch(() => {})
+    if ((enabled || capabilityUnknown) && value === undefined && scenarioId) void request<{ sources: MonitorBinding[] }>(`/scenarios/${encodeURIComponent(scenarioId)}/monitor-bindings`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) setInherited(result.sources || []) }).catch(() => {})
     return () => controller.abort()
-  }, [scenarioId, value, legacyELKConnectionId])
+  }, [capabilityUnknown, enabled, scenarioId, value, legacyELKConnectionId])
   useEffect(() => {
     const controller = new AbortController()
     setSources([]); setEnabled(false); setError('')
@@ -39,7 +44,7 @@ export default function RunMonitorBindingSelector({ projectId, value, onChange, 
   useEffect(() => { onConflictChange?.(hasConflict) }, [hasConflict, onConflictChange])
   // How many scenario bindings the run inherits (none once it overrides them).
   useEffect(() => { onInheritedCountChange?.(inherited.length) }, [inherited.length, onInheritedCountChange])
-  if (!enabled && value === undefined && !inherited.length) return null
+  if (!enabled && !capabilityUnknown && value === undefined && !inherited.length) return null
   const selectable = sources.filter(source => source.enabled && source.pack !== 'appdynamics')
   const effective = value ?? inherited
   const unavailable = effective.filter(binding => !selectable.some(source => source.id === binding.source_id))
