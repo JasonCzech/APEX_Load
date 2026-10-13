@@ -446,6 +446,22 @@ function formatLoadModelDimension(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 }
 
+// A load model's category (e.g. "throughput") as a chip reads it.
+function loadModelCategoryLabel(category?: string) {
+  if (category === 'vuser') return 'VUsers'
+  const words = (category || '').replace(/[_-]+/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : ''
+}
+
+// Goal-Driven has one variant; its card says what it sets rather than
+// repeating the model's name.
+const GOAL_VARIANT_TITLE = 'Per-group throughput targets'
+const GOAL_TARGETS_ACTION = 'Set throughput targets'
+
+function shapeOptionTitle(option: { id: string; support: { name: string } }) {
+  return shapeFamilyFor(option.id) === 'goal' ? GOAL_VARIANT_TITLE : option.support.name
+}
+
 function WorkloadShapeVisual({ entry }: { entry: LoadModelSupportEntry }) {
   const title = `${entry.name} workload shape`
 
@@ -1036,6 +1052,20 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 	const isSteppedRamp = selectedShapeId === 'stepped-ramp'
 	const isClosedVUser = selectedShapeId === 'closed-vuser'
 	const isGoalDriven = selectedShapeId === 'open-arrival-rate' || selectedShapeId === 'goal-based'
+	// The goal controller sets a Goal-Driven run's ramp, so it has no Ramp
+	// pattern tab; a draft on that tab moves to its targets.
+	useEffect(() => {
+		if (isGoalDriven && scenarioSettingsSection === 'stages') setScenarioSettingsSection('composition')
+	}, [isGoalDriven, scenarioSettingsSection])
+	// The protocols the groups run: guardrails offer only the measures they
+	// produce. Until a group has a script they are not known, and all are offered.
+	const groupProtocols = useMemo(() => {
+		const protocols = [...new Set(formGroups.flatMap(group => {
+			const script = findScriptById(scripts, group.script_id)
+			return script ? scriptProtocols(script) : []
+		}))]
+		return protocols.length > 0 ? protocols : undefined
+	}, [formGroups, scripts])
 	const goalDrivenStoredConfig = form.goal_config?.workload_shape_config?.goal_driven
 	const goalDrivenConfig: GoalDrivenConfig = useMemo(() => {
 		if (goalDrivenStoredConfig) return goalDrivenStoredConfig
@@ -1879,8 +1909,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (autoPicked && shapeFamilyFor(selectedShapeId) === familyId) return
     if ((selectedShapeId && !autoPicked) || selectedLoadModelTemplateId || scenarioSourceMode === 'existing') return
     const family = modelFamilies.find(item => item.id === familyId)
-    // Goal-Driven sizes its load in a dialog and Traffic Profile needs a source,
-    // so neither has a variant to take on the author's behalf.
+    // Traffic Profile needs a source, so it has no variant to take on the
+    // author's behalf. Goal-Driven's only variant seeds TPS pacing and
+    // guardrails, so it is taken when the author goes on (Next), not while
+    // they look at it.
     if (family && family.shapeIds[0] === family.primaryShapeId && familyId !== 'traffic-profile' && familyId !== 'goal') {
       selectShapeOption(family.primaryShapeId, true)
     } else if (autoPicked) {
@@ -3282,8 +3314,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     : scenarioSourceMode === 'existing'
       ? Boolean(selectedCloneScenarioId)
       : Boolean(selectedShapeId || selectedLoadModelTemplateId))
+  // Goal-Driven has one variant: with the model chosen and no variant yet,
+  // Next takes it and goes on to its targets.
+  const goalVariantOnNext = wizardStep === 'source' && modelFamilyChoice === 'goal' && !selectedShapeId && !selectedLoadModelTemplateId
+    && scenarioSourceMode !== 'existing' && scenarioSourceMode !== 'traffic_profile' && scenarioSourceMode !== 'csv_driven'
   // Why Next is unavailable, said next to it instead of a silently disabled button.
-  const nextStepBlockedReason = wizardStep === 'source' && !sourceStepComplete && !sourcePending
+  const nextStepBlockedReason = wizardStep === 'source' && !sourceStepComplete && !goalVariantOnNext && !sourcePending
     ? scenarioSourceMode === 'existing' ? 'Choose a scenario to copy to continue.' : modelFamilyChoice ? 'Choose a variant below (Use …) to continue.' : 'Choose a load model to continue.'
     : ''
   const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
@@ -3383,7 +3419,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       <div className="scenario-shape-guidance" role="note">
         <div className="scenario-shape-guidance-header">
           <span className="scenario-shape-guidance-name">{selectedShape.support.name}</span>
-          <span className="scenario-shape-guidance-category">{selectedShape.support.category}</span>
+          <span className="scenario-shape-guidance-category">{loadModelCategoryLabel(selectedShape.support.category)}</span>
         </div>
         <p className="scenario-shape-guidance-copy">{selectedShapePreset.guidance}</p>
         {showMultiGroupHint && (
@@ -3430,7 +3466,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       <div className="scenario-assignment-header">
         <div>
           <h4>Protect the run</h4>
-          <p>Optionally stop when the error rate remains at or above a threshold for a sustained active-runtime window.</p>
+          <p>Optionally stop any run, whatever its load model, when the error rate stays at or above a threshold for a sustained active-runtime window.{isGoalDriven ? ' It is separate from the guardrails\' max error rate; whichever stop is on and reached first ends the run.' : ''}</p>
         </div>
       </div>
       <div className="stepped-ramp-protection">
@@ -3581,10 +3617,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     <div key={option.id} className={`scenario-shape-catalog-card ${selectedShapeId === option.id ? 'selected' : ''}`}>
                   <div className="scenario-support-card-header">
                     <div>
-                      <strong>{option.support.name}</strong>{selectedShapeId === option.id && <span className="scenario-shape-selected">Selected</span>}{option.support.name === 'Closed VUser' && <small>Recommended for a first fixed-user test</small>}
-                      <span>{option.support.category}</span>
+                      <strong>{shapeOptionTitle(option)}</strong>{selectedShapeId === option.id && <span className="scenario-shape-selected">Selected</span>}{option.support.name === 'Closed VUser' && <small>Recommended for a first fixed-user test</small>}
+                      <span>{loadModelCategoryLabel(option.support.category)}</span>
                     </div>
-                    <span className={`scenario-load-status ${getLoadModelStatusClass(option.support.status)}`}>{option.support.status === 'executed' ? 'Supported' : formatLoadModelDimension(option.support.status)}</span>
+                    {/* Every variant offered runs; only one that does not yet says so. */}
+                    {option.support.status !== 'executed' && <span className={`scenario-load-status ${getLoadModelStatusClass(option.support.status)}`}>{formatLoadModelDimension(option.support.status)}</span>}
                   </div>
                   <p>{option.support.apexload_shape}</p>
                   <details><summary>Technical fields</summary><div className="scenario-support-fields">
@@ -3593,7 +3630,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   </div></details>
                   <WorkloadShapeVisual entry={option.support} />
                   <div className="scenario-shape-actions">
-                    <button type="button" className={`btn btn-sm ${selectedShapeId === option.id ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={onUse ? undefined : selectedShapeId === option.id} onClick={() => onUse ? onUse() : selectShapeOption(option.id)}>{`Use ${option.support.name}`}</button>
+                    <button type="button" className={`btn btn-sm ${selectedShapeId === option.id ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={onUse ? undefined : selectedShapeId === option.id} onClick={() => onUse ? onUse() : selectShapeOption(option.id)}>{shapeFamilyFor(option.id) === 'goal' ? GOAL_TARGETS_ACTION : `Use ${option.support.name}`}</button>
                     {option.templates.length > 0 && <details open={option.templates.some(template => template.id === selectedLoadModelTemplateId)}><summary>Starter templates</summary>{option.templates.map(template => (
                       <button key={template.id} type="button" className={`btn btn-sm ${selectedLoadModelTemplateId === template.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applyLoadModelTemplate(template.id)}>
                         {template.name}
@@ -3827,7 +3864,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 {familyShapeOptions.map(option => renderShapeCard(option, activeModelFamily.id === 'goal' ? () => void openGoalSizing() : undefined))}
                 {familyShapeOptions.length === 0 && (activeModelFamily.id === 'goal'
                   // Goal setup does not depend on the catalog, so it stays reachable while it loads or is unavailable.
-                  ? <div className="scenario-shape-actions"><button type="button" className="btn btn-sm btn-secondary" onClick={() => void openGoalSizing()}>Use Goal-Driven Scenario</button></div>
+                  ? <div className="scenario-shape-actions"><button type="button" className="btn btn-sm btn-secondary" onClick={() => void openGoalSizing()}>{GOAL_TARGETS_ACTION}</button></div>
                   : <p className="scenario-assignment-copy secondary">No workload shape catalog is available from this controller.</p>)}
               </div>
             </>
@@ -4053,7 +4090,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {renderShapeGuidance()}
           <div className="scenario-builder-run-tabs-scroller" ref={setRunTabsScroller} data-more-start={runTabEdges.start || undefined} data-more-end={runTabEdges.end || undefined}>
           <TabList className="scenario-builder-run-tabs ux-underline-tabs" role="tablist" aria-label="Run settings sections" onKeyDown={handleTabKey}>
-            {runSettingsSections.map(item => {
+            {runSettingsSections.filter(item => !(isGoalDriven && item.section === 'stages')).map(item => {
               const selected = runSettingsTab === item.tab && (!item.section || scenarioSettingsSection === item.section)
               return (
                 <button
@@ -4092,7 +4129,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 								<div className="stepped-ramp-number">1</div>
 								<div className="stepped-ramp-section-body">
 									<h4 id="goal-throughput-title">Throughput goal</h4>
-									<p>Set the requested transaction rate for each load group. The scenario target is their sum.</p>
+									<p>Set the requested transaction rate for each load group. The scenario target is their sum.{form.goal_config?.target_average_tps === 25 && parseDurationToSeconds(form.duration) === 3600 ? ' These are the Goal-Driven defaults, 25 TPS in all split evenly across the groups for 1 hour (Run phases); change them to your goal.' : ''}</p>
 									<div className="settings-grid scenario-core-grid">
 										<label className="scenario-field"><span>Target TPS for {activeGroupLabel}</span><div className="stepped-ramp-unit-input"><input aria-label={`Target TPS for ${activeGroupLabel}`} className="settings-input" type="number" min={0.01} step="any" value={activeGoalDrivenDefinition.target_tps} onChange={event => updateGoalDriven({ target_tps: Number(event.target.value) })} /><span>TPS</span></div></label>
 									</div>
@@ -4131,11 +4168,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 										<label className="scenario-field"><span>Min VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_config?.min_vusers ?? totalGoalDrivenEstimatedVUsers} onChange={event => updateGoalDrivenGuardrail('min_vusers', Number(event.target.value))} /></label>
 										<label className="scenario-field"><span>Max VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_config?.max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} onChange={event => updateGoalDrivenGuardrail('max_vusers', Number(event.target.value))} /></label>
 										<label className="scenario-field"><span>P95 latency ceiling</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} step="any" value={form.goal_config?.p95_latency_ms ?? ''} onChange={event => updateGoalDrivenGuardrail('p95_latency_ms', event.target.value === '' ? undefined : Number(event.target.value))} /><span>ms</span></div></label>
-										<label className="scenario-field"><span>Max error rate</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="any" value={form.goal_config?.max_error_pct ?? ''} onChange={event => updateGoalDrivenGuardrail('max_error_pct', event.target.value === '' ? undefined : Number(event.target.value))} /><span>%</span></div></label>
+										<label className="scenario-field"><span>Max error rate</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="any" aria-label="Max error rate" aria-describedby="goal-max-error-help" value={form.goal_config?.max_error_pct ?? ''} onChange={event => updateGoalDrivenGuardrail('max_error_pct', event.target.value === '' ? undefined : Number(event.target.value))} /><span>%</span></div><small id="goal-max-error-help">Above it the run is in breach; it stops only if Stop on sustained guardrail breach is on. Protect the run below stops any run on errors.</small></label>
 										<DurationField className="scenario-field" label="Breach window" value={form.goal_config?.sla_breach_window || '1m'} compact onChange={value => updateGoalDrivenGuardrail('sla_breach_window', value)} />
 									</div>
 									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.stop_on_sla_breach)} onChange={event => updateGoalDrivenGuardrail('stop_on_sla_breach', event.target.checked)} /><span><strong>Stop on sustained guardrail breach</strong><small>Stop only after the configured breach window.</small></span></label>
-									<div className="goal-driven-advanced"><h5>Advanced guardrails</h5><CreateTestGoalSettings advancedOnly goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></div>
+									<div className="goal-driven-advanced"><h5>Advanced guardrails</h5><CreateTestGoalSettings advancedOnly protocols={groupProtocols} goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></div>
 								</div>
 							</section>
 							{renderGuidedScenarioExtras()}
@@ -4303,6 +4340,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 </div>
               </div>
               <CreateTestGoalSettings
+                protocols={groupProtocols}
                 goalConfig={goalConfigFromForm(form)}
                 onGoalConfigChange={(field, value) => setForm(previous => scenarioFormWithGoalField(previous, field, value))}
               />
@@ -4629,7 +4667,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <section className="scenario-review-details" aria-label="Runtime and placement review">
           <h4>Runtime and placement</h4>
           <p>Load window: {form.duration}, including ramp-up. Start delay: {form.start_delay || 'none'}. Resource baseline: {form.resource_baseline ? 'enabled' : 'disabled'}.</p>
-          <p>Default pacing: {formatPacing(runtimeSettingsFromForm(form).pacing) || 'inherits script'}. Think time: {formatThinkTime(runtimeSettingsFromForm(form).think_time) || 'inherits script'}. Error handling: {formatErrorHandling(overrideFromRuntimeDraft(runtimeSettingsFromForm(form))?.error_handling) || 'inherits script'}.</p>
+          {/* A Goal-Driven run is paced to its groups' targets, not to a default pacing. */}
+          <p>{isGoalDriven
+            ? `Throughput targets: ${formGroups.map((group, index) => `${group.name.trim() || `Group ${index + 1}`} ${(goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0).toLocaleString()} TPS`).join(', ')}; the goal controller adjusts VUsers to hold them.`
+            : `Default pacing: ${formatPacing(runtimeSettingsFromForm(form).pacing) || 'inherits script'}.`} Think time: {formatThinkTime(runtimeSettingsFromForm(form).think_time) || 'inherits script'}. Error handling: {formatErrorHandling(overrideFromRuntimeDraft(runtimeSettingsFromForm(form))?.error_handling) || 'inherits script'}.</p>
           <p>Scenario placement: {rootAssignment.mode || 'automatic'}{rootAssignment.selected_targets?.length ? ` · Targets: ${rootAssignment.selected_targets.join(', ')}` : ''}.</p>
           <ul>{formGroups.map((group, index) => <li key={index}><strong>{group.name || `Group ${index + 1}`}</strong>: {group.iterations ? `${group.iterations} iterations` : 'duration limited'}; placement {group.assignment?.mode || 'inherits scenario'}; runtime {group.runtimeSettings ? 'group overrides configured' : 'inherits scenario defaults'}.
             <p>Pacing: {formatPacing(group.runtimeSettings?.pacing) || 'inherits defaults'}. Think time: {formatThinkTime(group.runtimeSettings?.think_time) || 'inherits defaults'}. {group.assignment?.selected_targets?.length ? `Selected targets: ${group.assignment.selected_targets.join(', ')}` : ''}</p>
@@ -4796,7 +4837,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
 		  <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser || isGoalDriven ? 'stepped-ramp-layout' : ''} ${showCompositionPreview ? 'scenario-composition-layout' : ''}`}>
             <div className="scenario-builder-main" ref={wizardPanelRef} tabIndex={-1} role="region" aria-label={`Scenario step: ${wizardStep}`}>
-              {sourcePending && wizardStep === 'source' && <p role="status" className="scenario-source-pending">{sourcePendingMessage}</p>}
+              {sourcePending && wizardStep === 'source' && !goalVariantOnNext && <p role="status" className="scenario-source-pending">{sourcePendingMessage}</p>}
               {renderWizardStep()}
               <div hidden={wizardStep !== 'data'} style={wizardStep !== 'data' ? { display: 'none' } : undefined}>
                 <MonitorRuleEditor key={`${activeProjectId}:${scenarioDraftGenerationRef.current}`} projectId={activeProjectId} value={form.goal_config?.monitor_rules || []} canEdit={canManageTests} onChange={rules => setForm(previous => scenarioFormWithGoalField(previous, 'monitor_rules', rules))} onValidationChange={setMonitorEditorError} />
@@ -4811,7 +4852,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   runPlan={scenarioRunPlan}
                   shapeLabel={shapeLabel}
                   dataPoolLabel={dataPoolLabel}
-                  validationStatus={goalSizingIncomplete && validationLabel === 'Not validated' ? 'Sizing incomplete' : validationLabel}
+                  validationStatus={validationLabel}
                   compositionGroups={showCompositionPreview ? compositionTimelineGroups : undefined}
                   openEnded={form.termination_mode === 'iterations'}
                 />
@@ -4902,10 +4943,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               className="btn btn-primary"
               aria-describedby={nextStepBlockedReason ? 'scenario-next-reason' : undefined}
               onClick={() => {
+                if (goalVariantOnNext) {
+                  void openGoalSizing()
+                  return
+                }
                 const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
                 setWizardStep(scenarioWizardSteps[nextIndex].id)
               }}
-              disabled={savePending || currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'source' && !sourceStepComplete) || (wizardStep === 'run' && !wizardStepCompletion.run) || (wizardStep === 'scripts' && !wizardStepCompletion.scripts)}
+              disabled={savePending || currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'source' && !sourceStepComplete && !goalVariantOnNext) || (wizardStep === 'run' && !wizardStepCompletion.run) || (wizardStep === 'scripts' && !wizardStepCompletion.scripts)}
             >
               Next
             </button>}

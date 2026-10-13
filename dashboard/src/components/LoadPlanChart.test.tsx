@@ -6,7 +6,7 @@ import LoadPlanChart from './LoadPlanChart'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const chartProps = vi.hoisted(() => ({ data: [] as Array<Record<string, number | undefined>>, xTicks: [] as number[], yTicks: [] as number[], areas: [] as string[], lines: [] as string[], refLines: [] as number[] }))
+const chartProps = vi.hoisted(() => ({ data: [] as Array<Record<string, number | undefined>>, xTicks: [] as number[], yTicks: [] as number[], tpsTicks: [] as number[], areas: [] as string[], lines: [] as string[], refLines: [] as number[] }))
 
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -16,7 +16,7 @@ vi.mock('recharts', () => ({
   ReferenceArea: () => null,
   ReferenceLine: ({ x }: { x: number }) => { chartProps.refLines.push(x); return null },
   XAxis: ({ ticks }: { ticks: number[] }) => { chartProps.xTicks = ticks; return null },
-  YAxis: ({ ticks, yAxisId }: { ticks?: number[]; yAxisId: string }) => { if (yAxisId === 'vusers') chartProps.yTicks = ticks || []; return null },
+  YAxis: ({ ticks, yAxisId }: { ticks?: number[]; yAxisId: string }) => { if (yAxisId === 'vusers') chartProps.yTicks = ticks || []; else chartProps.tpsTicks = ticks || []; return null },
   Area: ({ dataKey, type }: { dataKey: string; type: string }) => { chartProps.areas.push(`${dataKey}:${type}`); return null },
   Line: ({ dataKey, type }: { dataKey: string; type: string }) => { chartProps.lines.push(`${dataKey}:${type}`); return null },
 }))
@@ -25,7 +25,7 @@ describe('LoadPlanChart', () => {
   let container: HTMLDivElement
   let root: Root
   beforeEach(() => {
-    Object.assign(chartProps, { data: [], xTicks: [], yTicks: [], areas: [], lines: [], refLines: [] })
+    Object.assign(chartProps, { data: [], xTicks: [], yTicks: [], tpsTicks: [], areas: [], lines: [], refLines: [] })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -63,5 +63,19 @@ describe('LoadPlanChart', () => {
     expect(chartProps.lines).toEqual(['totalTps:stepAfter'])
     expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Model preview: planned TPS targets over 1m')
     expect(container.querySelector('.load-plan-legend')?.textContent).toBe('Target TPS')
+  })
+
+  it('stacks equal group TPS targets under the total, on round ticks', async () => {
+    await act(async () => root.render(<LoadPlanChart label="Model preview" points={[{ second: 0, group0Tps: 12.5, group1Tps: 12.5, totalTps: 25 }, { second: 3600, group0Tps: 0, group1Tps: 0, totalTps: 0 }]} totalSeconds={3600} groups={[]} showVUsers={false} tps={[
+      { key: 'group0Tps', label: 'Browse TPS', color: 'var(--chart-1)' },
+      { key: 'group1Tps', label: 'Cart TPS', color: 'var(--chart-2)' },
+      { key: 'totalTps', label: 'Target TPS', color: 'var(--warning)' },
+    ]} />))
+
+    // Equal targets would draw one on top of the other as lines; stacked, both show.
+    expect(chartProps.areas).toEqual(['group0Tps:stepAfter', 'group1Tps:stepAfter'])
+    expect(chartProps.lines).toEqual(['totalTps:stepAfter'])
+    expect(chartProps.tpsTicks).toEqual([0, 10, 20, 30])
+    expect(Array.from(container.querySelectorAll('.load-plan-legend span')).map(item => item.textContent)).toEqual(['Browse TPS', 'Cart TPS', 'Target TPS'])
   })
 })

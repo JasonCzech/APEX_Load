@@ -5,6 +5,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CreateTestGoalSettings from './CreateTestGoalSettings'
+import { goalCeilingApplies } from './goalCeilings'
+import type { GoalConfig } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -189,5 +191,36 @@ describe('CreateTestGoalSettings', () => {
     for (const [, , field, value] of edits) {
       expect(onGoalConfigChange).toHaveBeenCalledWith(field, value)
     }
+  })
+
+  function labels() {
+    return Array.from(container.querySelectorAll('label > span')).map(span => span.textContent)
+  }
+
+  it('offers only the ceilings the groups can produce, keeping one already set', async () => {
+    const render = (protocols: readonly string[] | undefined, goalConfig: GoalConfig = {}) => act(async () => {
+      root.render(<CreateTestGoalSettings advancedOnly protocols={protocols} goalConfig={goalConfig} onGoalConfigChange={vi.fn()} />)
+    })
+    await render(['http'])
+    expect(labels()).toEqual(['Avg Server Processing Ceiling (ms)', 'Avg Transfer Ceiling (ms)', 'Max Error Count', 'Stop when total errors exceed max error count'])
+    await render(['http', 'browser'])
+    expect(labels()).toContain('Max LCP (ms)')
+    expect(labels()).not.toContain('Max Partition Skew %')
+    await render(['kafka'])
+    expect(labels()).toContain('Max Dead-Letter Rate %')
+    expect(labels()).not.toContain('Max CLS')
+    // A ceiling saved earlier stays, so it can be seen and cleared.
+    await render(['http'], { max_cls: 0.2 })
+    expect(labels()).toContain('Max CLS')
+    // Protocols not known yet: every ceiling is offered.
+    await render(undefined)
+    expect(labels()).toHaveLength(12)
+  })
+
+  it('treats protocol names without regard to case or space', () => {
+    expect(goalCeilingApplies('browser', [' Browser '])).toBe(true)
+    expect(goalCeilingApplies('messaging', ['JMS'])).toBe(true)
+    expect(goalCeilingApplies('messaging', ['http'])).toBe(false)
+    expect(goalCeilingApplies('any', [])).toBe(true)
   })
 })

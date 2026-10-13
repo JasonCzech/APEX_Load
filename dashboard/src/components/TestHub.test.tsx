@@ -231,8 +231,11 @@ describe('TestHub', () => {
       return
     }
     await clickWizardStep('Model & shape')
+    // Goal-Driven's only variant is named for what it sets.
+    const goal = shapeName === 'Goal-Driven Scenario'
+    const cardName = goal ? 'Per-group throughput targets' : shapeName
     const findCard = () => Array.from(container.querySelectorAll('.scenario-shape-catalog-card')).find(item => (
-      item.querySelector('.scenario-support-card-header')?.textContent?.includes(shapeName)
+      item.querySelector('.scenario-support-card-header')?.textContent?.includes(cardName)
     ))
     for (const family of Array.from(container.querySelectorAll('.scenario-source-card'))) {
       if (findCard()) break
@@ -244,7 +247,7 @@ describe('TestHub', () => {
     const card = findCard()
     expect(card).toBeTruthy()
     if (!card) return
-    const manualButton = Array.from(card.querySelectorAll('button')).find(button => button.textContent === `Use ${shapeName}`)
+    const manualButton = Array.from(card.querySelectorAll('button')).find(button => button.textContent === (goal ? 'Set throughput targets' : `Use ${shapeName}`))
     expect(manualButton).toBeTruthy()
     if (!manualButton) return
     await act(async () => {
@@ -1435,9 +1438,13 @@ describe('TestHub', () => {
     const guidance = container.querySelector('.scenario-shape-guidance')
     expect(guidance).toBeTruthy()
     expect(guidance?.textContent).toContain('Goal-Driven Scenario')
-    expect(guidance?.textContent).toContain('throughput')
+    expect(guidance?.textContent).toContain('Throughput')
 
     await clickWizardStep('Run settings')
+    // The goal controller sets the ramp, so there is no Ramp pattern tab.
+    expect(Array.from(container.querySelectorAll('.scenario-builder-run-tabs [role="tab"]')).map(tab => tab.textContent)).not.toContain('Ramp pattern')
+    // Incomplete sizing is said once, in the preview's note.
+    expect(container.querySelector('.scenario-builder-preview')?.textContent?.match(/Sizing incomplete/g)).toHaveLength(1)
     await clickScenarioSettingsSection('Run phases')
     const durationField = getDurationFieldByLabel(container, 'Duration')
 	expect(durationField?.input.value).toBe('1')
@@ -1469,6 +1476,11 @@ describe('TestHub', () => {
     ]) {
       expect(container.textContent).toContain(label)
     }
+
+    // Review states the targets the run will hold, not the template's pacing.
+    await clickWizardStep('Review')
+    expect(container.textContent).toContain('Throughput targets: Group 1 25 TPS; the goal controller adjusts VUsers to hold them.')
+    expect(container.textContent).not.toContain('Default pacing')
   })
 
   it('preserves persisted Goal-Driven VUser guardrails when throughput changes', async () => {
@@ -2992,7 +3004,7 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-builder-progress')?.textContent).toContain('Editing')
 
     await clickModelFamily('Goal-Driven')
-    await clickButton('Use Goal-Driven Scenario')
+    await clickButton('Set throughput targets')
     await flushPromises()
 
     expect(container.querySelector('.scenario-builder-progress')?.textContent).toContain('Editing')
@@ -3708,7 +3720,9 @@ describe('TestHub', () => {
     expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(0)
     await clickModelFamily('Fixed VUsers')
     expect(container.textContent).toContain('Closed VUser')
-    expect(container.textContent).toContain('Supported')
+    // Every variant offered runs, so none carries a "Supported" chip; the category reads plainly.
+    expect(container.textContent).not.toContain('Supported')
+    expect(Array.from(container.querySelectorAll('.scenario-support-card-header span')).map(span => span.textContent)).toContain('VUsers')
     expect(container.textContent).toContain('groups[].vusers')
     expect(container.textContent).toContain('Chaos Resilience')
     expect(container.textContent).toContain('script_shakeout')
@@ -3875,9 +3889,12 @@ describe('TestHub', () => {
     await clickModelFamily('Stepped Ramp')
     expect(useButton('Stepped Ramp')?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).not.toContain('Still using')
-    // Goal-Driven has no variant to take, so Next waits for its setup rather than run Stepped Ramp.
+    // Looking at Goal-Driven changes nothing (its variant seeds pacing and
+    // guardrails); Next takes its only variant and goes on to its targets.
     await clickModelFamily('Goal-Driven')
-    expect(nextButton()?.disabled).toBe(true)
+    expect(Array.from(container.querySelectorAll('.scenario-shape-catalog-card')).find(card => card.textContent?.includes('Per-group throughput targets'))?.querySelector('.scenario-shape-selected')).toBeFalsy()
+    expect(nextButton()?.disabled).toBe(false)
+    expect(container.querySelector('#scenario-next-reason')?.textContent).toBe('')
 
     // A variant the author picks stays until they pick another.
     await clickModelFamily('Fixed VUsers')
@@ -3889,6 +3906,38 @@ describe('TestHub', () => {
     expect(useButton('Stepped Ramp')?.getAttribute('aria-pressed')).toBe('false')
     expect(container.textContent).toContain(`Still using ${authoredName}. Pick a variant below to switch to Stepped Ramp.`)
     expect(nextButton()?.disabled).toBe(false)
+  })
+
+  it('goes on to Goal-Driven targets with Next once the model is chosen, its only variant taken then', async () => {
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Model & shape')
+    await clickModelFamily('Goal-Driven')
+    const next = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-builder-actions button')).find(button => button.textContent === 'Next')
+    await act(async () => next!.click())
+    await flushPromises()
+    expect(container.textContent).toContain('Goal-Driven scenario setup')
+    expect(container.querySelector('input[aria-label^="Target TPS for"]')).toBeTruthy()
+  })
+
+  it('moves a draft on Ramp pattern to its targets when it becomes Goal-Driven, and names the defaults only while they hold', async () => {
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await clickModelFamily('Fixed VUsers')
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Ramp pattern')
+    await clickModelFamily('Goal-Driven')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-shape-catalog-card button')).find(button => button.textContent === 'Set throughput targets')!.click())
+    await flushPromises()
+    const tabs = Array.from(container.querySelectorAll('.scenario-builder-run-tabs [role="tab"]'))
+    expect(tabs.map(tab => tab.textContent)).not.toContain('Ramp pattern')
+    expect(tabs.find(tab => tab.getAttribute('aria-selected') === 'true')?.textContent).toBe('Target load')
+    expect(container.textContent).toContain('These are the Goal-Driven defaults, 25 TPS in all split evenly across the groups for 1 hour')
+    const target = container.querySelector<HTMLInputElement>('input[aria-label^="Target TPS for"]')!
+    await act(async () => setInputValue(target, '40'))
+    expect(container.textContent).not.toContain('These are the Goal-Driven defaults')
   })
 
   it('keeps the builder footer to one note and its actions', async () => {

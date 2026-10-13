@@ -1,39 +1,41 @@
 import { GoalConfig } from '../types'
 import DurationField from './DurationField'
+import { GOAL_CEILINGS, goalCeilingApplies } from './goalCeilings'
 
 interface Props {
   goalConfig: GoalConfig
   onGoalConfigChange: <K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) => void
   advancedOnly?: boolean
+  /** The scenario's group protocols: only ceilings they can produce are offered. Omitted, all are. */
+  protocols?: readonly string[]
 }
 
 function optionalNumber(value: string): number | undefined {
   return value === '' ? undefined : Number(value)
 }
 
-export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange, advancedOnly = false }: Props) {
+export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange, advancedOnly = false, protocols }: Props) {
+  // A ceiling the groups cannot produce is not offered; one already set stays, so it can be cleared.
+  const ceilings = GOAL_CEILINGS.filter(ceiling => goalCeilingApplies(ceiling.scope, protocols) || goalConfig[ceiling.field] !== undefined)
+  const renderCeiling = (ceiling: (typeof GOAL_CEILINGS)[number], withPlaceholder: boolean) => (
+    <label key={ceiling.field}>
+      <span>{ceiling.label}</span>
+      <input
+        type="number"
+        min={ceiling.min ?? 0}
+        max={ceiling.max}
+        step={ceiling.step}
+        value={goalConfig[ceiling.field] ?? ''}
+        onChange={event => onGoalConfigChange(ceiling.field, optionalNumber(event.target.value))}
+        placeholder={withPlaceholder ? ceiling.placeholder : undefined}
+        title={ceiling.title}
+      />
+    </label>
+  )
   if (advancedOnly) {
-    const fields: Array<{ field: keyof GoalConfig, label: string, max?: number, step?: string }> = [
-      { field: 'max_avg_server_processing_ms', label: 'Avg Server Processing Ceiling (ms)', step: 'any' },
-      { field: 'max_avg_transfer_ms', label: 'Avg Transfer Ceiling (ms)', step: 'any' },
-      { field: 'max_error_count', label: 'Max Error Count', step: '1' },
-      { field: 'max_lcp_ms', label: 'Max LCP (ms)', step: 'any' },
-      { field: 'max_inp_ms', label: 'Max INP (ms)', step: 'any' },
-      { field: 'max_cls', label: 'Max CLS', step: 'any' },
-      { field: 'max_throttled_requests', label: 'Max Throttled Requests', step: '1' },
-      { field: 'max_end_to_end_latency_ms', label: 'Max End-to-End Latency (ms)', step: 'any' },
-      { field: 'max_partition_skew_pct', label: 'Max Partition Skew %', max: 100, step: 'any' },
-      { field: 'max_redelivery_rate_pct', label: 'Max Redelivery Rate %', max: 100, step: 'any' },
-      { field: 'max_dead_letter_rate_pct', label: 'Max Dead-Letter Rate %', max: 100, step: 'any' },
-    ]
     return (
       <div className="goal-settings-grid">
-        {fields.map(({ field, label, max, step }) => (
-          <label key={field}>
-            <span>{label}</span>
-            <input type="number" min={0} max={max} step={step} value={(goalConfig[field] as number | undefined) ?? ''} onChange={event => onGoalConfigChange(field, optionalNumber(event.target.value) as never)} />
-          </label>
-        ))}
+        {ceilings.map(ceiling => renderCeiling(ceiling, false))}
         <label className="checkbox-label goal-checkbox-label">
           <input type="checkbox" checked={goalConfig.stop_on_max_errors ?? false} onChange={event => onGoalConfigChange('stop_on_max_errors', event.target.checked)} />
           <span>Stop when total errors exceed max error count</span>
@@ -82,39 +84,7 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange,
             placeholder="e.g. 2.5"
           />
         </label>
-        <label>
-          <span>Avg Server Processing Ceiling (ms)</span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={goalConfig.max_avg_server_processing_ms ?? ''}
-            onChange={(event) => onGoalConfigChange('max_avg_server_processing_ms', optionalNumber(event.target.value))}
-            placeholder="e.g. 450"
-          />
-        </label>
-        <label>
-          <span>Avg Transfer Ceiling (ms)</span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={goalConfig.max_avg_transfer_ms ?? ''}
-            onChange={(event) => onGoalConfigChange('max_avg_transfer_ms', optionalNumber(event.target.value))}
-            placeholder="e.g. 120"
-          />
-        </label>
-        <label>
-          <span>Max Error Count</span>
-          <input
-            type="number"
-            min={1}
-            step="1"
-            value={goalConfig.max_error_count ?? ''}
-            onChange={(event) => onGoalConfigChange('max_error_count', optionalNumber(event.target.value))}
-            placeholder="e.g. 25"
-          />
-        </label>
+        {ceilings.filter(ceiling => ceiling.scope === 'any').map(ceiling => renderCeiling(ceiling, true))}
         <label>
           <span>Min VUsers</span>
           <input
@@ -137,102 +107,7 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange,
             placeholder="e.g. 300"
           />
         </label>
-        <label>
-          <span>Max LCP (ms)</span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={goalConfig.max_lcp_ms ?? ''}
-            onChange={(event) => onGoalConfigChange('max_lcp_ms', optionalNumber(event.target.value))}
-            placeholder="e.g. 2500"
-            title="Largest Contentful Paint ceiling, evaluated against browser canary metrics."
-          />
-        </label>
-        <label>
-          <span>Max INP (ms)</span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={goalConfig.max_inp_ms ?? ''}
-            onChange={(event) => onGoalConfigChange('max_inp_ms', optionalNumber(event.target.value))}
-            placeholder="e.g. 200"
-            title="Interaction to Next Paint ceiling, evaluated against browser canary metrics."
-          />
-        </label>
-        <label>
-          <span>Max CLS</span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={goalConfig.max_cls ?? ''}
-            onChange={(event) => onGoalConfigChange('max_cls', optionalNumber(event.target.value))}
-            placeholder="e.g. 0.1"
-            title="Cumulative Layout Shift ceiling, evaluated against browser canary metrics."
-          />
-        </label>
-        <label>
-          <span>Max Throttled Requests</span>
-          <input
-            type="number"
-            min={0}
-            step="1"
-            value={goalConfig.max_throttled_requests ?? ''}
-            onChange={(event) => onGoalConfigChange('max_throttled_requests', optionalNumber(event.target.value))}
-            placeholder="e.g. 0"
-            title="Maximum total throttled, quota, or server-busy responses during the run."
-          />
-        </label>
-        <label>
-          <span>Max End-to-End Latency (ms)</span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={goalConfig.max_end_to_end_latency_ms ?? ''}
-            onChange={(event) => onGoalConfigChange('max_end_to_end_latency_ms', optionalNumber(event.target.value))}
-            placeholder="e.g. 500"
-            title="Maximum average producer-to-observed-consumer latency."
-          />
-        </label>
-        <label>
-          <span>Max Partition Skew %</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step="any"
-            value={goalConfig.max_partition_skew_pct ?? ''}
-            onChange={(event) => onGoalConfigChange('max_partition_skew_pct', optionalNumber(event.target.value))}
-            placeholder="e.g. 10"
-          />
-        </label>
-        <label>
-          <span>Max Redelivery Rate %</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step="any"
-            value={goalConfig.max_redelivery_rate_pct ?? ''}
-            onChange={(event) => onGoalConfigChange('max_redelivery_rate_pct', optionalNumber(event.target.value))}
-            placeholder="e.g. 1"
-          />
-        </label>
-        <label>
-          <span>Max Dead-Letter Rate %</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step="any"
-            value={goalConfig.max_dead_letter_rate_pct ?? ''}
-            onChange={(event) => onGoalConfigChange('max_dead_letter_rate_pct', optionalNumber(event.target.value))}
-            placeholder="e.g. 0.5"
-          />
-        </label>
+        {ceilings.filter(ceiling => ceiling.scope !== 'any').map(ceiling => renderCeiling(ceiling, true))}
         <DurationField
           label="SLA Breach Window"
           value={goalConfig.sla_breach_window || ''}

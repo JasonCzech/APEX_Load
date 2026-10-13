@@ -560,6 +560,15 @@ describe('CreateTestModal', () => {
     expect(source.goal_config).toEqual(hadConfig ? { p95_latency_ms: 1000 } : undefined)
   })
 
+  it('offers a goal run only the ceilings its groups can produce', async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, scenario_mode: 'goal_oriented', goal_config: { p95_latency_ms: 1000 } } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const labels = Array.from(container.querySelectorAll('.goal-settings label > span')).map(span => span.textContent)
+    expect(labels).toContain('Max Error Count')
+    expect(labels).not.toContain('Max LCP (ms)')
+    expect(labels).not.toContain('Max Partition Skew %')
+  })
+
   const captureScripts = [{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]
   function captureSource(): TestSummary {
     return { id: 'capture-source', project_id: 'project-original', name: 'Capture source', status: 'QUEUED', created_at: '2026-10-05T00:00:00Z', duration: '1m', total_vusers: 1, elk_capture: { connection_id: 'source-elk', connection_name: 'Source logs' }, dynatrace_capture: { connection_id: 'source-dt', connection_name: 'Source SaaS' }, groups: [{ name: 'orders', script_id: 'script-1', vusers: 1 }] } as TestSummary

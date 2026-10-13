@@ -112,6 +112,13 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
   const xMax = Math.max(totalSeconds, lastObserved, nowSecond ?? 0, 1)
   const timeTicks = loadTimeTicks(xMax, compact ? 5 : 7)
   const valueTicks = loadValueTicks(Math.max(plannedPeak, observedPeak))
+  // Without VUsers to draw, the groups' TPS targets stack (the top edge is the
+  // total target, drawn as its line), so equal targets do not hide each other.
+  const stackedTps = !showVUsers && tps.length > 1 ? tps.slice(0, -1) : NO_SERIES
+  const lineTps = stackedTps.length ? tps.slice(-1) : tps
+  const tpsPeak = rows.reduce((peak, row) => Math.max(peak, ...tps.map(series => Number(row[series.key]) || 0)), 0)
+  // TPS gets round ticks too, as VUsers do.
+  const tpsTicks = loadValueTicks(tpsPeak)
   const primaryAxis = showVUsers ? 'vusers' : 'tps'
   const summary = `${label}: ${showVUsers ? `planned peak ${formatValue(plannedPeak)} VUsers` : 'planned TPS targets'} over ${formatTrafficProfileAxisTime(totalSeconds)}${observed.length ? `; observed peak ${formatValue(observedPeak)} VUsers` : ''}`
   const axisLabel = (value: string, axis: 'x' | 'left' | 'right') => compact ? undefined : axis === 'x'
@@ -149,6 +156,8 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
             {tps.length > 0 && <YAxis
               yAxisId="tps"
               orientation={showVUsers ? 'right' : 'left'}
+              domain={[0, tpsTicks[tpsTicks.length - 1]]}
+              ticks={tpsTicks}
               stroke="var(--warning-text, var(--warning))"
               fontSize={10}
               tickLine={false}
@@ -177,7 +186,23 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
                 isAnimationActive={false}
               />
             ))}
-            {tps.map((series, index) => (
+            {stackedTps.map(series => (
+              <Area
+                key={series.key}
+                yAxisId="tps"
+                type="stepAfter"
+                dataKey={series.key}
+                name={series.label}
+                stackId="planned-tps"
+                stroke={series.color}
+                fill={series.color}
+                fillOpacity={0.24}
+                strokeWidth={1.5}
+                connectNulls
+                isAnimationActive={false}
+              />
+            ))}
+            {lineTps.map((series, index) => (
               <Line
                 key={series.key}
                 yAxisId="tps"
@@ -185,7 +210,7 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
                 dataKey={series.key}
                 name={series.label}
                 stroke={series.color}
-                strokeWidth={index === tps.length - 1 ? 2.5 : 1.5}
+                strokeWidth={index === lineTps.length - 1 ? 2.5 : 1.5}
                 strokeDasharray="6 5"
                 dot={false}
                 connectNulls
@@ -210,7 +235,8 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
       <div className="load-plan-legend">
         {showVUsers && groups.map(group => <span key={group.key}><i style={{ background: group.color }} />{group.label}</span>)}
         {showVUsers && observed.length > 0 && <span><i className="line" />Observed VUsers</span>}
-        {tps.map(series => <span key={series.key}><i className="line dashed" style={{ borderColor: series.color }} />{series.label}</span>)}
+        {stackedTps.map(series => <span key={series.key}><i style={{ background: series.color }} />{series.label}</span>)}
+        {lineTps.map(series => <span key={series.key}><i className="line dashed" style={{ borderColor: series.color }} />{series.label}</span>)}
         {nowSecond !== undefined && <span><i className="line dashed now" />Now</span>}
       </div>
     </div>

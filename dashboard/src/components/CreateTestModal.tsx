@@ -36,6 +36,16 @@ interface Props {
   mode?: 'create-queued-run' | 'revise-queued-run'
 }
 
+// The groups' protocols, for the goal ceilings they can produce; unknown
+// (no group has a known script yet) offers them all.
+function knownGroupProtocols(groups: ReadonlyArray<{ scriptId: string }>, scripts: StoredScript[]): string[] | undefined {
+  const protocols = [...new Set(groups.map(group => {
+    const script = scripts.find(candidate => candidate.id === group.scriptId)
+    return script ? script.protocol || 'http' : ''
+  }).filter(Boolean))]
+  return protocols.length > 0 ? protocols : undefined
+}
+
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
@@ -521,6 +531,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
           {scenarioMode === 'goal_oriented' && (
             <CreateTestGoalSettings
+              protocols={knownGroupProtocols(groups, scripts)}
               goalConfig={goalConfig}
               onGoalConfigChange={updateGoalConfig}
             />
