@@ -2,6 +2,8 @@ import { isAccessView, type AccessView } from './components/accessDestinations'
 import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPageID } from './apiGuideNavigation'
 import type { NavPage } from './components/Sidebar'
 import { isScriptImportLauncher, isScriptImportMode, LEGACY_IMPORT_ROUTE_LAUNCHER } from './scriptImportLaunchers'
+import { isSharedAssetsSection, type SharedAssetsSection } from './components/sharedAssetsNavigation'
+import { sharedAssetsSectionForSetting } from './components/settingsNavigation'
 
 export type AppWorkspaceScope = {
   projectId?: string
@@ -10,7 +12,8 @@ export type AppWorkspaceScope = {
 }
 
 export type AppView = AppWorkspaceScope & (
-  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository' | 'activity'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'shared-assets' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository' | 'activity'> }
+  | { page: 'shared-assets'; section?: SharedAssetsSection; resourceId?: string }
   | { page: 'activity'; activityQuery?: string }
   | { page: 'settings' | 'access' | 'repository'; setting?: string; returnTo?: string; resourceId?: string; accessView?: AccessView }
   | { page: 'monitoring'; category?: MonitoringCategoryID }
@@ -19,7 +22,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown'; focus?: ReportFocus } & RootCauseRouteState
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
-  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import' | 'assets'; scriptId?: string; importLauncher?: string; importMode?: string }
+  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string; importLauncher?: string; importMode?: string }
   | { page: 'swagger'; search?: string }
   | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
@@ -32,6 +35,7 @@ const NAV_PAGES: NavPage[] = [
   'tests',
   'new-test',
   'scripts',
+  'shared-assets',
   'results',
   'activity',
   'monitoring',
@@ -42,7 +46,7 @@ const NAV_PAGES: NavPage[] = [
   'settings',
 ]
 
-const SCRIPT_MODES = ['list', 'create', 'edit', 'import', 'assets'] as const
+const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
@@ -261,8 +265,16 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'shared-assets') {
+    const section = params.get('section')
+    const resourceId = params.get('resourceId') || undefined
+    return { page: 'shared-assets', ...(isSharedAssetsSection(section) ? { section } : {}), ...(resourceId ? { resourceId } : {}), ...workspaceScope }
+  }
+
   if (page === 'scripts') {
     const mode = params.get('mode')
+    // The Scripts page's Shared assets tab held the object repositories and correlation rules.
+    if (mode === 'assets') return { page: 'shared-assets', section: 'object-repositories', ...workspaceScope }
     const scriptId = params.get('scriptId') || undefined
     if (mode === 'import') {
       // An import route names its launcher. An address written before routes
@@ -303,6 +315,9 @@ export function parseAppViewFromHash(hash: string): AppView {
     const setting = params.get('setting') || undefined
     const returnTo = params.get('returnTo') || ''
     const resourceId = params.get('resourceId') || ''
+    // What scripts and scenarios share moved to Shared assets; old addresses open its section there.
+    const sharedAssetSection = sharedAssetsSectionForSetting(setting)
+    if (sharedAssetSection) return { page: 'shared-assets', section: sharedAssetSection, ...(resourceId ? { resourceId } : {}), ...workspaceScope }
     return { page, ...(page === 'access' && isAccessView(params.get('accessView')) ? { accessView: params.get('accessView') as AccessView } : {}), ...(resourceId ? { resourceId } : {}), ...(setting ? { setting } : {}), ...(/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(returnTo) ? { returnTo } : {}), ...workspaceScope }
   }
 
@@ -404,6 +419,13 @@ export function parseDesktopDeepLink(raw: string): AppView | null {
 }
 
 export function viewToLocationHash(view: AppView): string {
+  if (view.page === 'shared-assets') {
+    const params = new URLSearchParams()
+    if (view.section) params.set('section', view.section)
+    if (view.resourceId) params.set('resourceId', view.resourceId)
+    appendWorkspaceScope(params, view)
+    return params.size ? `#/shared-assets?${params}` : '#/shared-assets'
+  }
   if (view.page === 'settings' || view.page === 'access' || view.page === 'repository') {
     const params = new URLSearchParams()
     if (view.setting) params.set('setting', view.setting)
@@ -539,7 +561,7 @@ export function workspaceScopeForAppView(view: AppView): AppWorkspaceScope {
 
 /**
  * The scripts route naming what the authoring surface has open, so a refresh
- * or a shared link returns to it: the library, the script assets, a saved
+ * or a shared link returns to it: the library, a saved
  * script's editor, or a named importer. The create options, the recorder and an unsaved draft have
  * no route of their own and reopen at the create options, never at the
  * archive importer a bare import route opens.
@@ -549,7 +571,6 @@ export function scriptsRouteForAuthoringState(
   scope: AppWorkspaceScope,
 ): Extract<AppView, { page: 'scripts' }> {
   if (state.subView === 'list') return { page: 'scripts', mode: 'list', ...scope }
-  if (state.subView === 'assets') return { page: 'scripts', mode: 'assets', ...scope }
   if (state.subView === 'edit' && state.editingId) return { page: 'scripts', mode: 'edit', scriptId: state.editingId, ...scope }
   if (state.importLauncher && isScriptImportLauncher(state.importLauncher)) {
     return { page: 'scripts', mode: 'import', importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}), ...scope }
@@ -662,6 +683,8 @@ export function resetProjectScopedAssetView(view: AppView, projectId?: string): 
   if (view.page === 'report') return { page: 'results' }
   // Activity filters and paging belong to the project they were set in.
   if (view.page === 'activity') return { page: 'activity', ...(projectId ? { projectId } : {}) }
+  // The section stays; the pool, table or application it named belongs to the previous project.
+  if (view.page === 'shared-assets') return { page: 'shared-assets', ...(view.section ? { section: view.section } : {}), ...(projectId ? { projectId } : {}) }
   return view
 }
 

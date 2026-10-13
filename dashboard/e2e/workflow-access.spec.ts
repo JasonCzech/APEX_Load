@@ -11,7 +11,6 @@ test('Access policy navigation keeps the requested body through links and reload
     'Authentication',
     'Import credential policy',
     'Project redaction rules',
-    'Project secrets',
     'Governance audit',
   ]) {
     await page
@@ -28,6 +27,12 @@ test('Access policy navigation keeps the requested body through links and reload
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeHidden()
   }
   await page.reload()
+  await expect(page.locator('#settings-section-feature-access')).toBeVisible()
+  // Project secrets is listed here and lives in Shared assets.
+  await page.getByRole('navigation', { name: 'Access administration' }).getByRole('link', { name: /^Project secrets/ }).click()
+  await expect(page).toHaveURL(/#\/shared-assets\?section=secrets/)
+  await expect(page.getByRole('heading', { name: 'Secrets', exact: true, level: 2 })).toBeVisible()
+  await page.goBack()
   await expect(page.locator('#settings-section-feature-access')).toBeVisible()
   await page
     .getByRole('navigation', { name: 'Access administration' })

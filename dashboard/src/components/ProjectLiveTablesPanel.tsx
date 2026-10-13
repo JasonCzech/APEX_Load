@@ -1,19 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
-import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import type { SharedDataPool } from '../types/dataPools'
 import type { ProjectLiveTableCreate, ProjectLiveTableLifecycle, ProjectLiveTableMutation, ProjectLiveTableRow, ProjectLiveTableRows, ProjectLiveTableView } from '../types/projectLiveTables'
 import { getErrorMessage } from '../utils/errorUtils'
-import RepositorySectionTabs from './RepositorySectionTabs'
 import DataRowGrid from './ux/DataRowGrid'
 import { decimalInteger, projectTableCreateErrors, projectTableLifecycleBlock } from './projectLiveTableModel'
 import { dataPoolColumnNames } from './scenarioDataBindingModel'
-import './ProjectLiveTablesPage.css'
+import './ProjectLiveTablesPanel.css'
 
 const profileLabel = (profile: string) => profile === 'native_queue' ? 'Native work queue' : 'Shared columns'
 
-export default function ProjectLiveTablesPage({ projectId, projectName, canCreate = false }: { projectId?: string; projectName?: string; canCreate?: boolean }) {
+/**
+ * A project's live tables: tables runs read and change that keep their rows
+ * between runs. Shared assets › Live tables shows it.
+ */
+export default function ProjectLiveTablesPanel({ projectId, projectName, canCreate = false, selectedId }: { projectId?: string; projectName?: string; canCreate?: boolean; /** A table to open, from a link. */ selectedId?: string }) {
   const api = useApi()
   const [tables, setTables] = useState<ProjectLiveTableView[]>([])
   const [pools, setPools] = useState<SharedDataPool[]>([])
@@ -24,17 +26,7 @@ export default function ProjectLiveTablesPage({ projectId, projectName, canCreat
   const [creating, setCreating] = useState(false)
   const [create, setCreate] = useState<ProjectLiveTableCreate>({ name: '', profile: 'native_queue', columns: [], limits: { max_rows: 10000, max_bytes: 8388608 } })
   const [attempted, setAttempted] = useState(false)
-  const contribution = useMemo(() => ({ id: 'project-live-tables', title: 'Live tables', controls: <RepositorySectionTabs current="live-tables" />, priority: 10 }), [])
-  useTopbarContribution(contribution)
-  useEffect(() => {
-    const focus = () => {
-      const query = new URLSearchParams(window.location.hash.split('?')[1] || '')
-      const id = query.get('resourceId')
-      if (id && query.get('setting') === 'live-tables' && query.get('projectId') === projectId) setSelected(id)
-    }
-    focus(); window.addEventListener('hashchange', focus)
-    return () => window.removeEventListener('hashchange', focus)
-  }, [projectId])
+  useEffect(() => { if (selectedId) setSelected(selectedId) }, [selectedId])
   useEffect(() => {
     const abort = new AbortController()
     setLoading(true); setError('')
@@ -59,7 +51,7 @@ export default function ProjectLiveTablesPage({ projectId, projectName, canCreat
     } catch (cause) { setError(getErrorMessage(cause, 'Unable to create the table.')) }
     finally { setCreating(false) }
   }
-  return <main className="page project-live-tables-page">
+  return <div className="project-live-tables">
     <p>Project tables share committed data across concurrent runs in {projectName || 'the selected project'}. They remain available after a run finishes. Existing shared data pools and run tables keep their own lifecycle.</p>
     {!projectId ? <p role="status">Select a project to inspect its live tables.</p> : <>
       <button type="button" className="btn btn-secondary" onClick={() => setRefresh(value => value + 1)}>Refresh project tables</button>
@@ -80,7 +72,7 @@ export default function ProjectLiveTablesPage({ projectId, projectName, canCreat
       </fieldset></details>}
       {selected && <ProjectTableDetail key={`${projectId}:${selected}`} projectId={projectId} tableId={selected} onChanged={() => setRefresh(value => value + 1)} />}
     </>}
-  </main>
+  </div>
 }
 
 function ProjectTableDetail({ projectId, tableId, onChanged }: { projectId: string; tableId: string; onChanged: () => void }) {

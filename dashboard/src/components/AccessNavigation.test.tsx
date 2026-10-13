@@ -66,4 +66,12 @@ describe('AccessNavigation', () => {
     expect(onSelectView).toHaveBeenCalledWith('events')
     expect(entries().find(entry => entry.textContent?.startsWith('Authentication'))?.tagName).toBe('A')
   })
+
+  it('says which policy entry leaves Access for Shared assets', async () => {
+    await act(async () => root.render(<AccessNavigation currentSetting="redaction" />))
+    const secrets = entries().find(entry => entry.textContent?.startsWith('Project secrets'))
+    expect(secrets?.getAttribute('href')).toMatch(/^#\/shared-assets\?section=secrets/)
+    expect(secrets?.querySelector('.settings-nav-elsewhere')?.textContent).toBe('Opens Shared assets')
+    expect(entries().filter(entry => entry.querySelector('.settings-nav-elsewhere')).map(entry => entry.querySelector('span')?.textContent)).toEqual(['Project secrets'])
+  })
 })

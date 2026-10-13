@@ -20,9 +20,6 @@ interface Props {
   onSaved: ScriptsAuthoringSurfaceProps['onSaved']
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
-  onOpenAssets: () => void
-  /** The Shared assets tab, which every role that can view scripts can open. */
-  assetsView: ReactNode
   onImported: (result: ImportedSaveResult) => void
   onConfigureSecrets?: (projectId: string) => void
   onEditDraft: ScriptsAuthoringSurfaceProps['onEditDraft']
@@ -44,8 +41,6 @@ export default function ScriptsAuthoringShell({
   onSaved,
   onOpenLibrary,
   onOpenCreateOptions,
-  onOpenAssets,
-  assetsView,
   onImported,
   onConfigureSecrets,
   onEditDraft,
@@ -69,10 +64,6 @@ export default function ScriptsAuthoringShell({
     setCreateOptionsWorkflow(workflow)
   }
 
-  if (authoringState.subView === 'assets') {
-    return <>{assetsView}</>
-  }
-
   if (!canManageScripts) {
     return <>{children}</>
   }
@@ -83,7 +74,6 @@ export default function ScriptsAuthoringShell({
         projectId={projectId}
         policyRefreshSignal={policyRefreshSignal}
         onBack={onOpenLibrary}
-        onOpenAssets={onOpenAssets}
         onStartApiScript={createOptionActions.startApiScript}
         onStartSoapScript={createOptionActions.startSoapScript}
         onStartJavaHttpScript={createOptionActions.startJavaHttpScript}

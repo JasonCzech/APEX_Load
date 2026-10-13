@@ -1505,7 +1505,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   {!committed && (<>
                       <h3>Credentials</h3>
                       <p>Configure missing values now, or configure later — replay stays blocked until the selected bindings have usable values.</p>
-                      {onConfigureSecrets && projectId && <button className="btn btn-secondary" type="button" onClick={() => onConfigureSecrets(projectId)}>Open Project Secrets</button>}
+                      {onConfigureSecrets && projectId && <button className="btn btn-secondary" type="button" onClick={() => onConfigureSecrets(projectId)}>Open Secrets</button>}
                       <SecretBindingReview ref={credentialReviewRef} requirements={credentialRequirements} reviewGeneration={credentialReviewIdentity} disabled={loading || creatingFolder || protectedSessionExpired} projectId={projectId} sourceSecretSessionExpiresAt={inspection?.expires_at} sourceMigrationAllowed={sourceMigrationAvailable} externalSourceMigrationSelected={migrateSecrets} onExternalSourceMigrationChange={setMigrateSecrets} onApply={applyCredentialBindings} onPreparedChange={setPreparedSecrets} onRequirementDestinationStateChange={setCredentialDestinationState} onProjectSecretsConfigured={handleProjectSecretsConfigured}/>
                       {projectSecretsConfiguredForReview && (<div className="bruno-preflight" role="status">
                           Project-secret values configured during this review remain in Project Secrets independently of script saving.

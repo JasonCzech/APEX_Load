@@ -16,6 +16,7 @@ const NAVIGATION_SHORTCUTS: Array<{ id: string; label: string; keys: string; pag
   { id: 'activity', label: 'Go to Activity', keys: 'g v', page: 'activity' },
   { id: 'schedules', label: 'Go to Schedules', keys: 'g l', page: 'schedules' },
   { id: 'scripts', label: 'Go to Scripts', keys: 'g s', page: 'scripts' },
+  { id: 'shared-assets', label: 'Go to Shared assets', keys: 'g e', page: 'shared-assets' },
   { id: 'results', label: 'Go to Results', keys: 'g r', page: 'results' },
   { id: 'monitoring', label: 'Go to Monitoring', keys: 'g m', page: 'monitoring' },
   { id: 'fleet', label: 'Go to Fleet', keys: 'g f', page: 'fleet' },

@@ -12,7 +12,7 @@ import ProjectModal from './ProjectModal'
 import { OPEN_PROJECT_PICKER_EVENT } from '../workspacePickerEvents'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'activity' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
+export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'shared-assets' | 'results' | 'activity' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
 
 interface Props {
   active: NavPage
@@ -114,6 +114,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    id: 'shared-assets',
+    label: 'Shared assets',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2" />
+        <polyline points="2 17 12 22 22 17" />
+        <polyline points="2 12 12 17 22 12" />
+      </svg>
+    ),
+  },
+  {
     id: 'repository',
     label: 'Repository',
     icon: (
@@ -171,7 +182,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const NAV_GROUPS: { label: string; itemIds: NavPage[] }[] = [
   { label: 'Operate', itemIds: ['dashboard', 'command-center', 'results', 'monitoring', 'activity'] },
-  { label: 'Build', itemIds: ['scripts', 'tests'] },
+  { label: 'Build', itemIds: ['scripts', 'tests', 'shared-assets'] },
   { label: 'Administer', itemIds: ['repository', 'access', 'settings'] },
   { label: 'Support', itemIds: ['docs'] },
 ]

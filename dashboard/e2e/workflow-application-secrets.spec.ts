@@ -2,14 +2,17 @@ import { expect, test } from '@playwright/test'
 import { login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
-test('application settings show the shared secret vault in both auth profiles', async ({ page }) => {
+test('application settings open the application’s secret vault in Shared assets in both auth profiles', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/settings?setting=applications&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   const section = page.locator('#settings-section-applications')
   await expect(section).toBeVisible()
-  const vault = section.locator('.project-secrets-panel')
+  await section.getByRole('link', { name: 'Open Secrets', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`#/shared-assets\\?section=secrets&resourceId=${workspace.applicationId}`))
+  await expect(page.getByRole('combobox', { name: 'Secrets of', exact: true })).toHaveValue(workspace.applicationId)
+  const vault = page.locator('.project-secrets-panel')
   await expect(vault.getByText('Application Secret Vault')).toBeVisible()
   await expect(vault.getByText('Scripts in this application share its secret names and fall back to project values.', { exact: false })).toBeVisible()
   await expect(vault.getByText('Loading secret metadata…')).toBeHidden()

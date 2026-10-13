@@ -29,10 +29,8 @@ it('links every sidebar destination to the help section that covers it', async (
 it('sends an importer opened from script builder to the import help', () => {
   expect(contextualHelpHash({ page: 'scripts', mode: 'create' }, 'jmeter-import')).toBe('#/docs?guide=user-guide&article=imports')
   expect(contextualHelpHash({ page: 'scripts', mode: 'create' }, 'create')).toBe('#/docs?guide=user-guide&article=authoring')
-  // Shared assets covers what scripts share; switching tabs keeps the old mode in the view.
-  expect(contextualHelpHash({ page: 'scripts', mode: 'assets' })).toBe('#/docs?guide=user-guide&article=shared-assets&section=repository-and-shared-assets')
-  expect(contextualHelpHash({ page: 'scripts', mode: 'list' }, 'assets')).toBe('#/docs?guide=user-guide&article=shared-assets&section=repository-and-shared-assets')
-  expect(contextualHelpHash({ page: 'scripts', mode: 'assets' }, 'list')).toBe('#/docs?guide=user-guide&article=authoring')
+  // What scripts share has its own page and help.
+  expect(contextualHelpHash({ page: 'shared-assets', section: 'secrets' })).toBe('#/docs?guide=user-guide&article=shared-assets&section=repository-and-shared-assets')
 })
 
 it('offers no page help link on the help pages themselves', () => {

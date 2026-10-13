@@ -4643,7 +4643,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <p>Attach data pools for scripts that need coordinated parameter data.</p>
           </div>
           <details><summary>Create a data pool without leaving this draft</summary>
-            {!canManageScripts && <p>Data pool creation requires editor permission. Ask a project administrator to create it in Repository › Shared test data.</p>}
+            {!canManageScripts && <p>Data pool creation requires editor permission. Ask an editor or a project administrator to create it in Shared assets › Test data.</p>}
             <p>Requires permission to manage data pools. Name the pool and its columns; add rows afterwards in the pool's row editor, or import a CSV from the binding's preview.</p>
             <label>New data pool name<input value={newPoolName} onChange={event => setNewPoolName(event.target.value)} /></label>
             <label>Columns (parameter names, separated by commas)<input value={newPoolColumns} placeholder="customer_id, email" onChange={event => setNewPoolColumns(event.target.value)} /></label>

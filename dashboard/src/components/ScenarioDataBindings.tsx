@@ -9,7 +9,7 @@ import { useDslActionCatalog } from './dslActionCatalog'
 import { useProjectLiveTables } from './useProjectLiveTables'
 import DataRowGrid from './ux/DataRowGrid'
 import { orderedGridColumns } from './ux/dataRowGridModel'
-import { settingsHref } from './settingsNavigation'
+import { sharedAssetsHref } from './sharedAssetsNavigation'
 import ScenarioScriptData from './ScenarioScriptData'
 import LiveTableBindingOptions from './LiveTableBindingOptions'
 import ProjectLiveTableBinding from './ProjectLiveTableBinding'
@@ -55,7 +55,7 @@ function PoolPreview({ binding, required, canManage, canEditPool, poolColumns }:
       {total === 0 && <p role="status">{binding.access_mode === 'live' ? 'This pool is empty. The live table starts empty if no rows are added before launch; producers can add runtime rows.' : 'This pool is empty. Add rows before configuring a run.'}</p>}
       {required.length > 0 && <p>Required columns: {required.join(', ')}. {rows.some(row => required.some(column => !(column in row.data))) ? 'Some preview rows are missing required columns.' : 'Validate the full pool before execution; the preview is only a sample.'}</p>}
       {!!rows.length && <DataRowGrid label={`Rows for ${binding.alias}`} columns={columns} rows={rows.map(row => ({ id: row.id, values: row.data }))} />}
-      {canEditPool && <p><a href={settingsHref('test-data', undefined, binding.pool_id)}>Edit this pool's rows in Shared test data</a></p>}
+      {canEditPool && <p><a href={sharedAssetsHref('test-data', binding.pool_id)}>Edit this pool's rows in Shared assets</a></p>}
       <fieldset disabled={busy || !canManage}><legend>Append rows from CSV</legend>{!canManage && <p>Importing rows requires data-pool management permission.</p>}<p>Use a header row with column names. Preview the import before adding rows to the shared pool.</p>
         <ImportDropzone dropHint="Drop a CSV with a header row" accept=".csv,.tsv" file={file} onFile={next => { setFile(next); setInspection(null); setNotice('') }} onError={setError} disabled={busy} />
         {file && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void importRows(true)}>Preview CSV import</button>}

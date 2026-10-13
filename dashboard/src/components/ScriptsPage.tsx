@@ -16,9 +16,6 @@ import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable, { type ScriptLibraryFederation } from './ScriptsLibraryTable'
 import { isAddressableScriptId } from './scriptIdentity'
-import ObjectRepositoryPanel from './ObjectRepositoryPanel'
-import type { ScriptOption } from './ScriptPicker'
-import CorrelationRulesetPanel from './CorrelationRulesetPanel'
 import PageViewToggle from './PageViewToggle'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
@@ -29,7 +26,7 @@ import { type ImportedSaveResult, type ScriptsAuthoringEntryView, type ScriptsAu
 import type { ScriptImportLauncherDescriptor } from '../scriptImportLaunchers'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
-import { openProjectSecretsSettings } from './projectSecretsNavigation'
+import { openProjectSecretsPage } from './projectSecretsNavigation'
 import StoredScriptSecretBindingsDialog from './StoredScriptSecretBindingsDialog'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import {
@@ -192,8 +189,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   // Why a create/edit link opened the library instead (role without edit rights).
   const [accessNotice, setAccessNotice] = useState('')
   const [scriptsLoadError, setScriptsLoadError] = useState('')
-  // Which list `scripts` holds, so the Shared assets pickers reuse it only when it is the project's active scripts.
-  const [loadedScriptsScope, setLoadedScriptsScope] = useState<{ projectId: string; archiveState: string } | null>(null)
   const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
   // Saved scripts that asked to set up their secrets, waiting for the
   // library's secrets dialog one after another.
@@ -255,7 +250,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       setSecretDialogScript(script)
       return
     }
-    openProjectSecretsSettings(script?.project_id || activeProjectId)
+    openProjectSecretsPage(script?.project_id || activeProjectId)
   }, [activeProjectId])
 
   const secretStatusPlans = useMemo(
@@ -419,7 +414,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       const res = await (requestedArchiveState === 'active' ? api.listScripts(projectId) : api.listScripts(projectId, undefined, { archiveState: requestedArchiveState }))
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       setScripts(res.scripts || [])
-      setLoadedScriptsScope({ projectId, archiveState: requestedArchiveState })
       setScriptsLoadError('')
     } catch (error) {
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
@@ -466,7 +460,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     scriptsRequestGenerationRef.current += 1
     authoringSessionsRequestGenerationRef.current += 1
     setScripts([])
-    setLoadedScriptsScope(null)
     setAuthoringSessions([])
     setCorrelationPreviews({})
     setCorrelationErrors({})
@@ -485,7 +478,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     authoringState,
     openLibrary,
     openCreateOptions,
-    openScriptAssets,
     openCreateOptionsWithNotice,
     handleEdit,
     handleSavedScript: acceptSavedScript,
@@ -717,15 +709,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     }
   }, [activeProjectId, githubApi, isProjectScopeCurrent, refresh])
 
-  const assetScripts = useMemo<ScriptOption[] | undefined>(() => (
-    loadedScriptsScope && loadedScriptsScope.projectId === activeProjectId && loadedScriptsScope.archiveState === 'active'
-      ? scripts.map(script => ({ id: script.id, name: script.name, protocol: script.protocol, refKey: script.ref_key }))
-      : undefined
-  ), [activeProjectId, loadedScriptsScope, scripts])
-
   // The Scripts page tabs. A role that cannot create scripts has no Builder.
-  const scriptPageTab = authoringState.subView === 'create-options' ? 'create-options' : authoringState.subView === 'assets' ? 'assets' : 'library'
-  const showScriptPageToggle = authoringState.subView === 'list' || authoringState.subView === 'assets' || (canManageScripts && authoringState.subView === 'create-options')
+  const scriptPageTab = authoringState.subView === 'create-options' ? 'create-options' : 'library'
+  const showScriptPageToggle = authoringState.subView === 'list' || (canManageScripts && authoringState.subView === 'create-options')
   const scriptPageControls = useMemo(() => (
     showScriptPageToggle ? (
       <PageViewToggle
@@ -734,22 +720,20 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         className="script-page-toggle topbar-page-section-toggle"
         onChange={view => {
           if (view === 'library') openLibrary()
-          else if (view === 'assets') openScriptAssets()
           else openCreateOptions()
         }}
         options={[
           { value: 'library', label: 'Script library' },
           ...(canManageScripts ? [{ value: 'create-options' as const, label: 'Script builder' }] : []),
-          { value: 'assets', label: 'Shared assets' },
         ]}
       />
     ) : null
-  ), [canManageScripts, openCreateOptions, openLibrary, openScriptAssets, scriptPageTab, showScriptPageToggle])
+  ), [canManageScripts, openCreateOptions, openLibrary, scriptPageTab, showScriptPageToggle])
 
   const scriptsTopbarContribution = useMemo(() => (
     showScriptPageToggle ? {
       id: 'scripts-page',
-      title: scriptPageTab === 'create-options' ? 'Script builder' : scriptPageTab === 'assets' ? 'Shared assets' : 'Script library',
+      title: scriptPageTab === 'create-options' ? 'Script builder' : 'Script library',
       controls: scriptPageControls,
       secondaryActions: [
         {
@@ -857,7 +841,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     // Only redirect away from a manage-only sub-view once effective access has
     // loaded; otherwise the brief default-DENY window before the access fetch
     // resolves would bounce a deep-linked create/edit view back to the library.
-    if (effectiveAccessLoaded && !canManageScripts && authoringState.subView !== 'list' && authoringState.subView !== 'assets') {
+    if (effectiveAccessLoaded && !canManageScripts && authoringState.subView !== 'list') {
       openLibrary()
       setAccessNotice('Your role in this project can view scripts but not create or edit them, so the script library is shown instead.')
     }
@@ -1140,24 +1124,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         onSaved={handleSaved}
         onOpenLibrary={openLibrary}
         onOpenCreateOptions={openCreateOptions}
-        onOpenAssets={openScriptAssets}
-        assetsView={(
-          <div className="page script-assets-page">
-            <div className="page-header">
-              <div>
-                <h2>Shared assets</h2>
-                <p className="page-subtitle">Shared by the project&apos;s scripts, so a change made here reaches every script that uses it.</p>
-              </div>
-              {!hasTopbarContributionProvider && scriptPageControls}
-            </div>
-            <div className="page-section">
-              <ObjectRepositoryPanel projectId={activeProject?.id} canManage={canManageScripts} scripts={assetScripts} />
-            </div>
-            <div className="page-section">
-              <CorrelationRulesetPanel projectId={activeProject?.id} canManage={canManageScripts} scripts={assetScripts} />
-            </div>
-          </div>
-        )}
         onImported={handleImported}
         onConfigureSecrets={() => openProjectSecrets()}
         onEditDraft={handleDraftEdit}

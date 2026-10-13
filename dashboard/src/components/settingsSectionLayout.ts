@@ -6,7 +6,6 @@ export const SETTINGS_SECTIONS = [
   { id: 'feature-access', title: 'Feature access' },
   { id: 'projects', title: 'Projects & compliance' },
   { id: 'applications', title: 'Applications & releases' },
-  { id: 'data-pools', title: 'Data pools' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
 
@@ -55,7 +54,6 @@ export const PROJECT_SETTINGS_SUBSECTIONS = [
   { id: 'github', title: 'GitHub policy' },
   { id: 'analysis', title: 'Analysis' },
   { id: 'redaction', title: 'Redaction rules' },
-  { id: 'secrets', title: 'Project secrets' },
   { id: 'analysis-policies', title: 'Browser & journey policies' },
 ] as const
 

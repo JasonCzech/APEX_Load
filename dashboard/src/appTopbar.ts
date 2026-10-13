@@ -32,6 +32,8 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       return 'Run results'
     case 'repository':
       return 'Repository'
+    case 'shared-assets':
+      return 'Shared assets'
     case 'tests':
       return 'Scenarios'
     case 'new-test':
@@ -103,10 +105,9 @@ export function importSurfaceTitle(launcher: string): string {
 
 export function pageTitleForScriptSubView(subView?: string, importLauncher?: string | null): string {
   switch (subView) {
-    // Library, Builder and Assets are tabs of the Scripts page.
+    // Library and Builder are tabs of the Scripts page.
     case 'list':
     case 'create-options':
-    case 'assets':
       return 'Scripts'
     case 'create':
       return 'Create script'

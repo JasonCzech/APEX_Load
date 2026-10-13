@@ -1,6 +1,6 @@
 import './Access.css'
 import { useSectionListKeys } from './ux/useSectionListKeys'
-import { SETTINGS_DESTINATIONS, settingsHref } from './settingsNavigation'
+import { SETTINGS_DESTINATIONS, settingsHref, settingsOwner } from './settingsNavigation'
 import { accessHref, type AccessView } from './accessDestinations'
 
 export interface AccessNavigationCounts {
@@ -70,6 +70,7 @@ export default function AccessNavigation({ currentSetting, currentView, counts =
         {POLICY_ITEMS.map(([id, label]) => (
           <a key={id} href={settingsHref(id)} aria-current={currentSetting === id ? 'page' : undefined}>
             <span>{label}</span>
+            {settingsOwner(id) === 'shared-assets' && <span className="settings-nav-elsewhere">Opens Shared assets</span>}
           </a>
         ))}
       </div>

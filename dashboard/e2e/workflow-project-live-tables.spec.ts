@@ -12,7 +12,7 @@ test('project table operator reconciles conflicts and lost responses before gove
   const request = page.context().request
   const workspace = await createWorkspace(request)
   const collection = `/api/v1/projects/${workspace.projectId}/live-tables`
-  await page.goto(`/#/repository?setting=live-tables&${scopeQuery(workspace)}`)
+  await page.goto(`/#/shared-assets?section=live-tables&${scopeQuery(workspace)}`)
   await page.reload()
   await page.getByText('Create project live table', { exact: true }).click()
   const create = page.getByRole('group', { name: 'Starting definition' })
@@ -224,6 +224,7 @@ test('a project-only run keeps attachment provenance and links to its table afte
   }).toBe(1)
   await page.screenshot({ path: testInfo.outputPath('project-table-run-reference.png'), fullPage: true })
   await refs.getByRole('link', { name: 'work · Worker', exact: true }).click()
+  await expect(page).toHaveURL(/#\/shared-assets\?section=live-tables&resourceId=/)
   await expect(page.getByRole('region', { name: 'Project live table details' }).getByRole('heading', { name: 'Shared across runs' })).toBeVisible()
   await json(await request.post(`/api/v1/tests/${run}/abort`))
   await expect.poll(async () => (await json(await request.get(`/api/v1/tests/${run}`))).status).toBe('ABORTED')

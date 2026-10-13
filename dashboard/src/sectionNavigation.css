@@ -96,7 +96,7 @@ body :is(.settings-task-navigation, .section-nav) :is(button, a):focus-visible {
   outline-offset: -2px;
 }
 
-/* Entries owned by another page (Access, Repository) say where they go, so
+/* Entries owned by another page (Access, Shared assets) say where they go, so
    they never read as an in-page section. */
 body :is(.settings-task-navigation, .section-nav) .settings-nav-elsewhere {
   margin-left: auto;

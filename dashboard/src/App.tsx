@@ -4,7 +4,7 @@ import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
 import { scriptsRouteForAuthoringState, terminalRunReportView } from './appRouting';
 import PageHeader from './components/ux/PageHeader'
-import { settingsOwner } from "./components/settingsNavigation";
+import { settingsOwner, sharedAssetsSectionForSetting } from "./components/settingsNavigation";
 import {
   Suspense,
   lazy,
@@ -205,9 +205,7 @@ const ApplicationRepositoryPage = lazy(
 );
 const AccessPage = lazy(() => import("./components/AccessPage"));
 const UserSettingsPage = lazy(() => import("./components/UserSettingsPage"));
-const SharedTestDataPage = lazy(() => import("./components/SharedTestDataPage"));
-const ProjectSecretsPage = lazy(() => import("./components/ProjectSecretsPage"));
-const ProjectLiveTablesPage = lazy(() => import("./components/ProjectLiveTablesPage"));
+const SharedAssetsPage = lazy(() => import("./components/SharedAssetsPage"));
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRecorderControlPanel = lazy(
   () => import("./components/BrowserRecorderControlPanel"),
@@ -1228,6 +1226,11 @@ function AppShell({
     "manage_projects",
     false,
   );
+  // What Shared assets lets this role change, by the API's own operations.
+  const sharedAssetsPermissions = useMemo(() => {
+    const allowed = (operation: string) => effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, operation, false);
+    return { manageDataPools: allowed("manage_data_pools"), manageScripts: allowed("manage_scripts"), manageProjects: allowed("manage_projects") };
+  }, [effectiveAccessError, effectiveAccessLoaded, effectiveAccessResources]);
   const selectProjectScopeForRoute = useCallback(
     (projectID: string) => {
       const project = projects.find((candidate) => candidate.id === projectID);
@@ -3753,16 +3756,28 @@ function AppShell({
                   accessReviewRefreshSignal={accessReviewSignal}
                 />
               )}
-              {view.page === "repository" && view.setting === "live-tables" && !routeAssetScopeBlocked && (
-                <ProjectLiveTablesPage key={activeProject?.id || "unscoped"} projectId={activeProject?.id} projectName={activeProject?.name} canCreate={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_data_pools", false)} />
+              {view.page === "shared-assets" && !routeAssetScopeBlocked && (
+                isDevUserPreview || effectiveAccessLoaded || effectiveAccessError
+                  ? <SharedAssetsPage
+                    activeProject={activeProject}
+                    applications={applications}
+                    section={view.section}
+                    resourceId={view.resourceId}
+                    permissions={sharedAssetsPermissions} />
+                  // Until access is known, do not tell an editor they cannot change anything.
+                  : <p className="page" role="status">Checking access…</p>
               )}
-              {(view.page === "settings" || ((view.page === "access" || view.page === "repository") && view.setting && view.setting !== "live-tables")) && !routeAssetScopeBlocked && (
+              {(view.page === "settings" || ((view.page === "access" || view.page === "repository") && view.setting)) && !routeAssetScopeBlocked && (
                 (!isDevUserPreview && effectiveAccessLoaded && !effectiveAccessError &&
                   (["manage_system", "manage_domains", "manage_projects"] as const).some(operation => isEffectiveOperationAllowed(effectiveAccessResources, operation, false)) && !view.setting?.startsWith("personal-")) ? <SettingsPage
                   destinationId={view.setting}
                   focusRequest={settingsFocusRequest}
                   onFocusHandled={clearSettingsFocusRequest}
-                  onDestinationChange={(setting, control) => setGuardedView({ page: settingsOwner(setting), setting, returnTo: "returnTo" in view ? view.returnTo : undefined }, () => setSettingsFocusRequest(control ? { destination: setting, control } : null))}
+                  onDestinationChange={(setting, control) => {
+                    const section = sharedAssetsSectionForSetting(setting);
+                    if (section) setGuardedView({ page: "shared-assets", section });
+                    else setGuardedView({ page: settingsOwner(setting) as "settings" | "access", setting, returnTo: "returnTo" in view ? view.returnTo : undefined }, () => setSettingsFocusRequest(control ? { destination: setting, control } : null));
+                  }}
                   theme={theme}
                   onThemeChange={setTheme}
                   authStatus={authStatus}
@@ -3773,20 +3788,7 @@ function AppShell({
                   onDomainChange={handleSidebarDomainChange}
                   onDomainsRefresh={refreshDomains}
                   onProjectUpdate={updateOuterProject}
-                /> : view.page === "repository" && view.setting === "test-data"
-                  ? (isDevUserPreview || effectiveAccessLoaded || effectiveAccessError
-                    ? <SharedTestDataPage activeProject={activeProject} canManage={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_data_pools", false)} />
-                    // Until access is known, do not tell an admin they lack the role.
-                    : <p className="page" role="status">Checking access…</p>)
-                  : view.setting === "secrets"
-                    // Project secrets: editors add them and project admins rotate them, as the API allows.
-                    ? (isDevUserPreview || effectiveAccessLoaded || effectiveAccessError
-                      ? <ProjectSecretsPage
-                        activeProject={activeProject}
-                        canCreate={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_scripts", false)}
-                        canRotate={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_projects", false)} />
-                      : <p className="page" role="status">Checking access…</p>)
-                  : <UserSettingsPage destinationId={view.setting} onDestinationChange={setting => setGuardedView({ page: "settings", setting })} theme={theme} onThemeChange={setTheme} authStatus={authStatus} />
+                /> : <UserSettingsPage destinationId={view.setting} onDestinationChange={setting => setGuardedView({ page: "settings", setting })} theme={theme} onThemeChange={setTheme} authStatus={authStatus} />
               )}
             </Suspense>
           </LazyLoadBoundary>

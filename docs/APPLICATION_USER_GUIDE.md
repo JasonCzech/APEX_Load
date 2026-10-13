@@ -101,6 +101,7 @@ Navigation shortcuts are two-key sequences: press `g`, release, then the second 
 | `g` `n` | New run |
 | `g` `t` | Scenarios |
 | `g` `s` | Scripts |
+| `g` `e` | Shared assets |
 | `g` `p` | Repository |
 | `g` `r` | Results |
 | `g` `v` | Activity |
@@ -422,7 +423,7 @@ up as an unexpanded template in your request.
 ### Data Sources And Data Pools
 
 A **data source** is declared inside the script; a **data pool** is a project-scoped,
-reusable set of rows managed under [Repository → Shared test data](#/repository?setting=test-data) and bound to a scenario.
+reusable set of rows managed under [Shared assets → Test data](#/shared-assets?section=test-data) and bound to a scenario.
 Editors and project admins create pools and change their rows there; viewers see and
 export them.
 Both are addressed the same way from a script: `{{data.name.column}}`.
@@ -500,8 +501,8 @@ script** adds a table for each alias the script's table steps use, with their co
 ### Secrets
 
 Application and project secrets back the `{{secret.NAME}}` namespace. Manage
-shared application credentials in **Settings → Applications & releases → Application Secret Vault**
-and project defaults under [Access → Project secrets](#/access?setting=secrets).
+project defaults and shared application credentials in [Shared assets → Secrets](#/shared-assets?section=secrets),
+choosing the project or one of its applications.
 Scripts assigned to one application can use the same secret name. A managed run uses
 the application selected for that run, even if a script is assigned elsewhere; direct
 validation, replay, and debugging use the script's library application assignment.
@@ -1171,17 +1172,32 @@ rules and its limits are described in
 ## Repository And Shared Assets
 
 The **Repository** page is where you manage the structural hierarchy — applications,
-releases and projects — and the project's shared test data.
+releases and projects. Its catalog lists the project's data pools too, each opening in
+Shared assets.
 
-What scripts share lives on the **Shared assets** tab of the **Scripts** page, where
-you pick scripts by name:
+**Shared assets** (under Build in the sidebar) holds what a project's scripts and
+scenarios share, one section per kind. What you can change there follows your role:
+editors and project admins create and change pools, live tables, correlation rules and
+object repositories, and add secrets; project admins also rotate secrets; viewers see
+everything and can export pools.
 
+- **Test data** holds the data pools: rows that scenarios bind by alias and scripts read
+  as `{{data.alias.column}}`. Edit a row in place, paste rows from a spreadsheet, or
+  import and export CSV.
+- **Live tables** holds project tables whose rows runs read and change, and which keep
+  their rows from one run to the next.
+- **Secrets** holds the values scripts read as `{{secret.NAME}}`, for the project or one
+  of its applications (an application's secret overrides the project's of the same
+  name). A value is never shown once it is saved.
+- **Correlation rules** hold the dynamic-value rules learned from one recording.
+  Preview a rule set against another script before applying it; applying saves a new
+  script version.
 - **Object repositories** hold named page elements that browser scripts reference.
   Seed one from a script's recorded elements, and optionally point that script's
   actions at it. A changed selector is then fixed once rather than in fourteen scripts.
-- **Correlation rulesets** hold the dynamic-value rules learned from one recording.
-  Preview a ruleset against another script before applying it; applying saves a new
-  script version.
+
+Old addresses for these (Repository › Shared test data and Live tables, Project
+secrets, the Scripts page's Shared assets tab) open the matching section.
 
 ## Settings Reference
 
@@ -1200,8 +1216,8 @@ capabilities; a help link does not grant permission.
 | Root-cause analysis and business-key lookups for a project | [Project analysis](#/settings?setting=analysis) |
 | Schedule behavior and notification delivery | [Schedule defaults](#/settings?setting=scheduling), [Notification routes](#/settings?setting=notifications) |
 | Archive and recording retention | [Archive & HAR retention](#/settings?setting=retention) |
-| Shared input rows | [Repository → Shared test data](#/repository?setting=test-data) |
-| Authentication, import policy, redaction and secrets | [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), [Project secrets](#/access?setting=secrets) |
+| Shared input rows, live tables, secrets, correlation rules and object repositories | [Shared assets](#/shared-assets) |
+| Authentication, import policy, redaction and secrets | [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), [Secrets](#/shared-assets?section=secrets) |
 
 Alert/stop policy affects runtime decisions; a run's SLA verdict and lifecycle status
 remain distinct. Shared data pools provide snapshots to runs, as described in

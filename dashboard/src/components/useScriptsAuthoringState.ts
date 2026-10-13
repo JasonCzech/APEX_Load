@@ -12,7 +12,7 @@ import { importSurfaceForLauncher, scriptImportLauncherDescriptor, type ScriptIm
 
 // An importer is opened by its launcher descriptor (scriptImportLaunchers);
 // its sub-view is derived from the launcher, never named by callers.
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'assets' | 'create' | 'edit' | 'recorder' | ScriptImportSurface
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'recorder' | ScriptImportSurface
 
 /** The non-import sub-views a caller may open directly. */
 export type ScriptsAuthoringEntryView = Exclude<ScriptsAuthoringSubView, ScriptImportSurface>
@@ -111,7 +111,6 @@ interface ScriptsAuthoringStateModel {
   setSubview: (subView: ScriptsAuthoringEntryView) => void
   openLibrary: () => void
   openCreateOptions: () => void
-  openScriptAssets: () => void
   openCreateOptionsWithNotice: (notice: string) => void
   handleEdit: (id: string) => Promise<void>
   handleSavedScript: (script: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions) => void
@@ -216,10 +215,6 @@ export function useScriptsAuthoringState({
 
   const openCreateOptions = useCallback(() => {
     setSubview('create-options')
-  }, [setSubview])
-
-  const openScriptAssets = useCallback(() => {
-    setSubview('assets')
   }, [setSubview])
 
   const openImportSurface = useCallback((launcher: string, mode?: string | null, files?: File[] | null) => {
@@ -499,7 +494,6 @@ export function useScriptsAuthoringState({
     setSubview,
     openLibrary,
     openCreateOptions,
-    openScriptAssets,
     openCreateOptionsWithNotice,
     handleEdit,
     handleSavedScript,

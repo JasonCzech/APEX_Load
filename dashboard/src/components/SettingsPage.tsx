@@ -1,11 +1,9 @@
 import AccessNavigation from './AccessNavigation'
-import RepositorySectionTabs from './RepositorySectionTabs'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import PrometheusConnectionsCard from './PrometheusConnectionsCard'
 import TabList from './ux/TabList'
 import SettingsConfirmDialog from './SettingsConfirmDialog'
-import DataPoolsManager, { type DataPoolsDraftController } from './DataPoolsManager'
 import FormField from './ux/FormField'
 import { InfrastructureSetupGuide } from './InfrastructureSetupGuide'
 import { CapacityCommitments } from './CapacityCommitments'
@@ -18,7 +16,7 @@ import ConnectionDiagnostics from './ConnectionDiagnostics'
 import RedactionPreview from './RedactionPreview'
 import NotificationDiagnostics from './NotificationDiagnostics'
 import { handleTabKey } from './tabKeyboard'
-import { SETTINGS_DESTINATIONS, destinationTitle, matchesSettingsSearch, settingsSearchControl, settingsDestination, settingsOwner } from './settingsNavigation'
+import { SETTINGS_DESTINATIONS, destinationTitle, matchesSettingsSearch, settingsSearchControl, settingsDestination, settingsOwner, settingsPageDestination } from './settingsNavigation'
 import ComputeInfrastructureCard from './ComputeInfrastructureCard'
 import ClustersCard from './ClustersCard'
 import FleetPoolsCard from './FleetPoolsCard'
@@ -65,7 +63,7 @@ import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
 import ProjectTelemetryEvidenceCard from './ProjectTelemetryEvidenceCard'
-import ProjectSecretsPanel from './ProjectSecretsPanel'
+import { sharedAssetsHref } from './sharedAssetsNavigation'
 import AnalysisPoliciesPanel from './analysisPolicies/AnalysisPoliciesPanel'
 import ProjectAnalysisSettingsPanel from './ProjectAnalysisSettingsPanel'
 import { listAllFleetPools } from './fleetCatalogModel'
@@ -138,7 +136,6 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import { ApiError } from '../hooks/apiClient'
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import type { FleetPool } from '../types/fleet'
-import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import FeatureAccessPanel, { type FeatureAccessController } from './FeatureAccessPanel'
 import { useSectionListKeys } from './ux/useSectionListKeys'
@@ -305,9 +302,8 @@ export default function SettingsPage({
   onDomainsRefresh,
   onProjectUpdate,
 }: SettingsPageProps) {
-  const destination = settingsDestination(destinationId)
+  const destination = settingsPageDestination(destinationId)
   const accessSettings = destination?.group === 'Access & Security'
-  const repositorySettings = Boolean(destination && settingsOwner(destination.id) === 'repository')
   const resourceId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('resourceId') || ''
   const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
   const returnTo = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
@@ -475,8 +471,6 @@ export default function SettingsPage({
   const [projectDraftGitHubAutomationIdentity, setProjectDraftGitHubAutomationIdentity] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
-  const [missingRequestedProjectId, setMissingRequestedProjectId] = useState('')
-  const [projectSecretCount, setProjectSecretCount] = useState(0)
   const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
   const [archiveRetentionActionError, setArchiveRetentionActionError] = useState('')
   const [archiveRetentionActionMessage, setArchiveRetentionActionMessage] = useState('')
@@ -505,10 +499,6 @@ export default function SettingsPage({
   // the effect must not re-run on every selection.
   const selectedProjectIdRef = useRef('')
   const [poolQuotaDraftDirty, setPoolQuotaDraftDirty] = useState(false)
-  // The data-pool create form's draft and list error, reported by DataPoolsManager.
-  const dataPoolsRef = useRef<DataPoolsDraftController | null>(null)
-  const [dataPoolDraft, setDataPoolDraft] = useState({ dirty: false, ready: false })
-  const [dataPoolListError, setDataPoolListError] = useState('')
   const [featureAccessDirty, setFeatureAccessDirty] = useState(false)
   activeApplicationIdRef.current = activeApplication?.id
 
@@ -1115,9 +1105,8 @@ export default function SettingsPage({
     github: projectDraftGitHubEnabled ? 'Enabled' : 'Disabled',
     analysis: selectedProject?.settings?.analysis?.revision ? `Revision ${selectedProject.settings.analysis.revision}` : 'Not set',
     redaction: `${customRuleCount} rule${customRuleCount === 1 ? '' : 's'}`,
-    secrets: `${projectSecretCount} configured`,
     'analysis-policies': selectedProject ? selectedProject.name : 'Select project',
-  }), [customRuleCount, projectDraftGitHubEnabled, projectSecretCount, projects.length, selectedProject])
+  }), [customRuleCount, projectDraftGitHubEnabled, projects.length, selectedProject])
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
     'elk-capture': activeProject?.name || 'Project scoped',
     'dynatrace-capture': activeProject?.name || 'Project scoped',
@@ -1213,21 +1202,10 @@ export default function SettingsPage({
       scopedProjects || [],
       committedProjectsRef.current,
     )
-    const requestedProjectId = consumeProjectSecretsSettingsProjectId()
-    const requestedProject = requestedProjectId
-      ? nextProjects.find(project => project.id === requestedProjectId) || null
-      : null
-    const requestedProjectMissing = Boolean(requestedProjectId && !requestedProject)
-    // A Configure secrets deep link is a governed project-scoped action. If
-    // its target disappeared (or access was revoked), do not silently switch
-    // the write-only form to a different project.
-    const nextSelected = requestedProjectMissing
-      ? null
-      : requestedProject
-        || nextProjects.find(project => project.id === activeProject?.id)
-        || nextProjects.find(project => project.id === selectedProjectIdRef.current)
-        || nextProjects[0]
-        || null
+    const nextSelected = nextProjects.find(project => project.id === activeProject?.id)
+      || nextProjects.find(project => project.id === selectedProjectIdRef.current)
+      || nextProjects[0]
+      || null
     setProjects(nextProjects)
     setSelectedProjectId(nextSelected?.id || '')
     setProjectDraftName(nextSelected?.name || '')
@@ -1237,10 +1215,6 @@ export default function SettingsPage({
     setProjectDraftMaxVUsersPerTest(nextSelected?.settings?.max_vusers_per_test !== undefined ? String(nextSelected.settings.max_vusers_per_test) : '')
     setProjectDraftMaxTestDurationMinutes(nextSelected?.settings?.max_test_duration_minutes !== undefined ? String(nextSelected.settings.max_test_duration_minutes) : '')
     loadProjectGitHubDraft(nextSelected?.settings?.github)
-    setMissingRequestedProjectId(requestedProjectMissing ? requestedProjectId : '')
-    setProjectActionError(requestedProjectMissing
-      ? 'The project requested for secret configuration is no longer available or you no longer have access. Choose an available project explicitly before entering a credential.'
-      : '')
   }, [activeProject?.id, loadProjectGitHubDraft, scopedProjects])
 
   // The provider owns loading errors now that Settings no longer fetches.
@@ -2041,8 +2015,6 @@ export default function SettingsPage({
   }
 
   const applyProjectSelection = (project: Project | null) => {
-    setMissingRequestedProjectId('')
-    setProjectSecretCount(0)
     setSelectedProjectId(project?.id || '')
     setProjectDraftName(project?.name || '')
     setProjectDraftRules(toDraftRedactionRules(project?.settings?.redaction_rules))
@@ -2175,7 +2147,6 @@ export default function SettingsPage({
     && renamingReleaseOriginalName !== null
     && renamingReleaseName.trim() !== renamingReleaseOriginalName
   const projectCreateDraftDirty = Boolean(newProjectName.trim())
-  const dataPoolCreateDraftDirty = dataPoolDraft.dirty
   const hasAnyUnsavedChanges = hasUnsavedChanges
     || domainHasUnsavedChanges
     || projectHasUnsavedChanges
@@ -2183,7 +2154,6 @@ export default function SettingsPage({
     || applicationRenameDraftDirty
     || releaseRenameDraftDirty
     || projectCreateDraftDirty
-    || dataPoolCreateDraftDirty
     || poolQuotaDraftDirty
     || featureAccessDirty
   const canSaveAllSettingsChanges = hasAnyUnsavedChanges && !policySaving
@@ -2193,7 +2163,6 @@ export default function SettingsPage({
     && (!applicationRenameDraftDirty || Boolean(renamingApplicationName?.trim()))
     && (!releaseRenameDraftDirty || Boolean(renamingReleaseName.trim()))
     && (!projectCreateDraftDirty || canManageProjects)
-    && (!dataPoolCreateDraftDirty || dataPoolDraft.ready)
     && (!poolQuotaDraftDirty || canManageProjects)
     && (!featureAccessDirty || canManageSystem)
   const saveAllSettingsChanges = async (): Promise<boolean> => {
@@ -2210,7 +2179,6 @@ export default function SettingsPage({
     if (applicationRenameDraftDirty && !(await confirmRenameApplication())) return false
     if (releaseRenameDraftDirty && !(await confirmRenameRelease())) return false
     if (applicationCreateDraftDirty && !(await createApplication())) return false
-    if (dataPoolCreateDraftDirty && !(await dataPoolsRef.current?.save())) return false
     // Creating a project changes the global active-project scope, so commit it
     // after drafts bound to the previous project have been saved.
     if (projectCreateDraftDirty && !(await createProject())) return false
@@ -2236,7 +2204,6 @@ export default function SettingsPage({
     setRenamingReleaseUpdatedAt('')
     setNewProjectName('')
     setNewProjectDomainId('')
-    dataPoolsRef.current?.discard()
   }
   const hasAnyUnsavedChangesRef = useRef(false)
   hasAnyUnsavedChangesRef.current = hasAnyUnsavedChanges
@@ -2632,7 +2599,6 @@ export default function SettingsPage({
       'feature-access': { notices: [], errors: [] },
       applications: { notices: [], errors: [] },
       projects: { notices: [], errors: [] },
-      'data-pools': { notices: [], errors: [] },
       integrations: { notices: [], errors: [] },
     }
     if (saveMessage) msgs[activeSection].notices.push(saveMessage)
@@ -2642,12 +2608,10 @@ export default function SettingsPage({
     if (applicationActionError) msgs.applications.errors.push(applicationActionError)
     if (projectActionMessage) msgs.projects.notices.push(projectActionMessage)
     if (projectActionError) msgs.projects.errors.push(projectActionError)
-    // With a pool open, its row and import errors show beside those controls instead.
-    if (dataPoolListError) msgs['data-pools'].errors.push(dataPoolListError)
     return msgs
-  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolListError, activeSection])
+  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, activeSection])
 
-  const currentDestination = destination || SETTINGS_DESTINATIONS.find(item => item.section === activeSection && !item.resource && (!item.subsection || item.subsection === ({ general: activeGeneralSubsection, capacity: activeCapacitySubsection, projects: activeProjectSubsection, integrations: activeIntegrationSubsection } as Record<string, string>)[activeSection]) && (!item.governance || item.governance === activeGovernanceSubsection)) || SETTINGS_DESTINATIONS[0]
+  const currentDestination = destination || SETTINGS_DESTINATIONS.find(item => item.section === activeSection && !item.resource && !item.sharedAssets && (!item.subsection || item.subsection === ({ general: activeGeneralSubsection, capacity: activeCapacitySubsection, projects: activeProjectSubsection, integrations: activeIntegrationSubsection } as Record<string, string>)[activeSection]) && (!item.governance || item.governance === activeGovernanceSubsection)) || SETTINGS_DESTINATIONS[0]
   // Shown in the top bar; pages start with their cards rather than a heading block.
   const destinationScopeLabel = currentDestination.scope === 'browser' ? 'This browser only' : currentDestination.scope === 'deployment' ? 'Entire deployment' : currentDestination.scope === 'domain' ? `Domain: ${activeDomain?.name || 'Select a domain'}` : `Project: ${(currentDestination.section === 'projects' ? selectedProject?.name : activeProject?.name) || 'Select a project'}`
   const [searchFocusTarget, setSearchFocusTarget] = useState<{ destination: string; control: string } | null>(null)
@@ -2683,9 +2647,8 @@ export default function SettingsPage({
   const activeSectionMessages = sectionMessages[activeSection]
   const settingsTopbarContribution = useMemo(() => ({
     id: 'settings-page',
-    title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : settingsOwner(currentDestination.id) === 'repository' ? 'Shared test data' : 'Settings',
+    title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : 'Settings',
     controls: <>
-      {repositorySettings && <RepositorySectionTabs current="test-data" />}
       <span className="ux-save-status settings-scope-status">Applies to: {destinationScopeLabel}</span>
       {!hasAnyUnsavedChanges && <span className="ux-save-status" role="status">{currentDestination.id.endsWith('-capture') ? 'Connection forms save independently' : 'No pending changes'}</span>}
     </>,
@@ -2717,7 +2680,7 @@ export default function SettingsPage({
       },
     ],
     priority: 20,
-  }), [currentDestination.id, canSaveAllSettingsChanges, destinationScopeLabel, hasAnyUnsavedChanges, repositorySettings, settingsMutationBusy, validationErrors.length])
+  }), [currentDestination.id, canSaveAllSettingsChanges, destinationScopeLabel, hasAnyUnsavedChanges, settingsMutationBusy, validationErrors.length])
 
   useTopbarContribution(settingsTopbarContribution)
 
@@ -2745,13 +2708,13 @@ export default function SettingsPage({
       </div>
 
       {/* The section list is always shown, like every page's section list; it is not collapsible. */}
-      <div className={`settings-tabbed-layout ${repositorySettings ? "navigation-collapsed" : ""}`}>
+      <div className="settings-tabbed-layout">
         {accessSettings && <AccessNavigation currentSetting={destinationId} />}
-        <nav ref={settingsNavRef} hidden={accessSettings || repositorySettings} id="settings-task-navigation" className="settings-task-navigation is-open" aria-label="Settings sections">
+        <nav ref={settingsNavRef} hidden={accessSettings} id="settings-task-navigation" className="settings-task-navigation is-open" aria-label="Settings sections">
           <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
             const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
-            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{settingsOwner(item.id) !== 'settings' && <span className="settings-nav-elsewhere">{settingsOwner(item.id) === 'access' ? 'Opens Access' : 'Opens Repository'}</span>}{(() => {
+            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{settingsOwner(item.id) !== 'settings' && <span className="settings-nav-elsewhere">{settingsOwner(item.id) === 'access' ? 'Opens Access' : 'Opens Shared assets'}</span>}{(() => {
               const count = settingsIssuesForDestination(validationIssues, item).length
               return count ? <span className="settings-nav-issue-count" aria-label={`${count} validation issue${count === 1 ? '' : 's'}`}>{count}</span> : null
             })()}</button>)}</div> : null
@@ -2769,7 +2732,7 @@ export default function SettingsPage({
           {projectHasUnsavedChanges && <section aria-label="Pending project edits" className="settings-subsection"><h3>Project: {selectedProject?.name}</h3><p>Changed fields: {projectChangedFields.join(', ')}</p><button className="btn btn-primary" type="button" disabled={!canManageProjects || !!projectDraftValidationError || settingsMutationBusy || policySaving} onClick={() => void saveProjectCompliance()}>Save project changes</button> <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy || policySaving} onClick={discardProjectChanges}>Cancel project changes</button></section>}
           {currentDestination.group === 'Infrastructure' && canManageSystem && <InfrastructureSetupGuide />}
           {currentDestination.id === 'allocations' && <CapacityCommitments reservations={savedSettings.capacity_planning.reservations || []} projectId={activeProject?.id} projects={projects} pools={fleetPools || []} />}
-          {returnTo && !(repositorySettings && /^#\/repository(?:\?|$)/.test(returnTo)) && <a className="btn btn-secondary" href={returnTo}>{/^#\/repository(?:\?|$)/.test(returnTo) ? 'Return to repository' : 'Return to originating workflow'}</a>}
+          {returnTo && <a className="btn btn-secondary" href={returnTo}>{/^#\/repository(?:\?|$)/.test(returnTo) ? 'Return to repository' : 'Return to originating workflow'}</a>}
           {currentDestination.id === 'preferences' && <section aria-label="Personal preferences"><PersonalSettings theme={theme} onThemeChange={onThemeChange} authStatus={authStatus} /></section>}
           {destination?.resource && <section className="settings-resource-editor">
 <button className="btn btn-secondary" onClick={() => onNavigate?.('fleet')}>Return to Fleet monitoring</button>
@@ -4825,14 +4788,10 @@ export default function SettingsPage({
             </div>
 
             {activeApplication && (
-              <ProjectSecretsPanel
-                projectId={activeApplication.project_id || activeProject?.id || 'default'}
-                projectName={activeProject?.name || activeApplication.project_id || 'Default Project'}
-                applicationId={activeApplication.id}
-                applicationName={activeApplication.name}
-                canCreate={canManageScripts || canManageProjects || canManageSystem}
-                canRotate={canManageProjects || canManageSystem}
-              />
+              <div className="settings-subsection">
+                <span className="setting-label">Application secrets</span>
+                <p className="setting-desc">{`Secrets for ${activeApplication.name} are in Shared assets, beside the project's: `}<a href={sharedAssetsHref('secrets', activeApplication.id)}>Open Secrets</a></p>
+              </div>
             )}
 
             <div className="setting-row">
@@ -5423,34 +5382,18 @@ export default function SettingsPage({
                 </section>
 
                 <section
-                  id="settings-projects-panel-secrets"
-                  className="settings-subpanel"
-                  role="tabpanel"
-                  aria-labelledby="settings-projects-tab-secrets"
-                  hidden={activeProjectSubsection !== 'secrets'}
-                >
-                  <ProjectSecretsPanel
-                    projectId={selectedProject.id}
-                    projectName={selectedProject.name}
-                    canCreate={canManageScripts || canManageProjects || canManageSystem}
-                    canRotate={canManageProjects || canManageSystem}
-                    onCountChange={setProjectSecretCount}
-                  />
-                </section>
-
-                <section
                   id="settings-projects-panel-analysis-policies"
                   className="settings-subpanel"
                   role="tabpanel"
                   aria-labelledby="settings-projects-tab-analysis-policies"
                   hidden={activeProjectSubsection !== 'analysis-policies'}
                 >
-                  {/* Kept mounted (hidden) like the secrets panel, so a policy
-                      draft and its unsaved-work guard survive a tab switch. */}
+                  {/* Kept mounted (hidden), so a policy draft and its
+                      unsaved-work guard survive a tab switch. */}
                   <AnalysisPoliciesPanel key={selectedProject.id} projectId={selectedProject.id} canEdit={canManageScripts || canManageProjects || canManageSystem} />
                 </section>
 
-                {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && activeProjectSubsection !== 'analysis-policies' && activeProjectSubsection !== 'analysis' && (
+                {activeProjectSubsection !== 'catalog' && activeProjectSubsection !== 'analysis-policies' && activeProjectSubsection !== 'analysis' && (
                   <div className="settings-subsection settings-subsection-actions">
                     {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
                     {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}
@@ -5469,56 +5412,11 @@ export default function SettingsPage({
               </>
             ) : (
               <div className="settings-subsection settings-empty-subpanel">
-                <p className="new-test-inline-note">
-                  {missingRequestedProjectId
-                    ? 'The requested Project Secrets target is unavailable. No fallback project was selected.'
-                    : 'Select a project to edit its compliance defaults.'}
-                </p>
-                {missingRequestedProjectId && projects.length > 0 && (
-                  <button className="btn btn-secondary" type="button" onClick={() => selectDestination('projects')}>
-                    Choose an available project
-                  </button>
-                )}
+                <p className="new-test-inline-note">Select a project to edit its compliance defaults.</p>
               </div>
             )}
           </div>
           </fieldset>
-        </div>
-
-        <div
-          id="settings-section-data-pools"
-          className={sectionClass}
-          hidden={activeSection !== 'data-pools'}
-          style={{ order: getSectionOrder('data-pools') }}
-        >
-          <DataPoolsManager
-            ref={dataPoolsRef}
-            activeProject={activeProject}
-            projects={projects}
-            preferredPoolId={destinationId === 'test-data' ? resourceId : undefined}
-            // Settings shows only to administrators, who manage pools.
-            canManage
-            onDraftChange={setDataPoolDraft}
-            onListError={setDataPoolListError}
-            noProjectHint={applicationCreateProjects.length === 0 ? (
-              <div className="settings-inline-actions">
-                <span className="new-test-inline-note">
-                  {`No projects in ${selectedDomain?.name || 'this domain'} yet. Data pools belong to a project.`}
-                </span>
-                {canManageProjects && (
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    type="button"
-                    onClick={() => {
-                      selectDestination('projects')
-                    }}
-                  >
-                    Create a project
-                  </button>
-                )}
-              </div>
-            ) : undefined}
-          />
         </div>
 
         <div

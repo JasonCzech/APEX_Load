@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import ProjectLiveTablesPage from './ProjectLiveTablesPage'
+import ProjectLiveTablesPanel from './ProjectLiveTablesPanel'
 import { ApiError } from '../hooks/apiClient'
 import type { ProjectLiveTableView } from '../types/projectLiveTables'
 
@@ -16,7 +16,7 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 const button = (label: string) => [...container.querySelectorAll('button')].find(element => element.textContent === label)!
 async function click(label: string) { await act(async () => button(label).click()) }
 async function open() {
-  await act(async () => root.render(<ProjectLiveTablesPage projectId="project" />))
+  await act(async () => root.render(<ProjectLiveTablesPanel projectId="project" />))
   await act(async () => { const select = container.querySelector('select')!; select.value = 'table'; select.dispatchEvent(new Event('change', { bubbles: true })) })
 }
 function changeInput(element: HTMLInputElement, value: string) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })) }
@@ -262,15 +262,9 @@ it('requires resume before new edits to a quiesced table', async () => {
 })
 
 
-it('opens a scoped project table reference and follows another reference on the same page', async () => {
-  const previousHash = window.location.hash
-  try {
-    window.location.hash = '#/repository?setting=live-tables&projectId=project&resourceId=table'
-    await act(async () => root.render(<ProjectLiveTablesPage projectId="project" />))
-    expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'table'])
-    await act(async () => { window.location.hash = '#/repository?setting=live-tables&projectId=project&resourceId=another'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
-    expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'another'])
-    await act(async () => { window.location.hash = '#/repository?setting=live-tables&projectId=foreign&resourceId=wrong-project'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
-    expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'another'])
-  } finally { window.location.hash = previousHash }
+it('opens the table a link names and follows another link on the same page', async () => {
+  await act(async () => root.render(<ProjectLiveTablesPanel projectId="project" selectedId="table" />))
+  expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'table'])
+  await act(async () => root.render(<ProjectLiveTablesPanel projectId="project" selectedId="another" />))
+  expect(api.getProjectLiveTable.mock.lastCall?.slice(0, 2)).toEqual(['project', 'another'])
 })

@@ -76,14 +76,6 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => projectState,
 }))
 
-vi.mock('./ObjectRepositoryPanel', () => ({
-  default: ({ projectId, canManage, scripts }: { projectId?: string; canManage?: boolean; scripts?: Array<{ id: string }> }) => <div data-testid="object-repositories" data-scripts={scripts ? scripts.map(script => script.id).join(',') : 'server search'}>{`Object repositories for ${projectId}${canManage ? ', editable' : ', read only'}`}</div>,
-}))
-
-vi.mock('./CorrelationRulesetPanel', () => ({
-  default: ({ projectId, canManage }: { projectId?: string; canManage?: boolean }) => <div data-testid="correlation-rulesets">{`Correlation rulesets for ${projectId}${canManage ? ', editable' : ', read only'}`}</div>,
-}))
-
 vi.mock('./ScriptEditor', () => ({
   default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
     <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
@@ -917,7 +909,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons.map(button => button.textContent)).toEqual(['Script library', 'Script builder', 'Shared assets'])
+    expect(toggleButtons.map(button => button.textContent)).toEqual(['Script library', 'Script builder'])
     expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('true')
 
     const builderButton = toggleButtons.find(button => button.textContent?.includes('Script builder'))
@@ -929,66 +921,14 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons).toHaveLength(3)
+    expect(toggleButtons).toHaveLength(2)
     expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('false')
     expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).toContain('Start New Script')
     expect(container.querySelectorAll('[data-testid="topbar-contribution"] .script-page-toggle')).toHaveLength(1)
   })
 
-  it('keeps object repositories and correlation rulesets on their own Shared assets tab', async () => {
-    await act(async () => {
-      root.render(
-        <TopbarContributionProvider>
-          <TopbarContributionHarness />
-          <ScriptsPage />
-        </TopbarContributionProvider>,
-      )
-    })
-    await flushPromises()
-    expect(container.querySelector('[data-testid="object-repositories"]')).toBeNull()
-    expect(container.textContent).not.toContain('Advanced:')
-
-    const assetsButton = Array.from(container.querySelectorAll('.script-page-toggle button')).find(button => button.textContent === 'Shared assets')
-    expect(assetsButton).toBeDefined()
-    await act(async () => { assetsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await flushPromises()
-
-    expect(assetsButton?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.querySelector('[data-testid="object-repositories"]')?.textContent).toBe('Object repositories for project-1, editable')
-    expect(container.querySelector('[data-testid="correlation-rulesets"]')?.textContent).toBe('Correlation rulesets for project-1, editable')
-    expect(container.querySelector('.script-library-table, .library-toolbar')).toBeNull()
-    // The pickers search the active scripts the page already listed.
-    expect(container.querySelector('[data-testid="object-repositories"]')?.getAttribute('data-scripts')).toBe('script-1')
-  })
-
-  it('lets the Shared assets pickers ask the server while the library lists archived scripts', async () => {
-    await act(async () => {
-      root.render(
-        <TopbarContributionProvider>
-          <TopbarContributionHarness />
-          <ScriptsPage />
-        </TopbarContributionProvider>,
-      )
-    })
-    await flushPromises()
-    apiMock.listScripts.mockResolvedValueOnce({ scripts: [{ id: 'archived-1', name: 'Old flow', protocol: 'http', version: '1', created_at: '', archived_at: '2026-09-01T00:00:00Z' }], count: 1 })
-    const archiveState = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Script archive state'))?.querySelector('select')
-    expect(archiveState).toBeTruthy()
-    await act(async () => {
-      archiveState!.value = 'archived'
-      archiveState!.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    await flushPromises()
-    expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1', undefined, { archiveState: 'archived' })
-
-    const assetsButton = Array.from(container.querySelectorAll('.script-page-toggle button')).find(button => button.textContent === 'Shared assets')
-    await act(async () => { assetsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await flushPromises()
-    expect(container.querySelector('[data-testid="object-repositories"]')?.getAttribute('data-scripts')).toBe('server search')
-  })
-
-  it('opens Shared assets read only for a role that cannot manage scripts', async () => {
+  it('sends a role that cannot manage scripts from the builder to the library', async () => {
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
       authenticated: true,
@@ -1000,22 +940,6 @@ describe('ScriptsPage', () => {
         operations: [{ id: 'manage_scripts', label: 'Manage scripts', allowed: false }],
       }],
     })
-    await act(async () => {
-      root.render(
-        <TopbarContributionProvider>
-          <TopbarContributionHarness />
-          <ScriptsPage initialMode="assets" />
-        </TopbarContributionProvider>,
-      )
-    })
-    await flushPromises()
-
-    // A viewer has no Builder tab and is not bounced back to the library.
-    expect(Array.from(container.querySelectorAll('.script-page-toggle button')).map(button => button.textContent)).toEqual(['Script library', 'Shared assets'])
-    expect(container.querySelector('[data-testid="object-repositories"]')?.textContent).toBe('Object repositories for project-1, read only')
-    expect(container.textContent).not.toContain('can view scripts but not create or edit them')
-
-    // The same access does bounce a manage-only view, so the access had loaded.
     await act(async () => {
       root.render(
         <TopbarContributionProvider>

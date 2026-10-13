@@ -64,6 +64,6 @@ it('retains archived project attachment identity without presenting global table
   expect(container.textContent).toContain('global row counts and operations are not attributed to this run')
   expect(container.textContent).not.toContain('Record reconciliation')
   expect(container.textContent).not.toContain('Table operations')
-  expect(container.querySelector('a')?.getAttribute('href')).toBe('#/repository?setting=live-tables&projectId=project&resourceId=shared')
+  expect(container.querySelector('a')?.getAttribute('href')).toBe('#/shared-assets?section=live-tables&resourceId=shared&projectId=project')
  } finally { await act(async () => root.unmount()) }
 })

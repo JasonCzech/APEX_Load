@@ -1,6 +1,6 @@
 # Project live tables
 
-Project live tables share runtime data between concurrent runs in one project and retain that data after a run finishes. Open **Repository → Live tables** in the intended project. Existing **Shared test data** pools keep their snapshot behavior; creating a project table does not convert or modify a pool.
+Project live tables share runtime data between concurrent runs in one project and retain that data after a run finishes. Open **Shared assets → Live tables** in the intended project. Existing data pools (**Shared assets → Test data**) keep their snapshot behavior; creating a project table does not convert or modify a pool.
 
 | Choice | Data lifetime |
 | --- | --- |

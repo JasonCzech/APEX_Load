@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { SETTINGS_DESTINATIONS, settingsDestination, settingsHref, settingsOwner, workspaceHref } from './settingsNavigation'
+import { SETTINGS_DESTINATIONS, settingsDestination, settingsHref, settingsOwner, settingsPageDestination, workspaceHref } from './settingsNavigation'
 import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
 
 describe('settings task navigation', () => {
-  it('opens project live tables as a separate repository destination', () => {
-    expect(settingsOwner('live-tables')).toBe('repository')
-    expect(parseAppViewFromHash(settingsHref('live-tables', '#/repository?projectId=p'))).toMatchObject({ page: 'repository', setting: 'live-tables', projectId: 'p' })
+  it('sends test data, live tables and project secrets to Shared assets, still found by name', () => {
+    expect(settingsOwner('live-tables')).toBe('shared-assets')
+    expect(parseAppViewFromHash(settingsHref('live-tables', '#/repository?projectId=p'))).toEqual({ page: 'shared-assets', section: 'live-tables', projectId: 'p' })
+    expect(parseAppViewFromHash(settingsHref('test-data', '#/tests?projectId=p', 'pool-1'))).toEqual({ page: 'shared-assets', section: 'test-data', resourceId: 'pool-1', projectId: 'p' })
+    expect(parseAppViewFromHash(settingsHref('secrets', '#/access?projectId=p'))).toEqual({ page: 'shared-assets', section: 'secrets', projectId: 'p' })
     expect(settingsDestination('test-data')?.title).toBe('Shared data pools')
+    expect(settingsPageDestination('secrets')).toBeUndefined()
+    expect(settingsPageDestination('redaction')?.id).toBe('redaction')
   })
   it('gives every destination one address with preserved workspace context', () => {
     expect(new Set(SETTINGS_DESTINATIONS.map(item => item.id)).size).toBe(SETTINGS_DESTINATIONS.length)
-    for (const destination of SETTINGS_DESTINATIONS) {
+    for (const destination of SETTINGS_DESTINATIONS.filter(item => !item.sharedAssets)) {
       const hash = settingsHref(destination.id, '#/fleet?projectId=p&applicationId=a&releaseId=r&category=telemetry')
       expect(parseAppViewFromHash(hash)).toEqual({ page: settingsOwner(destination.id), setting: destination.id, projectId: 'p', applicationId: 'a', releaseId: 'r', returnTo: '#/fleet?projectId=p&applicationId=a&releaseId=r&category=telemetry' })
       expect(viewToLocationHash(parseAppViewFromHash(hash))).toBe(hash)

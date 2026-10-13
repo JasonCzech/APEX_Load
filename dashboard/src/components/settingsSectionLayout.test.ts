@@ -31,13 +31,12 @@ describe('settingsSectionLayout', () => {
       'feature-access',
       'projects',
       'applications',
-      'data-pools',
       'integrations',
     ])
   })
 
   it('inserts the Domains section before Applications in existing persisted orders', () => {
-    expect(mergeSettingsOrder(['general', 'thresholds', 'capacity', 'applications', 'projects', 'data-pools', 'integrations'])).toEqual([
+    expect(mergeSettingsOrder(['general', 'thresholds', 'capacity', 'applications', 'projects', 'data-pools', 'integrations'] as never)).toEqual([
       'general',
       'thresholds',
       'capacity',
@@ -45,7 +44,6 @@ describe('settingsSectionLayout', () => {
       'feature-access',
       'projects',
       'applications',
-      'data-pools',
       'integrations',
     ])
   })
@@ -113,7 +111,6 @@ describe('settingsSectionLayout', () => {
       'github',
       'analysis',
       'redaction',
-      'secrets',
       'analysis-policies',
     ])
     expect(INTEGRATION_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([

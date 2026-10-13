@@ -20,6 +20,7 @@ const PAGE_HELP: Partial<Record<AppView['page'], HelpTarget>> = {
   results: userGuide('results'),
   report: userGuide('results'),
   repository: userGuide('shared-assets', 'repository-and-shared-assets'),
+  'shared-assets': userGuide('shared-assets', 'repository-and-shared-assets'),
   settings: userGuide('shared-assets', 'settings-reference'),
   access: adminGuide('administration', 'the-access-console'),
 }
@@ -28,7 +29,6 @@ function helpTarget(view: AppView, scriptsSubView?: string): HelpTarget | undefi
   if (view.page === 'scripts') {
     // Importers opened from script builder keep mode=create in the URL; the
     // open sub-view says which help applies.
-    if (scriptsSubView ? scriptsSubView === 'assets' : view.mode === 'assets') return userGuide('shared-assets', 'repository-and-shared-assets')
     return userGuide(view.mode === 'import' || scriptsSubView?.endsWith('import') ? 'imports' : 'authoring')
   }
   if (view.page === 'settings' && view.setting === 'clusters') return adminGuide('clusters')

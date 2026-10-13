@@ -11,6 +11,8 @@ const ROUTES: Array<{ hash: string; name: string }> = [
   { hash: '#/tests?view=plans', name: 'Execution plans' },
   { hash: '#/scripts?mode=list', name: 'Script library' },
   { hash: '#/scripts?mode=create', name: 'Script builder' },
+  { hash: '#/shared-assets', name: 'Shared assets' },
+  { hash: '#/shared-assets?section=secrets', name: 'Shared assets (secrets)' },
   { hash: '#/results', name: 'Results' },
   { hash: '#/monitoring?category=overview', name: 'Monitoring' },
   { hash: '#/fleet', name: 'Fleet' },

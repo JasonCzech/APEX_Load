@@ -159,7 +159,7 @@ it('shows project-only attachment references without fetching values or attribut
   expect(container.textContent).not.toContain('92345')
   expect(container.textContent).not.toContain('never-disclose')
   const link = container.querySelector('a')!
-  expect(link.getAttribute('href')).toBe('#/repository?setting=live-tables&projectId=project&resourceId=shared%2Ftable')
+  expect(link.getAttribute('href')).toBe('#/shared-assets?section=live-tables&resourceId=shared%2Ftable&projectId=project')
   expect(container.querySelector('dl')).toBeNull()
   expect(request).toHaveBeenCalledTimes(1)
 })

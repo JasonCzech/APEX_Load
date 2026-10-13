@@ -1,4 +1,5 @@
 import { settingsDestination, settingsOwner } from './components/settingsNavigation'
+import { isSharedAssetsSection } from './components/sharedAssetsNavigation'
 import { describe, expect, it } from 'vitest'
 import { articleBlocks, articleForSection, helpArticles, helpArticleHash, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
 import { parseMarkdown } from './components/repositoryGuideMarkdown'
@@ -78,7 +79,7 @@ describe('Help catalogue and content contracts', () => {
       }
     }
   })
-  it('keeps task links synchronized with the current Settings, Access and Repository owners', async () => {
+  it('keeps task links synchronized with the current Settings, Access and Shared assets owners', async () => {
     const paths = new Set<string>()
     for (const article of helpArticles.filter(a => a.path.includes('/HELP_') || ['docs/APPLICATION_USER_GUIDE.md', 'docs/ADMIN_USER_GUIDE.md', 'docs/API_USER_GUIDE.md'].includes(a.path))) {
       if (paths.has(article.path)) continue
@@ -87,6 +88,10 @@ describe('Help catalogue and content contracts', () => {
       for (const match of source.matchAll(/\]\(#\/(settings|access|repository)\?setting=([^&)]+)[^)]*\)/g)) {
         expect(settingsDestination(match[2]), match[0]).toBeDefined()
         expect(settingsOwner(match[2]), match[0]).toBe(match[1])
+      }
+      // What scripts share links to its Shared assets section.
+      for (const match of source.matchAll(/\]\(#\/shared-assets(?:\?section=([^&)]+))?[^)]*\)/g)) {
+        if (match[1]) expect(isSharedAssetsSection(match[1]), match[0]).toBe(true)
       }
     }
   })

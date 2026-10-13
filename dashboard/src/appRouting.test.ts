@@ -121,13 +121,27 @@ describe('appRouting', () => {
     expect(resetProjectScopedAssetView(har, 'p2')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p2' })
   })
 
+  it('opens Shared assets by section and row, and sends the old homes of what it holds there', () => {
+    const view = parseAppViewFromHash('#/shared-assets?section=test-data&resourceId=pool-1&projectId=p1')
+    expect(view).toEqual({ page: 'shared-assets', section: 'test-data', resourceId: 'pool-1', projectId: 'p1' })
+    expect(viewToLocationHash(view)).toBe('#/shared-assets?section=test-data&resourceId=pool-1&projectId=p1')
+    expect(parseAppViewFromHash('#/shared-assets?section=nonsense')).toEqual({ page: 'shared-assets' })
+    expect(viewToLocationHash({ page: 'shared-assets' })).toBe('#/shared-assets')
+    expect(navPageForAppView({ page: 'shared-assets' })).toBe('shared-assets')
+    // Repository › Shared test data and Live tables, Project secrets (Access or Settings), the Scripts tab.
+    expect(parseAppViewFromHash('#/repository?setting=test-data&resourceId=pool-1&projectId=p1')).toEqual({ page: 'shared-assets', section: 'test-data', resourceId: 'pool-1', projectId: 'p1' })
+    expect(parseAppViewFromHash('#/repository?setting=live-tables&resourceId=t1&projectId=p1')).toEqual({ page: 'shared-assets', section: 'live-tables', resourceId: 't1', projectId: 'p1' })
+    expect(parseAppViewFromHash('#/access?setting=secrets&projectId=p1')).toEqual({ page: 'shared-assets', section: 'secrets', projectId: 'p1' })
+    expect(parseAppViewFromHash('#/settings?setting=secrets')).toEqual({ page: 'shared-assets', section: 'secrets' })
+    expect(parseAppViewFromHash('#/scripts?mode=assets&projectId=p1')).toEqual({ page: 'shared-assets', section: 'object-repositories', projectId: 'p1' })
+    // Other settings stay where they are.
+    expect(parseAppViewFromHash('#/access?setting=redaction')).toEqual({ page: 'access', setting: 'redaction' })
+  })
+
   it('writes a scripts route every authoring state reopens at', () => {
     const scope = { projectId: 'p1' }
     const route = (state: Parameters<typeof scriptsRouteForAuthoringState>[0]) => parseAppViewFromHash(viewToLocationHash(scriptsRouteForAuthoringState(state, scope)))
     expect(route({ subView: 'list', editingId: null })).toEqual({ page: 'scripts', mode: 'list', projectId: 'p1' })
-    expect(route({ subView: 'assets', editingId: null })).toEqual({ page: 'scripts', mode: 'assets', projectId: 'p1' })
-    expect(parseAppViewFromHash('#/scripts?mode=assets')).toEqual({ page: 'scripts', mode: 'assets' })
-    expect(resetProjectScopedAssetView({ page: 'scripts', mode: 'assets', projectId: 'p1' }, 'p2')).toEqual({ page: 'scripts', mode: 'assets', projectId: 'p2' })
     expect(route({ subView: 'edit', editingId: 'script-1' })).toEqual({ page: 'scripts', mode: 'edit', scriptId: 'script-1', projectId: 'p1' })
     expect(route({ subView: 'traffic_har', editingId: null, importLauncher: 'traffic_har', importMode: 'auto_detect' })).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p1' })
     // The recorder, an unsaved draft and the create options have no route of
@@ -329,6 +343,12 @@ describe('appRouting', () => {
       projectId: 'project-b',
     })
     expect(resetProjectScopedAssetView({ page: 'test', testId: 'run-a', tab: 'archive' }, 'project-b')).toEqual({ page: 'results' })
+    // A Shared assets section stays open; the pool, table or application it named was the old project's.
+    expect(resetProjectScopedAssetView({ page: 'shared-assets', section: 'live-tables', resourceId: 'table-a', projectId: 'project-a' }, 'project-b')).toEqual({
+      page: 'shared-assets',
+      section: 'live-tables',
+      projectId: 'project-b',
+    })
     expect(resetProjectScopedAssetView({ page: 'test', testId: 'run-a', tab: 'load-impact' }, 'project-b')).toEqual({ page: 'results' })
     expect(resetProjectScopedAssetView({ page: 'report', testId: 'run-a' }, 'project-b')).toEqual({ page: 'results' })
   })

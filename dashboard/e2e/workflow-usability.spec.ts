@@ -243,9 +243,9 @@ test('Shared assets picks scripts by name, seeds a bound repository, and meets W
   await page.addInitScript(value => { try { localStorage.setItem('apexload.theme', value) } catch { /* private mode */ } }, theme)
   // A hash-only goto keeps the document, so leave it to load the theme afresh.
   await page.goto('about:blank')
-  await page.goto(`/#/scripts?mode=list&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Shared assets', exact: true }).click()
-  await expect(page).toHaveURL(/mode=assets/)
+  // The Scripts page's old Shared assets address opens the section that holds the repositories.
+  await page.goto(`/#/scripts?mode=assets&${scopeQuery(workspace)}`)
+  await expect(page).toHaveURL(/#\/shared-assets\?section=object-repositories/)
   await page.getByRole('button', { name: 'New repository', exact: true }).click()
   // The script is chosen from the project's scripts by name, not typed as an id.
   const picker = form.getByRole('combobox', { name: 'Script', exact: true })
@@ -267,9 +267,11 @@ test('Shared assets picks scripts by name, seeds a bound repository, and meets W
  const stored = await json(await request.get(`/api/v1/scripts/${scriptId}`)) as { script?: { actions?: Array<{ object_ref?: string }> } }
  expect((stored.script?.actions || []).map(action => Boolean(action.object_ref))).toEqual([true, true])
 
- // A reload returns to the tab, and the library no longer carries the panels.
+ // A reload returns to the section, and the script library no longer carries the panels.
  await page.reload()
- await expect(page.getByRole('button', { name: 'Shared assets', exact: true })).toHaveAttribute('aria-pressed', 'true')
- await page.getByRole('button', { name: 'Script library', exact: true }).click()
+ await expect(page.getByRole('navigation', { name: 'Shared assets' }).getByRole('link', { name: 'Object repositories', exact: true })).toHaveAttribute('aria-current', 'page')
+ await page.goto(`/#/scripts?mode=list&${scopeQuery(workspace)}`)
+ await expect(page.locator('main').getByRole('button', { name: 'Script library', exact: true })).toBeVisible()
+ await expect(page.locator('main').getByRole('button', { name: 'Shared assets', exact: true })).toHaveCount(0)
  await expect(page.getByRole('heading', { name: 'Object repositories' })).toHaveCount(0)
 })

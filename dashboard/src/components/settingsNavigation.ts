@@ -1,3 +1,4 @@
+import { sharedAssetsHref, type SharedAssetsSection } from './sharedAssetsNavigation'
 import type { SettingsSectionId } from './settingsSectionLayout'
 
 export interface SettingsDestination {
@@ -9,6 +10,8 @@ export interface SettingsDestination {
   governance?: string
   scope: 'deployment' | 'domain' | 'project' | 'browser'
   resource?: 'cloud' | 'clusters' | 'pools' | 'allocation' | 'generators'
+  /** Lives on the Shared assets page: Settings search and Access list it, and its links open that section. */
+  sharedAssets?: SharedAssetsSection
 }
 
 export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
@@ -46,18 +49,29 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'features', group: 'Access & Security', title: 'Domain feature policy', section: 'feature-access', scope: 'domain' },
   { id: 'imports', group: 'Access & Security', title: 'Import credential policy', section: 'general', subsection: 'governance', governance: 'script-imports', scope: 'deployment' },
   { id: 'redaction', group: 'Access & Security', title: 'Project redaction rules', section: 'projects', subsection: 'redaction', scope: 'project' },
-  { id: 'secrets', group: 'Access & Security', title: 'Project secrets', section: 'projects', subsection: 'secrets', scope: 'project' },
+  { id: 'secrets', group: 'Access & Security', title: 'Project secrets', section: 'projects', scope: 'project', sharedAssets: 'secrets' },
   { id: 'audit', group: 'Access & Security', title: 'Governance audit', section: 'general', subsection: 'governance', governance: 'recent-audit-events', scope: 'deployment' },
   { id: 'thresholds', group: 'Alerts & Scheduling', title: 'Alert & stop policies', section: 'thresholds', scope: 'deployment' },
   { id: 'notifications', group: 'Alerts & Scheduling', title: 'Notification routes', section: 'integrations', subsection: 'notifications', scope: 'deployment' },
   { id: 'scheduling', group: 'Alerts & Scheduling', title: 'Schedule defaults', section: 'general', subsection: 'governance', governance: 'schedule-defaults', scope: 'deployment' },
   { id: 'retention', group: 'Data & Retention', title: 'Archive & HAR retention', section: 'capacity', subsection: 'retention', scope: 'deployment' },
-  { id: 'test-data', group: 'Test Data', title: 'Shared data pools', section: 'data-pools', scope: 'project' },
-  { id: 'live-tables', group: 'Test Data', title: 'Project live tables', section: 'data-pools', scope: 'project' },
+  { id: 'test-data', group: 'Test Data', title: 'Shared data pools', section: 'projects', scope: 'project', sharedAssets: 'test-data' },
+  { id: 'live-tables', group: 'Test Data', title: 'Project live tables', section: 'projects', scope: 'project', sharedAssets: 'live-tables' },
 ]
 
 export function settingsDestination(id?: string): SettingsDestination | undefined {
   return SETTINGS_DESTINATIONS.find(item => item.id === id)
+}
+
+/** A destination the Settings page itself shows; Shared assets ones open elsewhere. */
+export function settingsPageDestination(id?: string): SettingsDestination | undefined {
+  const destination = settingsDestination(id)
+  return destination?.sharedAssets ? undefined : destination
+}
+
+/** The Shared assets section a setting's address now opens, if it moved there. */
+export function sharedAssetsSectionForSetting(id: string | undefined): SharedAssetsSection | undefined {
+  return settingsDestination(id)?.sharedAssets
 }
 
 /** A destination's one name, reused by both section lists and its page card. */
@@ -65,12 +79,15 @@ export function destinationTitle(id: string): string {
   return settingsDestination(id)?.title ?? id
 }
 
-export function settingsOwner(id: string): 'settings' | 'access' | 'repository' {
+export function settingsOwner(id: string): 'settings' | 'access' | 'shared-assets' {
+  if (settingsDestination(id)?.sharedAssets) return 'shared-assets'
   if (settingsDestination(id)?.group === 'Access & Security') return 'access'
-  return id === 'test-data' || id === 'live-tables' ? 'repository' : 'settings'
+  return 'settings'
 }
 
 export function settingsHref(id: string, currentHash = typeof window === 'undefined' ? '' : window.location.hash, resourceId?: string): string {
+  const shared = sharedAssetsSectionForSetting(id)
+  if (shared) return sharedAssetsHref(shared, resourceId, currentHash)
   const current = new URLSearchParams(currentHash.split('?')[1] || '')
   const params = new URLSearchParams({ setting: settingsDestination(id)?.id || 'platform' })
   const origin = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(currentHash) && !current.has('setting') ? currentHash : current.get('returnTo') || ''

@@ -190,8 +190,8 @@ writes require the relevant administrative capability. Common destinations inclu
 - [Kubernetes clusters](#/settings?setting=clusters), [Generator pools](#/settings?setting=pools), and [Standing allocations](#/settings?setting=allocations).
 - [Domains & placement defaults](#/settings?setting=domains), [Projects](#/settings?setting=projects), and [Applications & releases](#/settings?setting=applications).
 - [Project limits & quotas](#/settings?setting=limits) and [Archive & HAR retention](#/settings?setting=retention).
-- [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), and [Project secrets](#/access?setting=secrets).
-- [Repository → Shared data pools](#/repository?setting=test-data) for reusable input rows.
+- [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), and [Project redaction rules](#/access?setting=redaction); project and application secrets are in [Shared assets → Secrets](#/shared-assets?section=secrets).
+- [Shared assets → Test data](#/shared-assets?section=test-data) for reusable input rows, and [Live tables](#/shared-assets?section=live-tables) for rows runs share and change.
 
 ### Authentication
 

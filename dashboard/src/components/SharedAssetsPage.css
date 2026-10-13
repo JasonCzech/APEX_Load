@@ -1,0 +1,6 @@
+/* Shared assets: a section list beside the open section, as Settings lays out. */
+.shared-assets-section { display: grid; gap: 16px; min-width: 0; align-content: start; }
+.shared-assets-section > .settings-task-heading { margin: 0; }
+/* How a script reads the section's assets, above its cards. */
+.shared-assets-usage { margin: 0; color: var(--text-secondary); font-size: var(--font-size-sm, 13px); }
+.shared-assets-scope { display: grid; gap: 4px; max-width: 360px; }

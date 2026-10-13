@@ -1,4 +1,4 @@
-import { settingsHref } from './settingsNavigation'
+import { sharedAssetsHref } from './sharedAssetsNavigation'
 
 /** A pool belongs to a project; never carry another project's application/release. */
 export function repositoryDataPoolHref(poolId: string, projectId: string, origin: string) {
@@ -10,9 +10,5 @@ export function repositoryDataPoolHref(poolId: string, projectId: string, origin
       if (value) scope.set(field, value)
     }
   }
-  const target = settingsHref('test-data', `#/repository?${scope}`, poolId)
-  const [path, query] = target.split('?')
-  const params = new URLSearchParams(query)
-  if (/^#\/repository(?:\?|$)/.test(origin) && !source.has('setting')) params.set('returnTo', origin)
-  return `${path}?${params}`
+  return sharedAssetsHref('test-data', poolId, `#/repository?${scope}`)
 }

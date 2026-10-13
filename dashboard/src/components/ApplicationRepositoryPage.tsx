@@ -28,7 +28,7 @@ import { useTestApi } from '../hooks/api/useTestApi'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { readStoredString, writeStoredString } from '../utils/browserStorage'
 import StatusBadge from './StatusBadge'
-import RepositorySectionTabs from './RepositorySectionTabs'
+import { sharedAssetsHref } from './sharedAssetsNavigation'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { SortHeader } from './SortHeader'
 import {
@@ -355,7 +355,6 @@ export default function ApplicationRepositoryPage({
   const repositoryTopbarContribution = useMemo(() => ({
     id: 'repository-page',
     title: 'Repository',
-    controls: <RepositorySectionTabs current="catalog" />,
     priority: 10,
   }), [])
   useTopbarContribution(repositoryTopbarContribution)
@@ -1166,7 +1165,7 @@ export default function ApplicationRepositoryPage({
 
   return (
     <div className="page repository-page" ref={pageRef}>
-      <nav className="related-links" aria-label="Related administration"><a className="related-link" href={settingsHref('projects')}>Manage workspaces in Settings</a></nav>
+      <nav className="related-links" aria-label="Related administration"><a className="related-link" href={settingsHref('projects')}>Manage workspaces in Settings</a><a className="related-link" href={sharedAssetsHref('test-data')}>Test data, live tables and secrets are in Shared assets</a></nav>
       <div className="page-header">
         <div>
           <p className="page-kicker">Repository</p>

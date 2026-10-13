@@ -42,8 +42,8 @@ interface Props {
 
 /**
  * A project's shared data pools: create and delete pools, and see, edit,
- * import and export their rows. Settings and Repository › Shared test data
- * both show it; what can be changed follows the viewer's role.
+ * import and export their rows. Shared assets › Test data shows it; what can
+ * be changed follows the viewer's role.
  */
 const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function DataPoolsManager({ activeProject, projects, preferredPoolId, canManage, noProjectHint, onDraftChange, onListError }, ref) {
   const api = useApi()
@@ -113,7 +113,7 @@ const DataPoolsManager = forwardRef<DataPoolsDraftController, Props>(function Da
         setDataPoolRowsNextCursor(null)
         setDataPoolRowsHasMore(false)
       }
-      setDataPoolActionError(preferredId && !isMember(preferredId) ? 'The requested data pool is not available in this project. Choose a pool below or return to the repository.' : '')
+      setDataPoolActionError(preferredId && !isMember(preferredId) ? 'The requested data pool is not available in this project. Choose a pool below.' : '')
       return true
     } catch (error: unknown) {
       if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
