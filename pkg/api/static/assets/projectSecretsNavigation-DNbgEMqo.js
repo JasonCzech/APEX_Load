@@ -1,0 +1,1 @@
+import{I as e,L as t,N as n,R as r}from"./api-correlation-rulesets-Bp-51IUB.js";import{h as i}from"./settingsSectionLayout-Dm3A2Tuu.js";var a=`apexload.settings.projectId`;function o(n){i(`projects`),t(`apexload.settings.projectSubsection`,`secrets`),n?.trim()?r(a,n.trim()):e(a)}function s(){let t=n(a).trim();return e(a),t}export{s as n,o as r,a as t};
