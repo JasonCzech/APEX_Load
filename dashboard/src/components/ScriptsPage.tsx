@@ -29,7 +29,7 @@ import { type ImportedSaveResult, type ScriptsAuthoringEntryView, type ScriptsAu
 import type { ScriptImportLauncherDescriptor } from '../scriptImportLaunchers'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
-import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
+import { openProjectSecretsSettings } from './projectSecretsNavigation'
 import StoredScriptSecretBindingsDialog from './StoredScriptSecretBindingsDialog'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import {
@@ -255,10 +255,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       setSecretDialogScript(script)
       return
     }
-    prepareProjectSecretsSettingsNavigation(script?.project_id || activeProjectId)
-    if (onNavigate) onNavigate('settings')
-    else window.location.hash = '#/settings'
-  }, [activeProjectId, onNavigate])
+    openProjectSecretsSettings(script?.project_id || activeProjectId)
+  }, [activeProjectId])
 
   const secretStatusPlans = useMemo(
     () => buildScriptSecretStatusPlans(scripts, activeProjectId),

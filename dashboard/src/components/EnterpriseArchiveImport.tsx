@@ -36,7 +36,7 @@ import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
-import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
+import { prepareProjectSecretsSettingsNavigation, projectSecretsHref } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import AuraOutcomeReview from './AuraOutcomeReview'
 import SalesforceCorrelationReview from './SalesforceCorrelationReview'
@@ -5005,7 +5005,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               {!currentRepairReview && (replayPreflight?.missing_secrets?.length || 0) > 0 && <>
                 <ul>{replayPreflight?.missing_secrets?.map(name => <li key={name}><code>{name}</code></li>)}</ul>
                 <p>Configure these exact names in the project secret provider, then validate again to refresh readiness.</p>
-                <a className="btn btn-secondary btn-sm" href="#/settings" target="_blank" rel="noopener noreferrer" onClick={() => prepareProjectSecretsSettingsNavigation(projectId)}>Open Project Secrets in a new tab</a>
+                <a className="btn btn-secondary btn-sm" href={projectSecretsHref()} target="_blank" rel="noopener noreferrer" onClick={() => prepareProjectSecretsSettingsNavigation(projectId)}>Open Project Secrets in a new tab</a>
               </>}
             </div>}
             script={importedScript}
