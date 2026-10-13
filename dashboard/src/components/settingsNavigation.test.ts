@@ -46,6 +46,7 @@ describe('operational workspace handoffs', () => {
   it('does not attach children from a different project or invent an empty scope', () => {
     expect(workspaceHref('schedules', '#/settings?projectId=old&applicationId=a&releaseId=r', 'new')).toBe('#/schedules?projectId=new')
     expect(workspaceHref('fleet', '#/settings')).toBe('#/fleet')
+    expect(workspaceHref('tests', '#/new-test?projectId=p&applicationId=a&releaseId=r&scenarioId=s', undefined, { view: 'plans' })).toBe('#/tests?view=plans&projectId=p&applicationId=a&releaseId=r')
   })
 })
 

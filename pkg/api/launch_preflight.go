@@ -1050,6 +1050,7 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 	}
 	conflicts := make([]LaunchConflict, 0)
 	conflicts = append(conflicts, tr.launchGovernanceWindowConflictsLocked(test, window)...)
+	conflicts = append(conflicts, launchVUserCapConflicts(test, evidence)...)
 
 	proposalGroups := launchGroupCapacities(test, window.StartAt, now)
 	proposal := launchCapacityEvent{
@@ -1092,6 +1093,59 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 		}
 	}
 	return conflicts
+}
+
+// launchVUserCapConflicts refuses a run that is larger on its own than the
+// project's or its pool's VUser cap. Such a run can never start, so offering
+// to queue or schedule it would only leave it waiting forever. A plan run
+// approved to burst the project quota is exempt from the project cap (the
+// approval doesn't cover pool quotas), and a run that has already started is
+// exempt from both: changes to it (including reductions after a cap was
+// lowered) are judged by the projected-capacity checks instead.
+func launchVUserCapConflicts(test *ManagedTest, evidence launchWindowEvidence) []LaunchConflict {
+	if test == nil || launchHasStarted(test) {
+		return nil
+	}
+	quota, ok := evidence.projectQuota.quotaFor(test)
+	if !ok {
+		// Missing quota evidence is reported by the capacity checks.
+		return nil
+	}
+	need := managedTestCapacityVUsers(test)
+	conflicts := make([]LaunchConflict, 0, 2)
+	if quota.maxVUsers > 0 && need > quota.maxVUsers && !hasApprovedExecutionPlanQuotaBurst(test) {
+		conflicts = append(conflicts, LaunchConflict{
+			Code:       "exceeds_project_vuser_cap",
+			Severity:   "blocking",
+			Source:     "project",
+			ResourceID: normalizeProjectID(test.ProjectID),
+			Message:    fmt.Sprintf("This run needs %d VUsers at its peak, but the project allows %d at a time, so it can never start. Lower its VUsers, or ask a project administrator to raise the project's VUser limit or to approve it as an execution plan run.", need, quota.maxVUsers),
+		})
+	}
+	if poolID := testAssignedPoolID(test); poolID != "" && quota.hasPoolQuota && quota.poolQuota.MaxVUsers > 0 && need > quota.poolQuota.MaxVUsers {
+		conflicts = append(conflicts, LaunchConflict{
+			Code:       "exceeds_pool_vuser_cap",
+			Severity:   "blocking",
+			Source:     "pool",
+			ResourceID: poolID,
+			Message:    fmt.Sprintf("This run needs %d VUsers at its peak, but the project may use at most %d on pool %q, so it can never start there. Lower its VUsers, choose another pool, or ask an administrator to raise the pool quota.", need, quota.poolQuota.MaxVUsers, poolID),
+		})
+	}
+	return conflicts
+}
+
+func launchHasStarted(test *ManagedTest) bool {
+	switch test.Status {
+	case "SHAKEOUT", "STARTING", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING":
+		return true
+	}
+	return test.StartedAt != nil && !test.StartedAt.IsZero()
+}
+
+// overCapacityLimitReason says why a run larger than a VUser cap on its own
+// waits, so a queued run never looks as if it will start once others finish.
+func overCapacityLimitReason(need, limit int, scope string) string {
+	return fmt.Sprintf("waiting for the %s VUser limit to be raised: this run needs %d VUsers and the limit is %d", scope, need, limit)
 }
 
 func launchConflictProjectionKey(conflict LaunchConflict) string {

@@ -32,6 +32,7 @@ import {
   firstLaunchConflict,
   formatDatetimeLocalValue,
   formatLaunchConflict,
+  startNowBlocker,
   formatLaunchDecision,
   formatLaunchWindow,
   formatNextBlockingEvent,
@@ -116,6 +117,7 @@ import {
 import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
 import DurationField from './DurationField'
 import { confirmAction } from './ux/confirmAction'
+import { settingsHref, workspaceHref } from './settingsNavigation'
 import { ApiError } from '../hooks/apiClient'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 import {
@@ -2850,7 +2852,14 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const showStartNow = true
   const startNowAllowed = Boolean(immediatePreflight?.start_now_allowed)
   const showQueueRun = Boolean(immediatePreflight?.queue_allowed)
-  const immediateLaunchBlocked = Boolean(immediatePreflight && !startNowAllowed && !showQueueRun)
+  // Said beside Start Now, so a disabled button always carries its reason.
+  // While the same scenario is re-checked, its last reason stays (and stays
+  // quiet): nothing flashes or is re-announced for a run that could start
+  // before, and another scenario's reason is never shown for this one.
+  const lastStartBlockerRef = useRef<{ scenarioId: string; blocker: ReturnType<typeof startNowBlocker> }>({ scenarioId: '', blocker: null })
+  if (!immediatePreflightLoading) lastStartBlockerRef.current = { scenarioId, blocker: startNowBlocker(immediatePreflight, { queueAvailable: canLaunch && !queueRecovery }) }
+  const startBlocker = lastStartBlockerRef.current.scenarioId === scenarioId ? lastStartBlockerRef.current.blocker : null
+  const launchDescribedBy = [launchBlockers.length && !creating ? 'new-test-launch-blockers' : '', startBlocker ? 'new-test-start-blocker' : ''].filter(Boolean).join(' ') || undefined
   const scheduleAllowed = Boolean(scheduledStartISO && scheduledPreflight?.schedule_allowed)
   const scheduleBlocked = Boolean(scheduledStartISO && scheduledPreflight && !scheduledPreflight.schedule_allowed)
   const scheduleMin = formatDatetimeLocalValue(scheduleClock)
@@ -3738,12 +3747,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               )}
               {showStartNow && (
                 <>
-                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Start Now</button>
-                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
+                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchDescribedBy}>Start Now</button>
+                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchDescribedBy} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
                 </>
               )}
               {showQueueRun && (
-                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Create Queued Run</button>
+                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)} aria-describedby={launchDescribedBy}>Create Queued Run</button>
               )}
               {launchBlockers.length > 0 && !creating && (
                 <div id="new-test-launch-blockers" className="new-test-launch-feedback warning" role="status">
@@ -3755,8 +3764,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   ))}{launchBlockers.length > 3 ? ` · and ${launchBlockers.length - 3} more` : ''}.
                 </div>
               )}
-              {immediateLaunchBlocked && (
-                <div className="new-test-launch-feedback warning" role="status">{formatLaunchConflict(immediatePreflight)}</div>
+              {startBlocker && (
+                <div id="new-test-start-blocker" className="new-test-launch-feedback warning" role="status">
+                  {startBlocker.message}
+                  {startBlocker.overCap && <> <a href={settingsHref('limits')}>Project limits &amp; quotas</a> · <a href={workspaceHref('tests', undefined, undefined, { view: 'plans' })}>Execution plans</a></>}
+                </div>
               )}
               <div className="new-test-schedule-launch">
                 <label>

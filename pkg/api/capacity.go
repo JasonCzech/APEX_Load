@@ -148,6 +148,9 @@ func (tr *TestRunner) evaluatePoolQuotaBlockWithQuotaLocked(test *ManagedTest, e
 		return true, fmt.Sprintf("waiting for a pool test slot on %q (%d max concurrent tests)", poolID, quota.MaxConcurrentTests)
 	}
 	if quota.MaxVUsers > 0 && nonNegativeSumExceedsLimit(activeVUsers, managedTestCapacityVUsers(test), quota.MaxVUsers) {
+		if need := managedTestCapacityVUsers(test); need > quota.MaxVUsers {
+			return true, overCapacityLimitReason(need, quota.MaxVUsers, fmt.Sprintf("pool %q", poolID))
+		}
 		return true, fmt.Sprintf("waiting for pool VUser capacity on %q (%d max vusers)", poolID, quota.MaxVUsers)
 	}
 	return false, ""
@@ -266,6 +269,9 @@ func (tr *TestRunner) evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test 
 	}
 	projectMaxVUsers := quota.maxVUsers
 	if projectMaxVUsers > 0 && nonNegativeSumExceedsLimit(projectActiveVUsers, managedTestCapacityVUsers(test), projectMaxVUsers) && !hasApprovedExecutionPlanQuotaBurst(test) {
+		if need := managedTestCapacityVUsers(test); need > projectMaxVUsers {
+			return true, overCapacityLimitReason(need, projectMaxVUsers, "project")
+		}
 		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
 	}
 	if blocked, reason := tr.evaluatePoolQuotaBlockWithQuotaLocked(test, excludeTestID, quota.poolQuota, quota.hasPoolQuota); blocked {

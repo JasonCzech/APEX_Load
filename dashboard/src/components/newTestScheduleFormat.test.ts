@@ -9,6 +9,7 @@ import {
   datetimeLocalToISO,
   describeCron,
   firstLaunchConflict,
+  startNowBlocker,
   formatDatetimeLocalValue,
   formatLaunchConflict,
   formatLaunchDecision,
@@ -219,3 +220,19 @@ describe('describeCron out-of-range fields', () => {
     expect(describeCron('99 87 * * *')).toBe('')
   })
 })
+
+describe('startNowBlocker', () => {
+  const base: LaunchPreflightResponse = { decision: 'blocked', start_now_allowed: false, schedule_allowed: false, queue_allowed: false, candidate_window: { start_at: '', end_at: '', duration_seconds: 60 } } as LaunchPreflightResponse
+  it('names the first blocking conflict and marks run-size caps', () => {
+    expect(startNowBlocker({ ...base, blocking_conflicts: [{ code: 'exceeds_project_vuser_cap', severity: 'blocking', message: 'Too big.' } as LaunchConflict] })).toEqual({ message: 'Too big.', overCap: true, queueable: false })
+    expect(startNowBlocker({ ...base, blocking_conflicts: [{ code: 'capacity_shortfall', severity: 'blocking', message: 'Short.' } as LaunchConflict] })).toEqual({ message: 'Short.', overCap: false, queueable: false })
+  })
+  it('explains a queueable wait and is silent when Start Now is available', () => {
+    expect(startNowBlocker({ ...base, queue_allowed: true, queue_reason: 'waiting for project VUser capacity (5 max vusers)' })?.message).toBe('Not enough capacity right now: waiting for project VUser capacity (5 max VUsers). Create Queued Run starts it as soon as capacity frees up.')
+    // No pointer to Create Queued Run while that button can't be used.
+    expect(startNowBlocker({ ...base, queue_allowed: true, queue_reason: 'waiting for a global test slot.' }, { queueAvailable: false })?.message).toBe('Not enough capacity right now: waiting for a global test slot.')
+    expect(startNowBlocker({ ...base, start_now_allowed: true })).toBeNull()
+    expect(startNowBlocker(null)).toBeNull()
+  })
+})
+

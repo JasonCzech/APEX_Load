@@ -359,7 +359,7 @@ describe('NewTestPage', () => {
     const blockers = container.querySelector('#new-test-launch-blockers')
     expect(blockers?.textContent).toContain('Select or create a release')
     const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')!
-    expect(start.getAttribute('aria-describedby')).toBe('new-test-launch-blockers')
+    expect(start.getAttribute('aria-describedby')?.split(' ')).toContain('new-test-launch-blockers')
     await selectLaunchRelease()
     expect(container.querySelector('#new-test-launch-blockers')?.textContent ?? '').not.toContain('release')
   })
@@ -3872,6 +3872,10 @@ describe('NewTestPage', () => {
     expect(startNowButton?.disabled).toBe(true)
     const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
     expect(queuedButton).toBeTruthy()
+    // The reason sits beside the disabled buttons and describes them.
+    const reason = container.querySelector('#new-test-start-blocker')
+    expect(reason?.textContent).toBe('Not enough capacity right now: Controller concurrency is currently full. Create Queued Run starts it as soon as capacity frees up.')
+    expect(startNowButton?.getAttribute('aria-describedby')).toContain('new-test-start-blocker')
 
     await act(async () => {
       queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3885,6 +3889,39 @@ describe('NewTestPage', () => {
       expect(openCommandCenter).toHaveBeenCalledWith('test-1')
     })
     expect(selectTest).not.toHaveBeenCalled()
+  })
+
+  it('says beside Start Now why a run larger than the project cap can never start, without offering a queue', async () => {
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'blocked',
+      start_now_allowed: false,
+      schedule_allowed: false,
+      queue_allowed: false,
+      candidate_window: { start_at: '2026-05-12T20:00:00Z', end_at: '2026-05-12T20:10:00Z', duration_seconds: 600 },
+      blocking_conflicts: [{ code: 'exceeds_project_vuser_cap', severity: 'blocking', source: 'project', message: 'This run needs 20 VUsers at its peak, but the project allows 5 at a time, so it can never start.' }],
+      warnings: [],
+    })
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')
+    expect(start?.disabled).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Create Queued Run')).toBe(false)
+    const reason = container.querySelector('#new-test-start-blocker')
+    expect(reason?.textContent).toContain('needs 20 VUsers at its peak, but the project allows 5 at a time')
+    expect(start?.getAttribute('aria-describedby')).toContain('new-test-start-blocker')
+    expect(Array.from(reason?.querySelectorAll('a') || []).map(link => link.textContent)).toEqual(['Project limits & quotas', 'Execution plans'])
   })
 
   it('recovers an uncertain queued-run create response by its client-requested ID', async () => {

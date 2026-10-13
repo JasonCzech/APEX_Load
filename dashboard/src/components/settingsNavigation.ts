@@ -83,10 +83,13 @@ export function settingsHref(id: string, currentHash = typeof window === 'undefi
   return `#/${settingsOwner(id)}?${params}`
 }
 
-/** Carry a workspace into a related operational page without unrelated settings filters. */
-export function workspaceHref(page: 'fleet' | 'schedules', currentHash = typeof window === 'undefined' ? '' : window.location.hash, projectId?: string): string {
+/**
+ * Carry a workspace into a related operational page without unrelated settings
+ * filters. query names the page's own view, e.g. { view: 'plans' }.
+ */
+export function workspaceHref(page: 'fleet' | 'schedules' | 'tests', currentHash = typeof window === 'undefined' ? '' : window.location.hash, projectId?: string, query: Record<string, string> = {}): string {
   const current = new URLSearchParams(currentHash.split('?')[1] || '')
-  const params = new URLSearchParams()
+  const params = new URLSearchParams(query)
   const targetProject = projectId ?? current.get('projectId') ?? ''
   if (targetProject) params.set('projectId', targetProject)
   // A caller switching projects must not attach a child from the old project.
