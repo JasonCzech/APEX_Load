@@ -36,3 +36,24 @@ test('a pool lists the scenario that binds it, refuses a delete it would break, 
   await expect(page).toHaveURL(/#\/shared-assets\?section=test-data/)
   await expect(usedBy.getByRole('link', { name: 'Customer journey', exact: true })).toBeVisible()
 })
+
+test('saved blocks are listed, previewed and deleted without opening a script', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await json(await request.post('/api/v1/scripts/authoring/components', { data: { project_id: workspace.projectId, name: 'Sign-in steps', kind: 'request_group', protocols: ['http'], summary: 'Opens a session and signs in', actions: [{ name: 'Open session', type: 'GET', method: 'GET', target: '/session' }, { name: 'Sign in', type: 'POST', method: 'POST', target: '/login' }] } }))
+
+  await page.goto(`/#/shared-assets?section=saved-blocks&${scopeQuery(workspace)}`)
+  const row = page.locator('.pp-row').filter({ hasText: 'Sign-in steps' })
+  await expect(row).toContainText('2 steps')
+  // Only blocks saved in the project; the built-in catalog is not listed here.
+  await expect(page.locator('.pp-row')).toHaveCount(1)
+  await row.getByRole('button', { name: /^Sign-in steps/ }).click()
+  await expect(row.getByRole('group', { name: 'Steps of Sign-in steps' })).toContainText('Open session')
+
+  await row.getByRole('button', { name: 'Delete', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Delete saved block' })
+  await expect(dialog).toContainText('Scripts that inserted it keep their copies of its steps.')
+  await dialog.getByRole('button', { name: 'Delete saved block', exact: true }).click()
+  await expect(page.getByText('No saved blocks yet.', { exact: true })).toBeVisible()
+})

@@ -4659,11 +4659,6 @@ details.replay-code-block > summary,
   cursor: pointer;
   padding: 8px 10px;
 }
-.user-block-delete {
-  flex: 0 0 auto;
-  align-self: center;
-  margin-right: 8px;
-}
 .save-block-dialog {
   width: min(440px, calc(100vw - 48px));
 }

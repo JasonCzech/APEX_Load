@@ -40,6 +40,8 @@ func (s *Server) handleCreateReusableBlock(w http.ResponseWriter, r *http.Reques
 
 	component := req.AuthoringComponent
 	component.ID = "block-" + uuid.New().String()
+	// The stored row says when it was saved; the request does not.
+	component.SavedAt = nil
 	if strings.TrimSpace(component.Kind) == "" {
 		component.Kind = "request_group"
 	}
@@ -67,6 +69,8 @@ func (s *Server) handleCreateReusableBlock(w http.ResponseWriter, r *http.Reques
 		"name": block.Name,
 		"kind": block.Kind,
 	})
+	savedAt := block.CreatedAt.UTC()
+	component.SavedAt = &savedAt
 	writeJSON(w, http.StatusCreated, component)
 }
 
@@ -107,6 +111,8 @@ func (s *Server) userReusableBlocks(projectID string) []AuthoringComponent {
 			continue
 		}
 		component.ID = block.ID
+		savedAt := block.CreatedAt.UTC()
+		component.SavedAt = &savedAt
 		components = append(components, component)
 	}
 	return components

@@ -38324,6 +38324,7 @@ export interface operations {
           }>;
           "project_id"?: string;
           "protocols"?: Array<string>;
+          "saved_at"?: (string) | null;
           "summary"?: string;
           "tags"?: Array<string>;
           "teardown"?: Array<{

@@ -36,6 +36,8 @@ func TestReusableBlockCreateListDelete(t *testing.T) {
 		"actions": []map[string]any{
 			{"name": "Add To Cart", "type": "http_request", "method": "POST", "target": "/cart"},
 		},
+		// A saved time from the request is never stored; the row's own is reported.
+		"saved_at": "2001-01-01T00:00:00Z",
 	}
 	body, _ := json.Marshal(create)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/components", bytes.NewReader(body))
@@ -51,6 +53,9 @@ func TestReusableBlockCreateListDelete(t *testing.T) {
 	}
 	if created.ID == "" || created.Name != "Checkout Group" {
 		t.Fatalf("created component = %+v, want id + name", created)
+	}
+	if created.SavedAt == nil || created.SavedAt.Year() < 2020 {
+		t.Fatalf("created saved_at = %v, want the time it was saved", created.SavedAt)
 	}
 
 	// GET (filtered to the project + protocol) must include the saved block alongside built-ins.
@@ -70,6 +75,12 @@ func TestReusableBlockCreateListDelete(t *testing.T) {
 	for _, c := range listed.Components {
 		if c.ID == created.ID {
 			found = true
+			// Only a saved block says when it was saved; built-ins have no time.
+			if c.SavedAt == nil || !c.SavedAt.Equal(*created.SavedAt) {
+				t.Errorf("listed saved_at = %v, want %v", c.SavedAt, created.SavedAt)
+			}
+		} else if c.SavedAt != nil {
+			t.Errorf("built-in %s carries saved_at %v", c.ID, c.SavedAt)
 		}
 	}
 	if !found {

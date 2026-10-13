@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -22,6 +23,8 @@ type AuthoringComponent struct {
 	Teardown    []dsl.Action      `json:"teardown,omitempty"`
 	UsageNotes  []string          `json:"usage_notes,omitempty"`
 	Variables   map[string]string `json:"variables,omitempty"`
+	// SavedAt is when a user saved the block; built-in catalog entries have none.
+	SavedAt *time.Time `json:"saved_at,omitempty"`
 }
 
 func (s *Server) handleAuthoringComponents(w http.ResponseWriter, r *http.Request) {

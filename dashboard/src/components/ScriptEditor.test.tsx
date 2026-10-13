@@ -2154,6 +2154,9 @@ describe('ScriptEditor', () => {
       await addAction()
       expect(placement().value).toBe('after')
       await act(async () => { placement().value = 'before'; placement().dispatchEvent(new Event('change', { bubbles: true })) })
+      // Saved blocks are managed (and deleted, with a confirmation) in Shared assets, linked from where they are inserted.
+      expect(document.querySelector<HTMLAnchorElement>('.reusable-blocks-group-label a')?.getAttribute('href')).toMatch(/^#\/shared-assets\?section=saved-blocks/)
+      expect(document.querySelector('[aria-label^="Delete reusable block"]')).toBeNull()
       // A saved block whose result name is taken now gets a free one, and its own reference follows.
       await act(async () => { Array.from(document.querySelectorAll<HTMLButtonElement>('.reusable-blocks-panel .user-block-insert')).find(button => button.textContent?.includes('Take one job'))!.click() })
       await act(async () => { findButtonByText(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })

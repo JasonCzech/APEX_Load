@@ -7,6 +7,7 @@ import DataPoolsManager from './DataPoolsManager'
 import ObjectRepositoryPanel from './ObjectRepositoryPanel'
 import ProjectLiveTablesPanel from './ProjectLiveTablesPanel'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
+import SavedBlocksPanel from './SavedBlocksPanel'
 import { consumeProjectSecretsSettingsProjectId, requestedProjectSecretsProjectId } from './projectSecretsNavigation'
 import { DEFAULT_SHARED_ASSETS_SECTION, SHARED_ASSET_SECTIONS, sharedAssetsHref, type SharedAssetsSection } from './sharedAssetsNavigation'
 import { useSectionListKeys } from './ux/useSectionListKeys'
@@ -16,7 +17,7 @@ import './SharedAssetsPage.css'
 export interface SharedAssetsPermissions {
   /** Pools and live tables: editors and up. */
   manageDataPools: boolean
-  /** Secrets to add, rule sets and object repositories: editors and up. */
+  /** Secrets to add, rule sets, object repositories and saved blocks: editors and up. */
   manageScripts: boolean
   /** Rotating secrets: project admins and up. */
   manageProjects: boolean
@@ -81,6 +82,8 @@ function SectionContent({ section, project, applications, resourceId, permission
       return <CorrelationRulesetPanel projectId={project.id} canManage={permissions.manageScripts} />
     case 'object-repositories':
       return <ObjectRepositoryPanel projectId={project.id} canManage={permissions.manageScripts} />
+    case 'saved-blocks':
+      return <SavedBlocksPanel projectId={project.id} canManage={permissions.manageScripts} />
   }
 }
 

@@ -240629,6 +240629,10 @@ paths:
                   type: array
                   items:
                     type: string
+                saved_at:
+                  type: string
+                  format: date-time
+                  nullable: true
                 summary:
                   type: string
                 tags:

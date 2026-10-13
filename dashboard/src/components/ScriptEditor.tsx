@@ -5,6 +5,8 @@ import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/stored
 import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
+import { isSavedBlock } from './savedBlocks'
+import { sharedAssetsHref } from './sharedAssetsNavigation'
 import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
 import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
 import { NO_RESPONSE_ACTION_TYPES, HTTP_RUNTIME_ACTION_TYPES, liveTableFormContext } from './catalogActionFormModel'
@@ -369,8 +371,6 @@ const AUTHORING_COMPONENT_GROUPS = [
   { kind: 'teardown', label: 'Teardown Blocks' },
 ] as const
 
-// User-saved blocks carry a server-generated "block-" id; built-in catalog entries do not.
-const isUserBlock = (component: AuthoringComponent) => (component.id || '').startsWith('block-')
 
 const BROWSER_REPLAY_TAB_ID: CenterWorkbenchTabId = 'browser-replay'
 
@@ -5304,20 +5304,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }
 
-  const deleteUserBlock = async (component: AuthoringComponent) => {
-    setSavingBlock(true)
-    try {
-      await api.deleteAuthoringComponent(component.id)
-      await reloadAuthoringComponents()
-      setSuccess(`Deleted reusable block "${component.name}".`)
-      setError('')
-    } catch (e) {
-      setError(getErrorMessage(e, 'Failed to delete reusable block'))
-    } finally {
-      setSavingBlock(false)
-    }
-  }
-
   const activeInspectorScope = useMemo(() => {
     const focus = authorCodeFocus || (activeAction !== null ? { phase: 'action' as const, actionIndex: activeAction } : null)
     if (!focus) return null
@@ -6005,7 +5991,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                       <div className="starter-blocks-panel reusable-blocks-panel">
                         <div className="starter-blocks-list">
                           {AUTHORING_COMPONENT_GROUPS.map(group => {
-                            const groupComponents = authoringComponents.filter(component => !isUserBlock(component) && component.kind === group.kind)
+                            const groupComponents = authoringComponents.filter(component => !isSavedBlock(component) && component.kind === group.kind)
                             if (groupComponents.length === 0) return null
                             return (
                               <div key={group.kind} className="reusable-blocks-group">
@@ -6025,10 +6011,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                               </div>
                             )
                           })}
-                          {authoringComponents.some(isUserBlock) && (
+                          {authoringComponents.some(isSavedBlock) && (
                             <div className="reusable-blocks-group">
-                              <span className="reusable-blocks-group-label">Your Blocks</span>
-                              {authoringComponents.filter(isUserBlock).map(component => (
+                              <span className="reusable-blocks-group-label">Your Blocks <a href={sharedAssetsHref('saved-blocks')}>Manage saved blocks</a></span>
+                              {authoringComponents.filter(isSavedBlock).map(component => (
                                 <div key={component.id} className="starter-block-card user-block-card">
                                   <TooltipButton
                                     type="button"
@@ -6038,16 +6024,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                                   >
                                     <strong>{component.name}</strong>
                                     <span>{component.summary}</span>
-                                  </TooltipButton>
-                                  <TooltipButton
-                                    type="button"
-                                    className="btn-icon danger user-block-delete"
-                                    aria-label={`Delete reusable block ${component.name}`}
-                                    title="Delete this block"
-                                    disabled={savingBlock}
-                                    onClick={() => deleteUserBlock(component)}
-                                  >
-                                    ✕
                                   </TooltipButton>
                                 </div>
                               ))}

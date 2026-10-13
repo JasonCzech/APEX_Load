@@ -2,7 +2,7 @@
 // with a section per kind. The order is the order of use: data first, then
 // secrets, then what authoring reuses.
 
-export type SharedAssetsSection = 'test-data' | 'live-tables' | 'secrets' | 'correlation-rules' | 'object-repositories'
+export type SharedAssetsSection = 'test-data' | 'live-tables' | 'secrets' | 'correlation-rules' | 'object-repositories' | 'saved-blocks'
 
 /**
  * Each section's panel says what it holds; `usage` adds how a script reads
@@ -14,6 +14,7 @@ export const SHARED_ASSET_SECTIONS: ReadonlyArray<{ id: SharedAssetsSection; tit
   { id: 'secrets', title: 'Secrets', usage: 'Scripts read a secret as {{secret.NAME}}. Its value is never shown once it is saved.' },
   { id: 'correlation-rules', title: 'Correlation rules' },
   { id: 'object-repositories', title: 'Object repositories' },
+  { id: 'saved-blocks', title: 'Saved blocks' },
 ]
 
 export const DEFAULT_SHARED_ASSETS_SECTION: SharedAssetsSection = 'test-data'

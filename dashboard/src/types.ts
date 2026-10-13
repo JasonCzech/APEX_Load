@@ -2788,6 +2788,8 @@ export interface AuthoringComponent {
   teardown?: ScriptActionDefinition[]
   usage_notes?: string[]
   variables?: Record<string, string>
+  /** When a user saved the block (RFC 3339); built-in catalog entries have none. */
+  saved_at?: string
 }
 
 export interface AuthoringSession {

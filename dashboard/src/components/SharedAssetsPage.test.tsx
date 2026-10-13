@@ -17,6 +17,7 @@ vi.mock('./ProjectLiveTablesPanel', () => stub('live-tables'))
 vi.mock('./ProjectSecretsPanel', () => stub('secrets'))
 vi.mock('./CorrelationRulesetPanel', () => stub('correlation-rules'))
 vi.mock('./ObjectRepositoryPanel', () => stub('object-repositories'))
+vi.mock('./SavedBlocksPanel', () => stub('saved-blocks'))
 
 const project = { id: 'project-1', name: 'Retail', created_at: '', updated_at: '' } as Project
 const applications = [
@@ -49,8 +50,8 @@ describe('SharedAssetsPage', () => {
   it('lists every section, marks the open one and says how scripts read it', async () => {
     await render({ section: 'live-tables' })
     const links = [...container.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Shared assets"] a')]
-    expect(links.map(link => link.textContent)).toEqual(['Test data', 'Live tables', 'Secrets', 'Correlation rules', 'Object repositories'])
-    expect(links.map(link => link.getAttribute('href'))).toEqual(['test-data', 'live-tables', 'secrets', 'correlation-rules', 'object-repositories'].map(section => `#/shared-assets?section=${section}&projectId=project-1`))
+    expect(links.map(link => link.textContent)).toEqual(['Test data', 'Live tables', 'Secrets', 'Correlation rules', 'Object repositories', 'Saved blocks'])
+    expect(links.map(link => link.getAttribute('href'))).toEqual(['test-data', 'live-tables', 'secrets', 'correlation-rules', 'object-repositories', 'saved-blocks'].map(section => `#/shared-assets?section=${section}&projectId=project-1`))
     expect(links.find(link => link.getAttribute('aria-current') === 'page')?.textContent).toBe('Live tables')
     expect(container.querySelector('h2')?.textContent).toBe('Live tables')
     // Outside the Settings-style heading, which only screen readers get.
@@ -78,6 +79,8 @@ describe('SharedAssetsPage', () => {
     expect(propsOf('correlation-rules')).toMatchObject({ projectId: 'project-1', canManage: false })
     await render({ section: 'object-repositories' })
     expect(propsOf('object-repositories')).toMatchObject({ projectId: 'project-1', canManage: true })
+    await render({ section: 'saved-blocks', permissions: viewer })
+    expect(propsOf('saved-blocks')).toMatchObject({ projectId: 'project-1', canManage: false })
   })
 
   it('lets editors add secrets and project admins rotate them', async () => {

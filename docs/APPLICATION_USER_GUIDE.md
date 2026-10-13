@@ -1178,8 +1178,8 @@ Shared assets.
 **Shared assets** (under Build in the sidebar) holds what a project's scripts and
 scenarios share, one section per kind. What you can change there follows your role:
 editors and project admins create and change pools, live tables, correlation rules and
-object repositories, and add secrets; project admins also rotate secrets; viewers see
-everything and can export pools.
+object repositories, delete saved blocks, and add secrets; project admins also rotate
+secrets; viewers see everything and can export pools.
 
 - **Test data** holds the data pools: rows that scenarios bind by alias and scripts read
   as `{{data.alias.column}}`. Edit a row in place, paste rows from a spreadsheet, or
@@ -1195,6 +1195,12 @@ everything and can export pools.
 - **Object repositories** hold named page elements that browser scripts reference.
   Seed one from a script's recorded elements, and optionally point that script's
   actions at it. A changed selector is then fixed once rather than in fourteen scripts.
+- **Saved blocks** hold steps saved from one script to insert into others: in the
+  script editor, select steps in the outline and choose **Save as block**, then insert
+  one from **Add action from a block** (its **Manage saved blocks** link opens this
+  section). Preview a block's steps here, or delete it. Inserting copies the steps, so a
+  block has no users to list, and deleting it changes no script. A domain's feature
+  policy can turn saved blocks off.
 
 Each row says what uses it, and each user is a link: the scenarios that bind a pool or
 live table (opening at their Data step, where the binding is changed), the scripts that
@@ -1225,7 +1231,7 @@ capabilities; a help link does not grant permission.
 | Root-cause analysis and business-key lookups for a project | [Project analysis](#/settings?setting=analysis) |
 | Schedule behavior and notification delivery | [Schedule defaults](#/settings?setting=scheduling), [Notification routes](#/settings?setting=notifications) |
 | Archive and recording retention | [Archive & HAR retention](#/settings?setting=retention) |
-| Shared input rows, live tables, secrets, correlation rules and object repositories | [Shared assets](#/shared-assets) |
+| Shared input rows, live tables, secrets, correlation rules, object repositories and saved blocks | [Shared assets](#/shared-assets) |
 | Authentication, import policy, redaction and secrets | [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), [Secrets](#/shared-assets?section=secrets) |
 
 Alert/stop policy affects runtime decisions; a run's SLA verdict and lifecycle status
