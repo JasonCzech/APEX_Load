@@ -1075,6 +1075,12 @@ type SharedDataPool struct {
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	ArchivedAt  *time.Time        `json:"archived_at,omitempty"`
+	// Columns is the display and export order of the pool's parameters: the
+	// source file's header order, then columns added in the editor. Row data
+	// is a map, so without it every view would sort columns alphabetically.
+	// It is an order hint only; a row key it does not list still shows, after
+	// the listed columns.
+	Columns []string `json:"columns,omitempty"`
 }
 
 type SharedDataPoolRow struct {

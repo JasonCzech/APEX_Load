@@ -79,7 +79,9 @@ test('[U09] the five-step scenario builder preserves the draft and reviews the s
 
   await steps.getByRole('button', { name: /^Data/ }).click()
   await expect(page.getByRole('heading', { level: 4, name: 'Data pools' })).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Data Pool' })).toHaveValue('')
+  // One way to add a binding: nothing to choose until one is added.
+  await expect(page.getByRole('button', { name: 'Add data binding', exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Data pool' })).toHaveCount(0)
 
   // Walk backward and forward through the footer controls instead of jumping
   // directly to Review. These checks catch a wizard that remounts stale state.
@@ -334,23 +336,23 @@ test('[U09] data pools support CSV preview, import and multiple editable binding
   await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Data/ }).click()
   await page.getByText('Create a data pool without leaving this draft', { exact: true }).click()
   await page.getByLabel('New data pool name', { exact: true }).fill('Customers CSV')
-  await page.getByRole('textbox', { name: 'First data row (JSON object)', exact: true }).fill('')
+  await page.getByLabel('Columns (parameter names, separated by commas)', { exact: true }).fill('email, name')
   await page.getByRole('button', { name: 'Create and attach data pool', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Pool Alias', exact: true })).toHaveValue('customers_csv')
+  await expect(page.getByRole('textbox', { name: 'Alias', exact: true })).toHaveValue('customers_csv')
   await page.getByText('Preview rows and import CSV', { exact: true }).click()
   await page.locator('.scenario-data-editor input[type=file]').setInputFiles({ name: 'customers.csv', mimeType: 'text/csv', buffer: Buffer.from('email,name\na@example.test,Alice\nb@example.test,Bob\n') })
   await page.getByRole('button', { name: 'Preview CSV import', exact: true }).click()
   await expect(page.getByRole('table', { name: 'CSV data preview', exact: true })).toContainText('a@example.test')
   await page.getByRole('button', { name: 'Import rows into shared pool', exact: true }).click()
   await expect(page.getByRole('table', { name: 'Rows for customers_csv', exact: true })).toContainText('Bob')
-  await page.getByRole('button', { name: 'Add data pool binding', exact: true }).click()
-  const pools = page.getByRole('combobox', { name: 'Data Pool', exact: true })
+  await page.getByRole('button', { name: 'Add data binding', exact: true }).click()
+  const pools = page.getByRole('combobox', { name: 'Data pool', exact: true })
   const poolId = await pools.first().inputValue()
   await pools.nth(1).selectOption(poolId)
-  await page.getByRole('textbox', { name: 'Pool Alias', exact: true }).nth(1).fill('secondary')
-  await expect(page.getByRole('textbox', { name: 'Pool Alias', exact: true })).toHaveCount(2)
+  await page.getByRole('textbox', { name: 'Alias', exact: true }).nth(1).fill('secondary')
+  await expect(page.getByRole('textbox', { name: 'Alias', exact: true })).toHaveCount(2)
   await page.getByRole('button', { name: 'Remove binding 1', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Pool Alias', exact: true })).toHaveValue('secondary')
+  await expect(page.getByRole('textbox', { name: 'Alias', exact: true })).toHaveValue('secondary')
 })
 
 test('[U09] narrow picker keeps actions visible and bulk-adds filtered scripts', async ({ page, request }) => {

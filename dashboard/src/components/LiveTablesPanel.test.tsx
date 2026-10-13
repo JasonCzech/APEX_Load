@@ -72,7 +72,7 @@ it('polls counts without disclosing rows, explicitly previews, distinguishes abs
   request.mockResolvedValueOnce({ revision: 1, columns: ['a', 'b', 'c'], rows: [{ id: 'r', version: 1, values: { a: 'private test value', b: '' } }], count: 1 })
   await click('Preview up to 100 rows')
   expect(request).toHaveBeenLastCalledWith('/tests/run/live-tables/t/rows?offset=0&limit=100&revision=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-  expect(container.textContent).toContain('private test value'); expect(container.querySelector('[aria-label="Empty value"]')).not.toBeNull(); expect(container.querySelector('[aria-label="Absent cell"]')).not.toBeNull()
+  expect(container.textContent).toContain('private test value'); expect([...container.querySelectorAll('.data-grid-empty-value')].map(cell => cell.textContent)).toEqual(['empty', 'absent'])
   request.mockResolvedValue({ tables: [{ ...table, revision: 2 }] }); await act(async () => vi.advanceTimersByTimeAsync(2000))
   expect(container.textContent).not.toContain('private test value'); expect(container.textContent).toContain('Revision 2')
 })

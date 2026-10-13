@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { test, expect, json, login, seedScript, idOf, mutation } from './support/workflow'
+import { test, expect, json, login, seedScript, idOf, mutation, editScenarioFromRow } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import type { ProjectLiveTableView } from '../src/types/projectLiveTables'
 
@@ -35,8 +35,8 @@ test('project table operator reconciles conflicts and lost responses before gove
   await detail.getByRole('button', { name: 'Preview up to 100 rows', exact: true }).click()
   const rows = detail.getByRole('table', { name: 'Project live table rows' })
   await expect(rows).toContainText('original')
-  await expect(rows).toContainText('Absent')
-  await rows.getByRole('button', { name: 'Edit row', exact: true }).click()
+  await expect(rows).toContainText('absent')
+  await rows.getByRole('button', { name: 'Edit row 1', exact: true }).click()
   await detail.getByLabel('Value for id', { exact: true }).fill('my reviewed edit')
   const current = await json(await request.get(path)) as unknown as ProjectLiveTableView
   // A second operator commits after our deliberate preview. The draft must
@@ -134,7 +134,7 @@ test('scenario explicitly references a project table while existing pool binding
   const open = async () => {
     await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
     await page.reload()
-    await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Project binding' }).getByRole('button', { name: /^Edit\b/ }).click()
+    await editScenarioFromRow(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Project binding' }), 'Project binding')
     await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Data/ }).click()
   }
   await open()

@@ -32,6 +32,8 @@ type LiveDataPoolSeed struct {
 	PoolName     string                   `json:"pool_name"`
 	Rows         []*SharedDataPoolRow     `json:"rows"`
 	ExcludedRows int                      `json:"excluded_rows"`
+	// Columns is the pool's column order (SharedDataPool.Columns).
+	Columns []string `json:"columns,omitempty"`
 }
 
 type LiveTableFinalizationRequest struct {
@@ -43,6 +45,8 @@ type LiveTableFinalizationRequest struct {
 	Seed           LiveDataPoolSeedIdentity
 	Rows           []*SharedDataPoolRow
 	Schema         map[string]string
+	// Columns is the table's column order, kept by a save_as_new pool.
+	Columns []string
 }
 
 type LiveTableFinalizationResult struct {
@@ -113,9 +117,9 @@ func (s *SQLiteStore) ReadLiveDataPoolSeed(ctx context.Context, poolID, projectI
 		return nil, sql.ErrNoRows
 	}
 	seed := &LiveDataPoolSeed{Identity: LiveDataPoolSeedIdentity{PoolID: poolID, ProjectID: owner}, Rows: []*SharedDataPoolRow{}}
-	var schema string
+	var schema, columns string
 	var archived sql.NullTime
-	if err := tx.QueryRowContext(ctx, `SELECT name,COALESCE(schema_json,''),rows_revision,created_at,updated_at,archived_at FROM shared_data_pools WHERE id=?`, poolID).Scan(&seed.PoolName, &schema, &seed.Identity.RowsRevision, &seed.Identity.CreatedAt, &seed.Identity.UpdatedAt, &archived); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT name,COALESCE(schema_json,''),COALESCE(columns_json,''),rows_revision,created_at,updated_at,archived_at FROM shared_data_pools WHERE id=?`, poolID).Scan(&seed.PoolName, &schema, &columns, &seed.Identity.RowsRevision, &seed.Identity.CreatedAt, &seed.Identity.UpdatedAt, &archived); err != nil {
 		return nil, err
 	}
 	if archived.Valid {
@@ -124,6 +128,11 @@ func (s *SQLiteStore) ReadLiveDataPoolSeed(ctx context.Context, poolID, projectI
 	if schema != "" {
 		if err := json.Unmarshal([]byte(schema), &seed.Identity.Schema); err != nil {
 			return nil, errors.New("invalid live table seed schema")
+		}
+	}
+	if columns != "" && columns != "null" {
+		if err := json.Unmarshal([]byte(columns), &seed.Columns); err != nil {
+			return nil, errors.New("invalid live table seed column order")
 		}
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id,pool_id,data_json,COALESCE(status,''),COALESCE(version,1),created_at,updated_at FROM shared_data_pool_rows WHERE pool_id=? ORDER BY created_at,id`, poolID)
@@ -318,7 +327,11 @@ func (s *SQLiteStore) FinalizeLiveTable(ctx context.Context, in LiveTableFinaliz
 		if err != nil {
 			return nil, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO shared_data_pools(id,name,description,schema_json,project_id,rows_revision,row_count,created_at,updated_at) VALUES(?,?,'Created from a live data table',?,?,0,0,?,?)`, out.OutputPoolID, strings.TrimSpace(in.OutputPoolName), string(schema), in.ProjectID, now, now); err != nil {
+		columns, err := encodeDataPoolColumns(&SharedDataPool{ID: out.OutputPoolID, Columns: in.Columns})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO shared_data_pools(id,name,description,schema_json,columns_json,project_id,rows_revision,row_count,created_at,updated_at) VALUES(?,?,'Created from a live data table',?,?,?,0,0,?,?)`, out.OutputPoolID, strings.TrimSpace(in.OutputPoolName), string(schema), columns, in.ProjectID, now, now); err != nil {
 			return nil, err
 		}
 		if err := replaceLiveActiveRowsTx(ctx, tx, out.OutputPoolID, in.Rows, now); err != nil {

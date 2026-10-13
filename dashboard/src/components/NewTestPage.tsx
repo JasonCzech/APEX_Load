@@ -1419,7 +1419,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       { label: 'Protocols', value: protocols.length ? protocols.join(', ') : 'None' },
       { label: 'Run Overrides', value: formatCount(runOverridesCount, 'override') },
       { label: 'Host Placement', value: groupPlacementSummary(groupRunOverrides, scenario?.scripts) },
-      { label: 'Data Pools', value: dataPoolValue, tone: bindingSummaries.some(item => item.writesBack) ? 'warning' : 'normal' },
+      { label: 'Data pools', value: dataPoolValue, tone: bindingSummaries.some(item => item.writesBack) ? 'warning' : 'normal' },
       { label: 'Capacity estimate', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Estimated bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Preflight Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },

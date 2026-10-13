@@ -49093,6 +49093,11 @@ paths:
             schema:
               type: object
               properties:
+                columns:
+                  type: array
+                  description: Display and export order of the pool's columns.
+                  items:
+                    type: string
                 description:
                   type: string
                 name:
@@ -49117,6 +49122,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  columns:
+                    type: array
+                    description: Display and export order of the pool's columns.
+                    items:
+                      type: string
                   created_at:
                     type: string
                     format: date-time
@@ -49248,6 +49258,11 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      columns:
+                        type: array
+                        description: Display and export order of the pool's columns.
+                        items:
+                          type: string
                       created_at:
                         type: string
                         format: date-time
@@ -49419,6 +49434,7 @@ paths:
                   format: date-time
                   description: Archive timestamp, or null to restore the data pool. Omit to preserve the current archive state.
                   nullable: true
+                columns: {}
                 description: {}
                 name:
                   type: string
@@ -49441,6 +49457,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  columns:
+                    type: array
+                    description: Display and export order of the pool's columns.
+                    items:
+                      type: string
                   created_at:
                     type: string
                     format: date-time

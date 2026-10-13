@@ -4,6 +4,8 @@ export interface SharedDataPool {
   name: string
   description?: string
   schema?: Record<string, string>
+  /** Display and export order of the pool's columns (source header order). */
+  columns?: string[]
   project_id?: string
   created_at: string
   updated_at: string

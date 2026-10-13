@@ -2229,14 +2229,13 @@ describe('TestHub', () => {
     await clickButton('Create and attach data pool')
     await flushPromises()
     expect(apiMock.createDataPoolRow).not.toHaveBeenCalled()
-    expect(findControlByLabel<HTMLSelectElement>(container,'Data Pool','select')?.value).toBe('empty-pool')
+    expect(findControlByLabel<HTMLSelectElement>(container,'Data pool','select')?.value).toBe('empty-pool')
   })
 
   it('does not attach a late data-pool result to a replacement draft', async () => {
-    let finish!: () => void
+    let finish!: (pool: { id: string; name: string }) => void
     apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({ resources: [{ id: 'authoring', operations: [{ id: 'manage_tests', allowed: true }, { id: 'manage_scripts', allowed: true }] }] })
-    apiMock.createDataPool.mockResolvedValueOnce({ id: 'late-pool', name: 'Old pool' })
-    apiMock.createDataPoolRow.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    apiMock.createDataPool.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()
@@ -2244,21 +2243,33 @@ describe('TestHub', () => {
     const poolNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('New data pool name'))?.querySelector<HTMLInputElement>('input')
     if (!poolNameInput) throw new Error('New data pool name input not found')
     await act(async () => setInputValue(poolNameInput, 'Old pool'))
-    const rowInput = container.querySelector<HTMLTextAreaElement>('textarea')
-    if (!rowInput) throw new Error('First data row input not found')
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(rowInput, '{"email":"old@example.test"}')
-      rowInput.dispatchEvent(new Event('input', {bubbles:true}))
-    })
+    const columnsInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Columns (parameter names'))?.querySelector<HTMLInputElement>('input')
+    if (!columnsInput) throw new Error('Columns input not found')
+    await act(async () => setInputValue(columnsInput, 'email, email , id'))
     await clickButton('Create and attach data pool')
     await flushPromises()
-    expect(apiMock.createDataPoolRow).toHaveBeenCalled()
+    expect(apiMock.createDataPool).toHaveBeenCalledWith(expect.objectContaining({ name: 'Old pool', columns: ['email', 'id'] }))
     await clickButton('Start over')
-    await act(async () => finish())
+    await act(async () => finish({ id: 'late-pool', name: 'Old pool' }))
     await clickWizardStep('Data')
-    expect(findControlByLabel<HTMLSelectElement>(container, 'Data Pool', 'select')?.value).toBe('')
+    expect(findControlByLabel<HTMLSelectElement>(container, 'Data pool', 'select')).toBeUndefined()
     expect(Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('New data pool name'))?.querySelector<HTMLInputElement>('input')?.value).toBe('')
     confirm.mockRestore()
+  })
+
+  it('refuses inline pool columns that scripts could not reference', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({ resources: [{ id: 'authoring', operations: [{ id: 'manage_tests', allowed: true }, { id: 'manage_scripts', allowed: true }] }] })
+    apiMock.createDataPool.mockClear()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await clickWizardStep('Data')
+    const field = (prefix: string) => Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith(prefix))?.querySelector<HTMLInputElement>('input')
+    await act(async () => setInputValue(field('New data pool name')!, 'Customers'))
+    await act(async () => setInputValue(field('Columns (parameter names')!, 'customer id, email'))
+    await clickButton('Create and attach data pool')
+    await flushPromises()
+    expect(apiMock.createDataPool).not.toHaveBeenCalled()
+    expect(container.textContent).toContain("Column customer id can't be used. Use only letters, numbers, underscores and hyphens")
   })
 
   it('keeps runtime focus on a surviving group and clears it when that group is removed', async () => {
@@ -3374,7 +3385,7 @@ describe('TestHub', () => {
     await flushPromises()
 
     await clickWizardStep('Data')
-    const poolSelect = findControlByLabel<HTMLSelectElement>(container, 'Data Pool', 'select')
+    const poolSelect = findControlByLabel<HTMLSelectElement>(container, 'Data pool', 'select')
     expect(poolSelect).toBeTruthy()
     expect(poolSelect?.value).toBe('pool-1')
     if (!poolSelect) return

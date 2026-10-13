@@ -186,14 +186,14 @@ type BindTimeslotBody = JsonRequestBody<'handleBindCapacityTimeslot'>
 
 const CREATE_DATA_POOL_CONTRACT = {
   required: ['name'],
-  known: ['description', 'name', 'project_id', 'schema'],
+  known: ['columns', 'description', 'name', 'project_id', 'schema'],
 } as const
 
 // The Go handler uses `updated_at` as the optimistic-concurrency token, which
 // is why it is the one required field on an otherwise all-optional patch.
 const UPDATE_DATA_POOL_CONTRACT = {
   required: ['updated_at'],
-  known: ['archived_at', 'description', 'name', 'schema', 'updated_at'],
+  known: ['archived_at', 'columns', 'description', 'name', 'schema', 'updated_at'],
 } as const
 
 const SCENARIO_DATA_POOLS_CONTRACT = {

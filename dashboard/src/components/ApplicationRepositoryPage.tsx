@@ -124,7 +124,7 @@ const CATALOG_TABS: Array<{ id: RepositoryCatalogTab; label: string; kind?: Repo
   { id: 'script', label: 'Scripts', kind: 'script' },
   { id: 'scenario', label: 'Scenarios', kind: 'scenario' },
   { id: 'test', label: 'Tests', kind: 'test' },
-  { id: 'data_pool', label: 'Data Pools', kind: 'data_pool' },
+  { id: 'data_pool', label: 'Data pools', kind: 'data_pool' },
   { id: 'structure', label: 'Structure' },
 ]
 
@@ -437,7 +437,7 @@ export default function ApplicationRepositoryPage({
           `Tests for project ${project.id}`,
         )
       }, limitTask),
-      loadProjectAssets(scopedProjects, 'Data Pools', async project => {
+      loadProjectAssets(scopedProjects, 'Data pools', async project => {
         const response = await scriptApi.listDataPools(project.id, true)
         return response.data_pools || []
       }, limitTask),

@@ -8,6 +8,7 @@ import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { downloadBlob } from '../utils/fileUtils'
 import LoadingState from './ux/LoadingState'
 import EmptyState from './ux/EmptyState'
+import DataRowGrid from './ux/DataRowGrid'
 import './LiveTables.css'
 
 export type { LiveTableSummary }
@@ -56,10 +57,7 @@ function LiveTablePreview({ testId, table }: { testId: string; table: LiveTableS
     {busy && <LoadingState what="live table data" inline />}
     {error && <p role="alert">{error}</p>}
     {rows && <><p role="status">Preview revision {rows.revision} · {rows.rows?.length || 0} of {rows.count ?? rows.rows?.length ?? 0} rows</p>
-      {!rows.rows?.length ? <EmptyState compact title="No live rows yet." hint="Producers can add rows while the run is active." /> : <div className="data-table"><table aria-label={`Live rows for ${table.alias}`}>
-        <thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead>
-        <tbody>{rows.rows.map((row, index) => <tr key={row.id || index}>{columns.map(column => <td key={column}>{Object.prototype.hasOwnProperty.call(row.values, column) ? row.values[column] === '' ? <span aria-label="Empty value">(empty)</span> : row.values[column] : <span aria-label="Absent cell">(absent)</span>}</td>)}</tr>)}</tbody>
-      </table></div>}
+      {!rows.rows?.length ? <EmptyState compact title="No live rows yet." hint="Producers can add rows while the run is active." /> : <DataRowGrid label={`Live rows for ${table.alias}`} columns={columns} rows={rows.rows.map((row, index) => ({ id: row.id || `row-${index}`, values: row.values }))} markEmpty />}
     </>}
   </div>
 }

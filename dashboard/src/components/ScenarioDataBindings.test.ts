@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScenarioDataPoolBinding, StoredScript } from '../types'
-import { dataBindingErrors, scenarioDataRequirements } from './scenarioDataBindingModel'
+import { aliasForPool, dataBindingErrors, scenarioDataRequirements, touchedDataBindingErrors } from './scenarioDataBindingModel'
 const binding = (alias: string, pool_id = 'pool-1'): ScenarioDataPoolBinding => ({ alias, pool_id, access_mode: 'read_only', selection_strategy: 'sequential' })
 describe('scenario data bindings', () => {
   it('keeps project bindings explicit and rejects run-specific seed/output settings', () => {
@@ -43,4 +43,17 @@ describe('scenario data bindings', () => {
     expect([...result.get('orders')!]).toEqual(['id'])
     expect(scenarioDataRequirements([]).size).toBe(0)
   })
+  it('derives unique aliases from pool names', () => {
+    expect(aliasForPool('Customer accounts', [])).toBe('customer_accounts')
+    expect(aliasForPool('Customer accounts', ['CUSTOMER_ACCOUNTS', 'customer_accounts_2'])).toBe('customer_accounts_3')
+    expect(aliasForPool('2026 Q4 — leads!', [])).toBe('_2026_q4_leads')
+    expect(aliasForPool('—', [])).toBe('data')
+  })
+  it('reports untouched bindings only once something is chosen', () => {
+    const untouched: ScenarioDataPoolBinding = { alias: '', pool_id: '', access_mode: 'read_only', selection_strategy: 'sequential' }
+    expect(dataBindingErrors([binding('a'), untouched, untouched]).length).toBeGreaterThan(0)
+    expect(touchedDataBindingErrors([binding('a'), untouched, untouched])).toEqual([])
+    expect(touchedDataBindingErrors([binding('a'), { ...untouched, pool_id: 'pool-1' }])).toEqual(['Binding 2: use a letter or underscore followed by letters, numbers, underscores or hyphens for the alias.'])
+  })
 })
+

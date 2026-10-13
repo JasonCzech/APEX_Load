@@ -1,5 +1,7 @@
 import AccessNavigation from './AccessNavigation'
 import RepositorySectionTabs from './RepositorySectionTabs'
+import DataRowGrid, { type DataGridRow } from './ux/DataRowGrid'
+import { orderedGridColumns, rowsToCSV } from './ux/dataRowGridModel'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import PrometheusConnectionsCard from './PrometheusConnectionsCard'
@@ -193,6 +195,10 @@ const NOTIFICATION_EVENT_OPTIONS = NOTIFICATION_EVENTS.map((eventType) => ({
 }))
 
 const DATA_POOL_ROW_PAGE_SIZE = 100
+// The engine's per-data-source column cap, which the server enforces too.
+const DATA_POOL_MAX_COLUMNS = 4096
+// Row statuses that runs skip (isActiveDataPoolRowStatus on the server).
+const INACTIVE_DATA_POOL_ROW_STATUSES = new Set(['consumed', 'used', 'disabled', 'inactive', 'exhausted'])
 
 const TELEMETRY_BUDGET_ROWS: Array<{ key: TelemetryBudgetKey; label: string; desc: string }> = [
   { key: 'max_telemetry_sample_age_ms', label: 'Max Telemetry Sample Age (ms)', desc: 'End-to-end live telemetry budget from collection through controller publish. Always enforced; 0 disables this budget.' },
@@ -558,8 +564,6 @@ export default function SettingsPage({
   const [dataPoolName, setDataPoolName] = useState('')
   const [dataPoolDescription, setDataPoolDescription] = useState('')
   const [dataPoolProjectId, setDataPoolProjectId] = useState('')
-  const [dataPoolRowJson, setDataPoolRowJson] = useState('{\n  "customer_id": "C-10001"\n}')
-  const [editingDataPoolRowId, setEditingDataPoolRowId] = useState<string | null>(null)
   const [dataPoolActionError, setDataPoolActionError] = useState('')
   const [dataPoolActionNotice, setDataPoolActionNotice] = useState('')
   const [dataPoolRowsTotal, setDataPoolRowsTotal] = useState(0)
@@ -575,10 +579,11 @@ export default function SettingsPage({
   const [dataPoolExportBusy, setDataPoolExportBusy] = useState(false)
   // Concurrency token captured when the editor opens; looking it up at save
   // time would silently refresh past another writer's change.
-  const [editingDataPoolRowVersion, setEditingDataPoolRowVersion] = useState<number | null>(null)
-  const [dataPoolRowSaveBusy, setDataPoolRowSaveBusy] = useState(false)
   const [dataPoolRowDeleteBusy, setDataPoolRowDeleteBusy] = useState(false)
   const dataPoolImportInputRef = useRef<HTMLInputElement | null>(null)
+  // Cell saves read the latest row version from here and run one at a time.
+  const dataPoolRowsRef = useRef<SharedDataPoolRow[]>([])
+  const dataPoolCellQueueRef = useRef<Promise<unknown>>(Promise.resolve())
   const selectedDataPoolIdRef = useRef('')
   const settingsLoadGenerationRef = useRef(0)
   const settingsMutationBusyRef = useRef(false)
@@ -605,6 +610,7 @@ export default function SettingsPage({
   const [poolQuotaDraftDirty, setPoolQuotaDraftDirty] = useState(false)
   const [featureAccessDirty, setFeatureAccessDirty] = useState(false)
   activeDataPoolProjectIdRef.current = activeProject?.id
+  dataPoolRowsRef.current = dataPoolRows
   activeApplicationIdRef.current = activeApplication?.id
 
   const commitSettingsProject = useCallback((project: Project) => {
@@ -1462,8 +1468,6 @@ export default function SettingsPage({
     selectedDataPoolIdRef.current = selectedDataPoolId
     setDataPoolImportDraft(null)
     setDataPoolImportMode('append')
-    setEditingDataPoolRowId(null)
-    setEditingDataPoolRowVersion(null)
     setDataPoolRows([])
     setDataPoolRowsTotal(0)
     setDataPoolRowsNextCursor(null)
@@ -2770,112 +2774,164 @@ export default function SettingsPage({
     }
   }
 
-  const saveDataPoolRow = async () => {
+  const selectedDataPool = dataPools.find(pool => pool.id === selectedDataPoolId) || null
+  // The pool's stored order first, then columns only rows use; columns added
+  // in the grid stay visible before any row fills them.
+  const dataPoolGridColumns = orderedGridColumns(selectedDataPool?.columns, dataPoolRows.map(row => row.data || {}), true)
+  const dataPoolGridRows: DataGridRow[] = dataPoolRows.map(row => {
+    const status = (row.status || '').trim()
+    return {
+      id: row.id,
+      values: row.data || {},
+      status: INACTIVE_DATA_POOL_ROW_STATUSES.has(status.toLowerCase()) ? `${status}, skipped by runs` : undefined,
+      details: `${status || 'active'} · version ${row.version} · updated ${formatDateTime(row.updated_at)}`,
+    }
+  })
+
+  const replaceDataPoolRow = (updated: SharedDataPoolRow) => {
+    dataPoolRowsRef.current = dataPoolRowsRef.current.map(row => row.id === updated.id ? updated : row)
+    setDataPoolRows(current => current.map(row => row.id === updated.id ? updated : row))
+  }
+
+  // One cell is one row update carrying the version the row was loaded at.
+  // Saves are queued so a second edit to the same row sends the version the
+  // first one returned instead of conflicting with it.
+  // Resolves true when saved, or why it wasn't; the grid shows that reason at
+  // the cell, so a failed cell save doesn't also raise the page error.
+  const commitDataPoolCell = (gridRow: DataGridRow, column: string, value: string): Promise<boolean | string> => {
     const poolId = selectedDataPoolId
-    const rowId = editingDataPoolRowId
-    const rowVersion = editingDataPoolRowVersion
-    const updating = Boolean(rowId)
-    if (!poolId) return
-    if (rowId && (!rowVersion || rowVersion <= 0)) {
-      setDataPoolActionError('This row is missing its edit version. Refresh the list and reopen the row before saving.')
-      return
-    }
-    let parsed: Record<string, string>
-    try {
-      parsed = JSON.parse(dataPoolRowJson)
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Row data must be a JSON object.')
-      }
-    } catch (error: unknown) {
-      // The browser's parser text ("Unexpected end of JSON input") means nothing to an operator.
-      setDataPoolActionError(error instanceof SyntaxError
-        ? 'Row data is not valid JSON. Enter an object such as {"customer_id": "C-10001"}.'
-        : getErrorMessage(error, 'Row data must be a JSON object.'))
-      return
-    }
-    setDataPoolRowSaveBusy(true)
-    setDataPoolActionNotice('')
-    try {
+    const save = async (): Promise<boolean | string> => {
+      const row = dataPoolRowsRef.current.find(candidate => candidate.id === gridRow.id)
+      if (!poolId || !row || selectedDataPoolIdRef.current !== poolId) return false
+      setDataPoolActionNotice('')
       try {
-        if (rowId) {
-          await api.updateDataPoolRow(poolId, rowId, { data: parsed, version: rowVersion as number })
-        } else {
-          await api.createDataPoolRow(poolId, { data: parsed })
+        const updated = await api.updateDataPoolRow(poolId, row.id, { data: { ...(row.data || {}), [column]: value }, version: row.version })
+        if (selectedDataPoolIdRef.current === poolId) {
+          replaceDataPoolRow(updated)
+          setDataPoolActionError('')
         }
+        return true
       } catch (error: unknown) {
+        if (selectedDataPoolIdRef.current !== poolId) return false
         const conflict = error instanceof ApiError && error.status === 409
-        const deleted = error instanceof ApiError && error.status === 404 && Boolean(rowId)
+        const deleted = error instanceof ApiError && error.status === 404
         if (conflict || deleted) {
           try {
             await refreshDataPoolRows(poolId)
           } catch {
-            // Keep the mutation conflict as the primary outcome when its
-            // best-effort reconciliation read also fails.
+            // The failed save stays the message; the list keeps its last state.
           }
-          // Close the editor: a blind retry against the refreshed list would
-          // otherwise pick up the new version and clobber the other writer
-          // (409), or keep 404ing against a row that no longer exists.
-          if (selectedDataPoolIdRef.current === poolId) {
-            setEditingDataPoolRowId(null)
-            setEditingDataPoolRowVersion(null)
-            setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
-            setDataPoolActionError(conflict
-              ? 'This row changed while you were editing. Reload the row list, then reopen the row to apply your change to the latest version.'
-              : 'This row was deleted while you were editing. Reload the row list before continuing.')
-          }
-          return
         }
-        if (selectedDataPoolIdRef.current === poolId) {
-          setDataPoolActionError(getErrorMessage(error, 'Unable to save data row'))
+        if (deleted) {
+          // The row and its cell are gone, so the page says what happened.
+          setDataPoolActionError('The row you were editing was deleted, and the list has been reloaded.')
+          return false
         }
-        return
+        return conflict
+          ? 'The row changed while you were editing, and the list now shows its latest values; Enter saves your value over them.'
+          : getErrorMessage(error, 'The server refused the change.')
       }
+    }
+    const result = dataPoolCellQueueRef.current.then(save, save)
+    dataPoolCellQueueRef.current = result.catch(() => undefined)
+    return result
+  }
 
-      // The mutation is authoritative at this point. A follow-up read is only
-      // reconciliation and must never turn a successful create/update into an
-      // error that invites a duplicate retry.
+  const addDataPoolRows = async (added: Record<string, string>[]): Promise<boolean> => {
+    const poolId = selectedDataPoolId
+    if (!poolId || added.length === 0) return false
+    const single = added.length === 1
+    setDataPoolActionNotice('')
+    try {
+      if (single) {
+        await api.createDataPoolRow(poolId, { data: added[0] })
+      } else {
+        // Pasted rows go in as one append import: one request and one
+        // transaction rather than a request per row.
+        const columns = orderedGridColumns(dataPoolGridColumns, added)
+        const file = new File([rowsToCSV(columns, added)], 'pasted-rows.csv', { type: 'text/csv' })
+        await api.importDataPoolRows(poolId, file, { mode: 'append', delimiter: 'comma' })
+      }
+    } catch (error: unknown) {
       if (selectedDataPoolIdRef.current === poolId) {
-        setEditingDataPoolRowId(null)
-        setEditingDataPoolRowVersion(null)
-        setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
+        setDataPoolActionError(getErrorMessage(error, single ? 'Unable to add the row' : 'Unable to add the pasted rows'))
       }
-      try {
-        const refreshed = await refreshDataPoolRows(poolId)
-        if (!refreshed) return
-      } catch {
-        if (selectedDataPoolIdRef.current === poolId) {
-          setDataPoolActionError('')
-          setDataPoolActionNotice(updating
-            ? 'Row updated, but the row list could not be reloaded. The save succeeded—do not retry the update. Refresh the list to verify it.'
-            : 'Row added, but the row list could not be reloaded. The save succeeded—do not add it again. Refresh the list to verify it.')
-        }
-        return
-      }
+      return false
+    }
+    // The rows are saved. A failed reload must not invite adding them again.
+    const outcome = single ? 'Row added' : `${added.length} rows added`
+    try {
+      const refreshed = await refreshDataPoolRows(poolId)
+      if (!refreshed) return true
+    } catch {
       if (selectedDataPoolIdRef.current === poolId) {
         setDataPoolActionError('')
-        setDataPoolActionNotice(updating ? 'Row updated.' : 'Row added.')
+        setDataPoolActionNotice(`${outcome}, but the row list could not be reloaded. The save succeeded—do not add ${single ? 'it' : 'them'} again. Refresh the list to verify it.`)
       }
-    } finally {
-      setDataPoolRowSaveBusy(false)
+      return true
+    }
+    if (selectedDataPoolIdRef.current === poolId) {
+      setDataPoolActionError('')
+      setDataPoolActionNotice(`${outcome}.`)
+    }
+    return true
+  }
+
+  // Columns are the pool's stored order; adding or removing one replaces it.
+  const saveDataPoolColumns = async (columns: string[], done: string, failed: string): Promise<boolean> => {
+    const pool = selectedDataPool
+    if (!pool) return false
+    try {
+      const updated = await api.updateDataPool(pool.id, { name: pool.name, columns, updated_at: pool.updated_at })
+      setDataPools(current => current.map(candidate => candidate.id === updated.id ? updated : candidate))
+      setDataPoolActionError('')
+      setDataPoolActionNotice(done)
+      return true
+    } catch (error: unknown) {
+      if (selectedDataPoolIdRef.current !== pool.id) return false
+      if (error instanceof ApiError && error.status === 409) {
+        try {
+          await refreshDataPoolRows(pool.id)
+        } catch {
+          // Reported below either way.
+        }
+        setDataPoolActionError('This pool changed since it was loaded and has been reloaded. Try again.')
+      } else {
+        setDataPoolActionError(getErrorMessage(error, failed))
+      }
+      return false
     }
   }
 
-  const editDataPoolRow = (row: SharedDataPoolRow) => {
-    setEditingDataPoolRowId(row.id)
-    setEditingDataPoolRowVersion(row.version)
-    setDataPoolRowJson(JSON.stringify(row.data || {}, null, 2))
-  }
+  const addDataPoolColumn = (name: string) => saveDataPoolColumns([...dataPoolGridColumns, name], `Column ${name} added. Rows leave it unset until you fill it in.`, 'Unable to add the column')
+  const removeDataPoolColumn = (name: string) => saveDataPoolColumns(dataPoolGridColumns.filter(column => column !== name), `Column ${name} removed.`, 'Unable to remove the column')
 
   const refreshDataPoolRows = async (poolId: string): Promise<boolean> => {
     // A late mutation from a pool the user has left must not invalidate the
     // active pool's generation or take ownership of its busy state.
     if (selectedDataPoolIdRef.current !== poolId) return false
     const generation = ++dataPoolRowsLoadGenerationRef.current
+    // Reload as many rows as were showing, so a row the user reached through
+    // "Load more" (and any value kept in its cells) doesn't vanish.
+    const keep = Math.max(DATA_POOL_ROW_PAGE_SIZE, dataPoolRowsRef.current.length)
     setDataPoolRowsLoadBusy(true)
     try {
-      const details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: '' })
-      if (selectedDataPoolIdRef.current !== poolId || generation !== dataPoolRowsLoadGenerationRef.current) return false
-      const rows = details.rows || []
+      let details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: '' })
+      const stale = () => selectedDataPoolIdRef.current !== poolId || generation !== dataPoolRowsLoadGenerationRef.current
+      if (stale()) return false
+      const latest = details.data_pool
+      const rows = [...(details.rows || [])]
+      // Bounded: one extra page of slack, and stop when a page adds nothing.
+      for (let pages = 1; rows.length < keep && details.next_cursor && (details.has_more ?? true) && pages <= Math.ceil(keep / DATA_POOL_ROW_PAGE_SIZE); pages++) {
+        details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: details.next_cursor })
+        if (stale()) return false
+        const seen = new Set(rows.map(row => row.id))
+        const fresh = (details.rows || []).filter(row => !seen.has(row.id))
+        if (fresh.length === 0) break
+        rows.push(...fresh)
+      }
+      // An import can change the pool's column order; take the server's copy.
+      if (latest?.id === poolId) setDataPools(current => current.map(pool => pool.id === poolId ? latest : pool))
       setDataPoolRows(rows)
       setDataPoolRowsTotal(details.total ?? rows.length)
       setDataPoolRowsNextCursor(details.next_cursor || null)
@@ -2978,9 +3034,6 @@ export default function SettingsPage({
       if (selectedDataPoolIdRef.current === draft.poolId) {
         setDataPoolImportDraft(null)
         setDataPoolImportMode('append')
-        setEditingDataPoolRowId(null)
-        setEditingDataPoolRowVersion(null)
-        setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
       }
       try {
         const refreshed = await refreshDataPoolRows(draft.poolId)
@@ -3355,7 +3408,7 @@ export default function SettingsPage({
           {projectHasUnsavedChanges && <section aria-label="Pending project edits" className="settings-subsection"><h3>Project: {selectedProject?.name}</h3><p>Changed fields: {projectChangedFields.join(', ')}</p><button className="btn btn-primary" type="button" disabled={!canManageProjects || !!projectDraftValidationError || settingsMutationBusy || policySaving} onClick={() => void saveProjectCompliance()}>Save project changes</button> <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy || policySaving} onClick={discardProjectChanges}>Cancel project changes</button></section>}
           {currentDestination.group === 'Infrastructure' && canManageSystem && <InfrastructureSetupGuide />}
           {currentDestination.id === 'allocations' && <CapacityCommitments reservations={savedSettings.capacity_planning.reservations || []} projectId={activeProject?.id} projects={projects} pools={fleetPools || []} />}
-          {returnTo && <a className="btn btn-secondary" href={returnTo}>{/^#\/repository(?:\?|$)/.test(returnTo) ? 'Return to repository' : 'Return to originating workflow'}</a>}
+          {returnTo && !(repositorySettings && /^#\/repository(?:\?|$)/.test(returnTo)) && <a className="btn btn-secondary" href={returnTo}>{/^#\/repository(?:\?|$)/.test(returnTo) ? 'Return to repository' : 'Return to originating workflow'}</a>}
           {currentDestination.id === 'preferences' && <section aria-label="Personal preferences"><PersonalSettings theme={theme} onThemeChange={onThemeChange} authStatus={authStatus} /></section>}
           {destination?.resource && <section className="settings-resource-editor">
 <button className="btn btn-secondary" onClick={() => onNavigate?.('fleet')}>Return to Fleet monitoring</button>
@@ -6081,10 +6134,9 @@ export default function SettingsPage({
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Create Data Pool</span>
-                  <span className="setting-desc">Create CRUD data pools that scenarios can bind by alias and share across scripts.</span>
+                  <span className="setting-label">Create a data pool</span>
+                  <span className="setting-desc">A data pool is a table of parameter values that scenarios bind by alias, so several scripts can share the same data.</span>
                 </div>
-                <strong>{dataPools.length}</strong>
               </div>
               <div className="inline-create-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto' }}>
                 <input
@@ -6113,7 +6165,7 @@ export default function SettingsPage({
                   aria-label="Pool description"
                 />
                 <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy || !dataPoolCreateProjectId}>
-                  Add Pool
+                  Add pool
                 </button>
               </div>
               {dataPoolCreateProjectId ? (
@@ -6146,16 +6198,10 @@ export default function SettingsPage({
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Data Pools</span>
-                  <span className="setting-desc">Select a pool to inspect and edit its rows.</span>
+                  <span className="setting-label">Data pools</span>
+                  <span className="setting-desc">Select a pool to see and edit its rows.</span>
                 </div>
-                <strong>
-                  {selectedDataPoolId
-                    ? (dataPoolRowsTotal > dataPoolRows.length
-                      ? `showing ${dataPoolRows.length} of ${dataPoolRowsTotal} rows`
-                      : `${dataPoolRowsTotal} rows`)
-                    : 'No pool selected'}
-                </strong>
+                <strong>{`${dataPools.length} ${dataPools.length === 1 ? 'pool' : 'pools'}`}</strong>
               </div>
               {dataPools.length > 0 ? (
                 <div className="settings-release-list">
@@ -6193,28 +6239,16 @@ export default function SettingsPage({
               <div className="settings-subsection">
                 <div className="settings-manager-summary">
                   <div>
-                    <span className="setting-label" id="data-pool-row-label">{editingDataPoolRowId ? 'Edit row' : 'Add Row'}</span>
-                    <span className="setting-desc">Use JSON object keys as parameter names, for example customer_id, account_id, or zip.</span>
+                    <span className="setting-label">{selectedDataPool ? `Rows of ${selectedDataPool.name}` : 'Rows'}</span>
+                    <span className="setting-desc">Each column is a parameter that scripts read by name. Edit a cell and press Enter, or move to another cell, to save it.</span>
                   </div>
-                  <strong>{editingDataPoolRowId ? 'Editing' : 'New'}</strong>
+                  <strong>
+                    {dataPoolRowsTotal > dataPoolRows.length
+                      ? `Showing ${dataPoolRows.length} of ${dataPoolRowsTotal} rows`
+                      : `${dataPoolRowsTotal} ${dataPoolRowsTotal === 1 ? 'row' : 'rows'}`}
+                  </strong>
                 </div>
-                <textarea
-                  className="settings-input cell-mono"
-                  style={{ minHeight: 120, resize: 'vertical' }}
-                  aria-labelledby="data-pool-row-label"
-                  aria-describedby={dataPoolActionError ? 'data-pool-row-error' : undefined}
-                  value={dataPoolRowJson}
-                  onChange={event => setDataPoolRowJson(event.target.value)}
-                />
                 <div className="settings-inline-actions">
-                  <button className="btn btn-primary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={saveDataPoolRow}>
-                    {dataPoolRowSaveBusy ? 'Saving…' : editingDataPoolRowId ? 'Save row' : 'Add row'}
-                  </button>
-                  {editingDataPoolRowId && (
-                    <button className="btn btn-secondary" type="button" disabled={dataPoolRowDeleteBusy} onClick={() => { setEditingDataPoolRowId(null); setEditingDataPoolRowVersion(null); setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}') }}>
-                      Cancel Edit
-                    </button>
-                  )}
                   <input
                     ref={dataPoolImportInputRef}
                     type="file"
@@ -6234,12 +6268,12 @@ export default function SettingsPage({
                     {dataPoolExportBusy ? 'Exporting…' : 'Export CSV'}
                   </button>
                 </div>
-                {dataPoolActionError && <p id="data-pool-row-error" className="settings-error-inline" role="alert">{dataPoolActionError.charAt(0).toUpperCase() + dataPoolActionError.slice(1)}</p>}
+                {dataPoolActionError && <p className="settings-error-inline" role="alert">{dataPoolActionError.charAt(0).toUpperCase() + dataPoolActionError.slice(1)}</p>}
                 {dataPoolImportDraft && dataPoolImportDraft.poolId === selectedDataPoolId && (
                   <div className="settings-subsection" style={{ marginTop: 12 }}>
                     <div className="settings-manager-summary">
                       <div>
-                        <span className="setting-label">Import Preview</span>
+                        <span className="setting-label">Import preview</span>
                         <span className="setting-desc" role="status">
                           {dataPoolImportDraft.file.name} — {dataPoolImportDraft.preview.row_count ?? 0} row(s), columns: {(dataPoolImportDraft.preview.columns || []).join(', ') || 'none'}
                         </span>
@@ -6292,8 +6326,8 @@ export default function SettingsPage({
                         {dataPoolImportBusy
                           ? 'Importing…'
                           : dataPoolImportMode === 'replace'
-                            ? `Replace With ${dataPoolImportDraft.preview.row_count ?? 0} Row(s)`
-                            : `Append ${dataPoolImportDraft.preview.row_count ?? 0} Row(s)`}
+                            ? `Replace with ${dataPoolImportDraft.preview.row_count ?? 0} row(s)`
+                            : `Append ${dataPoolImportDraft.preview.row_count ?? 0} row(s)`}
                       </button>
                       <button className="btn btn-secondary" type="button" disabled={dataPoolImportBusy} onClick={cancelDataPoolImport}>
                         Cancel
@@ -6302,57 +6336,49 @@ export default function SettingsPage({
                   </div>
                 )}
 
-                {dataPoolRows.length > 0 ? (
-                  <div className="script-parameter-table-wrap" style={{ marginTop: 16 }}>
-                    <table className="script-parameter-table">
-                      <thead>
-                        <tr>
-                          <th>Data</th>
-                          <th>Status</th>
-                          <th>Version</th>
-                          <th>Updated</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dataPoolRows.map(row => (
-                          <tr key={row.id}>
-                            <td className="cell-mono">{JSON.stringify(row.data)}</td>
-                            <td>{row.status || 'active'}</td>
-                            <td>{row.version}</td>
-                            <td>{formatDateTime(row.updated_at)}</td>
-                        <td aria-label="Data pool actions">
-                              <div className="settings-inline-actions">
-                                <button className="btn btn-sm btn-secondary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => editDataPoolRow(row)}>
-                                  Edit
-                                </button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => setConfirmDeleteRow(row)}>
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {dataPoolRowsHasMore && dataPoolRowsNextCursor && (
-                      <div className="settings-inline-actions" style={{ marginTop: 12 }}>
-                        <button
-                          className="btn btn-secondary"
-                          type="button"
-                          disabled={dataPoolRowsLoadBusy}
-                          onClick={() => { void loadMoreDataPoolRows() }}
-                        >
-                          {dataPoolRowsLoadBusy
-                            ? 'Loading rows…'
-                            : `Load more rows (${Math.max(dataPoolRowsTotal - dataPoolRows.length, 0)} remaining)`}
-                        </button>
-                      </div>
+                <div style={{ marginTop: 16 }}>
+                  <DataRowGrid
+                    key={selectedDataPoolId}
+                    label={selectedDataPool ? `Rows of ${selectedDataPool.name}` : 'Data pool rows'}
+                    columns={dataPoolGridColumns}
+                    rows={dataPoolGridRows}
+                    disabled={dataPoolRowDeleteBusy || dataPoolImportBusy}
+                    detailsLabel="Status, version and last update"
+                    maxColumns={DATA_POOL_MAX_COLUMNS}
+                    emptyMessage={dataPoolRowsLoadBusy ? 'Loading rows…' : 'This pool has no columns yet. Add a column for each parameter, or import a CSV file.'}
+                    onCellCommit={commitDataPoolCell}
+                    onAddRows={addDataPoolRows}
+                    onAddColumn={addDataPoolColumn}
+                    // An unused column can go only once every row is loaded.
+                    onRemoveColumn={dataPoolRowsHasMore ? undefined : removeDataPoolColumn}
+                    rowActions={(gridRow, rowNumber) => (
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        style={{ color: 'var(--danger-text)' }}
+                        type="button"
+                        aria-label={`Delete row ${rowNumber}`}
+                        disabled={dataPoolRowDeleteBusy}
+                        onClick={() => setConfirmDeleteRow(dataPoolRows.find(row => row.id === gridRow.id) || null)}
+                      >
+                        Delete
+                      </button>
                     )}
-                  </div>
-                ) : (
-                  <p className="new-test-inline-note">No rows in this data pool yet.</p>
-                )}
+                  />
+                  {dataPoolRowsHasMore && dataPoolRowsNextCursor && (
+                    <div className="settings-inline-actions" style={{ marginTop: 12 }}>
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        disabled={dataPoolRowsLoadBusy}
+                        onClick={() => { void loadMoreDataPoolRows() }}
+                      >
+                        {dataPoolRowsLoadBusy
+                          ? 'Loading rows…'
+                          : `Load more rows (${Math.max(dataPoolRowsTotal - dataPoolRows.length, 0)} remaining)`}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -6839,8 +6865,8 @@ export default function SettingsPage({
 
       <SettingsConfirmDialog
         open={Boolean(confirmDeletePool)}
-        title="Delete Data Pool"
-        confirmLabel="Delete Data Pool"
+        title="Delete data pool"
+        confirmLabel="Delete data pool"
         confirmDisabled={dataPoolCatalogMutationBusy}
         onCancel={() => setConfirmDeletePool(null)}
         onConfirm={() => {
@@ -6853,8 +6879,8 @@ export default function SettingsPage({
 
       <SettingsConfirmDialog
         open={Boolean(confirmDeleteRow)}
-        title="Delete Data Row"
-        confirmLabel="Delete Row"
+        title="Delete row"
+        confirmLabel="Delete row"
         confirmDisabled={dataPoolRowDeleteBusy}
         onCancel={() => setConfirmDeleteRow(null)}
         onConfirm={() => {

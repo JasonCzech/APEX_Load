@@ -145,3 +145,49 @@ describe('ScenarioDataBindings script-level data', () => {
     expect(container.querySelector('[aria-label="Data preview for users"]')).toBeNull()
   })
 })
+
+describe('ScenarioDataBindings adding a binding', () => {
+  let container: HTMLDivElement
+  let root: Root
+  beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container) })
+  afterEach(async () => { await act(async () => root.unmount()); container.remove() })
+  const pools = [
+    { id: 'pool-1', name: 'Customer accounts', created_at: '', updated_at: '' },
+    { id: 'pool-2', name: 'Orders', created_at: '', updated_at: '' },
+  ]
+  async function render(bindings: ScenarioDataPoolBinding[], onChange: (next: ScenarioDataPoolBinding[]) => void) {
+    await act(async () => root.render(<ScenarioDataBindings scripts={[]} bindings={bindings} pools={pools} onChange={onChange} canManage={false} />))
+  }
+  const choose = async (index: number, value: string) => {
+    const select = [...container.querySelectorAll('label')].filter(label => label.querySelector('span')?.textContent === 'Data pool')[index].querySelector('select')!
+    await act(async () => { select.value = value; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  }
+
+  it('offers one way to add a binding and holds its errors until it is touched', async () => {
+    const onChange = vi.fn()
+    await render([], onChange)
+    expect(container.querySelector('select')).toBeNull()
+    await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Add data binding')!.click())
+    const added = onChange.mock.calls[0][0] as ScenarioDataPoolBinding[]
+    await render(added, onChange)
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('Choose a data pool, or set Access mode to a shared live table.')
+    // A typed but invalid alias is touched, so its error shows.
+    await render([{ ...added[0], alias: '1bad' }], onChange)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Binding 1')
+  })
+
+  it('names a binding after its pool unless the alias was typed', async () => {
+    const onChange = vi.fn()
+    await render([{ pool_id: '', alias: '', access_mode: 'read_only', selection_strategy: 'sequential' }, { pool_id: 'pool-2', alias: 'customer_accounts', access_mode: 'read_only', selection_strategy: 'sequential' }], onChange)
+    await choose(0, 'pool-1')
+    expect(onChange.mock.lastCall![0][0]).toMatchObject({ pool_id: 'pool-1', alias: 'customer_accounts_2' })
+    await render([{ pool_id: 'pool-1', alias: 'customer_accounts_2', access_mode: 'read_only', selection_strategy: 'sequential' }, { pool_id: 'pool-2', alias: 'customer_accounts', access_mode: 'read_only', selection_strategy: 'sequential' }], onChange)
+    await choose(0, 'pool-2')
+    expect(onChange.mock.lastCall![0][0]).toMatchObject({ pool_id: 'pool-2', alias: 'orders' })
+    await render([{ pool_id: 'pool-1', alias: 'buyers', access_mode: 'read_only', selection_strategy: 'sequential' }], onChange)
+    await choose(0, 'pool-2')
+    expect(onChange.mock.lastCall![0][0]).toMatchObject({ pool_id: 'pool-2', alias: 'buyers' })
+  })
+})
+

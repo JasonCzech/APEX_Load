@@ -1,4 +1,4 @@
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, expectDebugOutcome, idOf, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('debugger uses explicit isolated live-table seeds and resets them for every replay', async ({ page }, testInfo) => {
@@ -47,7 +47,7 @@ test('debugger uses explicit isolated live-table seeds and resets them for every
     const session = (await json(await request.get(`/api/v1/replay/sessions/${sessionId}`))).session
     expect(session).toMatchObject({ report: { final_variables: { 'taken.values.id': 'sandbox-row', 'taken.values.note': '' } } })
     expect(session).not.toHaveProperty('live_table_seeds')
-    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    await expectDebugOutcome(page, 'passed')
   }
   expect(sessions[0]).not.toBe(sessions[1])
   // Classic replay accepts the same explicit seed contract and also starts fresh.

@@ -1674,6 +1674,7 @@ func sharedDataPoolOpenAPISchema() oasSchema {
 			"name":        {Type: "string"},
 			"description": {Type: "string"},
 			"schema":      {Type: "object", AdditionalProperties: &stringValue},
+			"columns":     {Type: "array", Items: &stringValue, Description: "Display and export order of the pool's columns."},
 			"project_id":  {Type: "string"},
 			"created_at":  {Type: "string", Format: "date-time"},
 			"updated_at":  {Type: "string", Format: "date-time"},

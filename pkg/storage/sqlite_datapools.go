@@ -38,6 +38,10 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	if err != nil {
 		return fmt.Errorf("marshal data pool schema: %w", err)
 	}
+	columnsJSON, err := encodeDataPoolColumns(pool)
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -62,11 +66,11 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	if err == nil && !pool.UpdatedAt.After(existingUpdatedAt) {
 		pool.UpdatedAt = existingUpdatedAt.Add(time.Microsecond)
 	}
-	result, err := tx.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, project_id, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at
+	result, err := tx.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, columns_json, project_id, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, columns_json=excluded.columns_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at
 		WHERE COALESCE(NULLIF(TRIM(shared_data_pools.project_id), ''), ?) = excluded.project_id`,
-		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.ProjectID, pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt, DefaultProjectID)
+		pool.ID, pool.Name, pool.Description, string(schemaJSON), columnsJSON, pool.ProjectID, pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt, DefaultProjectID)
 	if err != nil {
 		return err
 	}
@@ -83,7 +87,20 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 // UpdateDataPoolIfUnchanged updates editor-owned fields only when the durable
 // row still matches the snapshot loaded by the caller. Project ownership is an
 // immutable authorization boundary and is deliberately never rewritten.
+//
+// It leaves the column order as stored, since imports maintain it without
+// moving updated_at; on success pool.Columns holds the stored order.
 func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUpdatedAt time.Time) (bool, error) {
+	return s.updateDataPoolIfUnchanged(pool, expectedUpdatedAt, false)
+}
+
+// UpdateDataPoolAndColumnsIfUnchanged is UpdateDataPoolIfUnchanged that also
+// replaces the column order with pool.Columns, for an editor that changed it.
+func (s *SQLiteStore) UpdateDataPoolAndColumnsIfUnchanged(pool *SharedDataPool, expectedUpdatedAt time.Time) (bool, error) {
+	return s.updateDataPoolIfUnchanged(pool, expectedUpdatedAt, true)
+}
+
+func (s *SQLiteStore) updateDataPoolIfUnchanged(pool *SharedDataPool, expectedUpdatedAt time.Time, setColumns bool) (bool, error) {
 	if pool == nil {
 		return false, errors.New("data pool is required")
 	}
@@ -102,6 +119,13 @@ func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUp
 	if err != nil {
 		return false, fmt.Errorf("marshal data pool schema: %w", err)
 	}
+	// The order is validated and written only when the caller replaces it.
+	var columnsJSON any
+	if setColumns {
+		if columnsJSON, err = encodeDataPoolColumns(pool); err != nil {
+			return false, err
+		}
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
@@ -111,14 +135,14 @@ func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUp
 	if _, err := lockProjectForOwnedMutation(tx, pool.ProjectID); err != nil {
 		return false, err
 	}
-	var currentProjectID string
+	var currentProjectID, currentColumnsJSON string
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
-	currentQuery := `SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM shared_data_pools WHERE id = ?`
+	currentQuery := `SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT), COALESCE(columns_json, '') FROM shared_data_pools WHERE id = ?`
 	if tx.dialect == storeDialectPostgres {
 		currentQuery += ` FOR UPDATE`
 	}
-	if err := tx.QueryRow(currentQuery, pool.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	if err := tx.QueryRow(currentQuery, pool.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw, &currentColumnsJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -128,13 +152,60 @@ func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUp
 		return false, nil
 	}
 	pool.ProjectID = normalizeProjectID(currentProjectID)
+	if !setColumns {
+		pool.Columns = nil
+		if err := decodeDataPoolColumns(pool, currentColumnsJSON); err != nil {
+			return false, err
+		}
+	}
 	// Microsecond truncation keeps the returned token matchable on Postgres.
 	pool.UpdatedAt = time.Now().Truncate(time.Microsecond)
 	if !pool.UpdatedAt.After(currentUpdatedAt) {
 		pool.UpdatedAt = currentUpdatedAt.Add(time.Microsecond)
 	}
-	result, err := tx.Exec(`UPDATE shared_data_pools SET name = ?, description = ?, schema_json = ?, archived_at = ?, updated_at = ?
+	var result sql.Result
+	if setColumns {
+		result, err = tx.Exec(`UPDATE shared_data_pools SET name = ?, description = ?, schema_json = ?, columns_json = ?, archived_at = ?, updated_at = ?
+		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, string(schemaJSON), columnsJSON, pool.ArchivedAt, pool.UpdatedAt, pool.ID, currentUpdatedRaw)
+	} else {
+		result, err = tx.Exec(`UPDATE shared_data_pools SET name = ?, description = ?, schema_json = ?, archived_at = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, string(schemaJSON), pool.ArchivedAt, pool.UpdatedAt, pool.ID, currentUpdatedRaw)
+	}
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+// UpdateDataPoolColumnsIfUnchanged replaces a pool's column order when it
+// still equals expected. The order is a display hint maintained by imports, so
+// it leaves updated_at, the editor's token for name and archive changes, alone.
+func (s *SQLiteStore) UpdateDataPoolColumnsIfUnchanged(poolID string, expected, columns []string) (bool, error) {
+	expectedJSON, err := encodeDataPoolColumns(&SharedDataPool{Columns: expected})
+	if err != nil {
+		return false, err
+	}
+	columnsJSON, err := encodeDataPoolColumns(&SharedDataPool{Columns: columns})
+	if err != nil {
+		return false, err
+	}
+	expectedText, _ := expectedJSON.(string)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := lockDataPoolParentForMutation(tx, poolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	result, err := tx.Exec(`UPDATE shared_data_pools SET columns_json = ? WHERE id = ? AND COALESCE(columns_json, '') = ?`, columnsJSON, poolID, expectedText)
 	if err != nil {
 		return false, err
 	}
@@ -147,9 +218,9 @@ func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUp
 
 func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
 	var pool SharedDataPool
-	var schemaJSON string
-	err := s.db.QueryRow(`SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools WHERE id = ?`, id).Scan(
-		&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.ProjectID, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt)
+	var schemaJSON, columnsJSON string
+	err := s.db.QueryRow(`SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(columns_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools WHERE id = ?`, id).Scan(
+		&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &columnsJSON, &pool.ProjectID, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +229,9 @@ func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
 		if err := json.Unmarshal([]byte(schemaJSON), &pool.Schema); err != nil {
 			return nil, fmt.Errorf("decode data pool %s schema: %w", id, err)
 		}
+	}
+	if err := decodeDataPoolColumns(&pool, columnsJSON); err != nil {
+		return nil, err
 	}
 	return &pool, nil
 }
@@ -171,7 +245,7 @@ func (s *SQLiteStore) ListDataPoolsForProject(includeArchived bool, projectID st
 }
 
 func (s *SQLiteStore) listDataPools(includeArchived bool, projectID string) ([]*SharedDataPool, error) {
-	query := `SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools`
+	query := `SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(columns_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools`
 	args := make([]any, 0, 2)
 	if projectID != "" {
 		query += ` WHERE project_id = ?`
@@ -193,8 +267,8 @@ func (s *SQLiteStore) listDataPools(includeArchived bool, projectID string) ([]*
 	var pools []*SharedDataPool
 	for rows.Next() {
 		var pool SharedDataPool
-		var schemaJSON string
-		if err := rows.Scan(&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.ProjectID, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt); err != nil {
+		var schemaJSON, columnsJSON string
+		if err := rows.Scan(&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &columnsJSON, &pool.ProjectID, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt); err != nil {
 			return nil, err
 		}
 		pool.ProjectID = normalizeProjectID(pool.ProjectID)
@@ -203,9 +277,69 @@ func (s *SQLiteStore) listDataPools(includeArchived bool, projectID string) ([]*
 				return nil, fmt.Errorf("decode data pool %s schema: %w", pool.ID, err)
 			}
 		}
+		if err := decodeDataPoolColumns(&pool, columnsJSON); err != nil {
+			return nil, err
+		}
 		pools = append(pools, &pool)
 	}
 	return pools, rows.Err()
+}
+
+// MaxDataPoolColumns matches the engine's per-data-source column cap.
+const MaxDataPoolColumns = 4_096
+
+// NormalizeDataPoolColumns trims names and drops blanks and repeats, keeping
+// the first occurrence. Names are case-sensitive, like row keys.
+func NormalizeDataPoolColumns(columns []string) ([]string, error) {
+	if len(columns) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(columns))
+	normalized := make([]string, 0, len(columns))
+	for _, column := range columns {
+		column = strings.TrimSpace(column)
+		if column == "" {
+			continue
+		}
+		if _, dup := seen[column]; dup {
+			continue
+		}
+		seen[column] = struct{}{}
+		normalized = append(normalized, column)
+	}
+	if len(normalized) > MaxDataPoolColumns {
+		return nil, fmt.Errorf("a data pool can have at most %d columns", MaxDataPoolColumns)
+	}
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+	return normalized, nil
+}
+
+func encodeDataPoolColumns(pool *SharedDataPool) (any, error) {
+	columns, err := NormalizeDataPoolColumns(pool.Columns)
+	if err != nil {
+		return nil, err
+	}
+	pool.Columns = columns
+	if len(columns) == 0 {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(columns)
+	if err != nil {
+		return nil, fmt.Errorf("marshal data pool columns: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func decodeDataPoolColumns(pool *SharedDataPool, columnsJSON string) error {
+	if columnsJSON == "" || columnsJSON == "null" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(columnsJSON), &pool.Columns); err != nil {
+		return fmt.Errorf("decode data pool %s columns: %w", pool.ID, err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) DeleteDataPool(id string) error {

@@ -32318,6 +32318,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "columns"?: Array<string>;
           "description"?: string;
           "name": string;
           "project_id"?: string;
@@ -32330,6 +32331,7 @@ export interface operations {
         content: {
           "application/json": {
             "archived_at"?: (string) | null;
+            "columns"?: Array<string>;
             "created_at": string;
             "description"?: string;
             "id": string;
@@ -60973,6 +60975,7 @@ export interface operations {
             "count": number;
             "data_pool": ({
               "archived_at"?: (string) | null;
+              "columns"?: Array<string>;
               "created_at": string;
               "description"?: string;
               "id": string;
@@ -164776,6 +164779,7 @@ export interface operations {
       content: {
         "application/json": {
           "archived_at"?: (string) | null;
+          "columns"?: unknown;
           "description"?: unknown;
           "name"?: (string) | null;
           "schema"?: unknown;
@@ -164788,6 +164792,7 @@ export interface operations {
         content: {
           "application/json": {
             "archived_at"?: (string) | null;
+            "columns"?: Array<string>;
             "created_at": string;
             "description"?: string;
             "id": string;

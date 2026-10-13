@@ -289,6 +289,13 @@ func (tr *TestRunner) prepareLiveTables(ctx context.Context, test *ManagedTest) 
 					extra[c] = true
 				}
 			}
+			// The pool's own column order first, then anything else sorted.
+			for _, c := range seed.Columns {
+				if extra[c] {
+					manifest.Columns = append(manifest.Columns, c)
+					delete(extra, c)
+				}
+			}
 			keys := make([]string, 0, len(extra))
 			for k := range extra {
 				keys = append(keys, k)
@@ -749,6 +756,7 @@ func (tr *TestRunner) finalizeLiveTables(ctx context.Context, test *ManagedTest,
 			for _, column := range columns {
 				req.Schema[column] = "string"
 			}
+			req.Columns = columns
 			for _, row := range rows {
 				status := "available"
 				if row.State == "quarantined" {

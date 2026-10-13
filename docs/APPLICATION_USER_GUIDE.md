@@ -417,7 +417,7 @@ up as an unexpanded template in your request.
 ### Data Sources And Data Pools
 
 A **data source** is declared inside the script; a **data pool** is a project-scoped,
-reusable set of rows managed under [Repository → Shared data pools](#/repository?setting=test-data) and bound to a scenario.
+reusable set of rows managed under [Repository → Shared test data](#/repository?setting=test-data) and bound to a scenario.
 Both are addressed the same way from a script: `{{data.name.column}}`.
 
 The `strategy` field decides how VUsers walk the rows:
@@ -431,6 +431,31 @@ The `strategy` field decides how VUsers walk the rows:
 Rows can be overridden per execution-plan entry. A run receives an immutable, read-only
 snapshot of the selected rows; execution does not update or consume rows in the shared
 pool, so a rerun sees exactly the same data.
+
+A pool's rows are a table with one column per parameter, in the order of the file
+they were imported from. Edit a cell and press Enter, or move to another cell, to
+save it; each cell saves as its own row update, so another person's edits to other
+cells of the row are kept. If someone changed the row first, the list reloads and
+your value stays in the cell until you press Enter to save it over theirs or Escape
+to drop it. Type in the last line to add a row, or paste rows copied from a
+spreadsheet there: when the pasted first line names the columns, values go to those
+columns. Paste adds nothing if values would fall past the last column, or if the
+pasted header names a column the pool doesn't have, so add those columns first.
+**Add column** adds a parameter; rows leave it unset until filled in. Column names
+use letters, numbers, underscores and hyphens, so scripts can reference them as
+`{{data.alias.column}}`. Once every row is loaded, columns no row sets are listed
+above the table, each with a **Remove** button.
+A dash marks a cell the row doesn't set. **Show row details** adds each row's status,
+version and last update, and rows that runs skip (consumed, disabled and the like)
+say so beside their number. CSV export writes the columns in the same order.
+
+In a scenario's Data step, **Add data binding** adds a binding; picking its pool names
+the alias after the pool (`Customer accounts` becomes `customer_accounts`) unless you
+typed one. A binding with nothing chosen yet shows no errors until you choose or type
+something, but saving still requires every binding to be complete.
+
+The replay debugger's isolated live tables can be edited as tables, one per alias, or
+as JSON; use JSON to rename a table or change its behavior.
 
 ### Secrets
 
@@ -1056,7 +1081,7 @@ capabilities; a help link does not grant permission.
 | Root-cause analysis and business-key lookups for a project | [Project analysis](#/settings?setting=analysis) |
 | Schedule behavior and notification delivery | [Schedule defaults](#/settings?setting=scheduling), [Notification routes](#/settings?setting=notifications) |
 | Archive and recording retention | [Archive & HAR retention](#/settings?setting=retention) |
-| Shared input rows | [Repository → Shared data pools](#/repository?setting=test-data) |
+| Shared input rows | [Repository → Shared test data](#/repository?setting=test-data) |
 | Authentication, import policy, redaction and secrets | [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), [Project secrets](#/access?setting=secrets) |
 
 Alert/stop policy affects runtime decisions; a run's SLA verdict and lifecycle status

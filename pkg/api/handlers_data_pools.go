@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -251,7 +253,10 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		Name        *string         `json:"name"`
 		Description json.RawMessage `json:"description"`
 		Schema      json.RawMessage `json:"schema"`
-		UpdatedAt   time.Time       `json:"updated_at"`
+		// Columns sets the display and export order; absent keeps it and
+		// null clears it.
+		Columns   json.RawMessage `json:"columns"`
+		UpdatedAt time.Time       `json:"updated_at"`
 		// Raw so absent (keep current) is distinguishable from null (restore)
 		// and a timestamp (archive): archiving is a governance transition and
 		// must never flip as a side effect of a rename that omits the field.
@@ -287,6 +292,21 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if len(req.Columns) > 0 {
+		var columns []string
+		if strings.TrimSpace(string(req.Columns)) != "null" {
+			if err := json.Unmarshal(req.Columns, &columns); err != nil {
+				writeError(w, http.StatusBadRequest, "columns must be an array of names or null")
+				return
+			}
+		}
+		normalized, err := storage.NormalizeDataPoolColumns(columns)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		existing.Columns = normalized
+	}
 	if len(req.ArchivedAt) > 0 {
 		if strings.TrimSpace(string(req.ArchivedAt)) == "null" {
 			existing.ArchivedAt = nil
@@ -301,10 +321,17 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 	}
 	updater, ok := s.store.(interface {
 		UpdateDataPoolIfUnchanged(pool *storage.SharedDataPool, expectedUpdatedAt time.Time) (bool, error)
+		UpdateDataPoolAndColumnsIfUnchanged(pool *storage.SharedDataPool, expectedUpdatedAt time.Time) (bool, error)
 	})
 	if !ok {
 		writeError(w, http.StatusNotImplemented, "optimistic data pool updates are not supported by this storage backend")
 		return
+	}
+	update := updater.UpdateDataPoolIfUnchanged
+	if len(req.Columns) > 0 {
+		// Only an editor that sent an order replaces it; otherwise a rename
+		// racing an import would put back the order this handler loaded.
+		update = updater.UpdateDataPoolAndColumnsIfUnchanged
 	}
 	// updated_at is the editor's concurrency token. Substituting the freshly
 	// loaded value here would only guard the in-handler window and let a stale
@@ -313,7 +340,7 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "updated_at is required")
 		return
 	}
-	updated, err := updater.UpdateDataPoolIfUnchanged(existing, req.UpdatedAt)
+	updated, err := update(existing, req.UpdatedAt)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1058,8 +1085,69 @@ func (s *Server) handleImportDataPoolRows(w http.ResponseWriter, r *http.Request
 		totalFallback += existingRows
 	}
 	total := s.countDataPoolRows(pool.ID, totalFallback)
+	s.rememberImportedDataPoolColumns(pool, columns, mode == "replace")
 	s.recordAuditEvent(r, "data_pool.rows.import", "success", "data_pool", pool.ID, pool.ProjectID, map[string]any{"name": pool.Name, "mode": mode, "imported": len(rows), "deleted": deleted})
 	writeJSON(w, http.StatusOK, map[string]any{"imported": len(rows), "deleted": deleted, "mode": mode, "columns": columns, "total": total, "warnings": warnings})
+}
+
+// rememberImportedDataPoolColumns keeps the file's column order as the pool's
+// display and export order: a replacement takes the file's order, an append
+// adds the file's new columns after the known ones. The rows are already
+// committed, so losing a race with another change to the order only costs the
+// hint. It leaves the pool's edit token alone, so an import never makes an
+// open rename or archive conflict.
+func (s *Server) rememberImportedDataPoolColumns(pool *storage.SharedDataPool, columns []string, replace bool) {
+	merged := mergeDataPoolColumns(pool.Columns, columns, replace)
+	if slices.Equal(merged, pool.Columns) {
+		return
+	}
+	updater, ok := s.store.(interface {
+		UpdateDataPoolColumnsIfUnchanged(poolID string, expected, columns []string) (bool, error)
+	})
+	if !ok {
+		return
+	}
+	if _, err := updater.UpdateDataPoolColumnsIfUnchanged(pool.ID, pool.Columns, merged); err != nil {
+		slog.Warn("data pool import: column order not saved", "pool_id", pool.ID, "error", err)
+	}
+}
+
+func mergeDataPoolColumns(known, incoming []string, replace bool) []string {
+	base := known
+	if replace {
+		base = nil
+	}
+	merged, err := storage.NormalizeDataPoolColumns(append(append([]string(nil), base...), incoming...))
+	if err != nil {
+		// Over the cap: keep the known order rather than truncating it.
+		return known
+	}
+	return merged
+}
+
+// orderDataPoolColumns lists the pool's ordered columns that are present,
+// then any other present column alphabetically.
+func orderDataPoolColumns(preferred []string, present map[string]struct{}) []string {
+	columns := make([]string, 0, len(present))
+	listed := make(map[string]struct{}, len(preferred))
+	for _, column := range preferred {
+		if _, ok := present[column]; !ok {
+			continue
+		}
+		if _, dup := listed[column]; dup {
+			continue
+		}
+		listed[column] = struct{}{}
+		columns = append(columns, column)
+	}
+	rest := make([]string, 0, len(present)-len(columns))
+	for column := range present {
+		if _, ok := listed[column]; !ok {
+			rest = append(rest, column)
+		}
+	}
+	sort.Strings(rest)
+	return append(columns, rest...)
 }
 
 // parseDataPoolCSVImport recognizes the APEX export preamble and separates its
@@ -1701,11 +1789,7 @@ func (s *Server) handleExportDataPoolRows(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
-	columns := make([]string, 0, len(columnSet))
-	for key := range columnSet {
-		columns = append(columns, key)
-	}
-	sort.Strings(columns)
+	columns := orderDataPoolColumns(pool.Columns, columnSet)
 	statusColumn := dataPoolExportStatusColumn(columnSet)
 
 	// A successful export must fit the exact dimensions and byte envelope that

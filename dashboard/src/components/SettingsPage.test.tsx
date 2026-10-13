@@ -5656,7 +5656,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(apiMock.importDataPoolRows).toHaveBeenCalledWith('pool-1', file, { dryRun: true })
-    expect(section.textContent).toContain('Import Preview')
+    expect(section.textContent).toContain('Import preview')
     expect(section.textContent).toContain('customers.csv')
 
     apiMock.getDataPool.mockResolvedValue({
@@ -5668,7 +5668,7 @@ describe('SettingsPage', () => {
       total: 2,
     })
 
-    const confirmButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent?.includes('Append 2 Row(s)'))
+    const confirmButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent?.includes('Append 2 row(s)'))
     expect(confirmButton).toBeTruthy()
     if (!confirmButton) return
     await act(async () => {
@@ -5745,7 +5745,7 @@ describe('SettingsPage', () => {
     expect(modeSelect?.value).toBe('replace')
     expect(section?.textContent).toContain('can only be imported with mode=replace')
     const confirmButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent?.includes('Replace With 0 Row(s)'))
+      .find(button => button.textContent?.includes('Replace with 0 row(s)'))
     expect(confirmButton).toBeTruthy()
     if (!confirmButton) return
 
@@ -5785,7 +5785,7 @@ describe('SettingsPage', () => {
     if (!nameInput) return
     await setFieldValue(nameInput, 'Customers')
     const addPool = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Add Pool')
+      .find(button => button.textContent === 'Add pool')
     expect(addPool).toBeTruthy()
     if (!addPool) return
     await act(async () => {
@@ -5837,7 +5837,7 @@ describe('SettingsPage', () => {
       deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
-      .find(button => button.textContent === 'Delete Data Pool')
+      .find(button => button.textContent === 'Delete data pool')
     expect(confirm).toBeTruthy()
     if (!confirm) return
     await act(async () => {
@@ -5970,7 +5970,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
-    expect(section?.textContent).toContain('showing 100 of 101 rows')
+    expect(section?.textContent).toContain('Showing 100 of 101 rows')
     const loadMore = Array.from(section?.querySelectorAll('button') || [])
       .find(button => button.textContent?.includes('Load more rows (1 remaining)'))
     expect(loadMore).toBeTruthy()
@@ -5982,7 +5982,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(apiMock.getDataPool).toHaveBeenCalledWith('pool-1', { limit: 100, cursor: 'cursor-after-row-100' })
-    expect(section?.textContent).toContain('C-101')
+    expect(dataPoolGridText(section)).toContain('C-101')
     expect(section?.textContent).toContain('101 rows')
     expect(section?.textContent).not.toContain('Load more rows')
   })
@@ -6051,14 +6051,14 @@ describe('SettingsPage', () => {
 
     expect(apiMock.getDataPool).toHaveBeenNthCalledWith(2, 'pool-1', { limit: 100, cursor: 'cursor-after-stale-row' })
     expect(apiMock.getDataPool).toHaveBeenNthCalledWith(3, 'pool-1', { limit: 100, cursor: '' })
-    expect(section?.textContent).toContain('C-fresh')
-    expect(section?.textContent).not.toContain('C-stale')
+    expect(dataPoolGridText(section)).toContain('C-fresh')
+    expect(dataPoolGridText(section)).not.toContain('C-stale')
     expect(section?.textContent).toContain('refreshed from the beginning')
   })
 
   it('ignores a stale initial row-load failure after a newer mutation refresh succeeds', async () => {
     apiMock.listDataPools.mockResolvedValue({
-      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', columns: ['customer_id'], created_at: '', updated_at: '' }],
       count: 1,
     })
     let rejectInitialLoad: ((reason?: unknown) => void) | undefined
@@ -6098,6 +6098,10 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
+    const newCell = dataPoolCell(section, 'customer_id, new row')
+    expect(newCell).toBeTruthy()
+    if (!newCell) return
+    await setFieldValue(newCell, 'C-10001')
     const addButton = Array.from(section?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Add row')
     expect(addButton).toBeTruthy()
@@ -6107,49 +6111,127 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    expect(section?.textContent).toContain('C-10001')
+    expect(dataPoolGridText(section)).toContain('C-10001')
 
     await act(async () => {
       rejectInitialLoad?.(new Error('stale initial row read failed'))
     })
     await flushPromises()
 
-    expect(section?.textContent).toContain('C-10001')
+    expect(dataPoolGridText(section)).toContain('C-10001')
     expect(section?.textContent).not.toContain('stale initial row read failed')
     expect(section?.textContent).not.toContain('Unable to load data pool rows')
   })
 
-  it('explains invalid row JSON beside the row editor, not at the top of the page', async () => {
+  it('shows pool rows one column per parameter in the pool\'s column order', async () => {
     apiMock.listDataPools.mockResolvedValue({
-      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', columns: ['zip', 'customer_id'], created_at: '', updated_at: '' }],
       count: 1,
     })
-    apiMock.getDataPool.mockReset().mockResolvedValue({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [], total: 0, has_more: false, next_cursor: '' })
+    apiMock.getDataPool.mockReset().mockResolvedValue({
+      data_pool: { id: 'pool-1', name: 'Customers', columns: ['zip', 'customer_id'] },
+      rows: [
+        { id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-1', zip: '10001', email: 'a@example.test' }, version: 1, created_at: '', updated_at: '2026-05-18T12:00:00Z' },
+        { id: 'row-2', pool_id: 'pool-1', status: 'consumed', data: { customer_id: 'C-2' }, version: 2, created_at: '', updated_at: '2026-05-18T12:00:00Z' },
+      ],
+      total: 2,
+      has_more: false,
+      next_cursor: '',
+    })
     apiMock.createDataPoolRow.mockReset()
     window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
     await flushPromises()
+    await flushPromises()
     const section = container.querySelector('#settings-section-data-pools')!
-    const editor = section.querySelector('textarea[aria-labelledby="data-pool-row-label"]') as HTMLTextAreaElement
-    expect(editor).toBeTruthy()
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(editor, '{"customer_id": ')
-      editor.dispatchEvent(new Event('input', { bubbles: true }))
-    })
+    const headers = Array.from(section.querySelectorAll('table[aria-label="Rows of Customers"] thead th')).map(cell => cell.textContent)
+    // Stored order first, then columns only rows use; no JSON column.
+    expect(headers.slice(1, 4)).toEqual(['zip', 'customer_id', 'email'])
+    expect(section.textContent).not.toContain('{"')
+    expect(dataPoolCell(section, 'zip, row 1')?.value).toBe('10001')
+    expect(dataPoolCell(section, 'zip, row 2')?.placeholder).toBe('—')
+    // Inactive rows say so; status and version sit behind the details toggle.
+    expect(section.textContent).toContain('consumed, skipped by runs')
+    expect(section.textContent).not.toContain('version 2')
+    const toggle = Array.from(section.querySelectorAll('label')).find(label => label.textContent === 'Show row details')?.querySelector('input')
+    await act(async () => { toggle?.click() })
+    expect(section.textContent).toContain('consumed · version 2')
+
+    // An empty new row is not sent.
     const addButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Add row')!
     await act(async () => addButton.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const error = section.querySelector('#data-pool-row-error')
-    expect(error?.getAttribute('role')).toBe('alert')
-    expect(error?.textContent).toContain('Row data is not valid JSON')
-    expect(error?.textContent).not.toContain('Unexpected')
+    expect(section.textContent).toContain('Type at least one value before adding the row.')
     expect(apiMock.createDataPoolRow).not.toHaveBeenCalled()
+  })
+
+  it('adds a column to the pool\'s stored order with its edit token', async () => {
+    const pool = { id: 'pool-1', name: 'Customers', project_id: 'project-1', columns: ['customer_id'], created_at: '', updated_at: '2026-05-18T12:00:00Z' }
+    apiMock.listDataPools.mockResolvedValue({ data_pools: [pool], count: 1 })
+    apiMock.getDataPool.mockReset().mockResolvedValue({ data_pool: pool, rows: [], total: 0, has_more: false, next_cursor: '' })
+    apiMock.updateDataPool.mockReset().mockResolvedValue({ ...pool, columns: ['customer_id', 'region'], updated_at: '2026-05-18T12:01:00Z' })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    const section = container.querySelector('#settings-section-data-pools')!
+    const addColumn = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Add column')!
+    await act(async () => addColumn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const nameInput = Array.from(section.querySelectorAll('label')).find(label => label.textContent?.startsWith('Column name'))?.querySelector('input') as HTMLInputElement
+    await setFieldValue(nameInput, 'customer_id')
+    const submit = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Add')!
+    await act(async () => submit.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(section.textContent).toContain('There is already a column named "customer_id".')
+    expect(apiMock.updateDataPool).not.toHaveBeenCalled()
+
+    await setFieldValue(nameInput, 'region')
+    await act(async () => submit.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    expect(apiMock.updateDataPool).toHaveBeenCalledWith('pool-1', { name: 'Customers', columns: ['customer_id', 'region'], updated_at: '2026-05-18T12:00:00Z' })
+    expect(dataPoolCell(section, 'region, new row')).toBeTruthy()
+
+    // A column no row sets can be removed again.
+    const emptyColumns = section.querySelector('.data-grid-empty-columns[role="group"]')!
+    expect([...emptyColumns.querySelectorAll('button')].map(button => button.textContent)).toEqual(['Remove customer_id', 'Remove region'])
+    apiMock.updateDataPool.mockResolvedValue({ ...pool, columns: ['customer_id'], updated_at: '2026-05-18T12:02:00Z' })
+    await act(async () => [...emptyColumns.querySelectorAll('button')].find(button => button.textContent === 'Remove region')!.click())
+    await flushPromises()
+    expect(apiMock.updateDataPool).toHaveBeenLastCalledWith('pool-1', { name: 'Customers', columns: ['customer_id'], updated_at: '2026-05-18T12:01:00Z' })
+    expect(dataPoolCell(section, 'region, new row')).toBeNull()
+  })
+
+  it('appends pasted spreadsheet rows as one import matched by their header', async () => {
+    const pool = { id: 'pool-1', name: 'Customers', project_id: 'project-1', columns: ['customer_id', 'region'], created_at: '', updated_at: '' }
+    apiMock.listDataPools.mockResolvedValue({ data_pools: [pool], count: 1 })
+    apiMock.getDataPool.mockReset().mockResolvedValue({ data_pool: pool, rows: [], total: 0, has_more: false, next_cursor: '' })
+    apiMock.importDataPoolRows.mockReset().mockResolvedValue({ mode: 'append', columns: ['region', 'customer_id'], imported: 2, total: 2 })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    const section = container.querySelector('#settings-section-data-pools')!
+    const cell = dataPoolCell(section, 'customer_id, new row')!
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: { getData: (type: string) => string } }
+    paste.clipboardData = { getData: () => 'region\tcustomer_id\neast\tC-1\nwest\tC-2\n' }
+    await act(async () => { cell.dispatchEvent(paste) })
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.importDataPoolRows).toHaveBeenCalledTimes(1)
+    const [poolId, file, options] = apiMock.importDataPoolRows.mock.calls[0] as [string, File, unknown]
+    expect(poolId).toBe('pool-1')
+    expect(options).toEqual({ mode: 'append', delimiter: 'comma' })
+    expect(await file.text()).toBe('customer_id,region\r\nC-1,east\r\nC-2,west\r\n')
+    expect(container.textContent).toContain('2 rows added.')
   })
 
   it('reports a created data-pool row as saved when only the reconciliation read fails', async () => {
     apiMock.listDataPools.mockResolvedValue({
-      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', columns: ['customer_id'], created_at: '', updated_at: '' }],
       count: 1,
     })
     apiMock.getDataPool
@@ -6180,6 +6262,10 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
+    const newCell = dataPoolCell(section, 'customer_id, new row')
+    expect(newCell).toBeTruthy()
+    if (!newCell) return
+    await setFieldValue(newCell, 'C-10001')
     const addButton = Array.from(section?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Add row')
     expect(addButton).toBeTruthy()
@@ -6196,7 +6282,7 @@ describe('SettingsPage', () => {
     expect(container.textContent).not.toContain('Unable to save data row')
   })
 
-  it('reports an updated data-pool row as saved when only the reconciliation read fails', async () => {
+  it('saves an edited cell as one row update with the version the row was loaded at', async () => {
     apiMock.listDataPools.mockResolvedValue({
       data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
       count: 1,
@@ -6204,23 +6290,21 @@ describe('SettingsPage', () => {
     const row = {
       id: 'row-1',
       pool_id: 'pool-1',
-      data: { customer_id: 'C-1' },
+      data: { customer_id: 'C-1', region: 'east' },
       version: 3,
       created_at: '2026-05-18T12:00:00Z',
       updated_at: '2026-05-18T12:00:00Z',
     }
-    apiMock.getDataPool
-      .mockReset()
-      .mockResolvedValueOnce({
-        data_pool: { id: 'pool-1', name: 'Customers' },
-        rows: [row],
-        total: 1,
-        has_more: false,
-        next_cursor: '',
-      })
-      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.getDataPool.mockReset().mockResolvedValue({
+      data_pool: { id: 'pool-1', name: 'Customers' },
+      rows: [row],
+      total: 1,
+      has_more: false,
+      next_cursor: '',
+    })
     apiMock.updateDataPoolRow.mockReset()
-    apiMock.updateDataPoolRow.mockResolvedValue({ ...row, version: 4 })
+      .mockResolvedValueOnce({ ...row, data: { customer_id: 'C-2', region: 'east' }, version: 4 })
+      .mockResolvedValueOnce({ ...row, data: { customer_id: 'C-2', region: 'west' }, version: 5 })
     window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
 
     await act(async () => {
@@ -6230,27 +6314,24 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
-    const editButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Edit')
-    expect(editButton).toBeTruthy()
-    if (!editButton) return
+    const idCell = dataPoolCell(section, 'customer_id, row 1')!
+    const regionCell = dataPoolCell(section, 'region, row 1')!
+    await setFieldValue(idCell, 'C-2')
+    await setFieldValue(regionCell, 'west')
+    // Two edits in a row: the second waits for the first and sends its version.
     await act(async () => {
-      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    const updateButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Save row')
-    expect(updateButton).toBeTruthy()
-    if (!updateButton) return
-
-    await act(async () => {
-      updateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      idCell.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      regionCell.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
     })
     await flushPromises()
     await flushPromises()
 
-    expect(apiMock.updateDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1', { data: { customer_id: 'C-1' }, version: 3 })
-    expect(container.textContent).toContain('The save succeeded—do not retry the update.')
-    expect(container.textContent).not.toContain('Unable to save data row')
+    expect(apiMock.updateDataPoolRow).toHaveBeenNthCalledWith(1, 'pool-1', 'row-1', { data: { customer_id: 'C-2', region: 'east' }, version: 3 })
+    expect(apiMock.updateDataPoolRow).toHaveBeenNthCalledWith(2, 'pool-1', 'row-1', { data: { customer_id: 'C-2', region: 'west' }, version: 4 })
+    // Saved in place: no reload of the row list.
+    expect(apiMock.getDataPool).toHaveBeenCalledTimes(1)
+    expect(dataPoolCell(section, 'region, row 1')?.value).toBe('west')
+    expect(container.textContent).not.toContain('Unable to save')
   })
 
   it('reports a deleted data-pool row as committed when only the reconciliation read fails', async () => {
@@ -6287,7 +6368,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
-    const deleteButton = Array.from(section?.querySelectorAll('td[aria-label="Data pool actions"] button') || [])
+    const deleteButton = Array.from(section?.querySelectorAll('.data-grid-actions button') || [])
       .find(button => button.textContent === 'Delete')
     expect(deleteButton).toBeTruthy()
     if (!deleteButton) return
@@ -6295,7 +6376,7 @@ describe('SettingsPage', () => {
       deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
-      .find(button => button.textContent === 'Delete Row')
+      .find(button => button.textContent === 'Delete row')
     expect(confirm).toBeTruthy()
     if (!confirm) return
     await act(async () => {
@@ -6363,7 +6444,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const confirmButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent?.includes('Append 2 Row(s)'))
+      .find(button => button.textContent?.includes('Append 2 row(s)'))
     expect(confirmButton).toBeTruthy()
     if (!confirmButton) return
     await act(async () => {
@@ -6420,7 +6501,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
-    const deleteButton = Array.from(section?.querySelectorAll('td[aria-label="Data pool actions"] button') || [])
+    const deleteButton = Array.from(section?.querySelectorAll('.data-grid-actions button') || [])
       .find(button => button.textContent === 'Delete')
     expect(deleteButton).toBeTruthy()
     if (!deleteButton) return
@@ -6438,7 +6519,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
-      .find(button => button.textContent === 'Delete Row')
+      .find(button => button.textContent === 'Delete row')
     expect(confirm).toBeTruthy()
     if (!confirm) return
     await act(async () => {
@@ -6448,7 +6529,7 @@ describe('SettingsPage', () => {
 
     expect(apiMock.deleteDataPoolRow).toHaveBeenCalledWith('pool-a', 'row-a')
     expect(apiMock.getDataPool.mock.calls.filter(([poolId]) => poolId === 'pool-a')).toHaveLength(1)
-    expect(section?.textContent).toContain('B-visible')
+    expect(dataPoolGridText(section)).toContain('B-visible')
     expect(section?.textContent).not.toContain('Row deleted.')
     expect(section?.textContent).not.toContain('Unable to delete data row')
   })
@@ -6456,8 +6537,8 @@ describe('SettingsPage', () => {
   it('does not let a late row mutation invalidate the newly selected pool or erase its draft', async () => {
     apiMock.listDataPools.mockResolvedValue({
       data_pools: [
-        { id: 'pool-a', name: 'Primary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
-        { id: 'pool-b', name: 'Secondary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-a', name: 'Primary Customers', project_id: 'project-1', columns: ['customer_id'], created_at: '', updated_at: '' },
+        { id: 'pool-b', name: 'Secondary Customers', project_id: 'project-1', columns: ['customer_id'], created_at: '', updated_at: '' },
       ],
       count: 2,
     })
@@ -6511,6 +6592,10 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
+    const poolACell = dataPoolCell(section, 'customer_id, new row')
+    expect(poolACell).toBeTruthy()
+    if (!poolACell) return
+    await setFieldValue(poolACell, 'C-10001')
     const addButton = Array.from(section?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Add row')
     expect(addButton).toBeTruthy()
@@ -6529,10 +6614,10 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    const rowEditor = section?.querySelector('textarea') as HTMLTextAreaElement | null
+    const rowEditor = dataPoolCell(section, 'customer_id, new row')
     expect(rowEditor).toBeTruthy()
     if (!rowEditor) return
-    const poolBDraft = '{\n  "customer_id": "B-draft"\n}'
+    const poolBDraft = 'B-draft'
     await setFieldValue(rowEditor, poolBDraft)
 
     await act(async () => {
@@ -6566,8 +6651,8 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    expect(section?.textContent).toContain('B-visible')
-    expect(rowEditor.value).toBe(poolBDraft)
+    expect(dataPoolGridText(section)).toContain('B-visible')
+    expect(dataPoolCell(section, 'customer_id, new row')?.value).toBe(poolBDraft)
   })
 
   it('discards a late import preview after the user selects another data pool', async () => {
@@ -6640,8 +6725,8 @@ describe('SettingsPage', () => {
 
     expect(apiMock.importDataPoolRows).toHaveBeenCalledTimes(1)
     expect(apiMock.importDataPoolRows).toHaveBeenCalledWith('pool-a', file, { dryRun: true })
-    expect(section?.textContent).not.toContain('Import Preview')
-    expect(section?.textContent).not.toContain('Append 1 Row(s)')
+    expect(section?.textContent).not.toContain('Import preview')
+    expect(section?.textContent).not.toContain('Append 1 row(s)')
   })
 
   it('does not surface a late export failure against a newly selected data pool', async () => {
@@ -6711,17 +6796,23 @@ describe('SettingsPage', () => {
     expect(container.textContent).not.toContain('export backend unavailable')
   })
 
-  it('sends the edit-time version token and closes the row editor on a 409 conflict', async () => {
+  it('keeps a conflicting cell value in its cell and reloads the row on a 409', async () => {
     apiMock.listDataPools.mockResolvedValue({
       data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
       count: 1,
     })
-    apiMock.getDataPool.mockResolvedValue({
-      data_pool: { id: 'pool-1', name: 'Customers' },
-      rows: [{ id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-1' }, version: 3, created_at: '2026-05-18T12:00:00Z', updated_at: '2026-05-18T12:00:00Z' }],
-      total: 1,
-    })
-    apiMock.updateDataPoolRow.mockRejectedValue(new ApiError('data pool row changed while the update was in flight; reload and retry', 409))
+    apiMock.getDataPool.mockReset()
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [{ id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-1' }, version: 3, created_at: '2026-05-18T12:00:00Z', updated_at: '2026-05-18T12:00:00Z' }],
+        total: 1,
+      })
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [{ id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-9' }, version: 4, created_at: '2026-05-18T12:00:00Z', updated_at: '2026-05-18T12:01:00Z' }],
+        total: 1,
+      })
+    apiMock.updateDataPoolRow.mockReset().mockRejectedValue(new ApiError('data pool row changed while the update was in flight; reload and retry', 409))
     window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
 
     await act(async () => {
@@ -6731,29 +6822,54 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const section = container.querySelector('#settings-section-data-pools')
-    expect(section).toBeTruthy()
-    if (!section) return
-    const editButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Edit')
-    expect(editButton).toBeTruthy()
-    if (!editButton) return
-    await act(async () => {
-      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(section.textContent).toContain('Edit row')
-
-    const updateButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Save row')
-    expect(updateButton).toBeTruthy()
-    if (!updateButton) return
-    await act(async () => {
-      updateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    const cell = dataPoolCell(section, 'customer_id, row 1')!
+    await setFieldValue(cell, 'C-2')
+    await act(async () => { cell.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
+    await flushPromises()
     await flushPromises()
 
-    expect(apiMock.updateDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1', { data: { customer_id: 'C-1' }, version: 3 })
-    expect(section.textContent).not.toContain('Edit row')
-    // The conflict message renders in the shared section-messages banner, which
-    // sits outside the section element itself.
-    expect(container.textContent).toContain('reopen the row to apply your change')
+    expect(apiMock.updateDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1', { data: { customer_id: 'C-2' }, version: 3 })
+    expect(apiMock.getDataPool).toHaveBeenCalledTimes(2)
+    // The typed value stays put, marked, over the reloaded row.
+    expect(dataPoolCell(section, 'customer_id, row 1')?.value).toBe('C-2')
+    expect(dataPoolCell(section, 'customer_id, row 1')?.getAttribute('aria-invalid')).toBe('true')
+    // The reason is shown once, at the cell, not also as a page error.
+    const description = document.getElementById(dataPoolCell(section, 'customer_id, row 1')?.getAttribute('aria-describedby') || '')
+    expect(description?.textContent).toContain('customer_id in row 1 was not saved. The row changed while you were editing')
+    expect(container.querySelector('#settings-section-data-pools .settings-error-inline')).toBeNull()
+  })
+
+  it('keeps rows from later pages, and the value in their cells, when a cell save conflicts', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    const row = (index: number, version = 1) => ({ id: `row-${index}`, pool_id: 'pool-1', data: { customer_id: `C-${index}` }, version, created_at: '', updated_at: '' })
+    const firstPage = { data_pool: { id: 'pool-1', name: 'Customers' }, rows: Array.from({ length: 100 }, (_, index) => row(index + 1)), total: 101, has_more: true, next_cursor: 'after-100' }
+    apiMock.getDataPool.mockReset()
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [row(101)], total: 101, has_more: false, next_cursor: '' })
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [{ ...row(101, 2), data: { customer_id: 'C-other' } }], total: 101, has_more: false, next_cursor: '' })
+    apiMock.updateDataPoolRow.mockReset().mockRejectedValue(new ApiError('data pool row changed', 409))
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    const section = container.querySelector('#settings-section-data-pools')
+    const loadMore = Array.from(section?.querySelectorAll('button') || []).find(button => button.textContent?.includes('Load more rows'))!
+    await act(async () => loadMore.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    const cell = dataPoolCell(section, 'customer_id, row 101')!
+    await setFieldValue(cell, 'C-mine')
+    await act(async () => { cell.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
+    for (let i = 0; i < 4; i++) await flushPromises()
+
+    expect(apiMock.getDataPool).toHaveBeenNthCalledWith(4, 'pool-1', { limit: 100, cursor: 'after-100' })
+    expect(dataPoolCell(section, 'customer_id, row 101')?.value).toBe('C-mine')
+    expect(section?.textContent).toContain('101 rows')
   })
 
   it('offers fleet pools for reservation scoping and excludes pool-scoped rows from the usage summary', async () => {
@@ -7111,6 +7227,16 @@ async function setFieldValue(element: HTMLInputElement | HTMLTextAreaElement | H
     element.dispatchEvent(new Event('input', { bubbles: true }))
     element.dispatchEvent(new Event('change', { bubbles: true }))
   })
+}
+
+// Grid cells are inputs, so their values are not part of textContent.
+function dataPoolGridText(section: Element | null | undefined): string {
+  const values = Array.from(section?.querySelectorAll<HTMLInputElement>('input.data-grid-input') || []).map(input => input.value)
+  return [section?.textContent || '', ...values].join(' ')
+}
+
+function dataPoolCell(section: Element | null | undefined, label: string): HTMLInputElement | null {
+  return section?.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`) || null
 }
 
 async function flushPromises() {

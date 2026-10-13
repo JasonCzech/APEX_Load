@@ -76,7 +76,7 @@ const KIND_LABELS: Record<RepositoryAssetKind, string> = {
   script: 'Script',
   scenario: 'Scenario',
   test: 'Test Run',
-  data_pool: 'Data Pool',
+  data_pool: 'Data pool',
 }
 
 const TIMEFRAME_DAYS: Record<string, number> = {

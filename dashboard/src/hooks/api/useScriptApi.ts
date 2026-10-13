@@ -156,10 +156,10 @@ type DataPoolDeleteResponse = {
   deleted: string
 }
 
-type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'project_id'>>
+type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'columns' | 'project_id'>>
 type DataPoolUpdateRequest =
   Pick<SharedDataPool, 'name' | 'updated_at'>
-  & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at'>>
+  & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'columns' | 'archived_at'>>
 
 type DataPoolRowUpsertRequest = Pick<SharedDataPoolRow, 'data'> & Partial<Pick<SharedDataPoolRow, 'status' | 'version'>>
 type DataPoolRowUpdateRequest = Pick<SharedDataPoolRow, 'data' | 'version'> & Partial<Pick<SharedDataPoolRow, 'status'>>

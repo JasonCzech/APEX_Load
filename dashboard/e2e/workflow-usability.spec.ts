@@ -89,7 +89,7 @@ test('OpenAPI prerequisite import returns the saved script to the original group
   await expect(page.getByRole('button',{name:'Prerequisite_orders: change the script for Checkout group'})).toContainText('Prerequisite_orders')
 })
 
-test('data pool row failure retains the scenario and retries without creating a second pool',async({page,request})=>{
+test('a failed data pool creation keeps the scenario and the typed pool, and a retry attaches it',async({page,request})=>{
  const workspace=await createWorkspace(request)
  await page.goto(`/#/new-test?${scopeQuery(workspace)}`)
  await page.getByRole('button',{name:'Open scenario builder'}).click()
@@ -97,17 +97,21 @@ test('data pool row failure retains the scenario and retries without creating a 
  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button',{name:/^Data/}).click()
  await page.getByText('Create a data pool without leaving this draft',{exact:true}).click()
  await page.getByLabel('New data pool name').fill('Recovery data')
- await page.getByLabel('First data row (JSON object)').fill('{"account":"test-1"}')
- await page.route('**/api/v1/data-pools/*/rows',async route=>{
-  if(route.request().method()==='POST') await route.fulfill({status:503,json:{error:'Fixture: row temporarily unavailable'}})
+ await page.getByLabel('Columns (parameter names, separated by commas)').fill('account')
+ await page.route('**/api/v1/data-pools',async route=>{
+  if(route.request().method()==='POST') await route.fulfill({status:503,json:{error:'Fixture: pool service temporarily unavailable'}})
   else await route.continue()
  })
  await page.getByRole('button',{name:'Create and attach data pool'}).click()
- await expect(page.getByRole('alert')).toContainText('Fixture: row temporarily unavailable')
- await expect(page.getByLabel('First data row (JSON object)')).toHaveValue('{"account":"test-1"}')
- await page.unroute('**/api/v1/data-pools/*/rows')
- await page.getByRole('button',{name:'Retry adding first row'}).click()
- await expect(page.getByRole('combobox',{name:'Data Pool',exact:true})).not.toHaveValue('')
+ await expect(page.getByRole('alert')).toContainText('Fixture: pool service temporarily unavailable')
+ await expect(page.getByLabel('New data pool name')).toHaveValue('Recovery data')
+ await expect(page.getByLabel('Columns (parameter names, separated by commas)')).toHaveValue('account')
+ await expect(page.getByRole('combobox',{name:'Data pool',exact:true})).toHaveCount(0)
+ await page.unroute('**/api/v1/data-pools')
+ await page.getByRole('button',{name:'Create and attach data pool'}).click()
+ await expect(page.getByRole('combobox',{name:'Data pool',exact:true})).toHaveCount(1)
+ await expect(page.getByRole('combobox',{name:'Data pool',exact:true})).not.toHaveValue('')
+ await expect(page.getByLabel('Alias',{exact:true})).toHaveValue('recovery_data')
  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button',{name:/^Start/}).click()
  await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Data recovery scenario')
 })

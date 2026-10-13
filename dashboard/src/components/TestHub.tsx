@@ -98,7 +98,8 @@ import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
 import CSVDrivenSourcePanel from './CSVDrivenSourcePanel'
 import ScenarioDataBindings from './ScenarioDataBindings'
 import { ScenarioMonitorBindings } from './RunMonitoring'
-import { dataBindingErrors } from './scenarioDataBindingModel'
+import { aliasForPool, dataBindingErrors } from './scenarioDataBindingModel'
+import { COLUMN_NAME_RULE, isReferenceableColumnName } from './ux/dataRowGridModel'
 import NewTestReadiness from './NewTestReadiness'
 import type { RunLoadProfilePreview } from './newTestRunModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
@@ -843,8 +844,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [scenarioStartPath, setScenarioStartPath] = useState<'new' | 'copy'>('new')
   const [selectedShapeId, setSelectedShapeId] = useState('')
   const [prerequisiteScript, setPrerequisiteScript] = useState<'start-new' | 'source' | null>(null)
-  const [newPoolRow, setNewPoolRow] = useState('')
-  const [createdPoolId, setCreatedPoolId] = useState<string | null>(null)
+  const [newPoolColumns, setNewPoolColumns] = useState('')
   const [newPoolName, setNewPoolName] = useState('')
   const [poolCreating, setPoolCreating] = useState(false)
   const [authoringDraft, setAuthoringDraft] = useState<ScenarioAuthoringDraft | null>(() => readScenarioAuthoringDraft(activeProjectId || ''))
@@ -948,9 +948,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   effectiveAccessScopeKeyRef.current = effectiveAccessScopeKey
   if (currentProjectIdRef.current !== activeProjectId) {
     setPrerequisiteScript(null)
-    setCreatedPoolId(null)
     setNewPoolName('')
-    setNewPoolRow('')
+    setNewPoolColumns('')
     currentProjectIdRef.current = activeProjectId
     refreshGenerationRef.current += 1
     scenarioDraftGenerationRef.current += 1
@@ -1621,9 +1620,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     scenarioDraftGenerationRef.current += 1
     setGoalSizingError('')
     setGoalBaselineLoadingId('')
-    setCreatedPoolId(null)
     setNewPoolName('')
-    setNewPoolRow('')
+    setNewPoolColumns('')
     setPoolCreating(false)
     goalGuardrailsEditedRef.current = false
     setEditingId(null)
@@ -3282,7 +3280,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
   }, [api, showForm])
 
-  const dataPoolLabel = scenarioBindings.length ? scenarioBindings.map(binding => `${binding.alias || 'Unnamed alias'}: ${binding.scope === 'project' ? 'Project live table' : binding.access_mode === 'live' && binding.live_options?.seed_policy === 'empty' ? 'Empty live table' : binding.access_mode === 'live' && binding.live_options?.seed_policy === 'original_seed' ? 'Prior run seed' : dataPools.find(pool => pool.id === binding.pool_id)?.name || 'Unavailable pool'}`).join(', ') : 'No data pool'
+  const dataPoolLabel = scenarioBindings.length ? scenarioBindings.map((binding, index) => `${binding.alias || `Binding ${index + 1}`}: ${binding.scope === 'project' ? 'Project live table' : binding.access_mode === 'live' && binding.live_options?.seed_policy === 'empty' ? 'Empty live table' : binding.access_mode === 'live' && binding.live_options?.seed_policy === 'original_seed' ? 'Prior run seed' : !binding.pool_id ? 'no pool chosen yet' : dataPools.find(pool => pool.id === binding.pool_id)?.name || 'Unavailable pool'}`).join(', ') : 'No data pool'
   const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : scenarioSourceMode === 'csv_driven' ? 'CSV Driven' : 'Manual shape')
   const goalSizingIncomplete = isGoalDriven && formGroups.some((_, index) => !(Number(goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.art?.art_ms) > 0))
   const validationLabel = loadModelValidationLoading ? 'Checking' : loadModelValidationError ? 'Validation failed' : loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
@@ -4579,10 +4577,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <p>Attach data pools for scripts that need coordinated parameter data.</p>
           </div>
           <details><summary>Create a data pool without leaving this draft</summary>
-            {!canManageScripts && <p>Data pool creation requires editor permission. Ask a project administrator to create it in Settings → Data Pools.</p>}
-            <p>Requires permission to manage data pools. Start with a JSON data row, or leave it empty and import CSV after creating the pool.</p>
-            <label>New data pool name<input value={newPoolName} disabled={!!createdPoolId} onChange={event => setNewPoolName(event.target.value)} /></label>
-            <label>First data row (JSON object)<textarea value={newPoolRow} onChange={event => setNewPoolRow(event.target.value)} /></label>
+            {!canManageScripts && <p>Data pool creation requires editor permission. Ask a project administrator to create it in Repository › Shared test data.</p>}
+            <p>Requires permission to manage data pools. Name the pool and its columns; add rows afterwards in the pool's row editor, or import a CSV from the binding's preview.</p>
+            <label>New data pool name<input value={newPoolName} onChange={event => setNewPoolName(event.target.value)} /></label>
+            <label>Columns (parameter names, separated by commas)<input value={newPoolColumns} placeholder="customer_id, email" onChange={event => setNewPoolColumns(event.target.value)} /></label>
             <button className="btn btn-secondary" disabled={!canManageScripts || poolCreating || !newPoolName.trim()} onClick={async () => {
               const project = activeProjectId
               const generation = scenarioDraftGenerationRef.current
@@ -4590,19 +4588,20 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               if (!project) return
               setPoolCreating(true)
               try {
-                const data: unknown = newPoolRow.trim() ? JSON.parse(newPoolRow) : null
-                if (data !== null && (typeof data !== 'object' || Array.isArray(data) || Object.values(data).some(value => typeof value !== 'string'))) throw new Error('Enter a JSON object with string values for the first row.')
-                const pool = createdPoolId ? dataPools.find(item => item.id === createdPoolId) : await api.createDataPool({ name: newPoolName.trim(), project_id: project })
-                if (!pool || !isCurrentDraft()) return
-                setCreatedPoolId(pool.id)
-                setDataPools(previous => [...previous.filter(item => item.id !== pool.id), pool])
-                if (data !== null) await api.createDataPoolRow(pool.id, { data: data as Record<string, string> })
+                const columns = [...new Set(newPoolColumns.split(',').map(column => column.trim()).filter(Boolean))]
+                const unusable = columns.filter(column => !isReferenceableColumnName(column))
+                if (unusable.length) {
+                  setError(`Column ${unusable.join(', ')} can't be used. ${COLUMN_NAME_RULE}`)
+                  return
+                }
+                const pool = await api.createDataPool({ name: newPoolName.trim(), project_id: project, ...(columns.length ? { columns } : {}) })
                 if (!isCurrentDraft()) return
-                setForm(previous => ({...previous, data_pools: [...(previous.data_pools || []), {pool_id: pool.id, alias: pool.name.toLowerCase().replace(/\W+/g, '_'), access_mode: 'read_only', selection_strategy: 'sequential'}]}))
-                setCreatedPoolId(null); setNewPoolName(''); setNewPoolRow(''); setError('')
+                setDataPools(previous => [...previous.filter(item => item.id !== pool.id), pool])
+                setForm(previous => ({...previous, data_pools: [...(previous.data_pools || []), {pool_id: pool.id, alias: aliasForPool(pool.name, (previous.data_pools || []).map(binding => binding.alias)), access_mode: 'read_only', selection_strategy: 'sequential'}]}))
+                setNewPoolName(''); setNewPoolColumns(''); setError('')
               } catch (error) { if (isCurrentDraft()) setError(getErrorMessage(error, 'Unable to create data pool. Your scenario draft is retained.')) }
               finally { if (isCurrentDraft()) setPoolCreating(false) }
-            }}>{poolCreating ? 'Creating…' : createdPoolId ? 'Retry adding first row' : 'Create and attach data pool'}</button>
+            }}>{poolCreating ? 'Creating…' : 'Create and attach data pool'}</button>
           </details>
 
           {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} scenarioTag={scenarioBaseline?.etag} onSaved={() => void adoptBaselineAfterBindingsSave()} onScenarioChanged={() => setScenarioConflict(conflict => conflict || { reason: scenarioConflictReason(new ApiError('scenario changed', 412)), loading: false, current: null })} />}

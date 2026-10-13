@@ -1,0 +1,37 @@
+/* DataRowGrid: the shared parameter-data table. */
+.data-grid { display: grid; gap: 8px; min-width: 0; }
+.data-grid-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.data-grid-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.data-grid-add-column { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.data-grid-add-column label { display: grid; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.data-grid-add-column .settings-input { min-width: 200px; }
+.data-grid-error { flex-basis: 100%; font-size: 13px; color: var(--danger-text); }
+.data-grid-scroll { max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.data-grid-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-grid-table th, .data-grid-table td { padding: 0; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.data-grid-table thead th {
+  position: sticky; top: 0; z-index: 1; padding: 8px 10px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-muted); font-weight: 700; background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-card));
+}
+.data-grid-table tbody td { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.data-grid-value { padding: 6px 10px !important; }
+.data-grid-table tbody tr:last-child :is(td, th) { border-bottom: none; }
+.data-grid-table :is(th, td):last-child { border-right: none; }
+.data-grid-number { width: 1%; padding: 6px 10px !important; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right !important; background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-card)); }
+.data-grid-status { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: var(--warning-text); }
+.data-grid-absent { color: var(--text-muted); }
+.data-grid-empty-columns { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--text-secondary); }
+.data-grid-empty-value { color: var(--text-muted); font-style: italic; }
+.data-grid-input {
+  box-sizing: border-box; width: 100%; min-width: 14ch; padding: 6px 10px; border: 0; border-radius: 0; font: inherit; color: var(--text-primary); background: transparent;
+}
+.data-grid-input::placeholder { color: var(--text-muted); }
+.data-grid-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; background: var(--bg-primary); }
+.data-grid-input:disabled { color: var(--text-secondary); }
+.data-grid-cell-failed .data-grid-input { box-shadow: inset 0 0 0 2px var(--danger-text); }
+.data-grid-new-row :is(td, th) { background: var(--subtle-fill); }
+.data-grid-actions { width: 1%; padding: 4px 8px !important; white-space: nowrap; font-family: inherit !important; }
+.data-grid-actions .settings-inline-actions { flex-wrap: nowrap; }
+.data-grid-details { padding: 6px 10px !important; font-family: inherit !important; white-space: nowrap; color: var(--text-secondary); }
+.data-grid-hint, .data-grid-notice { margin: 0; font-size: 13px; color: var(--text-secondary); }
+.data-grid-empty { padding: 16px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary); }
