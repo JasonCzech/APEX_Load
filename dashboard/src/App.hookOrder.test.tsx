@@ -178,6 +178,10 @@ function jsonResponse(body: unknown): Response {
 }
 
 let scopeFixturesEnabled = false
+// Each project's own legacy application and release, for runs filed without one.
+let legacyFixturesEnabled = false
+const projectLegacyApplicationID = 'legacy-0123456789ab'
+const projectLegacyReleaseID = 'legacy-imported-0123456789ab'
 let domainCatalogFails = false
 
 const scopeDomains = [
@@ -205,12 +209,16 @@ function payloadForUrl(url: string): unknown {
       applications: [
         { id: `${projectID}-app-a`, project_id: projectID, name: 'Application A', created_at: '', updated_at: '' },
         { id: `${projectID}-app-b`, project_id: projectID, name: 'Application B', created_at: '', updated_at: '' },
+        ...(legacyFixturesEnabled ? [{ id: projectLegacyApplicationID, project_id: projectID, name: 'Legacy', created_at: '', updated_at: '' }] : []),
       ],
-      count: 2,
+      count: legacyFixturesEnabled ? 3 : 2,
     }
   }
   if (scopeFixturesEnabled && /\/applications\/[^/]+\/releases/.test(url)) {
     const applicationID = url.match(/\/applications\/([^/]+)\/releases/)?.[1] || ''
+    if (applicationID === projectLegacyApplicationID) {
+      return { releases: [{ id: projectLegacyReleaseID, application_id: applicationID, name: 'Imported Legacy', created_at: '', updated_at: '' }], count: 1 }
+    }
     return {
       releases: [
         { id: `${applicationID}-release-a`, application_id: applicationID, name: 'Release A', created_at: '', updated_at: '' },
@@ -243,6 +251,14 @@ function payloadForUrl(url: string): unknown {
       created_at: '',
       updated_at: '',
       script_count: 0,
+    }
+  }
+  if (scopeFixturesEnabled && url.includes('/tests/run-legacy')) {
+    // Filed under the bare legacy bucket, which exists only in the default project.
+    return {
+      id: 'run-legacy', name: 'Run without a release', project_id: 'project-b',
+      application_id: 'legacy', release_id: 'legacy-imported',
+      status: 'COMPLETED', groups: [], total_vusers: 0, duration: '1m', created_at: '',
     }
   }
   if (scopeFixturesEnabled && url.includes('/tests/run-b')) {
@@ -330,6 +346,7 @@ describe('AppShell hook-order stability across navigation', () => {
     navigationGuardMock.state.dirty = false
     navigationGuardMock.state.pending = null
     scopeFixturesEnabled = false
+    legacyFixturesEnabled = false
     domainCatalogFails = false
     window.localStorage.clear()
     delete (window as DesktopWindow).go
@@ -392,6 +409,7 @@ describe('AppShell hook-order stability across navigation', () => {
     navigationGuardMock.state.dirty = false
     navigationGuardMock.state.pending = null
     scopeFixturesEnabled = false
+    legacyFixturesEnabled = false
     domainCatalogFails = false
   })
 
@@ -575,6 +593,21 @@ describe('AppShell hook-order stability across navigation', () => {
     expect(currentPage()).toBe('page-results')
     expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
     expect(releaseSelector?.getAttribute('aria-label')).toContain('Release B')
+  })
+
+  it('opens a run filed under the bare legacy bucket in its project\'s own legacy application', async () => {
+    scopeFixturesEnabled = true
+    legacyFixturesEnabled = true
+    window.history.replaceState({}, '', '#/test/run-legacy?projectId=project-b')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    expect(container.textContent).not.toContain('for this run is unavailable')
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label^="Select application"]')?.getAttribute('aria-label')).toContain('Legacy')
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label^="Select release"]')?.getAttribute('aria-label')).toContain('Imported Legacy')
   })
 
   it('restores every workspace level from a fully scoped generic deep link before mounting the page', async () => {

@@ -52,7 +52,7 @@ export default function CommandCenterOverview(props: CommandCenterOverviewProps)
     {!scopeReady && <p>Select a project in the sidebar to discover its active runs.</p>}
     {error && <div className="page-error-banner" role="alert">Unable to refresh active runs: {error}. {updatedAt ? 'Showing the last successful list; statuses and metrics may have changed.' : 'Active runs could not be determined. Retry to check this workspace.'}</div>}
     {scopeReady && <p role="status">{updatedAt ? `${error ? 'Stale list' : 'Run list'} · Last updated ${new Date(updatedAt).toLocaleTimeString()}` : loading ? 'Looking for active runs…' : error ? 'Run list unavailable' : 'No run list loaded'}{loading && updatedAt ? ' · Refreshing…' : ''}</p>}
-    {empty && <p>Start a new test or choose a saved scenario. Live controls and metrics will appear when you open its run.</p>}
+    {empty && <p>Start a new run or choose a saved scenario. Live controls and metrics appear when you open its run.</p>}
     {runs.length > 0 && <>
       <p>{runs.length} active {runs.length === 1 ? 'run' : 'runs'} · {runs.length - waiting} executing or paused · {waiting} waiting or scheduled</p>
       <div className="command-overview-filters">

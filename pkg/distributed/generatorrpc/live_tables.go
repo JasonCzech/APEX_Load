@@ -205,10 +205,17 @@ func (p *liveTableProxy) frames(epoch uint64, group string) []*pb.LiveTableReque
 		if remaining <= 0 {
 			continue
 		}
-		frame := *call.frame
-		frame.GroupName = group
-		frame.TimeoutMilliseconds = max(1, remaining.Milliseconds())
-		frames = append(frames, &frame)
+		// A new message rather than a copy of one (a proto message carries a
+		// lock), sharing the request bytes, which are never changed once the
+		// call is queued: a deep clone would copy up to a frame's 1 MiB under
+		// p.mu. It sets every LiveTableRequest field.
+		frames = append(frames, &pb.LiveTableRequest{
+			GroupName:           group,
+			RequestId:           call.frame.RequestId,
+			TableId:             call.frame.TableId,
+			RequestJson:         call.frame.RequestJson,
+			TimeoutMilliseconds: max(1, remaining.Milliseconds()),
+		})
 		call.sent = epoch
 	}
 	return frames
@@ -515,11 +522,11 @@ func (c *Client) serveLiveTablesWithHandshakeTimeout(ctx context.Context, testID
 		admitted := admission.admit(request.Operation, len(frame.RequestJson))
 		admissionMu.Unlock()
 		if !admitted {
-			reply := *opening
+			reply := proto.Clone(opening).(*pb.LiveTableReply)
 			reply.RequestId = frame.RequestId
-			liveTableReplyError(&reply, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table operation admission limit exceeded"})
+			liveTableReplyError(reply, &livetable.Error{Code: livetable.CodeCapacity, Message: "live table operation admission limit exceeded"})
 			select {
-			case replies <- &reply:
+			case replies <- reply:
 			case <-streamCtx.Done():
 				return streamCtx.Err()
 			}
@@ -531,23 +538,23 @@ func (c *Client) serveLiveTablesWithHandshakeTimeout(ctx context.Context, testID
 				admission.release(request.Operation, len(frame.RequestJson))
 				admissionMu.Unlock()
 			}()
-			reply := *opening
+			reply := proto.Clone(opening).(*pb.LiveTableReply)
 			reply.RequestId = frame.RequestId
 			{
 				opCtx, stop := context.WithTimeout(streamCtx, time.Duration(frame.TimeoutMilliseconds)*time.Millisecond)
 				result, err := handler.Execute(opCtx, frame.TableId, request)
 				stop()
 				if err != nil {
-					liveTableReplyError(&reply, err)
+					liveTableReplyError(reply, err)
 				} else {
 					reply.ResultJson, err = json.Marshal(result)
 					if err != nil || len(reply.ResultJson) > liveTableFrameBytes {
-						liveTableReplyError(&reply, &livetable.Error{Code: livetable.CodeCapacity, Message: "committed result exceeds negotiated transport limit", OutcomeUnknown: true})
+						liveTableReplyError(reply, &livetable.Error{Code: livetable.CodeCapacity, Message: "committed result exceeds negotiated transport limit", OutcomeUnknown: true})
 					}
 				}
 			}
 			select {
-			case replies <- &reply:
+			case replies <- reply:
 			case <-streamCtx.Done():
 			}
 		}(frame, request)

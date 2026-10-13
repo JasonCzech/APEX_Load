@@ -193,6 +193,7 @@ const RunReportPage = lazy(() => import("./components/RunReportPage"));
 import ActivityWarning from "./components/ActivityWarning";
 import DesktopStatusMenu from "./components/DesktopStatusMenu";
 import LoadingState from "./components/ux/LoadingState";
+import { isLegacyApplicationId, isLegacyReleaseId } from "./utils/legacyPlacement";
 const ActivityPage = lazy(() => import("./components/ActivityPage"));
 const ResultsPage = lazy(() => import("./components/ResultsPage"));
 const NewTestPage = lazy(() => import("./components/NewTestPage"));
@@ -1733,9 +1734,15 @@ function AppShell({
     )
       return;
 
-    const targetApplication = applications.find(
-      (application) => application.id === resolution.test?.application_id,
-    );
+    // A run filed under the bare legacy bucket outside the default project
+    // (before runs took their project's own) opens in that project's legacy
+    // application and release.
+    const runApplicationID = resolution.test.application_id;
+    const targetApplication =
+      applications.find((application) => application.id === runApplicationID) ||
+      (isLegacyApplicationId(runApplicationID)
+        ? applications.find((application) => isLegacyApplicationId(application.id))
+        : undefined);
     if (!targetApplication) {
       if (applicationsLoading) return;
       if (!resolution.applicationsRefreshRequested) {
@@ -1770,9 +1777,16 @@ function AppShell({
       return;
     }
 
-    const targetRelease = releases.find(
-      (release) => release.id === resolution.test?.release_id,
-    );
+    const runReleaseID = resolution.test.release_id;
+    const targetRelease =
+      releases.find((release) => release.id === runReleaseID) ||
+      (isLegacyReleaseId(runReleaseID)
+        ? releases.find(
+            (release) =>
+              isLegacyReleaseId(release.id) &&
+              release.application_id === targetApplication.id,
+          )
+        : undefined);
     if (!targetRelease) {
       if (releasesLoading) return;
       if (!resolution.releasesRefreshRequested) {

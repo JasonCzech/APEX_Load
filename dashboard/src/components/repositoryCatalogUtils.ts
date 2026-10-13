@@ -75,8 +75,18 @@ const KIND_LABELS: Record<RepositoryAssetKind, string> = {
   release: 'Release',
   script: 'Script',
   scenario: 'Scenario',
-  test: 'Test Run',
+  test: 'Run',
   data_pool: 'Data pool',
+}
+
+/**
+ * One status vocabulary in sentence case for every asset kind: run states
+ * arrive upper case (COMPLETE), authoring health lower case (ready), and
+ * library states capitalized (Active).
+ */
+export function formatCatalogStatus(status: string): string {
+  const words = status.trim().replace(/_/g, ' ').toLowerCase()
+  return words ? words[0].toUpperCase() + words.slice(1) : ''
 }
 
 const TIMEFRAME_DAYS: Record<string, number> = {

@@ -5,6 +5,7 @@ import {
   buildRepositoryCatalogRows,
   customRangeInverted,
   filterRepositoryRows,
+  formatCatalogStatus,
   sortRepositoryRows,
   summarizeRepositoryRows,
 } from './repositoryCatalogUtils'
@@ -335,5 +336,11 @@ describe('application scope for unassigned assets', () => {
     } as never)
     const scripts = rows.filter(row => row.kind === 'script').map(row => row.id)
     expect(scripts).toEqual(['imported-unassigned'])
+  })
+})
+
+describe('formatCatalogStatus', () => {
+  it('states run, authoring and library statuses in one sentence-case vocabulary', () => {
+    expect(['COMPLETE', 'ready', 'Active', 'SHAKEOUT_REVIEW', ''].map(formatCatalogStatus)).toEqual(['Complete', 'Ready', 'Active', 'Shakeout review', ''])
   })
 })

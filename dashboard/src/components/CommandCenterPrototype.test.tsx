@@ -680,7 +680,7 @@ describe('CommandCenterPrototype', () => {
     await flush()
 
     expect(container.textContent).toContain('No active runs')
-    expect(container.textContent).toContain('Start a new test or choose a saved scenario.')
+    expect(container.textContent).toContain('Start a new run or choose a saved scenario.')
     expect(container.textContent).toContain('Open Results')
     expect(container.textContent).not.toContain('Checkout Peak Soak - Command Center Prototype')
     expect(container.querySelector('[aria-label="Command center run controls"]')).toBeNull()

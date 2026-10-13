@@ -41,10 +41,13 @@ import {
   buildRepositoryCatalogRows,
   customRangeInverted,
   filterRepositoryRows,
+  formatCatalogStatus,
   repositoryKindLabel,
   sortRepositoryRows,
   summarizeRepositoryRows,
 } from './repositoryCatalogUtils'
+import { isLegacyReleaseId } from '../utils/legacyPlacement'
+import { testOutcomeStatus } from '../utils/testStatusUtils'
 import { drainBoundedOffsetCatalog } from './catalogPagination'
 import BadgeIcon from './ux/BadgeIcon'
 import InfoPopover from './ux/InfoPopover'
@@ -123,7 +126,7 @@ const CATALOG_TABS: Array<{ id: RepositoryCatalogTab; label: string; kind?: Repo
   { id: 'release', label: 'Releases', kind: 'release' },
   { id: 'script', label: 'Scripts', kind: 'script' },
   { id: 'scenario', label: 'Scenarios', kind: 'scenario' },
-  { id: 'test', label: 'Tests', kind: 'test' },
+  { id: 'test', label: 'Runs', kind: 'test' },
   { id: 'data_pool', label: 'Data pools', kind: 'data_pool' },
   { id: 'structure', label: 'Structure' },
 ]
@@ -421,7 +424,7 @@ export default function ApplicationRepositoryPage({
         const response = await scriptApi.listScenarios(project.id)
         return response.scenarios || []
       }, limitTask),
-      loadProjectAssets(scopedProjects, 'Tests', async project => {
+      loadProjectAssets(scopedProjects, 'Runs', async project => {
         return drainBoundedOffsetCatalog(
           async (limit, offset) => {
             const response = await testApi.listTests({ project_id: project.id, limit, offset })
@@ -434,7 +437,7 @@ export default function ApplicationRepositoryPage({
             }
           },
           test => test.id,
-          `Tests for project ${project.id}`,
+          `Runs for project ${project.id}`,
         )
       }, limitTask),
       loadProjectAssets(scopedProjects, 'Data pools', async project => {
@@ -555,9 +558,11 @@ export default function ApplicationRepositoryPage({
       }
     })
     return Array.from(options.values())
+      // The legacy release is a fallback for runs without one, not a release to choose.
+      .filter(option => !isLegacyReleaseId(option.id) || option.id === filters.releaseId)
       .filter(option => filters.projectId === 'all' || catalogRows.some(row => row.kind === 'release' && row.id === option.id && row.projectId === filters.projectId))
       .sort((a, b) => `${a.name} ${a.projectName || ''}`.localeCompare(`${b.name} ${b.projectName || ''}`))
-  }, [catalogRows, filters.projectId])
+  }, [catalogRows, filters.projectId, filters.releaseId])
 
   const filteredRows = useMemo(
     () => filterRepositoryRows(catalogRows, activeTab, filters),
@@ -1239,7 +1244,7 @@ export default function ApplicationRepositoryPage({
             <span>Status</span>
             <select value={filters.status} onChange={event => setFilters(prev => ({ ...prev, status: event.target.value }))}>
               <option value="all">All statuses</option>
-              {statusOptions.map(option => <option key={option} value={option}>{option}</option>)}
+              {statusOptions.map(option => <option key={option} value={option}>{formatCatalogStatus(option)}</option>)}
             </select>
           </label>
           <label>
@@ -1269,7 +1274,7 @@ export default function ApplicationRepositoryPage({
             onClick={() => setFilters(DEFAULT_FILTERS)}
             disabled={!filterActive}
           >
-            Reset Filters
+            Reset filters
           </button>
         </div>
         {filters.timeframe === 'custom' && (
@@ -1337,7 +1342,7 @@ export default function ApplicationRepositoryPage({
           {renderRowAction(inspected)}
           {inspectedScenario && <><h3>Scenario scripts</h3><ul>{inspectedScenario.scripts.map(script => <li key={script.script_id}><button className="btn btn-sm btn-secondary" type="button" disabled={!onOpenScript} onClick={() => onOpenScript?.(script.script_id, inspected.projectId)}>{script.script_name || script.script_id}</button></li>)}</ul></>}
           {inspected.kind === 'script' && <><h3>Used by scenarios</h3>{relatedScenarios.length ? <ul>{relatedScenarios.map(scenario => <li key={scenario.id}><button className="btn btn-sm btn-secondary" type="button" onClick={() => { setFilters(DEFAULT_FILTERS); setActiveTab('scenario'); setInspectedKey(`scenario:${scenario.id}`) }}>{scenario.name}</button></li>)}</ul> : <p>No scenarios in the loaded catalog reference this script.</p>}</>}
-          {(inspected.kind === 'scenario' || inspected.kind === 'script') && <><h3>Run history</h3>{relatedRuns.length ? <ul>{relatedRuns.map(test => <li key={test.id}><button className="btn btn-sm btn-secondary" type="button" disabled={!onOpenTest} onClick={() => onOpenTest?.(test.id, inspected.projectId)}>{test.name} · {test.ref_key || test.id} · {test.status}</button></li>)}</ul> : <p>No runs in the loaded catalog reference this asset.</p>}</>}
+          {(inspected.kind === 'scenario' || inspected.kind === 'script') && <><h3>Run history</h3>{relatedRuns.length ? <ul>{relatedRuns.map(test => <li key={test.id}><button className="btn btn-sm btn-secondary" type="button" disabled={!onOpenTest} onClick={() => onOpenTest?.(test.id, inspected.projectId)}>{test.name} · {test.ref_key || test.id} · {formatCatalogStatus(testOutcomeStatus(test.status, Boolean(test.stopped_by_subject)))}</button></li>)}</ul> : <p>No runs in the loaded catalog reference this asset.</p>}</>}
         </section>}
         {activeTab !== 'structure' && (
           <nav className="repository-pagination" aria-label="Repository pages">

@@ -2798,6 +2798,13 @@ func legacyGlobalScenarioID(name string) string {
 	return "legacy-" + hex.EncodeToString(sum[:])[:12]
 }
 
+// LegacyApplicationIDForProject is the project's own legacy application: the
+// bare ID in the default project, suffixed with a hash of the project elsewhere.
+func LegacyApplicationIDForProject(projectID string) string { return legacyApplicationID(projectID) }
+
+// LegacyReleaseIDForProject is the project's own legacy release.
+func LegacyReleaseIDForProject(projectID string) string { return legacyReleaseID(projectID) }
+
 func legacyApplicationID(projectID string) string {
 	projectID = normalizeProjectID(projectID)
 	if projectID == DefaultProjectID {

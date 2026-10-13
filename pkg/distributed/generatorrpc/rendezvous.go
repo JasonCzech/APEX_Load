@@ -358,7 +358,7 @@ func (c *Client) serveRendezvous(ctx context.Context, test, group string, genera
 		callCtx, stop := context.WithTimeout(streamCtx, 4*time.Second)
 		outcome, err := handler.Exchange(callCtx, batch)
 		stop()
-		reply := *opening
+		reply := proto.Clone(opening).(*pb.RendezvousReply)
 		reply.RequestId = frame.RequestId
 		if err != nil {
 			reply.ErrorCode = rendezvousErrorCode(err)
@@ -368,7 +368,7 @@ func (c *Client) serveRendezvous(ctx context.Context, test, group string, genera
 				return rendezvous.ErrInvalid
 			}
 		}
-		if err = stream.Send(&reply); err != nil {
+		if err = stream.Send(reply); err != nil {
 			return err
 		}
 	}

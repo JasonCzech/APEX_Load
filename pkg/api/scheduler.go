@@ -4110,6 +4110,7 @@ func (tr *TestRunner) buildManagedTestForScheduleSweepLockedWithTerm(req CreateT
 	if !req.releaseContextEvidence.loaded {
 		req.releaseContextEvidence = snapshot.loadCreateTestReleaseEvidence(req)
 	}
+	req.releaseContextEvidence = snapshot.withProjectLegacyReleaseEvidence(req, status)
 	test, err := snapshot.buildManagedTestLocked(req, id, status)
 	tr.mu.Lock()
 	tr.mergeSchedulerSnapshotSequenceLocked(snapshot)

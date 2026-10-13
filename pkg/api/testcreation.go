@@ -133,6 +133,12 @@ type createTestReleaseEvidence struct {
 	applicationProjectID       string
 	applicationUpdatedAt       time.Time
 	applicationErr             error
+	// The project's own legacy application and release, when the store has
+	// them: a run that names no release is filed there (see
+	// resolveCreateTestReleaseContextWithEvidence).
+	legacyProjectID     string
+	legacyApplicationID string
+	legacyReleaseID     string
 }
 
 type applicationPersistence interface {
@@ -167,6 +173,43 @@ func (tr *TestRunner) loadCreateTestReleaseEvidence(req CreateTestRequest) creat
 	store := tr.releaseStore
 	tr.mu.RUnlock()
 	return loadCreateTestReleaseEvidence(store, applicationID, releaseID)
+}
+
+// withProjectLegacyReleaseEvidence adds the project's own legacy release to
+// the evidence of a runnable test that names no release: only such a test is
+// filed there, so drafts and previews read nothing more.
+func (tr *TestRunner) withProjectLegacyReleaseEvidence(req CreateTestRequest, status string) createTestReleaseEvidence {
+	evidence := req.releaseContextEvidence
+	if status == "DRAFT" || evidence.requestedApplicationID != "" || evidence.requestedReleaseID != "" || evidence.legacyProjectID != "" {
+		return evidence
+	}
+	tr.mu.RLock()
+	store := tr.releaseStore
+	tr.mu.RUnlock()
+	if store == nil {
+		return evidence
+	}
+	// The project quota evidence has already inferred the run's project
+	// (request, revision source, scenario or scripts).
+	projectID := normalizeProjectID(req.ProjectID)
+	if req.projectQuotaEvidence.loaded {
+		projectID = normalizeProjectID(req.projectQuotaEvidence.projectID)
+	}
+	loadProjectLegacyReleaseEvidence(store, projectID, &evidence)
+	return evidence
+}
+
+// loadProjectLegacyReleaseEvidence records the project's own legacy release
+// and application when the store has them. Every project the API creates has
+// them; a store that predates or bypasses that keeps the bare IDs.
+func loadProjectLegacyReleaseEvidence(store releasePersistence, projectID string, evidence *createTestReleaseEvidence) {
+	release, err := store.GetRelease(storage.LegacyReleaseIDForProject(projectID))
+	if err != nil || release == nil || normalizeProjectID(release.ProjectID) != projectID || strings.TrimSpace(release.ApplicationID) == "" {
+		return
+	}
+	evidence.legacyProjectID = projectID
+	evidence.legacyApplicationID = strings.TrimSpace(release.ApplicationID)
+	evidence.legacyReleaseID = strings.TrimSpace(release.ID)
 }
 
 func loadCreateTestReleaseEvidence(store releasePersistence, applicationID, releaseID string) createTestReleaseEvidence {
@@ -765,6 +808,7 @@ func (tr *TestRunner) buildManagedTestFromSnapshot(req CreateTestRequest, id, st
 	if !req.releaseContextEvidence.loaded {
 		req.releaseContextEvidence = snapshot.loadCreateTestReleaseEvidence(req)
 	}
+	req.releaseContextEvidence = snapshot.withProjectLegacyReleaseEvidence(req, status)
 	snapshot.mu.Lock()
 	test, err := snapshot.buildManagedTestLocked(req, id, status)
 	snapshot.mu.Unlock()
@@ -3474,9 +3518,16 @@ func resolveCreateTestReleaseContextWithEvidence(projectID, requestedApplication
 			return "", "", fmt.Errorf("application_id requires an explicit release_id for a runnable test")
 		}
 		// Preserve the long-standing uncategorized-run fallback. It is an
-		// internal bucket rather than a caller-supplied cross-project reference.
+		// internal bucket rather than a caller-supplied cross-project reference:
+		// the run's own project's legacy application and release when the store
+		// has them. The bare IDs belong to the default project, so a run filed
+		// under them elsewhere could not be opened in its workspace.
 		releaseID = storage.LegacyReleaseID
 		applicationID = storage.LegacyApplicationID
+		if evidence.legacyProjectID != "" && evidence.legacyProjectID == projectID {
+			releaseID = evidence.legacyReleaseID
+			applicationID = evidence.legacyApplicationID
+		}
 		legacyFallback = true
 	}
 

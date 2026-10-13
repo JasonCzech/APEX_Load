@@ -285,6 +285,8 @@ describe('ApplicationRepositoryPage', () => {
     expect(panel.textContent).not.toContain('Other application scenario')
     await act(async () => findButton(panel, 'Visible scenario')?.click())
     expect(container.querySelector('.repository-inspection')?.textContent).toContain('Scenario scripts')
+    // A run's status reads as on its row, in sentence case.
+    expect(findButton(container.querySelector('.repository-inspection') as HTMLElement, 'Checkout Run', false)?.textContent).toContain('· Complete')
     await act(async () => findButton(container.querySelector('.repository-inspection') as HTMLElement, 'Checkout Run', false)?.click())
     expect(onOpenTest).toHaveBeenCalledWith('test-1', project.id)
   })
@@ -433,6 +435,43 @@ describe('ApplicationRepositoryPage', () => {
 
     expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith(project.id, { name: '2026.06', application_id: application.id })
     expect(container.textContent).toContain('Release created.')
+  })
+
+  it('calls runs Runs, states every status in sentence case, and keeps the legacy release out of the filter', async () => {
+    repositoryApiMock.listProjectReleases.mockResolvedValue({ releases: [
+      { id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' },
+      { id: 'legacy-imported-0123456789ab', application_id: 'app-1', project_id: project.id, name: 'Imported Legacy', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' },
+    ], count: 2 })
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository={false}
+          canManageProjects={false}
+          canManageReleases={false}
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map(tab => tab.textContent?.replace(/\d+/g, '').trim())
+    expect(tabs).toContain('Runs')
+    expect(tabs).not.toContain('Tests')
+    const select = (label: string) => Array.from(container.querySelectorAll('label')).find(item => item.querySelector('span')?.textContent === label)?.querySelector('select') as HTMLSelectElement
+    const statuses = Array.from(select('Status').options).map(option => option.textContent)
+    expect(statuses).toContain('Complete')
+    expect(statuses.filter(status => status && status === status.toUpperCase() && /[A-Z]{2}/.test(status))).toEqual([])
+    expect(Array.from(select('Release').options).map(option => option.textContent)).not.toContain('Imported Legacy')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Reset filters')).toBe(true)
   })
 
   it('drains every bounded page of a project test catalog', async () => {
