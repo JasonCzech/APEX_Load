@@ -2159,7 +2159,14 @@ body .scenario-builder-run-tabs.ux-underline-tabs [role='tab'] { padding-inline:
 .scenario-assignment-chip-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.scenario-assignment-chip-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .scenario-assignment-chip {

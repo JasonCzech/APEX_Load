@@ -75,6 +75,22 @@ func (c *clusterClientCache) ClientFor(ctx context.Context, conn *storage.Cluste
 	return client, nil
 }
 
+// BuildUncached returns a client for a connection that is not the stored one
+// (an unsaved draft or an edit), without caching it: it must neither replace
+// nor be served in place of the stored connection's client.
+func (c *clusterClientCache) BuildUncached(ctx context.Context, conn *storage.ClusterConnection) (*kubeops.Client, error) {
+	if c == nil {
+		return nil, errors.New("cluster client cache is not initialized")
+	}
+	if conn == nil {
+		return nil, errors.New("cluster connection is required")
+	}
+	if strings.TrimSpace(conn.Status) != "" && conn.Status != "active" {
+		return nil, fmt.Errorf("%w: %s", errClusterConnectionInactive, conn.Status)
+	}
+	return c.build(ctx, conn)
+}
+
 // Forget drops a connection's cached client, used after a delete.
 func (c *clusterClientCache) Forget(id string) {
 	if c == nil {

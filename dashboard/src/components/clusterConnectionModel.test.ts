@@ -192,18 +192,29 @@ describe('describeProbe', () => {
       probes: [{ probe: 'nodes', ok: false, optional: true, message: 'node read permission is not granted' }],
     })
     expect(result.tone).toBe('warning')
-    expect(result.text).toMatch(/node read permission/)
+    expect(result.text).toBe('Connected, with limited permissions.')
+    expect(result.nextStep).toBe('Node read permission is not granted.')
   })
 
-  it('surfaces the failing probe message', () => {
-    const result = describeProbe({
+  it('leads a failure with what it means and what to do, not the raw error', () => {
+    const rejected = describeProbe({
       ...base,
       status: 'failed',
       summary: 'required checks failed: api_server',
-      probes: [{ probe: 'api_server', ok: false, message: 'the Kubernetes API server rejected the credential (401 Unauthorized)' }],
+      probes: [{ probe: 'api_server', ok: false, status_code: 401, message: 'the Kubernetes API server rejected the credential (401 Unauthorized)' }],
     })
-    expect(result.tone).toBe('danger')
-    expect(result.text).toMatch(/401/)
+    expect(rejected).toEqual({ tone: 'danger', text: 'The Kubernetes API server rejected the credential.', nextStep: 'Check that the credential is valid and is allowed to use this cluster.' })
+    const missing = describeProbe({
+      ...base,
+      status: 'failed',
+      summary: 'required checks failed: generator_workload',
+      probes: [{ probe: 'api_server', ok: true }, { probe: 'generator_workload', ok: false, message: 'statefulsets.apps "apexload-generator" not found' }],
+    })
+    expect(missing.text).toBe('Connected, but the generator StatefulSet was not found.')
+    // An inactive connection is refused before its credential is read: say that, not "check the secret".
+    expect(describeProbe({ ...base, status: 'failed', summary: 'the cluster credential could not be prepared', probes: [{ probe: 'credential', ok: false, message: 'cluster connection is not active: suspended' }] }).text).toBe('The connection is not active.')
+    // An unknown check still reads as a sentence.
+    expect(describeProbe({ ...base, status: 'failed', summary: 'x', probes: [{ probe: 'webhook', ok: false, message: 'webhook refused' }] }).text).toBe('Webhook refused.')
   })
 })
 

@@ -14,11 +14,30 @@ import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import type { ClusterConnection } from '../types/cluster'
 import type { ExecutionTarget } from '../types/compute'
 import type { DeploymentProvider, DomainDeploymentTarget } from '../types/deploymentTarget'
-import { clustersForProvider, providerLabel } from './deploymentTargetModel'
+import { clustersForProvider, executionTargetKindLabel, providerLabel } from './deploymentTargetModel'
 import { listAllFleetPools, listAllGeneratorMetadata, runtimePoolMemberCount } from './fleetCatalogModel'
 import './parityPanels.css'
 import LoadingState from './ux/LoadingState'
 import EmptyState from './ux/EmptyState'
+
+// A pool's provider and a cluster's last test, as people read them.
+const POOL_PROVIDER_LABELS: Record<string, string> = {
+  kubernetes: 'Kubernetes',
+  aws: 'Amazon Web Services',
+  azure: 'Microsoft Azure',
+  gcp: 'Google Cloud',
+  static: 'Static fleet',
+}
+const poolProviderLabel = (provider: string) => POOL_PROVIDER_LABELS[provider] ?? provider
+
+function clusterTestLabel(cluster: ClusterConnection): string {
+  switch (cluster.last_check_status) {
+    case 'ok': return 'connected'
+    case 'degraded': return 'connected, limited permissions'
+    case 'failed': return 'last test failed'
+    default: return 'not tested'
+  }
+}
 
 interface Props {
   resourceId?: string
@@ -610,7 +629,7 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
         </span>
         {canManage && (
           <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => setDraft(emptyDraft())}>
-            New Pool
+            New pool
           </button>
         )}
       </div>
@@ -644,10 +663,10 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                   <span className={poolStatusPill(pool.status)}>{pool.status}</span>
                 </div>
                 <div className="pp-row-meta">
-                  <span>{pool.cloud_provider}</span>
+                  <span>{poolProviderLabel(pool.cloud_provider)}</span>
                   {pool.region ? <span>{pool.region}</span> : null}
                   {pool.lifecycle_mode ? <span>{pool.lifecycle_mode.replace('_', ' ')}</span> : null}
-                  {pool.execution_target_id ? <span>target {pool.execution_target_id}</span> : null}
+                  {pool.execution_target_id ? <span>target {executionTargets.find(target => target.id === pool.execution_target_id)?.name || pool.execution_target_id}</span> : null}
                   <span>size {pool.desired_size ?? 0} ({pool.min_size ?? 0}–{(pool.max_size ?? 0) > 0 ? pool.max_size : 'no max'})</span>
                   <span>{memberCount} runtime member{memberCount === 1 ? '' : 's'}</span>
                   {!pool.execution_target_id && memberCount < initialProvisionCount ? <span>associate {initialProvisionCount - memberCount} more target{initialProvisionCount - memberCount === 1 ? '' : 's'} before provisioning</span> : null}
@@ -740,8 +759,7 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
         >
           <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={draftTitleId}>
             <div className="pp-modal-header">
-              <h3 id={draftTitleId}>{draft.id ? 'Edit Pool' : 'New Pool'}</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft} disabled={busy}>Close</button>
+              <h3 id={draftTitleId}>{draft.id ? 'Edit pool' : 'New pool'}</h3>
             </div>
             <div className="pp-modal-form">
               <div className="pp-field-row">
@@ -758,11 +776,8 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                     <input value={providerLabel(draftProvider)} disabled readOnly data-testid="pool-derived-provider" />
                   ) : (
                     <select value={draft.cloud_provider} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, cloud_provider: e.target.value } : d))}>
-                      <option value="kubernetes">kubernetes</option>
-                      <option value="aws">aws</option>
-                      <option value="azure">azure</option>
-                      <option value="gcp">gcp</option>
-                      <option value="static">static</option>
+                      {Object.entries(POOL_PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      {draft.cloud_provider && !POOL_PROVIDER_LABELS[draft.cloud_provider] && <option value={draft.cloud_provider}>{draft.cloud_provider}</option>}
                     </select>
                   )}
                 </label>
@@ -809,14 +824,14 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                     data-testid="pool-execution-target"
                     onChange={e => setDraft(d => (d ? { ...d, execution_target_id: e.target.value, cluster_id: e.target.value ? '' : d.cluster_id } : d))}
                   >
-                    <option value="">Legacy cluster/controller placement</option>
-                    {eligibleExecutionTargets.map(target => <option key={target.id} value={target.id}>{target.name} — {target.kind}</option>)}
+                    <option value="">None: use a cluster connection</option>
+                    {eligibleExecutionTargets.map(target => <option key={target.id} value={target.id}>{target.name} — {executionTargetKindLabel(target.kind)}</option>)}
                   </select>
                 </label>
               </div>
               {!draft.execution_target_id ? <div className="pp-field-row">
                 <label className="pp-field">
-                  <span>Legacy cluster connection</span>
+                  <span>Cluster connection</span>
                   <select
                     value={draft.cluster_id}
                     disabled={busy}
@@ -826,9 +841,10 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                     <option value="">
                       {draftProvider ? 'Select a cluster…' : 'Controller default (env-configured)'}
                     </option>
+                    {/* Each cluster says how its last connection test went. */}
                     {eligibleClusters.map(cluster => (
                       <option key={cluster.id} value={cluster.id}>
-                        {cluster.name}
+                        {cluster.name} · {clusterTestLabel(cluster)}
                       </option>
                     ))}
                   </select>
@@ -841,10 +857,11 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                 </label>
                 <label className="pp-field">
                   <span>Status</span>
+                  {/* Active or suspended is the operator's call; an error is the system's, shown but not chosen. */}
                   <select value={draft.status} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, status: e.target.value } : d))}>
-                    <option value="active">active</option>
-                    <option value="suspended">suspended</option>
-                    <option value="error">error</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    {draft.status === 'error' && <option value="error" disabled>Error (set by the system)</option>}
                   </select>
                 </label>
               </div>

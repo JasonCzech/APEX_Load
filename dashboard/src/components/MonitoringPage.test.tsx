@@ -476,6 +476,32 @@ describe('MonitoringPage', () => {
     expect(container.textContent).not.toContain('Restart Generator Fleet')
   })
 
+  it('says what a static generator does not report, gives its region, and leaves Kubernetes out of a static fleet', async () => {
+    apiMock.getRestartCapabilities.mockResolvedValue({
+      enabled: false,
+      disabled_reason: 'Kubernetes restart controls are disabled.',
+      execution_mode: 'distributed',
+      allow_force: false,
+      supports: { controller_workload: false, generator_workload: false, generator_pod: false },
+    })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'healthy', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [generatorInventoryFixture({ pod_name: undefined, region: 'us-east', cpu_limit_cores: 0, memory_limit_bytes: 0 })],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+    await clickMonitorTab('Fleet')
+    await openGeneratorInventoryModal()
+
+    const rows = Object.fromEntries(Array.from(container.querySelectorAll('.monitor-inventory-item .monitor-row')).map(row => [row.querySelector('.monitor-label')?.textContent, row.querySelector('.monitor-value:last-child')?.textContent]))
+    // Zero is no cgroup limit found: none set, or none readable.
+    expect(rows).toMatchObject({ Region: 'us-east', 'CPU Capacity': 'No limit reported', 'Memory Capacity': 'No limit reported' })
+    expect(container.textContent).not.toContain('Kubernetes restart controls are disabled.')
+  })
+
   it('submits a generator pod restart after reason and target confirmation', async () => {
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
@@ -1183,6 +1209,27 @@ describe('MonitoringPage', () => {
     expect(readinessCardBadge?.textContent).toContain('1 unreported')
     expect(container.querySelector('[data-card-id="production-readiness"]')?.textContent).toContain('Ready Checks2/3')
     expect(container.textContent).not.toContain('All configured production readiness checks are passing.')
+  })
+
+  it('names the check behind a degraded readiness when every listed component is ready', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'degraded',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        { name: 'kubernetes_api', status: 'not_configured', message: 'not running in Kubernetes', details: {} },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'sqlite' } },
+        { name: 'cache_backend', status: 'ready', message: 'in-memory cache backend is ready', details: { cache_backend: 'memory' } },
+        { name: 'auth_mode', status: 'degraded', message: 'auth bypass mode is active; suitable for local development only', details: { mode: 'dev' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readinessCardBadge = container.querySelector<HTMLElement>('[data-card-id="production-readiness"] .monitor-header-badge')
+    expect(readinessCardBadge?.textContent).toBe('Degraded · Auth Mode')
+    expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Degraded · Auth Mode.')
   })
 
   it('keeps a hard readiness result ahead of mixed-version coverage gaps', async () => {

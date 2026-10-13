@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../types'
+import { generatorDisplayName } from './generatorNames'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { isPositiveSafeInteger } from './generatorAssignmentValidation'
 import './GroupPlacementEditor.css'
@@ -12,7 +13,6 @@ interface Props {
   assignment?: GeneratorAssignmentSettings
   onChange: (assignment: GeneratorAssignmentSettings | undefined) => void
   availableTargets?: string[]
-  recommendedTargets?: string[]
   generatorInventory?: SystemInventoryGenerator[]
   availableLabels?: Record<string, string[]>
   protocol?: string
@@ -181,9 +181,9 @@ function labelsMatch(generator: SystemInventoryGenerator, required?: Record<stri
   return Object.entries(labels).every(([key, value]) => generator.labels?.[key] === value)
 }
 
-function formatHostSelectionSummary(selectedTargets: string[]) {
+function formatHostSelectionSummary(selectedTargets: string[], inventory: SystemInventoryGenerator[] | undefined) {
   if (selectedTargets.length === 0) return 'No hosts selected'
-  if (selectedTargets.length === 1) return `Pinned: ${selectedTargets[0]}`
+  if (selectedTargets.length === 1) return `Pinned: ${generatorDisplayName(selectedTargets[0], inventory)}`
   return `Sharded: ${selectedTargets.length} hosts, capacity weighted`
 }
 
@@ -191,7 +191,6 @@ export default function GroupPlacementEditor({
   assignment,
   onChange,
   availableTargets = [],
-  recommendedTargets = [],
   generatorInventory,
   availableLabels,
   protocol,
@@ -482,7 +481,6 @@ export default function GroupPlacementEditor({
             const selected = selectedTargets.includes(generator.target)
             const eligible = generatorCanRun(generator, protocol, assignment?.java_host?.profile_id)
             const disabledReason = generatorDisabledReason(generator, protocol, assignment?.java_host?.profile_id)
-            const recommended = recommendedTargets.includes(generator.target)
             return (
               <label key={generator.target} className={`new-test-generator-option ${selected ? 'selected' : ''} ${!eligible ? 'disabled' : ''}`}>
                 <input
@@ -492,9 +490,10 @@ export default function GroupPlacementEditor({
                   onChange={event => toggleTarget(generator.target, event.target.checked)}
                 />
                 <span>
-                  <strong>{generator.target}</strong>
+                  {/* Named by generator and region; the address is detail. */}
+                  <strong>{generator.generator_id || generator.target}</strong>
                   <PodCapacityMeter capacity={generator.pod_capacity} />
-                  <em>{generator.region || generator.pool_name || 'default'} · {generatorCapacityLabel(generator, protocol, assignment?.java_host?.profile_id)} · {generator.status}{recommended ? ' · recommended' : ''}</em>
+                  <em>{generator.region || generator.pool_name || 'default'} · {generator.generator_id ? `${generator.target} · ` : ''}{generatorCapacityLabel(generator, protocol, assignment?.java_host?.profile_id)} · {generator.status}</em>
                   {disabledReason && <em className="warning">{disabledReason}</em>}
                 </span>
               </label>
@@ -504,7 +503,7 @@ export default function GroupPlacementEditor({
             <p className="scenario-assignment-copy secondary">One or more selected hosts are absent or ineligible and will block preflight or launch.</p>
           )}
           <div className="new-test-placement-summary">
-            <strong>{formatHostSelectionSummary(selectedTargets)}</strong>
+            <strong>{formatHostSelectionSummary(selectedTargets, generatorInventory)}</strong>
             <span>{selectedCapacitySummary}</span>
           </div>
           {selectedTargets.every(target => !target.trim()) && <p className="settings-error-inline" role="alert">Select at least one load generator host.</p>}

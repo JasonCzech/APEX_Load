@@ -7,6 +7,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ClusterConnection, ClusterKind, ClusterTestResult } from '../types/cluster'
 import { getErrorMessage } from '../utils/errorUtils'
+import ClusterTestResultView from './ClusterTestResultView'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import {
   AUTH_MODE_FOR_KIND,
@@ -19,7 +20,6 @@ import {
   connectionIsDirty,
   connectionPayload,
   describeCredentialSource,
-  describeProbe,
   emptyClusterDraft,
   isRemoteKind,
 } from './clusterConnectionModel'
@@ -69,6 +69,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
   const [loadError, setLoadError] = useState(false)
 
   const [draft, setDraft] = useState<ClusterDraft | null>(null)
+  const draftRef = useRef<ClusterDraft | null>(null)
+  draftRef.current = draft
   const [draftBaseline, setDraftBaseline] = useState('')
   const [draftMode, setDraftMode] = useState<'create' | 'edit'>('create')
   // Fields the engineer has edited; a new connection's empty fields are not flagged until touched.
@@ -78,6 +80,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<{ id: string; result: ClusterTestResult } | null>(null)
   const [testError, setTestError] = useState<string | null>(null)
+  // A test of the form as it stands, before it is saved.
+  const [draftTest, setDraftTest] = useState<{ running: boolean; result?: ClusterTestResult; error?: string }>({ running: false })
 
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const initialFocusRef = useRef<HTMLInputElement | null>(null)
@@ -129,6 +133,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     setTouched(current => new Set([...current, ...(Object.keys(patch) as ClusterDraftField[])]))
     setTestResult(null)
     setTestError(null)
+    setDraftTest({ running: false })
   }, [])
 
   const openCreate = useCallback(() => {
@@ -139,6 +144,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     setTouched(new Set())
     setTestResult(null)
     setTestError(null)
+    setDraftTest({ running: false })
   }, [])
 
   const openEdit = useCallback((connection: ClusterConnection) => {
@@ -149,6 +155,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     setTouched(new Set())
     setTestResult(null)
     setTestError(null)
+    setDraftTest({ running: false })
   }, [])
 
   const saveRef = useRef<() => Promise<boolean>>(async () => false)
@@ -227,6 +234,20 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     [api, load],
   )
 
+  // The form as it stands, before saving: an edit's blank credentials are its stored ones.
+  const testDraft = useCallback(async () => {
+    if (!draft || draftError) return
+    const tested = draft
+    setDraftTest({ running: true })
+    try {
+      const result = await api.testClusterDraft(connectionPayload(tested, draftMode), draftMode === 'edit' ? tested.id : undefined)
+      // A result for a form that has changed (or closed) since is stale.
+      if (draftRef.current === tested) setDraftTest({ running: false, result })
+    } catch (err) {
+      if (draftRef.current === tested) setDraftTest({ running: false, error: getErrorMessage(err, 'The connection test failed.') })
+    }
+  }, [api, draft, draftError, draftMode])
+
   const remote = draft ? isRemoteKind(draft.kind) : false
 
   return (
@@ -237,7 +258,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
         </span>
         {canManage && (
           <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={openCreate}>
-            Connect Cluster
+            Connect a cluster
           </button>
         )}
       </div>
@@ -288,14 +309,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                     <span>checked {formatDateTime(connection.last_checked_at, { seconds: true })}</span>
                   ) : null}
                 </div>
-                {testResult?.id === connection.id && (
-                  <div
-                    data-testid="cluster-test-result"
-                    className={describeProbe(testResult.result).tone === 'danger' ? 'pp-error' : 'pp-muted'}
-                  >
-                    {describeProbe(testResult.result).text}
-                  </div>
-                )}
+                {testResult?.id === connection.id && <ClusterTestResultView result={testResult.result} />}
               </div>
               {canManage && (
                 <div className="pp-row-actions">
@@ -323,9 +337,11 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
       {draft && (
         <DialogLayer><div className="pp-modal-overlay">
           <div className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={dialogTitleId} ref={dialogRef}>
-            <div className="pp-modal-title" id={dialogTitleId}>
-              {draftMode === 'create' ? 'Connect Cluster' : `Edit ${draft.name}`}
+            {/* One way out: Cancel (or Escape), beside Save. */}
+            <div className="pp-modal-header">
+              <h3 id={dialogTitleId}>{draftMode === 'create' ? 'Connect a cluster' : `Edit ${draft.name}`}</h3>
             </div>
+            <div className="pp-modal-form">
 
             <label className="pp-field">
               <span>Name</span>
@@ -562,10 +578,16 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
               />{errorNote('generatorSelector')}
             </label>
 
-            {draftError && <div className="pp-muted" aria-live="polite">To {draftMode === 'create' ? 'connect' : 'save'}, complete or correct: {invalidFields.map(field => CLUSTER_FIELD_LABELS[field] || field).join(', ')}.</div>}
-            <div className="pp-muted">Save the connection first — the connection test uses the stored configuration.</div>
+            {draftError && <div className="pp-muted" aria-live="polite">To {draftMode === 'create' ? 'test or connect' : 'test or save'}, complete or correct: {invalidFields.map(field => CLUSTER_FIELD_LABELS[field] || field).join(', ')}.</div>}
+            {draftTest.result && <ClusterTestResultView result={draftTest.result} />}
+            {draftTest.error && <div className="pp-error" role="alert">{draftTest.error}</div>}
+            </div>
 
-            <div className="pp-modal-actions">
+            <div className="pp-modal-actions pp-modal-actions-sticky">
+              {/* Test before saving: nothing is stored until Connect or Save. */}
+              <button type="button" className="btn btn-secondary btn-sm" disabled={!!draftError || busy || draftTest.running} onClick={() => { void testDraft() }}>
+                {draftTest.running ? 'Testing…' : 'Test connection'}
+              </button>
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={closeDialog}>
                 Cancel
               </button>

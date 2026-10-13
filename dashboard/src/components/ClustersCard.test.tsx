@@ -17,6 +17,7 @@ const clustersApiMock = {
   updateCluster: vi.fn(),
   deleteCluster: vi.fn(),
   testCluster: vi.fn(),
+  testClusterDraft: vi.fn(),
   getClusterCapacity: vi.fn(),
   updatePoolAllocation: vi.fn(),
   getPoolAllocationPreflight: vi.fn(),
@@ -110,7 +111,7 @@ describe('ClustersCard', () => {
 
   it('hides management actions without permission', async () => {
     await render(false)
-    expect(buttonByText('Connect Cluster')).toBeUndefined()
+    expect(buttonByText('Connect a cluster')).toBeUndefined()
     expect(buttonByText('Edit')).toBeUndefined()
     expect(buttonByText('Delete')).toBeUndefined()
     expect(buttonByText('Test connection')).toBeUndefined()
@@ -136,12 +137,12 @@ describe('ClustersCard', () => {
 
   it('flags each invalid field it was given and lists the rest before Connect', async () => {
     await render(true)
-    await act(async () => { buttonByText('Connect Cluster')?.click() })
+    await act(async () => { buttonByText('Connect a cluster')?.click() })
     await flush()
     const field = (label: string) => Array.from(container.querySelectorAll('label.pp-field')).find(item => item.querySelector('span')?.textContent === label)!.querySelector('input') as HTMLInputElement
     // Nothing is flagged before the engineer types; the summary names what is missing.
     expect(container.querySelector('[aria-invalid="true"]')).toBeNull()
-    expect(container.textContent).toContain('To connect, complete or correct: Name, Namespace, API server URL')
+    expect(container.textContent).toContain('To test or connect, complete or correct: Name, Namespace, API server URL')
     await act(async () => {
       setInputValue(field('Namespace'), 'Bad Namespace!')
       setInputValue(field('Generator selector'), 'not==valid==x')
@@ -180,6 +181,49 @@ describe('ClustersCard', () => {
     })
     await flush()
     expect(container.querySelector('[data-testid="cluster-test-result"]')).toBeNull()
+  })
+
+  it('tests the form before it is saved, and drops a result the form has outgrown', async () => {
+    const refused: ClusterTestResult = {
+      status: 'failed',
+      summary: 'the Kubernetes API server could not be reached or rejected the credential',
+      probes: [{ probe: 'api_server', ok: false, message: 'Get "https://10.0.0.9:6443/version": dial tcp 10.0.0.9:6443: connect: connection refused' }],
+      checked_at: '2026-08-06T02:00:00Z',
+    }
+    clustersApiMock.testClusterDraft.mockResolvedValue(refused)
+    clustersApiMock.listClusters.mockResolvedValue({ clusters: [connection({ tls_mode: 'system_roots' })], total: 1 })
+    await render(true)
+    await act(async () => { buttonByText('Edit')?.click() })
+    await flush()
+    const dialog = () => container.querySelector('[role="dialog"]') as HTMLElement
+    // The shared dialog layout: a header, a padded form, and the actions in the footer.
+    expect(dialog().querySelector('.pp-modal-header h3')?.textContent).toBe('Edit eastus-perf')
+    expect(dialog().querySelector('.pp-modal-form input')).not.toBeNull()
+    expect(dialog().textContent).not.toContain('Save the connection first')
+    const testButton = () => Array.from(dialog().querySelectorAll('.pp-modal-actions button')).find(button => button.textContent === 'Test connection') as HTMLButtonElement
+
+    await act(async () => { testButton().click() })
+    await flush()
+    // The edit is tested as it stands, over its stored connection; nothing is saved.
+    expect(clustersApiMock.testClusterDraft).toHaveBeenCalledWith(expect.objectContaining({ name: 'eastus-perf', namespace: 'apex' }), 'cluster-1')
+    expect(clustersApiMock.updateCluster).not.toHaveBeenCalled()
+    const result = dialog().querySelector('[data-testid="cluster-test-result"]') as HTMLElement
+    // The outcome and next step lead; the raw error waits under Details.
+    expect(result.querySelector('strong')?.textContent).toBe('The Kubernetes API server could not be reached.')
+    expect(result.querySelector('p')?.textContent).toContain('Check the API server URL')
+    expect(result.querySelector('strong')?.textContent).not.toContain('dial tcp')
+    expect(result.querySelector('details li')?.textContent).toContain('Failed API server: Get "https://10.0.0.9:6443/version"')
+
+    // Editing a field clears the result, and a test still running when the
+    // form changes does not report on it.
+    let finish: (value: ClusterTestResult) => void = () => {}
+    clustersApiMock.testClusterDraft.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await act(async () => { testButton().click() })
+    const nameInput = dialog().querySelector('input') as HTMLInputElement
+    await act(async () => { setInputValue(nameInput, 'renamed') })
+    await act(async () => { finish(okTest) })
+    await flush()
+    expect(dialog().querySelector('[data-testid="cluster-test-result"]')).toBeNull()
   })
 
   it('reports a load failure with a retry affordance', async () => {

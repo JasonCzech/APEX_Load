@@ -13,7 +13,6 @@ interface Props {
   onUpdateGroup: (index: number, patch: Partial<ScenarioDraftGroup>) => void
   onRemoveGroup: (index: number) => void
   availableTargets?: string[]
-  recommendedTargets?: string[]
   generatorInventory?: SystemInventoryGenerator[]
   availableLabels?: Record<string, string[]>
 }
@@ -46,7 +45,6 @@ export default function CreateTestGroupsEditor({
   onUpdateGroup,
   onRemoveGroup,
   availableTargets,
-  recommendedTargets,
   generatorInventory,
   availableLabels,
 }: Props) {
@@ -257,7 +255,6 @@ export default function CreateTestGroupsEditor({
                 assignment={group.assignment}
                 onChange={assignment => onUpdateGroup(idx, { assignment })}
                 availableTargets={availableTargets}
-                recommendedTargets={recommendedTargets}
                 generatorInventory={generatorInventory}
                 availableLabels={availableLabels}
                 protocol={scripts.find(script => script.id === group.scriptId)?.protocol}

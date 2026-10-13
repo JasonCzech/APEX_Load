@@ -41,6 +41,7 @@ func TestClusterMutationsRequireSettingsManageScope(t *testing.T) {
 		{http.MethodPut, "/api/v1/system/clusters/cluster-1"},
 		{http.MethodDelete, "/api/v1/system/clusters/cluster-1"},
 		{http.MethodPost, "/api/v1/system/clusters/cluster-1/test"},
+		{http.MethodPost, "/api/v1/system/clusters/test"},
 	}
 	for _, tc := range mutations {
 		if scope := staticServiceAccountScopeForRoute(tc.method, tc.path); scope != "settings:manage" {

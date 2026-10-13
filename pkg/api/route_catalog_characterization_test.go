@@ -529,6 +529,7 @@ var accessRequirementGolden = map[string]string{
 	"PUT /api/v1/system/deployment-targets/sample-id":             "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=16384 featureID=",
 	"DELETE /api/v1/system/deployment-targets/sample-id":          "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"POST /api/v1/system/clusters/sample-id/test":                 "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=65536 featureID=",
+	"POST /api/v1/system/clusters/test":                           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144 featureID=",
 	"GET /api/v1/system/clusters/sample-id/capacity":              "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"POST /api/v1/system/cloud-connections":                       "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144 featureID=",
 	"GET /api/v1/system/cloud-connections":                        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0 featureID=",

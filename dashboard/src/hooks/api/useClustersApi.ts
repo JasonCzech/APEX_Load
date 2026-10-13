@@ -46,14 +46,25 @@ export function useClustersApi() {
     [],
   )
 
-  /**
-   * Tests the STORED configuration, so it is only offered on a saved
-   * connection. Testing an unsaved draft would require sending the plaintext
-   * secret in the request body, which the write-only credential design forbids.
-   */
+  /** Tests the STORED configuration and records the result as the connection's health. */
   const testCluster = useCallback(
     (id: string) =>
       request<ClusterTestResult>(`/system/clusters/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+    [],
+  )
+
+  /**
+   * Tests a connection as its form describes it, before it is saved. The
+   * credentials travel as they do on save (write-only: never returned), and
+   * nothing is stored, health included. An edit names its stored connection,
+   * whose credentials stand in for any left blank.
+   */
+  const testClusterDraft = useCallback(
+    (body: ClusterConnectionInput, connectionId?: string) =>
+      request<ClusterTestResult>('/system/clusters/test', {
+        method: 'POST',
+        body: JSON.stringify({ ...(connectionId ? { connection_id: connectionId } : {}), connection: body }),
+      }),
     [],
   )
 
@@ -90,6 +101,7 @@ export function useClustersApi() {
       updateCluster,
       deleteCluster,
       testCluster,
+      testClusterDraft,
       getClusterCapacity,
       updatePoolAllocation,
       getPoolAllocationPreflight,
@@ -101,6 +113,7 @@ export function useClustersApi() {
       updateCluster,
       deleteCluster,
       testCluster,
+      testClusterDraft,
       getClusterCapacity,
       updatePoolAllocation,
       getPoolAllocationPreflight,

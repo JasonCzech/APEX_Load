@@ -32,6 +32,25 @@ vi.mock('../hooks/api/useFleetApi', () => ({
   useFleetApi: () => fleetApiMock,
 }))
 
+// The pool form's lookups: clusters, execution targets, deployment targets, domains.
+const lookupMocks = {
+  listClusters: vi.fn(),
+  listExecutionTargets: vi.fn(),
+  listDeploymentTargets: vi.fn(),
+  listDomains: vi.fn(),
+}
+// One object per hook, as the real hooks memoize theirs: a new one each render re-runs the load.
+const lookupApis = {
+  clusters: { listClusters: lookupMocks.listClusters },
+  compute: { listExecutionTargets: lookupMocks.listExecutionTargets },
+  deploymentTargets: { listDeploymentTargets: lookupMocks.listDeploymentTargets },
+  repository: { listDomains: lookupMocks.listDomains },
+}
+vi.mock('../hooks/api/useClustersApi', () => ({ useClustersApi: () => lookupApis.clusters }))
+vi.mock('../hooks/api/useComputeApi', () => ({ useComputeApi: () => lookupApis.compute }))
+vi.mock('../hooks/api/useDeploymentTargetsApi', () => ({ useDeploymentTargetsApi: () => lookupApis.deploymentTargets }))
+vi.mock('../hooks/api/useRepositoryApi', () => ({ useRepositoryApi: () => lookupApis.repository }))
+
 let container: HTMLElement
 let root: Root
 
@@ -43,6 +62,10 @@ beforeEach(() => {
   fleetApiMock.listProvisionRequestInstances.mockResolvedValue({ instances: [], total: 0 })
   fleetApiMock.getProvisioner.mockResolvedValue(null)
   fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+  lookupMocks.listClusters.mockResolvedValue({ clusters: [], total: 0 })
+  lookupMocks.listExecutionTargets.mockResolvedValue({ execution_targets: [] })
+  lookupMocks.listDeploymentTargets.mockResolvedValue({ targets: [] })
+  lookupMocks.listDomains.mockResolvedValue({ domains: [] })
 })
 
 afterEach(() => {
@@ -96,7 +119,7 @@ describe('FleetPoolsCard', () => {
     await flush()
     expect(fleetApiMock.listFleetPools).toHaveBeenCalled()
     expect(container.textContent).toContain('No managed generator pools')
-    expect(container.textContent).toContain('New Pool')
+    expect(container.textContent).toContain('New pool')
   })
 
   it('opens a labelled pool dialog, focuses the name, and restores focus on Escape', async () => {
@@ -106,7 +129,7 @@ describe('FleetPoolsCard', () => {
     })
     await flush()
 
-    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Pool')
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New pool')
     trigger?.focus()
     await act(async () => {
       trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -117,7 +140,7 @@ describe('FleetPoolsCard', () => {
 	const name = container.querySelector<HTMLInputElement>('input[placeholder="e.g. east-http"]')
 	const lifecycle = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(select => select.parentElement?.textContent?.includes('Capacity lifecycle'))
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New Pool')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New pool')
 	expect(document.activeElement).toBe(name)
 	expect(lifecycle?.value).toBe('')
 	expect(lifecycle?.selectedOptions[0]?.textContent).toBe('Target default')
@@ -127,6 +150,33 @@ describe('FleetPoolsCard', () => {
     })
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(trigger)
+  })
+
+  it('labels the pool form plainly: providers, the statuses an operator sets, and each cluster\'s last test', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+    lookupMocks.listClusters.mockResolvedValue({
+      clusters: [
+        { id: 'lab', name: 'Lab cluster', kind: 'generic', namespace: 'apex', last_check_status: 'failed' },
+        { id: 'prod', name: 'Prod cluster', kind: 'generic', namespace: 'apex', last_check_status: 'ok' },
+      ],
+      total: 2,
+    })
+    lookupMocks.listExecutionTargets.mockResolvedValue({ execution_targets: [{ id: 'aca-east', name: 'East apps', kind: 'azure_container_apps' }] })
+    await act(async () => root.render(<FleetPoolsCard canManage />))
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New pool')?.click()
+    })
+    await flush()
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')!
+    const select = (label: string) => Array.from(dialog.querySelectorAll('label.pp-field')).find(item => item.querySelector('span')?.textContent === label)?.querySelector('select') as HTMLSelectElement
+    const options = (label: string) => Array.from(select(label).options).map(option => option.textContent)
+    expect(options('Cloud provider')).toEqual(['Kubernetes', 'Amazon Web Services', 'Microsoft Azure', 'Google Cloud', 'Static fleet'])
+    // The system sets an error; the operator does not choose one.
+    expect(options('Status')).toEqual(['Active', 'Suspended'])
+    expect(options('Cluster connection')).toEqual(['Controller default (env-configured)', 'Lab cluster · last test failed', 'Prod cluster · connected'])
+    expect(options('Execution target')).toEqual(['None: use a cluster connection', 'East apps — Azure Container Apps'])
+    expect(dialog.textContent).not.toContain('Legacy')
   })
 
   it('announces asynchronous loading errors', async () => {
@@ -149,7 +199,7 @@ describe('FleetPoolsCard', () => {
     await flush()
     expect(container.textContent).toContain('east-http')
     expect(container.querySelector('.pp-pill-success')).toBeTruthy()
-    expect(container.textContent).toContain('kubernetes')
+    expect(container.textContent).toContain('Kubernetes')
     expect(container.textContent).toContain('size 4 (1–10)')
     expect(container.textContent).toContain('1 runtime member')
     expect(container.textContent).toContain('Recent Provisioning')
@@ -201,7 +251,7 @@ describe('FleetPoolsCard', () => {
       root.render(<FleetPoolsCard canManage={false} />)
     })
     await flush()
-    expect(container.textContent).not.toContain('New Pool')
+    expect(container.textContent).not.toContain('New pool')
     expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Provision')).toBe(false)
     expect(container.textContent).not.toContain('Delete')
   })
@@ -350,7 +400,7 @@ describe('FleetPoolsCard', () => {
     fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
     await act(async () => root.render(<FleetPoolsCard canManage />))
     await flush()
-    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Pool')
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New pool')
     await act(async () => create?.click())
     const name = container.querySelector<HTMLInputElement>('input[placeholder="e.g. east-http"]')
     const numbers = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
@@ -383,7 +433,7 @@ describe('FleetPoolsCard', () => {
       </NavigationGuardRegisterContext.Provider>,
     ))
     await flush()
-    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Pool')
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New pool')
     await act(async () => create?.click())
     const name = container.querySelector<HTMLInputElement>('input[placeholder="e.g. east-http"]')
     act(() => {
@@ -618,10 +668,10 @@ describe('FleetPoolsCard', () => {
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save')
     act(() => save?.click())
 
-    const close = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close')
     const cancel = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Cancel')
-    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Pool')
-    expect(close?.disabled).toBe(true)
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New pool')
+    // One way out of the dialog, in its footer.
+    expect(container.querySelector('[role="dialog"] .pp-modal-header button')).toBeNull()
     expect(cancel?.disabled).toBe(true)
     expect(create?.disabled).toBe(true)
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))

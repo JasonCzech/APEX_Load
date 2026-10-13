@@ -109,6 +109,14 @@ type ClusterConnectionRequest struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ClusterConnectionTestRequest probes a connection as its form describes it,
+// before it is saved. ConnectionID names the stored connection an edit starts
+// from: credentials the form leaves out are its stored ones, as on update.
+type ClusterConnectionTestRequest struct {
+	ConnectionID string                   `json:"connection_id,omitempty"`
+	Connection   ClusterConnectionRequest `json:"connection"`
+}
+
 // ClusterConnectionResponse is the read shape: everything an administrator
 // needs, and nothing that could reconstruct a credential.
 type ClusterConnectionResponse struct {
@@ -461,12 +469,77 @@ func (s *Server) handleTestClusterConnection(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleTestClusterConnectionDraft probes a connection before it is saved, so
+// a cluster is tested before it is registered or an edit is kept. Nothing is
+// stored: not the connection, its credentials, or a health result.
+func (s *Server) handleTestClusterConnectionDraft(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.requireClusterStore(w)
+	if !ok {
+		return
+	}
+	var req ClusterConnectionTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cluster connection payload")
+		return
+	}
+	conn := &storage.ClusterConnection{ID: uuid.New().String()}
+	// New drafts are throttled per administrator: one admin's test must not
+	// refuse another's, as a shared key would.
+	throttleKey := "draft"
+	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
+		throttleKey = "draft:" + firstNonEmpty(user.ID, user.Subject)
+	}
+	if id := strings.TrimSpace(req.ConnectionID); id != "" {
+		stored, err := store.GetClusterConnection(id)
+		if err != nil || stored == nil {
+			writeError(w, http.StatusNotFound, "cluster connection not found")
+			return
+		}
+		// A copy: the edit is probed over the stored connection without
+		// changing it. Its ID keeps the stored credentials decryptable.
+		draft := *stored
+		conn = &draft
+		throttleKey = stored.ID
+	}
+	applyClusterConnectionRequest(conn, req.Connection)
+	// The probe reads credentials the way a stored connection does, sealed;
+	// without a key wrapper the connection could not be saved either.
+	if err := s.sealSubmittedClusterCredentials(r.Context(), conn, req.Connection); err != nil {
+		if errors.Is(err, errClusterCredentialEncryptionUnavailable) {
+			writeError(w, http.StatusServiceUnavailable,
+				"cluster credential encryption is not configured on this controller, so an entered credential can be neither tested nor saved; configure a key wrapper, or read the credential from an environment variable")
+			return
+		}
+		writeClusterCredentialError(w, err)
+		return
+	}
+	if err := conn.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.clusterProbes.claim(throttleKey, time.Now()) {
+		writeError(w, http.StatusTooManyRequests, "a connection test for this cluster ran moments ago; wait a few seconds and retry")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), clusterProbeTimeout)
+	defer cancel()
+	// Never the cached client: an edit shares the stored connection's ID and
+	// timestamp, so the cache would answer with the stored configuration.
+	writeJSON(w, http.StatusOK, s.probeClusterConnectionWith(ctx, conn, s.clusterClients.BuildUncached))
+}
+
 // probeClusterConnection runs the capability checks in increasing order of
 // required privilege so the administrator sees exactly where it stops working.
 func (s *Server) probeClusterConnection(ctx context.Context, conn *storage.ClusterConnection) ClusterTestResponse {
+	return s.probeClusterConnectionWith(ctx, conn, s.clusterClients.ClientFor)
+}
+
+// probeClusterConnectionWith probes with the given client source: the cache
+// for a stored connection, a fresh client for one not yet saved.
+func (s *Server) probeClusterConnectionWith(ctx context.Context, conn *storage.ClusterConnection, clientFor func(context.Context, *storage.ClusterConnection) (*kubeops.Client, error)) ClusterTestResponse {
 	response := ClusterTestResponse{CheckedAt: time.Now().UTC(), Probes: make([]ClusterProbe, 0, 5)}
 
-	client, err := s.clusterClients.ClientFor(ctx, conn)
+	client, err := clientFor(ctx, conn)
 	if err != nil {
 		response.Probes = append(response.Probes, ClusterProbe{
 			Probe: "credential", OK: false, Message: scrubClusterError(err),

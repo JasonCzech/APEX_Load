@@ -338,7 +338,14 @@
 .assignment-chip-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.assignment-chip-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .assignment-chip {

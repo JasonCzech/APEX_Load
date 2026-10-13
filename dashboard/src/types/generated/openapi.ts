@@ -157985,6 +157985,99 @@ export interface operations {
       };
     };
   };
+  "handleTestClusterConnectionDraft": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "connection"?: {
+            "api_server_url"?: string;
+            "auth_mode"?: string;
+            "aws_access_key_id"?: string;
+            "aws_cluster_name"?: string;
+            "aws_credential_mode"?: string;
+            "aws_external_id"?: (string) | null;
+            "aws_region"?: string;
+            "aws_role_arn"?: string;
+            "aws_secret_access_key"?: (string) | null;
+            "aws_sts_endpoint"?: string;
+            "azure_authority"?: string;
+            "azure_client_id"?: string;
+            "azure_scope"?: string;
+            "azure_tenant_id"?: string;
+            "ca_certificate_pem"?: string;
+            "client_secret"?: (string) | null;
+            "client_secret_env_var"?: (string) | null;
+            "description"?: string;
+            "generator_container"?: string;
+            "generator_selector"?: string;
+            "generator_stateful_set"?: string;
+            "kind"?: string;
+            "labels"?: Record<string, string>;
+            "name"?: string;
+            "namespace"?: string;
+            "static_token"?: (string) | null;
+            "status"?: string;
+            "tls_mode"?: string;
+            "updated_at"?: string;
+          };
+          "connection_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "checked_at": string;
+            "probes": Array<{
+              "message"?: string;
+              "ok": boolean;
+              "optional"?: boolean;
+              "probe": string;
+              "status_code"?: number;
+            }>;
+            "server_version"?: string;
+            "status": string;
+            "summary": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestConfluenceConnection": {
     parameters: {
       "path": {
@@ -180753,6 +180846,9 @@ export interface paths {
   "/api/v1/system/clusters": {
     "get": operations["handleListClusterConnections"];
     "post": operations["handleCreateClusterConnection"];
+  };
+  "/api/v1/system/clusters/test": {
+    "post": operations["handleTestClusterConnectionDraft"];
   };
   "/api/v1/system/clusters/{id}": {
     "get": operations["handleGetClusterConnection"];

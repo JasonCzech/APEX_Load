@@ -179,6 +179,26 @@
   font-size: 12px;
 }
 
+/* A connection test: the outcome, its next step, then each check under Details. */
+.cluster-test-result {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  font-size: 13px;
+}
+.cluster-test-result.danger {
+  color: var(--danger-text);
+  background: rgba(var(--danger-rgb), 0.1);
+  border-color: rgba(var(--danger-rgb), 0.3);
+}
+.cluster-test-result.warning { border-color: var(--warning, var(--border)); }
+.cluster-test-result.success strong { color: var(--success-text); }
+.cluster-test-result p { margin: 0; color: var(--text-primary); }
+.cluster-test-result details summary { cursor: pointer; color: var(--text-secondary); }
+.cluster-test-result ul { margin: 4px 0 0; padding-left: 18px; color: var(--text-secondary); overflow-wrap: anywhere; }
+
 /* Modal ------------------------------------------------------------------ */
 .pp-modal-overlay {
   position: fixed;

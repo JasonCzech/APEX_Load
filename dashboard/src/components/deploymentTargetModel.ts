@@ -35,6 +35,19 @@ export const SELECTABLE_DEPLOYMENT_PROVIDERS: DeploymentProvider[] = [
   'static',
 ]
 
+const EXECUTION_TARGET_KIND_LABELS: Record<ExecutionTargetKind, string> = {
+  kubernetes: 'Kubernetes',
+  azure_container_apps: 'Azure Container Apps',
+  azure_container_instances: 'Azure Container Instances',
+  aws_ecs_fargate: 'AWS ECS Fargate',
+  static: 'Static generators',
+}
+
+/** An execution target's kind as people read it. */
+export function executionTargetKindLabel(kind: ExecutionTargetKind | string): string {
+  return EXECUTION_TARGET_KIND_LABELS[kind as ExecutionTargetKind] ?? kind
+}
+
 export function providerForExecutionTargetKind(kind: ExecutionTargetKind | string): DeploymentProvider | null {
   switch (kind) {
     case 'kubernetes': return 'kubernetes'

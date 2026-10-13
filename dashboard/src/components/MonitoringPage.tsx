@@ -619,6 +619,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       : telemetryDiagnostics.length ? 'No degradation reported' : 'No diagnostic samples'
   const generators = inventory?.generators ?? EMPTY_GENERATORS
   const canRestart = canManageSystem && Boolean(restartCapabilities?.enabled)
+  // Kubernetes is in play when a generator runs in a pod or a namespace is configured for restarts.
+  const runsOnKubernetes = generators.some(generator => Boolean(generator.pod_name)) || Boolean(restartCapabilities?.namespace)
   const restartDisabledReason = canManageSystem
     ? restartCapabilities?.disabled_reason || (restartCapabilities ? '' : 'Restart capability status is unavailable.')
     : ''
@@ -716,7 +718,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             : reportedReadinessSeverity === 'unknown'
               ? 'Unknown'
               : formatReadinessStatus(systemReadiness?.status)
+  // Degraded or Not ready names a check the infrastructure list does not show
+  // (Auth mode, say), so it is never a bare word beside a list of Ready.
+  const readinessProblemNames = (systemReadiness?.checks ?? [])
+    .filter(check => !INFRASTRUCTURE_READINESS_CHECK_NAMES.has(check.name))
+    .filter(check => check.status === 'degraded' || check.status === 'not_ready')
+    .map(check => formatReadinessCheckName(check.name))
   const readinessHeaderQualifiers = systemReadiness ? [
+    readinessProblemNames.length > 2 ? `${readinessProblemNames.slice(0, 2).join(', ')} and ${readinessProblemNames.length - 2} more` : readinessProblemNames.join(', '),
     missingRequiredInfrastructureCount > 0 ? `${missingRequiredInfrastructureCount} unreported` : '',
     unknownReportedInfrastructureCount > 0 ? `${unknownReportedInfrastructureCount} unknown` : '',
     readinessFetchState === 'stale' && (reportedReadinessSeverity === 'danger' || reportedReadinessSeverity === 'warning') ? 'stale data' : '',
@@ -2129,7 +2138,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                 {restartMessage && <span className="monitor-action-message">{restartMessage}</span>}
               </div>
             )}
-            {canManageSystem && !canRestart && restartDisabledReason && <p className="monitor-action-message muted">{restartDisabledReason}</p>}
+            {/* Restart is a Kubernetes control: a static fleet outside Kubernetes has nothing to say about it. */}
+            {canManageSystem && !canRestart && restartDisabledReason && runsOnKubernetes && <p className="monitor-action-message muted">{restartDisabledReason}</p>}
             <div className="monitor-body telemetry-modal-body">
               <GeneratorInventoryList
                 generators={generators}
@@ -2197,6 +2207,12 @@ function GeneratorInventoryList({
             <span className="monitor-label">Target</span>
             <span className="monitor-value cell-mono">{generator.target}</span>
           </div>
+          {generator.region && (
+            <div className="monitor-row">
+              <span className="monitor-label">Region</span>
+              <span className="monitor-value">{generator.region}</span>
+            </div>
+          )}
           <div className="monitor-row">
             <span className="monitor-label">Available Capacity</span>
             <span className="monitor-value">{generator.available_capacity.toLocaleString()}</span>
@@ -2212,7 +2228,7 @@ function GeneratorInventoryList({
           </div>
           <div className="monitor-row">
             <span className="monitor-label">CPU Capacity</span>
-            <span className="monitor-value">{formatCPUCores(generator.cpu_limit_cores)}</span>
+            <span className="monitor-value">{generator.cpu_limit_cores ? formatCPUCores(generator.cpu_limit_cores) : 'No limit reported'}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Memory Usage</span>
@@ -2220,7 +2236,7 @@ function GeneratorInventoryList({
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Memory Capacity</span>
-            <span className="monitor-value">{formatMemoryBytes(generator.memory_limit_bytes)}</span>
+            <span className="monitor-value">{generator.memory_limit_bytes ? formatMemoryBytes(generator.memory_limit_bytes) : 'No limit reported'}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Goroutines</span>

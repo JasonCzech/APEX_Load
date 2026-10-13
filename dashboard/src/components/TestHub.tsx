@@ -96,6 +96,8 @@ import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelectio
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline, type CompositionTimelineGroup } from './ScenarioCompositionTimeline'
 import TrafficProfileRunSettings from './TrafficProfileRunSettings'
+import ConfiguredGeneratorChips from './ConfiguredGeneratorChips'
+import { formatEstimate } from './generatorNames'
 import { trafficProfileMappingForGroup } from './trafficProfilePreviewModel'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
 import CSVDrivenSourcePanel from './CSVDrivenSourcePanel'
@@ -3245,7 +3247,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
   const assignmentRecommendation = draftEstimate?.assignment_recommendation
   const availableTargets = assignmentRecommendation?.available_targets || []
-  const recommendedTargets = assignmentRecommendation?.recommended_targets || []
   const availableLabels = assignmentRecommendation?.available_labels || {}
   const rootAssignment = assignmentFromForm(form)
 
@@ -4576,7 +4577,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               <div className="scenario-assignment-footprint">
                 <div className="scenario-assignment-metric"><span>Footprint</span><strong>{draftEstimate.footprint.total_vusers} VUsers</strong><small>{draftEstimate.footprint.duration}</small></div>
                 <div className="scenario-assignment-metric"><span>Complexity</span><strong>{draftEstimate.footprint.complexity_score.toFixed(2)}</strong><small>derived from current script mix</small></div>
-                <div className="scenario-assignment-metric"><span>Estimated load</span><strong>{draftEstimate.footprint.estimated_cpu_cores.toFixed(2)} CPU</strong><small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small></div>
+                <div className="scenario-assignment-metric"><span>Estimated load</span><strong>{formatEstimate(draftEstimate.footprint.estimated_cpu_cores)} CPU</strong><small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small></div>
               </div>
             )}
             {assignmentRecommendation?.summary && <p className="scenario-assignment-copy">{assignmentRecommendation.summary}</p>}
@@ -4585,16 +4586,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 assignment={rootAssignment}
                 onChange={updateRootAssignment}
                 availableTargets={availableTargets}
-                recommendedTargets={recommendedTargets}
                 generatorInventory={generatorInventory}
                 availableLabels={availableLabels}
                 allowInherit={false}
                 scope="scenario"
               />
             </div>
-            {rootAssignment.mode === 'auto' && recommendedTargets.length > 0 ? (
-              <div className="scenario-assignment-chip-row">{recommendedTargets.map(target => <span key={target} className="scenario-assignment-chip">{target}</span>)}</div>
-            ) : null}
+            {rootAssignment.mode === 'auto' && <ConfiguredGeneratorChips targets={availableTargets} inventory={generatorInventory} rowClassName="scenario-assignment-chip-row" chipClassName="scenario-assignment-chip" labelClassName="scenario-assignment-chip-label" />}
             {estimateError && <div className="settings-error-inline">{estimateError}</div>}
             {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
               <div className="scenario-assignment-warnings">{assignmentRecommendation.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>
@@ -4619,7 +4617,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         assignment={group.assignment}
                         onChange={assignment => updateScenarioGroup(index, { assignment })}
                         availableTargets={availableTargets}
-                        recommendedTargets={recommendedTargets}
                         generatorInventory={generatorInventory}
                         availableLabels={availableLabels}
                         protocol={script?.protocol}

@@ -307,6 +307,11 @@ var explicitRouteContractTypes = map[string]struct {
 		requestType:   "ClusterConnectionRequest",
 		responseTypes: map[int]string{200: "ClusterConnectionResponse"},
 	},
+	"POST /api/v1/system/clusters/test": {
+		requestType:         "ClusterConnectionTestRequest",
+		responseTypes:       map[int]string{200: "ClusterTestResponse"},
+		responseDescription: "Probes a cluster connection as a form describes it, before it is saved. Nothing is stored.",
+	},
 	"POST /api/v1/system/cloud-connections": {
 		requestType:   "CloudConnectionRequest",
 		responseTypes: map[int]string{201: "CloudConnectionResponse"},

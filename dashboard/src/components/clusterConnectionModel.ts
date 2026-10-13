@@ -4,6 +4,7 @@ import type {
   ClusterConnection,
   ClusterConnectionInput,
   ClusterKind,
+  ClusterProbe,
   ClusterTestResult,
   ClusterTLSMode,
 } from '../types/cluster'
@@ -366,8 +367,42 @@ export function connectionIsDirty(draft: ClusterDraft, baseline: string): boolea
   )
 }
 
-/** Renders a test result for display. */
-export function describeProbe(result: ClusterTestResult): { tone: 'success' | 'warning' | 'danger'; text: string } {
+const sentence = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const capitalized = trimmed[0].toUpperCase() + trimmed.slice(1)
+  return /[.!?)]$/.test(capitalized) ? capitalized : `${capitalized}.`
+}
+
+/** What a failed check means, and what to do about it; the raw message goes under Details. */
+function failedCheckOutcome(probe: ClusterProbe): { text: string; nextStep: string } {
+  switch (probe.probe) {
+    case 'credential':
+      // The controller refuses an inactive connection before it reads the credential.
+      if (probe.message?.includes('cluster connection is not active')) return { text: 'The connection is not active.', nextStep: 'Set its status to active to test or use it.' }
+      return { text: 'The cluster credential could not be prepared.', nextStep: 'Check the secret or environment variable, and for Azure the tenant and client IDs.' }
+    case 'sts_identity':
+      // The server's own advice for an AWS identity failure is the next step.
+      return { text: 'AWS did not accept the credential.', nextStep: sentence(probe.message || 'Check the access key, secret and role.') }
+    case 'api_server':
+      if (probe.message?.includes('EKS access entry')) return { text: 'The API server did not authorize this AWS identity.', nextStep: sentence(probe.message) }
+      return probe.status_code === 401 || probe.status_code === 403
+        ? { text: 'The Kubernetes API server rejected the credential.', nextStep: 'Check that the credential is valid and is allowed to use this cluster.' }
+        : { text: 'The Kubernetes API server could not be reached.', nextStep: 'Check the API server URL, that this controller can reach it (network, firewall or private endpoint), and the TLS trust setting.' }
+    case 'generator_workload':
+      return { text: 'Connected, but the generator StatefulSet was not found.', nextStep: "Deploy the generator StatefulSet in this connection's namespace, or correct its name." }
+    case 'resource_quotas':
+      return { text: "Connected, but the namespace's resource quotas could not be read.", nextStep: 'Allow the credential to read resource quotas in the namespace.' }
+    default:
+      return { text: sentence(probe.message || probe.probe) || 'A required check failed.', nextStep: '' }
+  }
+}
+
+/**
+ * A test result for display: what happened first, then what to do about it.
+ * Each check's raw message belongs under Details, not in the headline.
+ */
+export function describeProbe(result: ClusterTestResult): { tone: 'success' | 'warning' | 'danger'; text: string; nextStep?: string } {
   const failures = result.probes.filter((probe) => !probe.ok)
   if (result.status === 'ok') {
     const version = result.server_version ? ` (Kubernetes ${result.server_version})` : ''
@@ -376,11 +411,26 @@ export function describeProbe(result: ClusterTestResult): { tone: 'success' | 'w
   if (result.status === 'degraded') {
     // A degraded result is the expected state without the optional node
     // ClusterRole, so it must not read as a failure.
-    const optional = failures.filter((probe) => probe.optional).map((probe) => probe.message || probe.probe)
-    return { tone: 'warning', text: `Connected, with limited permissions. ${optional.join(' ')}`.trim() }
+    const optional = failures.filter((probe) => probe.optional).map((probe) => sentence(probe.message || probe.probe))
+    return { tone: 'warning', text: 'Connected, with limited permissions.', nextStep: optional.join(' ') || undefined }
   }
-  const detail = failures.map((probe) => probe.message || probe.probe).join(' ')
-  return { tone: 'danger', text: detail || result.summary || 'The connection test failed.' }
+  const required = failures.find((probe) => !probe.optional)
+  if (!required) return { tone: 'danger', text: sentence(result.summary) || 'The connection test failed.' }
+  const outcome = failedCheckOutcome(required)
+  return { tone: 'danger', text: outcome.text, nextStep: outcome.nextStep || undefined }
+}
+
+/** A check's name as people read it, for the test result's details. */
+export function clusterProbeLabel(probe: string): string {
+  switch (probe) {
+    case 'credential': return 'Credential'
+    case 'sts_identity': return 'AWS identity'
+    case 'api_server': return 'API server'
+    case 'generator_workload': return 'Generator StatefulSet'
+    case 'resource_quotas': return 'Resource quotas'
+    case 'nodes': return 'Node read (optional)'
+    default: return probe.replace(/_/g, ' ')
+  }
 }
 
 /** Short label for a connection's credential source. */

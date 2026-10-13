@@ -24,6 +24,8 @@ import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionRespon
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { effectiveGroupVUsers, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
+import ConfiguredGeneratorChips from './ConfiguredGeneratorChips'
+import { formatEstimate } from './generatorNames'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 
 interface Props {
@@ -136,7 +138,6 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const totalVUsers = groups.reduce((sum, group) => sum + effectiveGroupVUsers(group), 0)
   const assignmentRecommendation = draftEstimate?.assignment_recommendation
   const availableTargets = assignmentRecommendation?.available_targets || []
-  const recommendedTargets = assignmentRecommendation?.recommended_targets || []
   const availableLabels = assignmentRecommendation?.available_labels || {}
   const footprint = draftEstimate?.footprint
   const hasGoalModeConfig = hasGoalModeConfiguration(goalConfig)
@@ -493,7 +494,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                   </div>
                   <div className="assignment-footprint-card">
                     <span>Estimated load</span>
-                    <strong>{footprint.estimated_cpu_cores.toFixed(2)} CPU</strong>
+                    <strong>{formatEstimate(footprint.estimated_cpu_cores)} CPU</strong>
                     <small>{Math.round(footprint.estimated_memory_mb)} MB / {Math.round(footprint.estimated_network_mbps)} Mbps</small>
                   </div>
                 </div>
@@ -507,20 +508,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 assignment={assignment}
                 onChange={next => updateScenarioField('assignment', next || { mode: 'auto' })}
                 availableTargets={availableTargets}
-                recommendedTargets={recommendedTargets}
                 generatorInventory={generatorInventory}
                 availableLabels={availableLabels}
                 allowInherit={false}
                 scope="scenario"
               />
 
-              {(!assignment.mode || assignment.mode === 'auto') && recommendedTargets.length > 0 ? (
-                <div className="assignment-chip-row">
-                  {recommendedTargets.map((target) => (
-                    <span key={target} className="assignment-chip">{target}</span>
-                  ))}
-                </div>
-              ) : null}
+              {(!assignment.mode || assignment.mode === 'auto') && <ConfiguredGeneratorChips targets={availableTargets} inventory={generatorInventory} rowClassName="assignment-chip-row" chipClassName="assignment-chip" labelClassName="assignment-chip-label" />}
 
               {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
                 <div className="assignment-warnings">
@@ -548,7 +542,6 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             onUpdateGroup={updateGroup}
             onRemoveGroup={removeGroup}
             availableTargets={availableTargets}
-            recommendedTargets={recommendedTargets}
             generatorInventory={generatorInventory}
             availableLabels={availableLabels}
           />

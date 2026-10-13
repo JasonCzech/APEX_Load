@@ -26,8 +26,8 @@ for (const width of [1024, 1280, 1440]) {
     expect(new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('projectId')).toBe(workspace.projectId)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.goto(`/#/settings?setting=pools&${scopeQuery(workspace)}`)
-    await page.getByRole('button', { name: 'New Pool', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'New Pool', exact: true })
+    await page.getByRole('button', { name: 'New pool', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'New pool', exact: true })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText('Advanced lifecycle & admission policy', { exact: true })).toBeVisible()
     expect(await dialog.evaluate(element => {

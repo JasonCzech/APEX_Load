@@ -125,6 +125,15 @@ describe('GroupPlacementEditor', () => {
     expect(container.textContent).toContain('Selected VUser capacity unknown')
   })
 
+  it('names pinned hosts by generator and region, with the address as detail', () => {
+    const generator = { ...runtimeCapacityGenerator([]), target: '127.0.0.1:19091', generator_id: 'gen-a', region: 'us-east', supported_protocols: ['http'] }
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'specific_hosts', selected_targets: ['127.0.0.1:19091'] }} availableTargets={['127.0.0.1:19091']} generatorInventory={[generator]} protocol="http" />))
+    const option = container.querySelector('.new-test-generator-option') as HTMLElement
+    expect(option.querySelector('strong')?.textContent).toBe('gen-a')
+    expect(option.querySelector('em')?.textContent).toContain('us-east · 127.0.0.1:19091')
+    expect(container.querySelector('.new-test-placement-summary strong')?.textContent).toBe('Pinned: gen-a · us-east')
+  })
+
   it('reports the protocol runtime ceiling instead of overstating aggregate capacity', () => {
     const generator: SystemInventoryGenerator = {
       target: 'gen-a',

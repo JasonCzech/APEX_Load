@@ -29,6 +29,10 @@ var clusterAdministrationAPIRouteCatalog = apiRouteCatalog{
 			systemAdminAccess(), func(s *Server) http.Handler {
 				return http.HandlerFunc(s.handleDeleteClusterConnection)
 			}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/clusters/test", "handleTestClusterConnectionDraft",
+			accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}, func(s *Server) http.Handler {
+				return http.HandlerFunc(s.handleTestClusterConnectionDraft)
+			}),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/clusters/{id}/test", "handleTestClusterConnection",
 			accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}, func(s *Server) http.Handler {
 				return http.HandlerFunc(s.handleTestClusterConnection)

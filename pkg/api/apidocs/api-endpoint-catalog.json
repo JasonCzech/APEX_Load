@@ -6056,6 +6056,16 @@
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/system/clusters/test",
+      "operationId": "handleTestClusterConnectionDraft",
+      "summary": "Test Cluster Connection Draft",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/system/clusters/{id}",
       "operationId": "handleDeleteClusterConnection",

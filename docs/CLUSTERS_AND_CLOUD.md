@@ -292,6 +292,7 @@ require the `settings:manage` service-account scope (reads use `system:read`).
 | POST / GET | `/api/v1/system/clusters` |
 | GET / PUT / DELETE | `/api/v1/system/clusters/{id}` |
 | POST | `/api/v1/system/clusters/{id}/test` |
+| POST | `/api/v1/system/clusters/test` |
 | GET | `/api/v1/system/clusters/{id}/capacity` |
 | PUT | `/api/v1/fleet/pools/{id}/allocation` |
 | GET | `/api/v1/fleet/pools/{id}/allocation/preflight` |
@@ -313,6 +314,17 @@ The connection test returns a per-probe array (`api_server`,
 administrator sees exactly which capability is missing. It is throttled to one
 run per connection per 5 seconds. Authentication failures report a status code
 and a fixed string, never the API server's response body.
+
+`POST /api/v1/system/clusters/test` runs the same probes on a connection as its
+form describes it, before it is saved: `{"connection": {…}}` for a new one, or
+`{"connection_id": "…", "connection": {…}}` for an edit, whose blank
+credentials are the stored ones. Credentials travel as they do on save and are
+never returned. Nothing is stored, not the connection and not a health result,
+so **Connect a cluster** offers **Test connection** beside **Connect**. A new
+connection's test is throttled per administrator, and an edit's shares its
+stored connection's throttle, each to one run per 5 seconds. The
+dashboard leads a failed test with what it means and what to check next; each
+probe's raw message is under **Details**.
 
 
 ## Kubernetes Restart Controls

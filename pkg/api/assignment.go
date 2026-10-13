@@ -283,8 +283,29 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 		}
 		return recommendation
 	}
-	recommendation.Summary = fmt.Sprintf("Auto-assignment recommends %d host%s for the current scenario footprint.", test.CapacityAdvisory.RecommendedGenerators, pluralSuffix(test.CapacityAdvisory.RecommendedGenerators))
+	recommendation.Summary = autoAssignmentSummary(test.CapacityAdvisory.RecommendedGenerators, len(availableTargets))
 	return recommendation
+}
+
+// autoAssignmentSummary says what automatic placement does: each group goes
+// to the reachable generator with the most free capacity (planDistributedGroup
+// Shards takes each group's VUsers off its generator before placing the
+// next), so groups spread across generators. The footprint's generator count
+// is what it needs, not a limit on where groups go. The count beside it is of
+// configured generators (assignmentTargets), which may not all be reachable.
+func autoAssignmentSummary(needed, configured int) string {
+	placement := "Automatic placement puts each group on the reachable generator with the most free capacity."
+	if needed < 1 {
+		return placement
+	}
+	if configured < 1 {
+		return fmt.Sprintf("%s This footprint needs about %d generator%s; none is configured.", placement, needed, pluralSuffix(needed))
+	}
+	verb := "are"
+	if configured == 1 {
+		verb = "is"
+	}
+	return fmt.Sprintf("%s This footprint needs about %d generator%s; %d %s configured.", placement, needed, pluralSuffix(needed), configured, verb)
 }
 
 func (tr *TestRunner) hydrateCapacityGroupsLocked(groups []TestGroup) []TestGroup {

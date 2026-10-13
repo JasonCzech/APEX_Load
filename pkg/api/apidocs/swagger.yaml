@@ -332780,6 +332780,173 @@ paths:
       tags:
         - System
       x-handler: handleTestClusterConnection
+  /api/v1/system/clusters/test:
+    post:
+      summary: Test Cluster Connection Draft
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleTestClusterConnectionDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                connection:
+                  type: object
+                  properties:
+                    api_server_url:
+                      type: string
+                    auth_mode:
+                      type: string
+                    aws_access_key_id:
+                      type: string
+                    aws_cluster_name:
+                      type: string
+                    aws_credential_mode:
+                      type: string
+                    aws_external_id:
+                      type: string
+                      nullable: true
+                    aws_region:
+                      type: string
+                    aws_role_arn:
+                      type: string
+                    aws_secret_access_key:
+                      type: string
+                      nullable: true
+                    aws_sts_endpoint:
+                      type: string
+                    azure_authority:
+                      type: string
+                    azure_client_id:
+                      type: string
+                    azure_scope:
+                      type: string
+                    azure_tenant_id:
+                      type: string
+                    ca_certificate_pem:
+                      type: string
+                    client_secret:
+                      type: string
+                      nullable: true
+                    client_secret_env_var:
+                      type: string
+                      nullable: true
+                    description:
+                      type: string
+                    generator_container:
+                      type: string
+                    generator_selector:
+                      type: string
+                    generator_stateful_set:
+                      type: string
+                    kind:
+                      type: string
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    static_token:
+                      type: string
+                      nullable: true
+                    status:
+                      type: string
+                    tls_mode:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                connection_id:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Probes a cluster connection as a form describes it, before it is saved. Nothing is stored.
+                properties:
+                  checked_at:
+                    type: string
+                    format: date-time
+                  probes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        ok:
+                          type: boolean
+                        optional:
+                          type: boolean
+                        probe:
+                          type: string
+                        status_code:
+                          type: integer
+                          format: int64
+                      required:
+                        - ok
+                        - probe
+                  server_version:
+                    type: string
+                  status:
+                    type: string
+                  summary:
+                    type: string
+                required:
+                  - checked_at
+                  - probes
+                  - status
+                  - summary
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      tags:
+        - System
+      x-handler: handleTestClusterConnectionDraft
   /api/v1/system/deployment-lease:
     get:
       summary: Get Deployment Lease
