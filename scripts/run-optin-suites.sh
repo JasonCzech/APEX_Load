@@ -215,6 +215,14 @@ run_suite "HA failover soak" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RUN_HA_FAILOVER_SOAK=1 go test -count=1 -run HAFailoverSoak ./pkg/api
 
+# Builds the controller, generator and target images, starts its own disposable
+# production-posture stack (two HA controllers, three mTLS generators,
+# PostgreSQL, Redis, S3), runs the suite, then removes the stack and its images.
+run_suite "multiproject_integration (multi-project concurrency on a disposable Docker stack)" \
+  "--all; Docker with about 6 GB for containers, 15 GB free disk, Go, Python 3 and OpenSSL" \
+  "[[ ${run_all} == 1 ]]" \
+  python3 scripts/multiproject/stack.py run
+
 run_suite "performance smoke (perf evidence probes)" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RUN_PERFORMANCE_SMOKE=1 go test -count=1 ./pkg/perfevidence
