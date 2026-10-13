@@ -410,6 +410,12 @@ Useful scenario endpoints:
 - `PUT /api/v1/scenarios/{id}/data-pools` — Bind data pools
 - `POST /api/v1/scenarios/{id}/schedules` — Create a schedule
 - `GET /api/v1/scenarios/{id}/runtime-settings/report` — Effective runtime-settings report
+- `GET`/`POST /api/v1/projects/{id}/scenario-drafts` — List or save scenario-builder drafts:
+  incomplete work saved to the project, which no run, plan or schedule can launch
+- `PUT /api/v1/projects/{id}/scenario-drafts/{draftID}` — Save a draft again, with the `revision`
+  it was read at (`409` when someone saved it since)
+- `DELETE /api/v1/projects/{id}/scenario-drafts/{draftID}` — Delete a draft; `?revision=` deletes
+  it only at that revision, keeping later work
 
 #### IP Spoofing (Source-IP Pool)
 

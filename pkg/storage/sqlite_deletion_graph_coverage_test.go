@@ -31,7 +31,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"monitoring_collectors", "object_repositories", "powerbi_publishes",
 	"project_secret_provider_metadata", "project_secrets", "protected_source_secret_sessions",
 	"provisioning_requests", "release_sla_waivers", "releases", "reusable_blocks",
-	"run_archives", "runtime_secret_provisioning_attempts", "scenario_data_pool_bindings",
+	"run_archives", "runtime_secret_provisioning_attempts", "scenario_data_pool_bindings", "scenario_drafts",
 	"scenario_schedule_approvals", "scenario_schedule_occurrences", "scenario_schedules",
 	"scenario_scripts", "script_recordings", "scripts", "shared_data_pool_rows",
 	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "tests",

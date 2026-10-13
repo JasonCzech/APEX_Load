@@ -3,7 +3,7 @@ import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApplicationContext } from '../hooks/applicationContext'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardRegisterContext, useNavigationGuardRunner, type NavigationGuardRegistrar } from '../hooks/NavigationGuardProvider'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { ProjectContext } from '../hooks/projectContext'
 import type { Project } from '../types'
@@ -25,16 +25,25 @@ export interface SharedAssetsDialogProps {
 
 /**
  * One Shared assets section over the page that asked for it, so an author
- * changes what a script or scenario uses and is back where they were. Its
- * panels' unsaved work is its own: closing asks about it, as leaving a page
- * does, and the page underneath is not asked about.
+ * changes what a script or scenario uses and is back where they were.
+ * Closing asks about the section's unsaved work only, not the page's; leaving
+ * the page (Back, a link) asks about both, as the app's navigation sees the
+ * section's work too.
  */
 export default function SharedAssetsDialog(props: SharedAssetsDialogProps) {
-  return <NavigationGuardProvider><SharedAssetsDialogBody {...props} /></NavigationGuardProvider>
+  const pageRegister = useContext(NavigationGuardRegisterContext)
+  return <NavigationGuardProvider><SharedAssetsDialogBody {...props} pageRegister={pageRegister} /></NavigationGuardProvider>
 }
 
-function SharedAssetsDialogBody({ projectId, section, resourceId, onClose }: SharedAssetsDialogProps) {
+function SharedAssetsDialogBody({ projectId, section, resourceId, onClose, pageRegister }: SharedAssetsDialogProps & { pageRegister: NavigationGuardRegistrar }) {
   const runner = useNavigationGuardRunner()
+  const dialogRegister = useContext(NavigationGuardRegisterContext)
+  // Each panel's unsaved work is the dialog's, for closing, and the page's, for leaving.
+  const register = useMemo<NavigationGuardRegistrar>(() => (guard, dirty) => {
+    const releaseDialog = dialogRegister(guard, dirty)
+    const releasePage = pageRegister(guard, dirty)
+    return () => { releaseDialog(); releasePage() }
+  }, [dialogRegister, pageRegister])
   const close = () => runner.runGuarded(onClose)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   useModalDialog({ dialogRef, onClose: close })
@@ -62,18 +71,13 @@ function SharedAssetsDialogBody({ projectId, section, resourceId, onClose }: Sha
       <div className="shared-assets-dialog-body">
         {entry.usage && <p className="shared-assets-usage">{entry.usage}</p>}
         {permissions
-          ? <SharedAssetSection section={section} project={project} applications={applications || []} resourceId={resourceId} permissions={permissions} />
+          ? <NavigationGuardRegisterContext.Provider value={register}><SharedAssetSection section={section} project={project} applications={applications || []} resourceId={resourceId} permissions={permissions} /></NavigationGuardRegisterContext.Provider>
           // Until access is known, do not tell an editor they cannot change anything.
           : <p role="status">Checking access…</p>}
       </div>
       <footer className="shared-assets-dialog-footer">
-        {/* Leaving for the page asks about this dialog's unsaved work first; the page's own guard then asks about the one underneath. */}
-        <a href={href} onClick={event => {
-          // A new tab leaves this page as it is.
-          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-          event.preventDefault()
-          runner.runGuarded(() => { window.location.hash = href })
-        }}>Open in Shared assets</a>
+        {/* An ordinary link: leaving asks about the dialog's unsaved work and the page's. */}
+        <a href={href}>Open in Shared assets</a>
         <button type="button" className="btn btn-primary" onClick={close}>Done</button>
       </footer>
     </div>

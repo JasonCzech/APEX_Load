@@ -3542,6 +3542,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 : bindingErrors[0] || blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage
                   || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || (scenarioGroupNameError ? 'give each group its own name.' : '')
   const draftSaveHelp = scenarioIncompleteReason ? 'Not complete yet: Save keeps it as a draft in this project, which can’t be launched.' : ''
+  // Someone's unfinished changes to the scenario being edited here (not the draft this builder continues).
+  const pendingScenarioDraft = showForm && editingId && !projectDraftRef.current ? projectDrafts.find(draft => draft.scenario_id === editingId) : undefined
   // Only offer "Start over" for a new build (not an edit) once there's progress to discard.
   const builderHasProgress = !editingId && hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
 
@@ -4985,6 +4987,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
       {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">{error}</div>}
       {savedNotice && <p className="scenario-save-notice" role="status">{savedNotice}</p>}
+      {pendingScenarioDraft && <p className="scenario-save-notice" role="note">{`${pendingScenarioDraft.updated_by || 'Someone'} saved a draft of changes to this scenario ${formatDisplayDateTime(pendingScenarioDraft.updated_at)}. To pick up those changes, continue “${pendingScenarioDraft.name}” from the library's Drafts; saving here leaves that draft as it is.`}</p>}
 
       {authoringDraft && canManageTests && <section className="scenario-draft-recovery" aria-label="Unsaved work in this browser">
         <strong>{authoringDraft.form.name || 'Untitled draft'}</strong>

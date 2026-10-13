@@ -4122,6 +4122,18 @@ describe('TestHub', () => {
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-builder-actions button')).find(button => button.textContent === 'Save scenario')?.disabled).toBe(false)
   })
 
+  it('says when someone has saved a draft of changes to the scenario opened for editing', async () => {
+    const stored: StoredScenario = { id: 'edited', name: 'Edited', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    apiMock.listScenarioDrafts.mockResolvedValue({ drafts: [{ id: 'scenario-draft-3', project_id: 'project-1', scenario_id: 'edited', scenario_name: 'Edited', name: 'Edited changes', revision: 1, updated_by: 'Grace', created_at: '', updated_at: '2026-10-13T10:00:00Z' }], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    const note = container.querySelector('.scenario-save-notice[role="note"]')?.textContent
+    expect(note).toContain('Grace saved a draft of changes to this scenario')
+    expect(note).toContain('continue “Edited changes” from the library')
+  })
+
   it('opens a saved scenario at the step asked for from its row', async () => {
     const stored: StoredScenario = { id: 'edit-at-step', name: 'Edit at step', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
     apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })

@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 752,
+    "routes": 758,
     "public": 31,
-    "protected": 721,
-    "rbac": 716,
+    "protected": 727,
+    "rbac": 722,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 752,
+    "green": 758,
     "partial": 0,
     "missing": 0
   },
@@ -8752,6 +8752,135 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/scenario-drafts",
+      "operation_id": "handleListScenarioDrafts",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/scenario-drafts",
+      "operation_id": "handleCreateScenarioDraft",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/scenario-drafts/{draftID}",
+      "operation_id": "handleDeleteScenarioDraft",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/scenario-drafts/{draftID}",
+      "operation_id": "handleGetScenarioDraft",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/scenario-drafts/{draftID}",
+      "operation_id": "handleUpdateScenarioDraft",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/secrets",
       "operation_id": "handleListProjectSecrets",
       "public": false,
@@ -8856,6 +8985,33 @@
       "method": "GET",
       "path": "/api/v1/projects/{id}/secrets/{name}/usage",
       "operation_id": "handleProjectSecretUsage",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/shared-asset-usage",
+      "operation_id": "handleSharedAssetUsage",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

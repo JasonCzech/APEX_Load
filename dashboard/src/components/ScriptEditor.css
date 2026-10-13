@@ -8282,7 +8282,7 @@ button.debugger-problem-row:hover {
 .script-outline-treeview .script-outline-row.group { font-weight: 650; }
 .script-outline-treeview .script-outline-row.kind-phase { color: var(--text-secondary); font-size: 11px; font-weight: 700; }
 /* Nesting is the indent and a thin bracket per level, not a word on the row. */
-.script-outline-treeview .script-outline-row:not([aria-level="1"]):not([aria-level="2"])::before { content: ''; position: absolute; top: 0; bottom: 0; left: calc((var(--outline-level) - 2) * 12px + 7px); width: 1px; background: var(--border); }
+.script-outline-treeview .script-outline-row:not([aria-level="1"]):not([aria-level="2"])::before { content: ''; position: absolute; top: 0; bottom: 0; left: calc((var(--outline-level, 2) - 2) * 12px + 7px); width: 1px; background: var(--border); }
 /* The name is fitted to the row in script (cut on a word boundary), so it never clips mid-word. */
 .script-outline-name { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
 .script-outline-occurrence { flex: 0 0 auto; color: var(--text-secondary); font-size: 11px; font-weight: 400; }

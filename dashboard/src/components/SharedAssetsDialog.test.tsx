@@ -3,7 +3,8 @@ import { act, useMemo } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useNavigationGuard } from '../hooks/NavigationGuardProvider'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { ProjectContext, type ProjectContextValue } from '../hooks/projectContext'
 import SharedAssetsDialog from './SharedAssetsDialog'
 import type { SharedAssetsPermissions } from './SharedAssetsPage'
@@ -66,17 +67,21 @@ describe('SharedAssetsDialog', () => {
     expect(dialog().querySelector('a')!.getAttribute('href')).toBe('#/shared-assets?section=test-data&resourceId=pool-7&projectId=project-1')
   })
 
-  it('leaves a new-tab click on the full-page link to the browser', async () => {
-    await render()
-    const link = dialog().querySelector('a')!
-    const modified = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true })
-    link.dispatchEvent(modified)
-    expect(modified.defaultPrevented).toBe(false)
-    const plain = new MouseEvent('click', { bubbles: true, cancelable: true })
-    await act(async () => { link.dispatchEvent(plain) })
-    expect(plain.defaultPrevented).toBe(true)
-    expect(window.location.hash).toBe('#/shared-assets?section=test-data&projectId=project-1')
-    window.location.hash = ''
+  it('lets the page’s navigation see the section’s unsaved work, as Back or a link in a panel would leave it', async () => {
+    dirty.value = true
+    let pageRunner!: NavigationGuardRunner
+    const CapturePage = () => { pageRunner = useNavigationGuardRunner(); return null }
+    const context = { projects: [project], activeProject: project } as unknown as ProjectContextValue
+    const onClose = vi.fn()
+    await act(async () => root.render(<NavigationGuardProvider><CapturePage /><ProjectContext.Provider value={context}><SharedAssetsDialog projectId="project-1" section="test-data" onClose={onClose} /></ProjectContext.Provider></NavigationGuardProvider>))
+    await act(async () => { await Promise.resolve() })
+    const leave = vi.fn()
+    await act(async () => pageRunner.runGuarded(leave))
+    expect(leave).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Pool rows')
+    await act(async () => button('Discard changes').click())
+    expect(leave).toHaveBeenCalledOnce()
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('waits for access, and stays read-only when it cannot be checked', async () => {
