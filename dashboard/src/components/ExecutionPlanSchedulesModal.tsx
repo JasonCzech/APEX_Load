@@ -104,15 +104,15 @@ function formatTimestamp(iso?: string): string {
 function occurrenceStatusPill(status: string, reasonCode?: string): string {
   switch (status) {
     case 'materialized':
-      return 'pp-pill pp-pill-success'
+      return 'pp-pill pp-pill-label pp-pill-success'
     case 'blocked':
-      return reasonCode === 'approval_required' || reasonCode === 'waiting_for_previous_run' ? 'pp-pill pp-pill-warning' : 'pp-pill pp-pill-danger'
+      return reasonCode === 'approval_required' || reasonCode === 'waiting_for_previous_run' ? 'pp-pill pp-pill-label pp-pill-warning' : 'pp-pill pp-pill-label pp-pill-danger'
     case 'failed':
-      return 'pp-pill pp-pill-danger'
+      return 'pp-pill pp-pill-label pp-pill-danger'
     case 'materializing':
-      return 'pp-pill pp-pill-info'
+      return 'pp-pill pp-pill-label pp-pill-info'
     default:
-      return 'pp-pill pp-pill-muted'
+      return 'pp-pill pp-pill-label pp-pill-muted'
   }
 }
 
@@ -203,8 +203,16 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
     }
   }, [load])
 
+  // The form's Cancel and Save leave with it: focus moves to the Close that
+  // takes their place in the footer.
+  const draftWasOpenRef = useRef(false)
   useEffect(() => {
-    if (!draftOpen) return
+    if (!draftOpen) {
+      if (draftWasOpenRef.current) closeButtonRef.current?.focus()
+      draftWasOpenRef.current = false
+      return
+    }
+    draftWasOpenRef.current = true
     const timeout = window.setTimeout(() => nameInputRef.current?.focus(), 0)
     return () => window.clearTimeout(timeout)
   }, [draftOpen])
@@ -456,15 +464,13 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
       }}
     >
       <div ref={dialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        {/* One way out at a time, in the footer: Close, or the open form's Cancel beside Save. */}
         <div className="pp-modal-header">
           <h3 id={titleId}>Schedules — “{plan.name}”</h3>
-					<button ref={closeButtonRef} type="button" className="btn btn-ghost btn-sm" onClick={requestClose} disabled={busy}>
-            Close
-          </button>
         </div>
         <div className="pp-modal-form">
           <div className="pp-row-meta">
-            <span>Recurring triggers materialize a plan run on each cron occurrence.</span>
+            <span>Each schedule starts a run of this plan at the times its cron expression names.</span>
           </div>
           {error && (
             <div className="pp-error" role="alert">
@@ -585,6 +591,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   <input
                     type="datetime-local"
                     value={draft.disabled_from}
+                    aria-describedby={`${titleId}-pause-help`}
                     onChange={e => setDraft(d => (d ? { ...d, disabled_from: e.target.value } : d))}
                   />
                 </label>
@@ -593,10 +600,14 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   <input
                     type="datetime-local"
                     value={draft.disabled_until}
+                    aria-describedby={`${titleId}-pause-help`}
                     onChange={e => setDraft(d => (d ? { ...d, disabled_until: e.target.value } : d))}
                   />
                 </label>
               </div>
+              <p id={`${titleId}-pause-help`} className="setting-desc pp-field-help">
+                Optional, in your local time. No runs start between these times; the schedule stays on and picks up after. Leave &ldquo;until&rdquo; empty to pause until you clear it.
+              </p>
 
               <section className="new-test-schedule-policy" aria-label="What this schedule's runs follow">
                 <dl>
@@ -607,23 +618,16 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                 </dl>
               </section>
 
-              <label className="pp-entry-enabled" title="Enabled">
+              <label className="pp-entry-enabled">
                 <input
                   type="checkbox"
                   checked={draft.enabled}
+                  aria-describedby={`${titleId}-enabled-help`}
                   onChange={e => setDraft(d => (d ? { ...d, enabled: e.target.checked } : d))}
                 />
-                enabled
+                Enabled
               </label>
-
-              <div className="pp-modal-actions">
-								<button type="button" className="btn btn-secondary" onClick={requestDraftClose} disabled={busy}>
-                  Cancel
-                </button>
-                <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
-                  {busy ? 'Saving…' : draft.id ? 'Save' : 'Create'}
-                </button>
-              </div>
+              <p id={`${titleId}-enabled-help`} className="setting-desc pp-field-help">Turned off, the schedule stays saved but starts no runs.</p>
             </div>
           )}
 
@@ -640,14 +644,14 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   <div className="pp-row-main">
                     <div className="pp-row-title">
                       {schedule.name}
-                      <span className={schedule.enabled ? 'pp-pill pp-pill-success' : 'pp-pill pp-pill-muted'}>
-                        {schedule.enabled ? 'enabled' : 'paused'}
+                      <span className={schedule.enabled ? 'pp-pill pp-pill-label pp-pill-success' : 'pp-pill pp-pill-label pp-pill-muted'}>
+                        {schedule.enabled ? 'Enabled' : 'Turned off'}
                       </span>
                       {schedule.next_required_action === 'approval_required' && (
-                        <span className="pp-pill pp-pill-warning">Waiting for approval</span>
+                        <span className="pp-pill pp-pill-label pp-pill-warning">Waiting for approval</span>
                       )}
                       {schedule.next_required_action === 'waiting_for_previous_run' && (
-                        <span className="pp-pill pp-pill-info">Queued</span>
+                        <span className="pp-pill pp-pill-label pp-pill-info">Queued</span>
                       )}
                     </div>
                     <div className="pp-row-meta">
@@ -669,7 +673,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                     <ScheduleClockChanges changes={clockChanges[schedule.id]} timezone={schedule.timezone || 'UTC'} />
                     {schedule.last_error && schedule.next_required_action !== 'approval_required' && schedule.next_required_action !== 'waiting_for_previous_run' ? (
                       <div className="pp-row-meta">
-                        <span className="pp-pill pp-pill-danger">last error</span>
+                        <span className="pp-pill pp-pill-label pp-pill-danger">Last error</span>
                         <span>{schedule.last_error}</span>
                       </div>
                     ) : null}
@@ -722,10 +726,21 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
             </div>
           )}
         </div>
-        <div className="pp-modal-actions">
-					<button type="button" className="btn btn-primary" onClick={requestClose} disabled={busy}>
-            Done
-          </button>
+        <div className="pp-modal-actions pp-modal-actions-sticky">
+          {draft ? (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={requestDraftClose} disabled={busy}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
+                {busy ? 'Saving…' : draft.id ? 'Save' : 'Create'}
+              </button>
+            </>
+          ) : (
+            <button ref={closeButtonRef} type="button" className="btn btn-secondary" onClick={requestClose} disabled={busy}>
+              Close
+            </button>
+          )}
         </div>
       </div>
 

@@ -61,6 +61,7 @@ import ReferenceKeyBadge from './ReferenceKeyBadge'
 import StatusBadge from './StatusBadge'
 import { ObjectInfoBadge, ScriptReadinessBadge } from './LibraryRowBadges'
 import { ScenarioNameMeta, ScenarioUsageSummary, ScenarioWorkloadSummary } from './ScenarioRowSummary'
+import { scenarioNameCounts, scenarioNameKey } from './scenarioNames'
 import SelectAllCheckbox from './SelectAllCheckbox'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
@@ -220,11 +221,6 @@ function runSettingsTabId(item: { tab: RunSettingsTab; section?: ScenarioSetting
   return item.section ? `scenario-settings-${item.section}-tab` : `scenario-run-settings-${item.tab}-tab`
 }
 
-
-// Scenario names compare without case or surrounding space, as people read them.
-function scenarioNameKey(name: string) {
-  return name.trim().toLowerCase()
-}
 
 function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
   return {
@@ -1523,12 +1519,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     [showLocalScenarios, sorted],
   )
   // Names shared by more than one saved scenario: their rows say so and show the reference.
-  const scenarioNameCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const scenario of scenarios) counts.set(scenarioNameKey(scenario.name), (counts.get(scenarioNameKey(scenario.name)) || 0) + 1)
-    return counts
-  }, [scenarios])
-  const duplicateScenarioName = (scenario: StoredScenario) => (scenarioNameCounts.get(scenarioNameKey(scenario.name)) || 0) > 1
+  const nameCounts = useMemo(() => scenarioNameCounts(scenarios), [scenarios])
+  const duplicateScenarioName = (scenario: StoredScenario) => (nameCounts.get(scenarioNameKey(scenario.name)) || 0) > 1
   // The library's filters that fold behind its Filters toggle, and how many are set.
   const scenarioFilterCount = [archiveState !== 'active', assignedApplicationFilter !== 'all', assignedReleaseFilter !== 'all', scenarioReleaseFilter !== 'all'].filter(Boolean).length
   // Nothing saved yet and nothing narrowing the list.
@@ -4734,7 +4726,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <h2>{showPlans ? 'Execution plans' : showForm ? 'Scenario builder' : 'Scenario library'}</h2>
             <p className="page-subtitle">
               {showPlans
-                ? 'Ordered, cross-run orchestration of scenarios — parallel or sequential.'
+                ? 'Run several scenarios as one plan, in parallel or one after another.'
                 : 'Reusable scenario definitions linked to scripts, releases, and results.'}
             </p>
           </div>
@@ -4757,7 +4749,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             projectId={activeProject?.id}
             canManage={canManageTests}
             canAdmin={canManageProjects}
-            scenarioOptions={scenarios.map(scenario => ({ id: scenario.id, name: scenario.name, data_pools: scenario.data_pools }))}
+            scenarioOptions={scenarios.map(scenario => ({ id: scenario.id, name: scenario.name, ref_key: scenario.ref_key, data_pools: scenario.data_pools }))}
             onOpenTest={onSelectTest}
             seedScenarioId={planSeedScenarioId ?? undefined}
             onSeedConsumed={() => setPlanSeedScenarioId(null)}

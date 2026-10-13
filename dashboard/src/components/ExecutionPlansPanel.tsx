@@ -46,12 +46,14 @@ import LoadingState from './ux/LoadingState'
 import EmptyState from './ux/EmptyState'
 import PlanEntryDataNote from './PlanEntryDataNote'
 import { liveBindingSummary } from './scenarioDataBindingModel'
+import RowActions from './ux/RowActions'
+import { scenarioNameCounts, scenarioNameKey } from './scenarioNames'
 
 interface Props {
   projectId?: string
   canManage?: boolean
   canAdmin?: boolean
-  scenarioOptions?: { id: string; name: string; data_pools?: ScenarioDataPoolBinding[] }[]
+  scenarioOptions?: { id: string; name: string; ref_key?: string; data_pools?: ScenarioDataPoolBinding[] }[]
   onOpenTest?: (testId: string) => void
   // When set, opens a new-plan draft pre-seeded with this scenario as the first entry.
   seedScenarioId?: string
@@ -118,6 +120,24 @@ function emptyDraft(workspace: { applicationId?: string; releaseId?: string } = 
 
 const RUN_TERMINAL = ['completed', 'halted', 'failed']
 
+const RUN_MODE_OPTIONS = [
+  { value: 'parallel', label: 'In parallel' },
+  { value: 'sequential', label: 'One after another' },
+]
+
+function runModeLabel(mode: string): string {
+  return RUN_MODE_OPTIONS.find(option => option.value === mode)?.label || mode
+}
+
+// What an entry's failure policy does, as the editor offers it.
+const FAILURE_POLICY_OPTIONS = [
+  { value: 'halt', label: 'Stop the plan', summary: 'stops the plan if it fails' },
+  { value: 'skip', label: 'Continue with the next', summary: 'continues if it fails' },
+]
+
+// A card lists this many entries, then says how many more there are.
+const CARD_ENTRY_LIMIT = 5
+
 // A run view from a current controller says whether its load is still running;
 // an older run record only has the plan run's own status.
 function runIsLive(run: ExecutionPlanRun | ExecutionPlanRunView): boolean {
@@ -177,13 +197,13 @@ function planRunStatusLabel(run: ExecutionPlanRun | ExecutionPlanRunView): strin
 }
 
 function planRunPillClass(run: ExecutionPlanRun | ExecutionPlanRunView): string {
-  return isRunView(run) ? `pp-pill pp-pill-${planRunOutcomeTone(run)}` : runStatusPill(run.status)
+  return isRunView(run) ? `pp-pill pp-pill-label pp-pill-${planRunOutcomeTone(run)}` : runStatusPill(run.status)
 }
 
 // An entry's state in plain words, from its run's live state when known.
 function entryPill(entry: ExecutionPlanRunEntry | ExecutionPlanRunEntryView): { label: string; className: string } {
   const status = planEntryStatusLabel(entry)
-  return { label: status.label, className: `pp-pill pp-pill-${status.tone}` }
+  return { label: status.label, className: `pp-pill pp-pill-label pp-pill-${status.tone}` }
 }
 
 export default function ExecutionPlansPanel({ projectId, canManage = false, canAdmin = false, scenarioOptions, onOpenTest, seedScenarioId, onSeedConsumed }: Props) {
@@ -231,7 +251,17 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null)
   const [clock, setClock] = useState(() => Date.now())
   const [schedulesTarget, setSchedulesTarget] = useState<ExecutionPlan | null>(null)
-  const [approvalsTarget, setApprovalsTarget] = useState<ExecutionPlan | null>(null)
+  const [approvalsTarget, setApprovalsTarget] = useState<ExecutionPlanListItem | null>(null)
+  // Why the approvals dialog opened, e.g. a run just held for approval.
+  const [approvalsNotice, setApprovalsNotice] = useState<string | null>(null)
+  const openApprovals = useCallback((plan: ExecutionPlanListItem, notice: string | null = null) => {
+    setApprovalsNotice(notice)
+    setApprovalsTarget(plan)
+  }, [])
+  const closeApprovals = useCallback(() => {
+    setApprovalsTarget(null)
+    setApprovalsNotice(null)
+  }, [])
   const [busy, setBusy] = useState(false)
   const scopeRef = useRef({ projectId, generation: 0 })
   const loadGenerationRef = useRef(0)
@@ -244,6 +274,9 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const draftDialogRef = useRef<HTMLDivElement>(null)
   const resultDialogRef = useRef<HTMLDivElement>(null)
   const progressDialogRef = useRef<HTMLDivElement>(null)
+  // The result and progress dialogs open on their one way out, Done.
+  const resultDoneRef = useRef<HTMLButtonElement>(null)
+  const progressDoneRef = useRef<HTMLButtonElement>(null)
 	const discardDraft = useCallback(() => {
 		setDraft(null)
 		setError(null)
@@ -253,9 +286,22 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const runResultCounts = runResult ? planRunCounts(runResult.res) : { created: 0, failed: 0 }
   const closePlanRun = useCallback(() => setPlanRun(null), [])
 
+  // Entries are named by their scenario as the project has it now; two
+  // scenarios with one name are told apart by their reference, as in the library.
+  const scenarioNames = useMemo(() => {
+    const counts = scenarioNameCounts(scenarioOptions || [])
+    return new Map((scenarioOptions || []).map(option => {
+      const duplicate = (counts.get(scenarioNameKey(option.name)) || 0) > 1
+      return [option.id, { name: duplicate ? `${option.name} (${option.ref_key || option.id})` : option.name, duplicate }]
+    }))
+  }, [scenarioOptions])
+  const entryScenarioName = useCallback((entry: { scenario_id: string; scenario_name?: string }) => (
+    scenarioNames.get(entry.scenario_id)?.name || entry.scenario_name || entry.scenario_id
+  ), [scenarioNames])
+
 	useModalDialog({ dialogRef: draftDialogRef, enabled: Boolean(draft), onClose: busy ? undefined : closeDraft })
-  useModalDialog({ dialogRef: resultDialogRef, enabled: Boolean(runResult), onClose: closeRunResult })
-  useModalDialog({ dialogRef: progressDialogRef, enabled: Boolean(planRun), onClose: closePlanRun })
+  useModalDialog({ dialogRef: resultDialogRef, enabled: Boolean(runResult), initialFocusRef: resultDoneRef, onClose: closeRunResult })
+  useModalDialog({ dialogRef: progressDialogRef, enabled: Boolean(planRun), initialFocusRef: progressDoneRef, onClose: closePlanRun })
 
   useLayoutEffect(() => {
     loadGenerationRef.current += 1
@@ -271,6 +317,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
     setPlanRun(null)
     setSchedulesTarget(null)
     setApprovalsTarget(null)
+    setApprovalsNotice(null)
     setBusy(false)
   }, [projectId])
 
@@ -504,15 +551,37 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   }, [api, draft, isCurrentScope, load, projectId])
 
   const runPlan = useCallback(
-    async (plan: ExecutionPlanListItem) => {
+    async (plan: ExecutionPlanListItem, options: { approvalReady?: boolean } = {}) => {
       // Running a plan starts real load immediately; say what will start first.
       const enabled = plan.entries.filter(entry => entry.enabled !== false)
-      const names = enabled.map(entry => entry.scenario_name || entry.scenario_id).slice(0, 5).join(', ')
+      const names = enabled.map(entryScenarioName).slice(0, 5).join(', ')
       const how = plan.run_mode === 'parallel' ? 'all at the same time' : 'one after another, each after the previous run finishes'
       const alongside = plan.activity?.active_run && effectiveOverlapPolicy(plan.overlap_policy) === 'allow'
         ? ' A run of this plan is still in progress; this one runs alongside it, and quota approval counts both.'
         : ''
-      if (!await confirmAction(`Start “${plan.name}”? This starts ${enabled.length} scenario run${enabled.length === 1 ? '' : 's'} ${how} and sends real load to their targets: ${names}${enabled.length > 5 ? ', …' : ''}.${alongside}`, { title: 'Start execution plan', confirmLabel: 'Start runs', destructive: false })) return
+      // A plan over the project's VUser limit runs only with a project admin's
+      // approval: say so before asking, and show a request already waiting
+      // rather than asking again.
+      const quota = plan.activity?.quota
+      const approvalReady = Boolean(options.approvalReady || quota?.ready_approval_id)
+      const overLimit = !quota
+        ? ''
+        : quota.active_vusers
+          ? `Its peak of ${quota.peak_vusers} VUsers, with the ${quota.active_vusers} VUsers of its runs already in progress, is over the project limit of ${quota.max_vusers}`
+          : `Its peak of ${quota.peak_vusers} VUsers is over the project limit of ${quota.max_vusers}`
+      // The card's request may have been decided since it was listed: the
+      // dialog shows where it stands.
+      if (quota && !approvalReady && plan.activity?.pending_approval) {
+        setError(null)
+        openApprovals(plan, `${overLimit}, so its run needs a project admin's approval. Nothing has started.`)
+        return
+      }
+      const runs = `${enabled.length} scenario run${enabled.length === 1 ? '' : 's'} ${how}`
+      const targets = `${names}${enabled.length > 5 ? ', …' : ''}`
+      const confirmed = quota && !approvalReady
+        ? await confirmAction(`“${plan.name}” starts ${runs}: ${targets}. ${overLimit}, so this asks a project admin to approve it first. Nothing starts until it is approved.${canAdmin ? ' You can approve it next.' : ''}${alongside}`, { title: 'Request approval to run', confirmLabel: 'Request approval', destructive: false })
+        : await confirmAction(`Start “${plan.name}”? This starts ${runs} and sends real load to their targets: ${targets}.${quota ? ` ${overLimit}; the approval granted for it lets this run start.` : ''}${alongside}`, { title: 'Start execution plan', confirmLabel: 'Start runs', destructive: false })
+      if (!confirmed) return
       const scope = { ...scopeRef.current }
       setBusy(true)
       setError(null)
@@ -545,18 +614,21 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
             /* keep the seeded snapshot if the run can't be re-read yet */
           }
         } else {
-          setRunResult({ plan: plan.name, res, names: Object.fromEntries(plan.entries.map(entry => [entry.order, entry.scenario_name || ''])) })
+          setRunResult({ plan: plan.name, res, names: Object.fromEntries(plan.entries.map(entry => [entry.order, entryScenarioName(entry)])) })
         }
         await load()
       } catch (err) {
         if (!isCurrentScope(scope)) return
         // A run that exceeds the project VUser quota is blocked (HTTP 409) until
-        // a project admin approves it. Open the approvals surface instead of
-        // showing a bare error so the gate is actionable.
+        // a project admin approves it. Open the approvals dialog, which says
+        // why, instead of showing a bare error so the gate is actionable.
         const conflict = err instanceof ApiError && err.status === 409 ? err.payload as { status?: string; overlap?: ExecutionPlanOverlap } | undefined : undefined
         if (conflict?.status === 'blocked') {
-          setError('This run exceeds the project VUser quota and needs project-admin approval. Review the pending request below.')
-          setApprovalsTarget(plan)
+          openApprovals(plan, canAdmin
+            ? 'Nothing has started: this run is over the project\'s VUser limit and needs a project admin\'s approval. Approve the request below, then run it.'
+            : 'Nothing has started: this run is over the project\'s VUser limit and waits for a project admin\'s approval.')
+          // The card shows the request now waiting (and keeps it current).
+          await load(true)
         } else if (conflict?.status === 'plan_running') {
           // The overlap policy kept a second run from starting: show the one in progress.
           setError(conflict.overlap?.message || (err instanceof ApiError ? err.message : 'This plan is already running.'))
@@ -570,7 +642,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
         if (isCurrentScope(scope)) setBusy(false)
       }
     },
-    [api, isCurrentScope, load, openPlanRun],
+    [api, canAdmin, entryScenarioName, isCurrentScope, load, openApprovals, openPlanRun],
   )
 
   const confirmDelete = useCallback(async () => {
@@ -685,7 +757,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   function renderRunningState(plan: ExecutionPlanListItem, state: Extract<PlanCardState, { kind: 'running' }>) {
     return (
       <div className="pp-row-meta pp-plan-state">
-        <span className="pp-pill pp-pill-info">{state.stopping ? 'Stopping' : 'Running'}</span>
+        <span className="pp-pill pp-pill-label pp-pill-info">{state.stopping ? 'Stopping' : 'Running'}</span>
         <span>{state.summary}{state.extraRuns > 0 ? ` · ${state.extraRuns} more run${state.extraRuns === 1 ? '' : 's'} of this plan in progress` : ''}</span>
         {canManage && effectiveOverlapPolicy(plan.overlap_policy) !== 'allow' ? (
           <span id={`plan-run-blocked-${plan.id}`}>Run is unavailable until this run ends.</span>
@@ -713,17 +785,17 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
       ) : null
     }
     const pill = state.kind === 'waiting_approval'
-      ? { label: 'Waiting for approval', className: 'pp-pill pp-pill-warning' }
+      ? { label: 'Waiting for approval', className: 'pp-pill pp-pill-label pp-pill-warning' }
       : state.kind === 'queued'
-        ? { label: 'Queued', className: 'pp-pill pp-pill-info' }
-        : { label: 'Needs a decision', className: 'pp-pill pp-pill-warning' }
+        ? { label: 'Queued', className: 'pp-pill pp-pill-label pp-pill-info' }
+        : { label: 'Needs a decision', className: 'pp-pill pp-pill-label pp-pill-warning' }
     return (
       <>
         <div className="pp-row-meta pp-plan-state">
           <span className={pill.className}>{pill.label}</span>
           <span>{state.summary}</span>
           {state.kind === 'waiting_approval' ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setApprovalsTarget(plan)}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => openApprovals(plan)}>
               {canAdmin ? 'Review approval' : 'View approval'}
             </button>
           ) : null}
@@ -746,11 +818,20 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
     [draft],
   )
 
+  // Approvals reads the plan as last listed, so a granted approval offers Run
+  // now once the list says the next run uses it; Run now waits where Run does.
+  const approvalsPlan = approvalsTarget ? plans.find(candidate => candidate.id === approvalsTarget.id) || approvalsTarget : null
+  const runNowBlocked = busy
+    ? 'Another plan action is still in progress.'
+    : approvalsPlan?.activity?.active_run && effectiveOverlapPolicy(approvalsPlan.overlap_policy) !== 'allow'
+      ? 'A run of this plan is in progress; Run now is available when it ends.'
+      : undefined
+
   return (
     <div className="pp-panel">
       <div className="pp-toolbar">
         <span className="pp-toolbar-title">
-          {plans.length} execution plan{plans.length === 1 ? '' : 's'} — ordered, cross-run scenario orchestration.
+          {plans.length} execution plan{plans.length === 1 ? '' : 's'}
         </span>
         {canManage && (
           <button
@@ -763,7 +844,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               setDraft(newDraft())
             }}
           >
-            New Execution Plan
+            New execution plan
           </button>
         )}
       </div>
@@ -776,7 +857,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
       ) : loading ? (
         <LoadingState what="execution plans" className="pp-loading" />
       ) : plans.length === 0 ? (
-        <EmptyState title="No execution plans yet." hint="An execution plan runs several scenarios in order — in parallel or sequentially — with per-entry failure handling." />
+        <EmptyState title="No execution plans yet." hint="An execution plan runs several scenarios, in parallel or one after another, and says for each what happens if it fails." />
       ) : (
         <div className="pp-list">
           {plans.map(plan => (
@@ -784,14 +865,28 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               <div className="pp-row-main">
                 <div className="pp-row-title">
                   {plan.name}
-                  <span className="pp-pill pp-pill-info">{plan.run_mode}</span>
-                  {plan.status ? <span className="pp-pill pp-pill-muted">{plan.status}</span> : null}
+                  <span className="pp-pill pp-pill-label pp-pill-info">{runModeLabel(plan.run_mode)}</span>
                 </div>
                 <div className="pp-row-meta">
                   <span>{plan.entries.length} entr{plan.entries.length === 1 ? 'y' : 'ies'}</span>
                   <span>{plan.entries.filter(e => e.enabled !== false).length} enabled</span>
                   <span>{planReleaseSentence(plan, releaseNames)}</span>
                 </div>
+                {/* What the plan runs, in order, and what each entry does if it fails. */}
+                {plan.entries.length > 0 ? (
+                  <ol className="pp-plan-entries" aria-label={`Entries of ${plan.name}`}>
+                    {[...plan.entries].sort((a, b) => a.order - b.order).slice(0, CARD_ENTRY_LIMIT).map(entry => (
+                      <li key={entry.order} className={entry.enabled === false ? 'is-off' : undefined}>
+                        <span>{entryScenarioName(entry)}</span>
+                        {' · '}
+                        <span>
+                          {entry.enabled === false ? 'turned off' : FAILURE_POLICY_OPTIONS.find(option => option.value === (entry.failure_policy || 'halt'))?.summary}
+                        </span>
+                      </li>
+                    ))}
+                    {plan.entries.length > CARD_ENTRY_LIMIT ? <li className="pp-plan-entries-more">and {plan.entries.length - CARD_ENTRY_LIMIT} more</li> : null}
+                  </ol>
+                ) : null}
                 {renderPlanState(plan)}
               </div>
               {canManage && (
@@ -806,18 +901,21 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                   >
                     Run
                   </button>
-                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setSchedulesTarget(plan)}>
-                    Schedules
-                  </button>
-                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setApprovalsTarget(plan)}>
-                    Approvals
-                  </button>
-                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => startEdit(plan)}>
-                    Edit
-                  </button>
-                  <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => setDeleteTarget(plan)}>
-                    Delete
-                  </button>
+                  {/* One action on the card; the rest wait in More, as in the libraries. */}
+                  <RowActions label={plan.name}>
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => startEdit(plan)}>
+                      Edit
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setSchedulesTarget(plan)}>
+                      Schedules
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openApprovals(plan)}>
+                      Approvals
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm pp-menu-danger" disabled={busy} onClick={() => setDeleteTarget(plan)}>
+                      Delete
+                    </button>
+                  </RowActions>
                 </div>
               )}
             </div>
@@ -828,12 +926,10 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
       {/* Create / edit modal */}
       {draft && (
         <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft)}>
-          <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title">
+          <div ref={draftDialogRef} className="pp-modal pp-modal-wide" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title">
+            {/* One way out: Cancel (or Escape), beside Save. */}
             <div className="pp-modal-header">
-              <h3 id="execution-plan-editor-title">{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
-								<button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft} disabled={busy}>
-                Close
-              </button>
+              <h3 id="execution-plan-editor-title">{draft.id ? 'Edit execution plan' : 'New execution plan'}</h3>
             </div>
             <div className="pp-modal-form">
               <div className="pp-field-row">
@@ -844,8 +940,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                 <label className="pp-field">
                   <span>Run mode</span>
                   <select value={draft.run_mode} onChange={e => setDraft(d => (d ? { ...d, run_mode: e.target.value } : d))}>
-                    <option value="parallel">parallel</option>
-                    <option value="sequential">sequential</option>
+                    {RUN_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </label>
               </div>
@@ -900,7 +995,18 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               <div className="pp-field">
                 <span>Entries (run order)</span>
                 <div className="pp-entry-list">
-                  {draft.entries.map((entry, index) => (
+                  {/* One grid row per entry; the column names are for sight, each control is named for its entry. */}
+                  <div className="pp-entry-head" aria-hidden="true">
+                    <span>#</span>
+                    <span>Scenario</span>
+                    <span>If it fails</span>
+                    <span>Enabled</span>
+                    <span />
+                  </div>
+                  {draft.entries.map((entry, index) => {
+                    // Named for its scenario, and by number: one scenario can run twice in a plan.
+                    const entryName = entry.scenario_id ? `entry ${index + 1}, ${entryScenarioName(entry)}` : `entry ${index + 1}`
+                    return (
                     <div className="pp-entry-block" key={index}>
                       <div className="pp-entry">
                       <div className="pp-entry-index">{index + 1}</div>
@@ -913,24 +1019,25 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                             updateEntry(index, { scenario_id: e.target.value, scenario_name: opt?.name || '' })
                           }}
                         >
-                          <option value="">— select scenario —</option>
+                          <option value="">Choose a scenario</option>
+                          {entry.scenario_id && !scenarioNames.has(entry.scenario_id) && <option value={entry.scenario_id}>{entry.scenario_name || `Scenario ${entry.scenario_id}`} (not in this project&apos;s list)</option>}
                           {scenarioOptions.map(s => (
                             <option key={s.id} value={s.id}>
-                              {s.name}
+                              {scenarioNames.get(s.id)?.duplicate ? `${scenarioNames.get(s.id)?.name} · duplicate name` : s.name}
                             </option>
                           ))}
                         </select>
                       ) : (
                         <input aria-label={`Entry ${index + 1} scenario ID`} value={entry.scenario_id} placeholder="scenario id" onChange={e => updateEntry(index, { scenario_id: e.target.value })} />
                       )}
-                      <select aria-label={`Entry ${index + 1}: if this run fails`} value={entry.failure_policy} onChange={e => updateEntry(index, { failure_policy: e.target.value })} title="If this run fails">
-                        <option value="halt">If it fails: stop the plan</option>
-                        <option value="skip">If it fails: continue with the next</option>
+                      <select aria-label={`Entry ${index + 1}: if this run fails`} value={entry.failure_policy} onChange={e => updateEntry(index, { failure_policy: e.target.value })}>
+                        {FAILURE_POLICY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                       <label className="pp-entry-enabled">
-                        <input type="checkbox" checked={entry.enabled} onChange={e => updateEntry(index, { enabled: e.target.checked })} />
-                        Enabled
+                        <input type="checkbox" checked={entry.enabled} aria-label={`Enabled: ${entryName}`} onChange={e => updateEntry(index, { enabled: e.target.checked })} />
+                        <span className="pp-entry-enabled-text">Enabled</span>
                       </label>
+                      <div className="pp-entry-order">
                       <button type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => moveEntry(index, -1)} title="Move up" aria-label={`Move entry ${index + 1} up`}>
                         ↑
                       </button>
@@ -946,6 +1053,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                       >
                         ✕
                       </button>
+                      </div>
                       </div>
                       <div className="pp-entry-advanced">
                         <label className="pp-entry-advanced-field">
@@ -998,7 +1106,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDraft(d => (d ? { ...d, entries: [...d.entries, { ...emptyEntry }] } : d))}>
                   + Add entry
@@ -1006,7 +1115,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               </div>
             </div>
             {error && <div className="pp-error" role="alert">{error}</div>}
-            <div className="pp-modal-actions">
+            <div className="pp-modal-actions pp-modal-actions-sticky">
 								<button type="button" className="btn btn-secondary" onClick={closeDraft} disabled={busy}>
                 Cancel
               </button>
@@ -1024,13 +1133,10 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
           <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-result-title">{runResultCounts.created === 0 ? 'Plan run did not start' : runResultCounts.failed > 0 ? 'Plan run partly started' : 'Plan run started'}: “{runResult.plan}”</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeRunResult}>
-                Close
-              </button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-row-meta">
-                <span>{runResult.res.run_mode === 'parallel' ? 'Parallel' : 'Sequential'}</span>
+                <span>{runModeLabel(runResult.res.run_mode)}</span>
                 <span>{runResultCounts.created} run{runResultCounts.created === 1 ? '' : 's'} created</span>
                 <span>{runResultCounts.failed} failed to start</span>
               </div>
@@ -1055,8 +1161,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                 ))}
               </div>
             </div>
-            <div className="pp-modal-actions">
-              <button type="button" className="btn btn-primary" onClick={closeRunResult}>
+            <div className="pp-modal-actions pp-modal-actions-sticky">
+              <button ref={resultDoneRef} type="button" className="btn btn-primary" onClick={closeRunResult}>
                 Done
               </button>
             </div>
@@ -1075,13 +1181,10 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                   {planRunStatusLabel(planRun.run)}
                 </span>
               </h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closePlanRun}>
-                Close
-              </button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-row-meta">
-                <span>{planRun.run.run_mode === 'parallel' ? 'parallel — every enabled entry starts at once' : 'sequential — each entry starts only after the previous run finishes'}</span>
+                <span>{planRun.run.run_mode === 'parallel' ? 'In parallel — every enabled entry starts at once' : 'One after another — each entry starts only after the previous run finishes'}</span>
                 {isRunView(planRun.run) ? <span>{planRunTimingSentence(planRun.run, clock)}</span> : null}
                 {planRunLive && planRunUpdatedAt ? <span>Updated {formatDateTime(planRunUpdatedAt, { seconds: true, zone: false })}</span> : null}
               </div>
@@ -1092,14 +1195,14 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                     <div className="pp-row" key={entry.order}>
                       <div className="pp-row-main">
                         <div className="pp-row-title">
-                          #{entry.order + 1} {entry.scenario_name || entry.scenario_id}
+                          #{entry.order + 1} {entryScenarioName(entry)}
                           <span className={pill.className}>{pill.label}</span>
                         </div>
                         {entry.detail ? <div className="pp-row-meta"><span>{entry.detail}</span></div> : null}
                       </div>
                       {entry.test_id && onOpenTest && (('test_status' in entry && entry.test_status) || entry.status !== 'failed') ? (
                         <div className="pp-row-actions">
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onOpenTest(entry.test_id!)} aria-label={`Open run for ${entry.scenario_name || entry.scenario_id}`}>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onOpenTest(entry.test_id!)} aria-label={`Open run for ${entryScenarioName(entry)}`}>
                             Open run
                           </button>
                         </div>
@@ -1110,7 +1213,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               </div>
             </div>
             {error && <div className="pp-error" role="alert">{error}</div>}
-            <div className="pp-modal-actions">
+            <div className="pp-modal-actions pp-modal-actions-sticky">
               {canManage && planRunLive && !(isRunView(planRun.run) && planRunStopping(planRun.run)) ? (
                 <button
                   type="button"
@@ -1121,7 +1224,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                   {stoppingRunId === planRun.run.id ? 'Stopping…' : 'Stop plan'}
                 </button>
               ) : null}
-              <button type="button" className="btn btn-primary" onClick={closePlanRun}>
+              <button ref={progressDoneRef} type="button" className="btn btn-primary" onClick={closePlanRun}>
                 Done
               </button>
             </div>
@@ -1142,7 +1245,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
             // A schedule being edited asks before it is left.
             runGuarded(() => {
               setSchedulesTarget(null)
-              setApprovalsTarget(target)
+              openApprovals(target)
             })
           }}
         />
@@ -1152,8 +1255,19 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
         <ExecutionPlanApprovalsModal
           plan={approvalsTarget}
           canAdmin={canAdmin}
-          onClose={() => setApprovalsTarget(null)}
-          onResolved={() => void load()}
+          notice={approvalsNotice || undefined}
+          onClose={closeApprovals}
+          onResolved={() => {
+            // The notice described the request just decided.
+            setApprovalsNotice(null)
+            void load()
+          }}
+          readyApprovalId={approvalsPlan?.activity?.quota?.ready_approval_id}
+          runNowBlocked={runNowBlocked}
+          onRunNow={canManage && approvalsPlan ? () => {
+            closeApprovals()
+            void runPlan(approvalsPlan, { approvalReady: true })
+          } : undefined}
         />
       )}
 

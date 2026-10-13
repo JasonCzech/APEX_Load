@@ -110,7 +110,7 @@ describe('ExecutionPlansPanel', () => {
     await flush()
     expect(plansApiMock.listExecutionPlans).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0, include_activity: 'true' })
     expect(container.textContent).toContain('No execution plans yet')
-    expect(container.textContent).toContain('New Execution Plan')
+    expect(container.textContent).toContain('New execution plan')
   })
 
   it('exposes the plan editor as a labelled modal and closes it with Escape', async () => {
@@ -119,7 +119,7 @@ describe('ExecutionPlansPanel', () => {
       root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
     })
     await flush()
-    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New execution plan')
     await act(async () => newButton?.click())
 
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
@@ -131,18 +131,57 @@ describe('ExecutionPlansPanel', () => {
   })
 
   it('renders plans with run-mode pill and enabled-entry count', async () => {
-    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ entries: [
+      { order: 0, scenario_id: 's1', scenario_name: 'Browse catalog', enabled: true, failure_policy: 'skip' },
+      { order: 1, scenario_id: 's2', enabled: false },
+    ] })], count: 1 })
     await act(async () => {
-      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage scenarioOptions={[{ id: 's2', name: 'Checkout peak hour' }]} />)
     })
     await flush()
     expect(container.textContent).toContain('nightly')
-    expect(container.textContent).toContain('sequential')
-    expect(container.querySelector('.pp-pill-info')).toBeTruthy()
+    expect(container.querySelector('.pp-pill-info')?.textContent).toBe('One after another')
     expect(container.textContent).toContain('2 entries')
     expect(container.textContent).toContain('1 enabled')
-    // Manage actions present.
-    expect(container.textContent).toContain('Run')
+    // The card lists its entries in order, with what each does if it fails.
+    const entries = [...container.querySelectorAll('.pp-plan-entries li')].map(item => item.textContent)
+    expect(entries).toEqual(['Browse catalog · continues if it fails', 'Checkout peak hour · turned off'])
+    // The plan's status ("draft") changes nothing, so the card does not show it.
+    expect(container.textContent).not.toMatch(/draft/i)
+    // Run is the card's one action; the rest wait in More, Delete among them.
+    const actions = container.querySelector('.pp-row-actions') as HTMLElement
+    expect([...actions.children].map(child => child.tagName === 'BUTTON' ? child.textContent : child.querySelector('.ux-row-actions-toggle')?.textContent)).toEqual(['Run', 'More'])
+    expect([...actions.querySelectorAll('.ux-row-actions-menu button')].map(button => button.textContent)).toEqual(['Edit', 'Schedules', 'Approvals', 'Delete'])
+  })
+
+  it('names each entry for its scenario and tells duplicate scenario names apart', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ entries: [{ order: 0, scenario_id: 's1', enabled: true }] })], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage scenarioOptions={[
+        { id: 's1', name: 'Checkout peak hour', ref_key: 'SCN-1' },
+        { id: 's2', name: 'checkout peak hour ', ref_key: 'SCN-2' },
+        { id: 's3', name: 'Browse' },
+      ]} />)
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Edit') as HTMLElement).click()
+    })
+    await flush()
+    const dialog = document.querySelector('[aria-labelledby="execution-plan-editor-title"]') as HTMLElement
+    expect(dialog.classList.contains('pp-modal-wide')).toBe(true)
+    expect(dialog.querySelector('h3')?.textContent).toBe('Edit execution plan')
+    // One way out: no header Close beside the footer's Cancel.
+    expect([...dialog.querySelectorAll('button')].some(button => button.textContent === 'Close')).toBe(false)
+    expect([...dialog.querySelectorAll<HTMLOptionElement>('select[aria-label="Entry 1 scenario"] option')].map(option => option.textContent)).toEqual([
+      'Choose a scenario',
+      'Checkout peak hour (SCN-1) · duplicate name',
+      'checkout peak hour  (SCN-2) · duplicate name',
+      'Browse',
+    ])
+    expect([...dialog.querySelectorAll<HTMLOptionElement>('select[aria-label="Entry 1: if this run fails"] option')].map(option => option.textContent)).toEqual(['Stop the plan', 'Continue with the next'])
+    expect(dialog.querySelector('input[type="checkbox"]')?.getAttribute('aria-label')).toBe('Enabled: entry 1, Checkout peak hour (SCN-1)')
+    expect([...dialog.querySelectorAll<HTMLOptionElement>('.pp-modal-form > .pp-field-row select option')].slice(0, 2).map(option => option.textContent)).toEqual(['In parallel', 'One after another'])
   })
 
   it('sends the current revision when saving an existing plan', async () => {
@@ -217,7 +256,7 @@ describe('ExecutionPlansPanel', () => {
       root.render(<ExecutionPlansPanel projectId="proj-a" canManage={false} />)
     })
     await flush()
-    expect(container.textContent).not.toContain('New Execution Plan')
+    expect(container.textContent).not.toContain('New execution plan')
     expect([...container.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Run')).toBe(false)
   })
 
@@ -311,7 +350,7 @@ describe('ExecutionPlansPanel', () => {
       root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
     })
     await flush()
-    const newBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'New Execution Plan')
+    const newBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'New execution plan')
     await act(async () => {
       ;(newBtn as HTMLElement).click()
     })
@@ -423,7 +462,12 @@ describe('ExecutionPlansPanel', () => {
     await flush()
     expect(plansApiMock.runExecutionPlan).toHaveBeenCalledWith('p1')
     expect(plansApiMock.listExecutionPlanApprovals).toHaveBeenCalledWith('p1')
-    expect(container.textContent).toContain('needs project-admin approval')
+    // The list is read again, so the card shows the request now waiting.
+    expect(plansApiMock.listExecutionPlans).toHaveBeenCalledTimes(2)
+    // The dialog itself says why it opened; nothing under its overlay does.
+    const approvals = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(approvals.querySelector('[role="status"]')?.textContent).toContain('Nothing has started: this run is over the project\'s VUser limit')
+    expect(container.querySelector('.pp-error')).toBeNull()
     expect(container.textContent).toContain('Approvals — “nightly”')
     // The pending request is actionable.
     expect([...container.querySelectorAll('button')].some(b => b.textContent === 'Approve')).toBe(true)
@@ -497,7 +541,7 @@ describe('ExecutionPlansPanel', () => {
     })
     await flush()
     // Draft modal opens, pre-named from the scenario, and the seed is consumed.
-    expect(container.textContent).toContain('New Execution Plan')
+    expect(container.textContent).toContain('New execution plan')
     const nameInput = container.querySelector<HTMLInputElement>('.pp-modal-form input')
     expect(nameInput?.value).toContain('Checkout')
     expect(onSeedConsumed).toHaveBeenCalledTimes(1)
@@ -527,7 +571,7 @@ describe('ExecutionPlansPanel', () => {
     await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
     await flush()
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New execution plan')?.click()
     })
     await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'project-a-draft'))
 
@@ -535,7 +579,7 @@ describe('ExecutionPlansPanel', () => {
     await flush()
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New execution plan')?.click()
     })
     expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. nightly regression"]')?.value).toBe('')
   })
@@ -573,7 +617,7 @@ describe('ExecutionPlansPanel', () => {
 		})
 		await flush()
 		await act(async () => {
-			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')?.click()
+			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New execution plan')?.click()
 		})
 		await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'unsaved plan'))
 		await act(async () => {
@@ -600,7 +644,7 @@ describe('ExecutionPlansPanel', () => {
     })
     await flush()
     await act(async () => {
-      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'New Execution Plan') as HTMLElement).click()
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'New execution plan') as HTMLElement).click()
     })
     await flush()
     await flush()
@@ -877,5 +921,102 @@ describe('ExecutionPlansPanel', () => {
       await flush()
     }
     expect(applicationApiMock.listReleases.mock.calls.length - before).toBeGreaterThanOrEqual(2)
+  })
+  it('says before asking that a plan over the VUser limit needs approval, and shows a request already waiting', async () => {
+    const pending = { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', requested_at: '', created_at: '', updated_at: '' }
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [
+      { ...plan({ id: 'p1', name: 'over' }), activity: { quota: { peak_vusers: 8, max_vusers: 5 } } },
+      { ...plan({ id: 'p2', name: 'waiting' }), activity: { quota: { peak_vusers: 8, max_vusers: 5 }, pending_approval: { ...pending, plan_id: 'p2' } } },
+    ], count: 2 })
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({ approvals: [{ ...pending, plan_id: 'p2' }], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
+    })
+    await flush()
+    const runButtons = [...container.querySelectorAll('button')].filter(b => b.textContent === 'Run') as HTMLElement[]
+    confirmActionMock.mockResolvedValueOnce(false)
+    await act(async () => { runButtons[0].click() })
+    await flush()
+    const [asked, askedOptions] = confirmActionMock.mock.calls[0] as unknown as [string, { confirmLabel?: string }]
+    expect(asked).toContain('Its peak of 8 VUsers is over the project limit of 5, so this asks a project admin to approve it first. Nothing starts until it is approved. You can approve it next.')
+    expect(askedOptions).toEqual(expect.objectContaining({ confirmLabel: 'Request approval' }))
+    expect(plansApiMock.runExecutionPlan).not.toHaveBeenCalled()
+
+    // A request already waiting is shown, not asked again.
+    await act(async () => { runButtons[1].click() })
+    await flush()
+    expect(confirmActionMock).toHaveBeenCalledTimes(1)
+    expect(plansApiMock.runExecutionPlan).not.toHaveBeenCalled()
+    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(dialog.textContent).toContain('Approvals — “waiting”')
+    expect(dialog.querySelector('[role="status"]')?.textContent).toBe("Its peak of 8 VUsers is over the project limit of 5, so its run needs a project admin's approval. Nothing has started.")
+  })
+
+  it('offers Run now on the approval the next run uses, and starts the plan with it', async () => {
+    const approved = { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'approved', requested_at: '2026-10-12T06:00:00Z', created_at: '', updated_at: '' }
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [
+      { ...plan({ run_mode: 'parallel' }), activity: { quota: { peak_vusers: 8, max_vusers: 5, ready_approval_id: 'appr-1' } } },
+    ], count: 1 })
+    // appr-0 is used; appr-2 was granted for the plan before it changed.
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({ approvals: [
+      { ...approved, id: 'appr-2', requested_at: '2026-10-12T07:00:00Z' },
+      approved,
+      { ...approved, id: 'appr-0', requested_at: '2026-10-11T06:00:00Z', run_id: 'epr-0' },
+    ], count: 3 })
+    plansApiMock.runExecutionPlan.mockResolvedValue({ execution_plan_id: 'p1', run_mode: 'parallel', status: 'completed', results: [{ order: 0, scenario_id: 's1', test_id: 't1', status: 'created' }], created_count: 1, failed_count: 0, materialized_at: '' })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Approvals') as HTMLElement).click()
+    })
+    await flush()
+    const rows = [...document.querySelectorAll('[role="dialog"] .pp-list > .pp-row')]
+    expect(rows.map(row => [...row.querySelectorAll('button')].some(button => button.textContent === 'Run now'))).toEqual([false, true, false])
+    await act(async () => { ([...rows[1].querySelectorAll('button')].find(b => b.textContent === 'Run now') as HTMLElement).click() })
+    await flush()
+    const [asked, askedOptions] = confirmActionMock.mock.calls[confirmActionMock.mock.calls.length - 1] as unknown as [string, { confirmLabel?: string }]
+    expect(asked).toContain('Its peak of 8 VUsers is over the project limit of 5; the approval granted for it lets this run start.')
+    expect(askedOptions).toEqual(expect.objectContaining({ confirmLabel: 'Start runs' }))
+    expect(plansApiMock.runExecutionPlan).toHaveBeenCalledWith('p1')
+    expect(document.querySelector('[aria-labelledby="execution-plan-result-title"]')).toBeTruthy()
+  })
+
+  it('names the load of the runs in progress when a run alongside them goes over the limit', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [
+      { ...plan({ run_mode: 'parallel', overlap_policy: 'allow' }), activity: { active_run: activeRun(), active_runs: 1, quota: { peak_vusers: 4, active_vusers: 3, max_vusers: 5 } } },
+    ], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    confirmActionMock.mockResolvedValueOnce(false)
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Run') as HTMLElement).click()
+    })
+    await flush()
+    const [asked, askedOptions] = confirmActionMock.mock.calls[0] as unknown as [string, { confirmLabel?: string }]
+    expect(asked).toContain('Its peak of 4 VUsers, with the 3 VUsers of its runs already in progress, is over the project limit of 5, so this asks a project admin to approve it first.')
+    expect(askedOptions).toEqual(expect.objectContaining({ confirmLabel: 'Request approval' }))
+  })
+
+  it('holds Run now, as Run, while a run of the plan is in progress', async () => {
+    const approved = { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'approved', requested_at: '', created_at: '', updated_at: '' }
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [
+      { ...plan({ run_mode: 'parallel', overlap_policy: 'skip' }), activity: { active_run: activeRun(), active_runs: 1, quota: { peak_vusers: 8, max_vusers: 5, ready_approval_id: 'appr-1' } } },
+    ], count: 1 })
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({ approvals: [approved], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Approvals') as HTMLElement).click()
+    })
+    await flush()
+    const runNow = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent === 'Run now')
+    expect(runNow?.disabled).toBe(true)
+    expect(document.getElementById(runNow?.getAttribute('aria-describedby') || '')?.textContent).toBe('A run of this plan is in progress; Run now is available when it ends.')
   })
 })

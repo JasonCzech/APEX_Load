@@ -93,6 +93,27 @@ describe('ExecutionPlanSchedulesModal accessibility', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('has one way out at a time and explains the pause window', async () => {
+    apiMock.listExecutionPlanSchedules.mockResolvedValue({ schedules: [{ ...schedule, enabled: false }], count: 1 })
+    await act(async () => {
+      root.render(<ExecutionPlanSchedulesModal plan={plan} canManage onClose={() => {}} />)
+    })
+    await flush()
+    expect(container.querySelector('.pp-row-title .pp-pill')?.textContent).toBe('Turned off')
+    // No header Close beside the footer's.
+    expect(Array.from(container.querySelectorAll('button')).filter(item => item.textContent === 'Close')).toHaveLength(1)
+    expect(container.querySelector('.pp-modal-header button')).toBeNull()
+    await act(async () => button('New schedule').click())
+    await flush()
+    const pauseFrom = Array.from(container.querySelectorAll<HTMLLabelElement>('label')).find(label => label.textContent?.startsWith('Pause from'))?.querySelector('input')
+    expect(document.getElementById(pauseFrom?.getAttribute('aria-describedby') || '')?.textContent).toContain('No runs start between these times')
+    expect(Array.from(container.querySelectorAll('label')).some(label => label.textContent === 'Enabled')).toBe(true)
+    // Cancel closes the form; focus moves to the Close that replaces it.
+    await act(async () => button('Cancel').click())
+    await flush()
+    expect(document.activeElement).toBe(button('Close'))
+  })
+
   it('announces API failures', async () => {
     apiMock.listExecutionPlanSchedules.mockRejectedValue(new ApiError('schedules unavailable', 503))
     await act(async () => {
@@ -260,7 +281,9 @@ describe('ExecutionPlanSchedulesModal accessibility', () => {
 			Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(nameInput, 'weekday draft')
 			nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
 		})
-		await act(async () => button('Done').click())
+		// The open form's footer offers Cancel (the form) and Save; Escape closes the dialog.
+		expect(Array.from(container.querySelectorAll('.pp-modal-actions button')).map(item => item.textContent)).toEqual(['Cancel', 'Create'])
+		await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
 
 		expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
 		expect(onClose).not.toHaveBeenCalled()

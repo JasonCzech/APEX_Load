@@ -862,8 +862,8 @@ When one scenario is not enough — say you want a baseline, then a spike, then 
 in order — use an **execution plan**. Manage plans from the **Scenarios** page.
 
 A plan groups several scenario entries with per-entry runtime and data-pool overrides
-and a run mode (parallel or sequential), and runs them as one coordinated unit. A
-typical release-qualification plan runs sequentially:
+and a run mode (**In parallel** or **One after another**), and runs them as one
+coordinated unit. A typical release-qualification plan runs one after another:
 
 - **Baseline** — the standard scenario at last release's VUser count, to produce a
   comparable number.
@@ -872,8 +872,27 @@ typical release-qualification plan runs sequentially:
 - **Soak** — baseline load held for hours, to surface leaks and connection-pool
   exhaustion that a ten-minute run never shows.
 
-Plans can carry governance approvals, so a gated plan waits for sign-off before it
-proceeds.
+Each plan's card lists its entries in run order with what each does if it fails.
+**Run** starts the plan; **More** holds Edit, Schedules, Approvals and Delete. In the
+editor each entry is one row: its scenario, what happens if it fails (stop the plan, or
+continue with the next) and whether it is enabled. Two scenarios with the same name
+show their reference keys.
+
+### When A Plan Is Over The VUser Limit
+
+A plan whose peak is over its project's VUser limit runs only with a project admin's
+approval. Its peak is the sum of its enabled entries' peaks when they run in parallel,
+and the largest one when they run one after another. **Run** says so before it asks;
+asking files a request under the plan's **Approvals**, and nothing starts until it is
+approved. When a request is already waiting, **Run** shows it instead of asking again.
+
+Each approval lets one run start. Once a request is approved, **Run now** in
+**Approvals** starts the plan (so does **Run** on its card); like **Run**, it waits
+while a run of the plan is in progress that its overlap setting does not run
+alongside. A request keeps why it was asked for, and the decision's reason follows it;
+a scheduled run whose request is rejected is skipped and says so. An approval holds
+for the plan as it was approved: changing the plan (its name, run mode or entries) or
+one of its scenarios asks again for the plan as it is now.
 
 ### Where A Plan Files Its Runs
 
@@ -905,6 +924,15 @@ plan is started again before its previous run has finished:
   the previous run finishes. **Run** is unavailable while a run is in progress.
 - **Start alongside it**: both runs send load at once, and the quota approval counts
   them together.
+
+### Scheduling A Plan
+
+**More › Schedules** lists the plan's schedules. Each starts a run of the plan at the
+times its cron expression names, in its own timezone. **Pause from** and **Pause until**
+(in your local time) hold a schedule over a date range: no runs start between them, and
+the schedule picks up after; leave **Pause until** empty to pause until you clear it. A
+schedule that is turned off stays saved but starts no runs. While a schedule's form is
+open, its **Cancel** and **Save** are the dialog's only buttons; otherwise **Close**.
 
 ### Following And Stopping A Plan Run
 

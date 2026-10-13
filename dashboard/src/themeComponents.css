@@ -90,3 +90,8 @@
 :root[data-theme] body .status-badge.monitor-service-status {
   text-transform: capitalize;
 }
+
+/* A pill that carries a written label, not a machine value, reads as written. */
+:root[data-theme] body .pp-pill.pp-pill-label {
+  text-transform: none;
+}

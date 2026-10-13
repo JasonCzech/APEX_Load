@@ -106,7 +106,7 @@ describe('ExecutionPlanApprovalsModal accessibility', () => {
     await flush()
 
     expect(apiMock.approveExecutionPlanApproval).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('approved')
+    expect(container.textContent).toContain('Approved')
     expect(container.textContent).toContain('approval refresh unavailable')
     expect(button('Retry approvals')).toBeTruthy()
     expect(onResolved).toHaveBeenCalledOnce()
@@ -116,8 +116,53 @@ describe('ExecutionPlanApprovalsModal accessibility', () => {
     })
     await flush()
     expect(apiMock.approveExecutionPlanApproval).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('approved')
+    expect(container.textContent).toContain('Approved')
     expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent === 'Retry approvals')).toBe(false)
+  })
+
+  it('says it is loading until the first answer, not that there are no requests', async () => {
+    let answer: (value: unknown) => void = () => {}
+    apiMock.listExecutionPlanApprovals.mockImplementation(() => new Promise(resolve => { answer = resolve }))
+    await act(async () => {
+      root.render(<ExecutionPlanApprovalsModal plan={plan} canAdmin onClose={() => {}} />)
+    })
+    expect(container.textContent).toContain('Loading approvals')
+    expect(container.textContent).not.toContain('No approval requests')
+    await act(async () => { answer({ approvals: [], count: 0 }) })
+    await flush()
+    expect(container.textContent).toContain('No approval requests')
+  })
+
+  it('reads in plain words, keeps the request reason and offers Run now for the approval ready to use', async () => {
+    const base = { plan_id: plan.id, policy: 'quota_burst', created_at: '', updated_at: '' }
+    apiMock.listExecutionPlanApprovals.mockResolvedValue({ approvals: [
+      { ...base, id: 'a-pending', status: 'pending', required_role: 'project_admin', requested_by: 'dev-mode', requested_at: '2026-10-12T06:00:00Z', decision_reason: 'Aggregate peak 8 VUsers exceeds project limit 5' },
+      { ...base, id: 'a-ready', status: 'approved', requested_by: 'service-account:sa-1', resolved_by: 'dev-mode', requested_at: '2026-10-11T06:00:00Z', resolved_at: '2026-10-11T06:05:00Z', decision_reason: 'Aggregate peak 8 VUsers exceeds project limit 5 Decision: release window' },
+      { ...base, id: 'a-used', status: 'approved', requested_at: '2026-10-10T06:00:00Z', run_id: 'epr-1' },
+    ], count: 3 })
+    const onRunNow = vi.fn()
+    await act(async () => {
+      root.render(<ExecutionPlanApprovalsModal plan={plan} canAdmin onClose={() => {}} onRunNow={onRunNow} readyApprovalId="a-ready" notice="Nothing has started." />)
+    })
+    await flush()
+    // Opened to say why, the dialog takes focus and is described by the notice.
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(document.activeElement).toBe(dialog)
+    expect(document.getElementById(dialog?.getAttribute('aria-describedby') || '')?.textContent).toBe('Nothing has started.')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Nothing has started.')
+    const rows = [...container.querySelectorAll('.pp-list > .pp-row')] as HTMLElement[]
+    expect(rows[0].querySelector('.pp-row-title')?.textContent).toBe('Over the project VUser limitWaiting for a decisionNeeds a project admin')
+    expect(rows[0].textContent).toContain('by development mode')
+    expect(rows[1].querySelector('.pp-row-title')?.textContent).toBe('Over the project VUser limitApproved')
+    expect(rows[1].textContent).toContain('Aggregate peak 8 VUsers exceeds project limit 5 Decision: release window')
+    expect(rows[1].textContent).toContain('by a service account')
+    expect(rows[1].textContent).toContain('Approved Oct')
+    expect(rows[2].querySelector('.pp-row-title')?.textContent).toBe('Over the project VUser limitApproved and used')
+    expect(container.textContent).not.toMatch(/quota_burst|project_admin|dev-mode/)
+    // Only the approval the next run uses offers to start it.
+    expect(rows.map(row => [...row.querySelectorAll('button')].some(item => item.textContent === 'Run now'))).toEqual([false, true, false])
+    await act(async () => { button('Run now').click() })
+    expect(onRunNow).toHaveBeenCalledOnce()
   })
 
   function button(label: string) {

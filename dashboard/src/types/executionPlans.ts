@@ -80,6 +80,18 @@ export interface ExecutionPlanActivity {
   last_run?: ExecutionPlanRunView
   pending_approval?: ExecutionPlanApproval
   waiting?: ExecutionPlanWaitingOccurrence[]
+  /** Set when the plan's peak is over its project's VUser limit. */
+  quota?: ExecutionPlanQuota
+}
+
+/** A plan's peak VUsers against its project's limit, as its run gate judges it. */
+export interface ExecutionPlanQuota {
+  peak_vusers: number
+  /** The load of the plan's runs already in progress, which a run started alongside them adds to. */
+  active_vusers?: number
+  max_vusers: number
+  /** The approval the next run uses: granted for the plan as it is now and not yet used. */
+  ready_approval_id?: string
 }
 
 /** The run already in progress when the overlap policy kept another from starting. */

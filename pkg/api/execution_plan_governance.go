@@ -240,6 +240,9 @@ func (tr *TestRunner) ResolveExecutionPlanApproval(planID, approvalID string, ap
 	if approve {
 		toStatus = "approved"
 	}
+	// The request's reason (why the run needs approval) stays; the decision's
+	// own reason, when given, follows it.
+	reason = resolvedExecutionPlanApprovalReason(approval.DecisionReason, reason)
 	// Atomic compare-and-set so two concurrent resolutions cannot both win.
 	won, err := tr.resolveExecutionPlanApprovalWithTerm(approval.ID, toStatus, resolvedBy, reason, currentHash, now, leaseTerm)
 	if err != nil {
@@ -352,6 +355,15 @@ func (tr *TestRunner) executionPlanApprovalContentHash(plan *storage.ExecutionPl
 	if plan == nil {
 		return ""
 	}
+	return tr.executionPlanApprovalContentHashForPeak(plan, tr.executionPlanAggregatePeak(plan))
+}
+
+// executionPlanApprovalContentHashForPeak is executionPlanApprovalContentHash
+// for a caller that has already worked out the plan's aggregate peak.
+func (tr *TestRunner) executionPlanApprovalContentHashForPeak(plan *storage.ExecutionPlan, aggregatePeak int) string {
+	if plan == nil {
+		return ""
+	}
 	entries := make([]storage.ExecutionPlanEntry, len(plan.Entries))
 	copy(entries, plan.Entries)
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
@@ -362,7 +374,7 @@ func (tr *TestRunner) executionPlanApprovalContentHash(plan *storage.ExecutionPl
 		Description:   strings.TrimSpace(plan.Description),
 		RunMode:       strings.TrimSpace(plan.RunMode),
 		TimeslotID:    trimPtr(plan.TimeslotID),
-		AggregatePeak: tr.executionPlanAggregatePeak(plan),
+		AggregatePeak: aggregatePeak,
 		Entries:       make([]executionPlanApprovalEntryFingerprint, 0, len(entries)),
 	}
 	for _, entry := range entries {
@@ -487,6 +499,20 @@ func canonicalJSONValue(value any) any {
 		return string(data)
 	}
 	return decoded
+}
+
+// resolvedExecutionPlanApprovalReason is a resolved approval's reason: why it
+// was requested, then the decision's reason when one was given.
+func resolvedExecutionPlanApprovalReason(requested, decision string) string {
+	requested, decision = strings.TrimSpace(requested), strings.TrimSpace(decision)
+	switch {
+	case decision == "":
+		return requested
+	case requested == "":
+		return decision
+	default:
+		return requested + " Decision: " + decision
+	}
 }
 
 // executionPlanQuotaReason states why a plan run needs approval, naming the

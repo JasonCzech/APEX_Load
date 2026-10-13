@@ -235,6 +235,15 @@ func TestPlanOverlapPolicyAllowCountsTheRunInProgressForQuota(t *testing.T) {
 	if reason := second.Approval.DecisionReason; !strings.Contains(reason, "plus 1 VUsers from 1 run of this plan already in progress makes 2 together") {
 		t.Fatalf("approval reason = %q, want the combined peak named", reason)
 	}
+	// The plan's activity judges the next run as the gate does, so once the
+	// request is approved it names the approval that run uses.
+	if _, ok, err := runner.ResolveExecutionPlanApproval(plan.ID, second.Approval.ID, true, "user:admin", ""); err != nil || !ok {
+		t.Fatalf("resolve: ok=%v err=%v", ok, err)
+	}
+	activity, err := runner.ExecutionPlanActivityFor(plan)
+	if err != nil || activity.Quota == nil || activity.Quota.PeakVUsers != 1 || activity.Quota.ActiveVUsers != 1 || activity.Quota.MaxVUsers != 1 || activity.Quota.ReadyApprovalID != second.Approval.ID {
+		t.Fatalf("activity quota = %+v (err %v), want peak 1 plus 1 in progress over 1, approval %s ready", activity.Quota, err, second.Approval.ID)
+	}
 }
 
 func TestStopSequentialPlanRunSkipsEntriesNotStarted(t *testing.T) {

@@ -71,6 +71,22 @@ type ExecutionPlanActivity struct {
 	LastRun         *ExecutionPlanRunView            `json:"last_run,omitempty"`
 	PendingApproval *storage.ExecutionPlanApproval   `json:"pending_approval,omitempty"`
 	Waiting         []ExecutionPlanWaitingOccurrence `json:"waiting,omitempty"`
+	// Quota is set when the plan's peak is over its project's VUser limit,
+	// so a run waits for a project admin's approval unless one is ready.
+	Quota *ExecutionPlanQuota `json:"quota,omitempty"`
+}
+
+// ExecutionPlanQuota is a plan's peak VUsers against its project's limit, as
+// the run gate judges it (parallel = sum of entries, sequential = the largest).
+type ExecutionPlanQuota struct {
+	PeakVUsers int `json:"peak_vusers"`
+	// ActiveVUsers is the load of the plan's runs already in progress, which
+	// a run started alongside them adds to (overlap policy allow).
+	ActiveVUsers int `json:"active_vusers,omitempty"`
+	MaxVUsers    int `json:"max_vusers"`
+	// ReadyApprovalID names the approval the next run uses: granted for the
+	// plan as it is now and not yet used. Empty when the run must ask.
+	ReadyApprovalID string `json:"ready_approval_id,omitempty"`
 }
 
 // executionPlanWithActivity is a plan as listed with ?include_activity=true.
@@ -409,9 +425,21 @@ func (tr *TestRunner) ExecutionPlanActivitiesFor(plans []*storage.ExecutionPlan)
 	index := tr.liveExecutionPlanRunIndex()
 	activities := make([]*ExecutionPlanActivity, len(plans))
 	errs := make([]error, len(plans))
+	// The plans of a list share their project: read its VUser limit once.
+	limits := map[string]int{}
+	projectMaxVUsers := func(projectID string) (int, error) {
+		if limit, ok := limits[projectID]; ok {
+			return limit, nil
+		}
+		limit, err := tr.projectMaxVUsersStrict(projectID)
+		if err == nil {
+			limits[projectID] = limit
+		}
+		return limit, err
+	}
 	for i, plan := range plans {
 		if plan != nil {
-			activities[i], errs[i] = tr.executionPlanActivity(plan, index[plan.ID])
+			activities[i], errs[i] = tr.executionPlanActivity(plan, index[plan.ID], projectMaxVUsers)
 		}
 	}
 	return activities, errs
@@ -424,10 +452,10 @@ func (tr *TestRunner) ExecutionPlanActivityFor(plan *storage.ExecutionPlan) (*Ex
 		return nil, nil
 	}
 	tr.refreshTestsForHARead()
-	return tr.executionPlanActivity(plan, tr.liveExecutionPlanRunIndex()[plan.ID])
+	return tr.executionPlanActivity(plan, tr.liveExecutionPlanRunIndex()[plan.ID], tr.projectMaxVUsersStrict)
 }
 
-func (tr *TestRunner) executionPlanActivity(plan *storage.ExecutionPlan, live []string) (*ExecutionPlanActivity, error) {
+func (tr *TestRunner) executionPlanActivity(plan *storage.ExecutionPlan, live []string, projectMaxVUsers func(projectID string) (int, error)) (*ExecutionPlanActivity, error) {
 	activity := &ExecutionPlanActivity{}
 	if tr.execPlanRunStore != nil {
 		runs, err := tr.executionPlanRecentAndLiveRuns(plan.ID, live)
@@ -462,21 +490,56 @@ func (tr *TestRunner) executionPlanActivity(plan *storage.ExecutionPlan, live []
 	if err != nil {
 		return nil, err
 	}
-	contentHash := ""
+	// The plan's peak reads its scenarios, and its content hash includes it:
+	// work each out at most once.
+	peak, peakKnown, contentHash := 0, false, ""
+	planPeak := func() int {
+		if !peakKnown {
+			peak, peakKnown = tr.executionPlanAggregatePeak(plan), true
+		}
+		return peak
+	}
+	planContentHash := func() string {
+		if contentHash == "" {
+			contentHash = tr.executionPlanApprovalContentHashForPeak(plan, planPeak())
+		}
+		return contentHash
+	}
 	for _, approval := range approvals {
 		if approval == nil || !strings.EqualFold(approval.Status, "pending") {
 			continue
 		}
 		// A request for content the plan no longer has holds nothing: the next
 		// run asks again for what the plan is now.
-		if contentHash == "" {
-			contentHash = tr.executionPlanApprovalContentHash(plan)
-		}
-		if strings.TrimSpace(approval.PlanContentHash) != "" && approval.PlanContentHash != contentHash {
+		if strings.TrimSpace(approval.PlanContentHash) != "" && approval.PlanContentHash != planContentHash() {
 			continue
 		}
 		if activity.PendingApproval == nil || approval.RequestedAt.After(activity.PendingApproval.RequestedAt) {
 			activity.PendingApproval = approval
+		}
+	}
+	// A quota lookup that fails leaves the position out: the run gate still
+	// judges the run when it starts.
+	if maxVUsers, err := projectMaxVUsers(normalizeProjectID(plan.ProjectID)); err == nil && maxVUsers > 0 {
+		// As the gate, a run started alongside runs of the plan still in
+		// progress is judged on their load together.
+		activeVUsers := 0
+		if activity.ActiveRuns > 0 {
+			if vusers, _, err := tr.executionPlanActiveVUsers(plan.ID, ""); err == nil {
+				activeVUsers = vusers
+			}
+		}
+		if saturatingAddNonNegative(planPeak(), activeVUsers) > maxVUsers {
+			quota := &ExecutionPlanQuota{PeakVUsers: planPeak(), ActiveVUsers: activeVUsers, MaxVUsers: maxVUsers}
+			// The approval the run gate would use: the first granted, unused
+			// one for exactly this content, in the order the gate reads them.
+			for _, approval := range approvals {
+				if approval != nil && approval.Status == "approved" && approval.RunID == "" && approval.PlanContentHash == planContentHash() {
+					quota.ReadyApprovalID = approval.ID
+					break
+				}
+			}
+			activity.Quota = quota
 		}
 	}
 	schedules, err := store.ListExecutionPlanSchedules(plan.ID)

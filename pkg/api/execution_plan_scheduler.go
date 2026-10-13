@@ -923,7 +923,12 @@ func (tr *TestRunner) reconcileExecutionPlanScheduleApprovalOccurrence(schedule 
 		}
 		return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now, leaseTerm)
 	case "rejected":
-		lastErr := firstNonEmpty(strings.TrimSpace(approval.DecisionReason), "execution-plan approval rejected")
+		// The approval's reason says why it was asked for and, when the
+		// reviewer gave one, why it was refused; say first that it was refused.
+		lastErr := "execution-plan approval rejected"
+		if reason := strings.TrimSpace(approval.DecisionReason); reason != "" {
+			lastErr += ": " + reason
+		}
 		occurrence.ConflictSummary = lastErr
 		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "skipped", "approval_rejected", "", lastErr, leaseTerm)
 	default:

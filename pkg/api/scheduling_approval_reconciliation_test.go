@@ -2,6 +2,8 @@ package api
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -353,28 +355,35 @@ func TestScheduledExecutionPlanApprovalResumesOrRejectsCorrelatedOccurrence(t *t
 		}
 	})
 
-	t.Run("reject skips occurrence and advances", func(t *testing.T) {
-		fixture := newExecutionPlanScheduledApprovalFixture(t)
-		blocked := fixture.block(t)
-		if _, found, err := fixture.runner.ResolveExecutionPlanApproval(fixture.plan.ID, blocked.ApprovalID, false, "reviewer", "capacity denied"); err != nil || !found {
-			t.Fatalf("ResolveExecutionPlanApproval = found %v err %v", found, err)
-		}
-		held, err := fixture.store.GetExecutionPlanSchedule(fixture.schedule.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := fixture.runner.runDueExecutionPlanScheduleOnce(held, fixture.now); err != nil {
-			t.Fatalf("rejected schedule sweep: %v", err)
-		}
-		skipped, err := fixture.store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(fixture.schedule.ID, blocked.PlannedAt)
-		if err != nil || skipped.Status != "skipped" || skipped.ReasonCode != "approval_rejected" || skipped.RunID != "" || skipped.ApprovalID != blocked.ApprovalID {
-			t.Fatalf("rejected occurrence = %+v, %v", skipped, err)
-		}
-		advanced, err := fixture.store.GetExecutionPlanSchedule(fixture.schedule.ID)
-		if err != nil || advanced.LastRunRunID != "" || advanced.NextRequiredAction != "" || advanced.NextRunAt == nil || !advanced.NextRunAt.After(blocked.PlannedAt) {
-			t.Fatalf("schedule after rejection = %+v, %v", advanced, err)
-		}
-	})
+	// A rejected occurrence says first that it was refused, then why the
+	// approval was asked for and the reviewer's reason when one was given.
+	for _, decision := range []string{"capacity denied", ""} {
+		t.Run("reject skips occurrence and advances (reason "+strconv.Quote(decision)+")", func(t *testing.T) {
+			fixture := newExecutionPlanScheduledApprovalFixture(t)
+			blocked := fixture.block(t)
+			if _, found, err := fixture.runner.ResolveExecutionPlanApproval(fixture.plan.ID, blocked.ApprovalID, false, "reviewer", decision); err != nil || !found {
+				t.Fatalf("ResolveExecutionPlanApproval = found %v err %v", found, err)
+			}
+			held, err := fixture.store.GetExecutionPlanSchedule(fixture.schedule.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fixture.runner.runDueExecutionPlanScheduleOnce(held, fixture.now); err != nil {
+				t.Fatalf("rejected schedule sweep: %v", err)
+			}
+			skipped, err := fixture.store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(fixture.schedule.ID, blocked.PlannedAt)
+			if err != nil || skipped.Status != "skipped" || skipped.ReasonCode != "approval_rejected" || skipped.RunID != "" || skipped.ApprovalID != blocked.ApprovalID {
+				t.Fatalf("rejected occurrence = %+v, %v", skipped, err)
+			}
+			if !strings.HasPrefix(skipped.ConflictSummary, "execution-plan approval rejected: Aggregate peak") || strings.Contains(skipped.ConflictSummary, " Decision: "+decision) != (decision != "") {
+				t.Fatalf("rejected occurrence summary = %q, want it to say it was rejected, then why", skipped.ConflictSummary)
+			}
+			advanced, err := fixture.store.GetExecutionPlanSchedule(fixture.schedule.ID)
+			if err != nil || advanced.LastRunRunID != "" || advanced.NextRequiredAction != "" || advanced.NextRunAt == nil || !advanced.NextRunAt.After(blocked.PlannedAt) {
+				t.Fatalf("schedule after rejection = %+v, %v", advanced, err)
+			}
+		})
+	}
 }
 
 func TestSchedulerSweepHealthRecordsOnlyAttemptedDomains(t *testing.T) {
