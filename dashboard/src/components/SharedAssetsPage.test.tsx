@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import { act, StrictMode } from 'react'
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Application, Project } from '../types'
 import SharedAssetsPage, { type SharedAssetsPermissions } from './SharedAssetsPage'
-import { prepareProjectSecretsNavigation, PROJECT_SECRETS_SETTINGS_PROJECT_KEY } from './projectSecretsNavigation'
 import type { SharedAssetsSection } from './sharedAssetsNavigation'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -116,21 +115,6 @@ describe('SharedAssetsPage', () => {
     await act(async () => { scope.value = ''; scope.dispatchEvent(new Event('change', { bubbles: true })) })
     await renderWith([...applications])
     expect(propsOf('secrets').applicationId).toBeUndefined()
-  })
-
-  it('never configures another project’s secrets in place of the one a link named, StrictMode included', async () => {
-    prepareProjectSecretsNavigation('project-2')
-    await act(async () => root.render(<StrictMode><SharedAssetsPage activeProject={project} section="secrets" permissions={editor} /></StrictMode>))
-    expect(container.textContent).toContain('belong to another project')
-    expect(container.querySelector('[data-testid="secrets"]')).toBeNull()
-    // The link is used once.
-    expect(window.localStorage.getItem(PROJECT_SECRETS_SETTINGS_PROJECT_KEY)).toBeNull()
-  })
-
-  it('opens the named project’s secrets when it is the active one', async () => {
-    prepareProjectSecretsNavigation('project-1')
-    await render({ section: 'secrets' })
-    expect(container.querySelector('[data-testid="secrets"]')).not.toBeNull()
   })
 
   it('asks for a project when none is active', async () => {

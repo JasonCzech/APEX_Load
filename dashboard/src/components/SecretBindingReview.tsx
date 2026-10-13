@@ -106,6 +106,8 @@ type CredentialProbeState = 'idle' | 'loading' | 'ready' | 'unavailable'
 export interface SecretBindingReviewHandle {
   commit: () => Promise<boolean>
   discardSourceSession: () => Promise<void>
+  /** Checks the secrets again, keeping the statuses shown until it answers (after secrets changed elsewhere). */
+  refreshStatuses: () => void
 }
 
 function requirementScope(requirement: SecretBindingRequirement): string {
@@ -1355,6 +1357,11 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   useImperativeHandle(ref, () => ({
     commit,
     discardSourceSession,
+    refreshStatuses: () => {
+      if (applyingRef.current) return
+      backgroundStatusRefreshRef.current = true
+      setProbeRetryGeneration(current => current + 1)
+    },
   }))
 
   if (requirements.length === 0) return null

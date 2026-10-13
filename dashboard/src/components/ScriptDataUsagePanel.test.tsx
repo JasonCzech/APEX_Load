@@ -34,6 +34,26 @@ it('lists each alias’s columns, steps and bindings, and flags what a binding c
   expect(users.textContent).toContain('Expects a row from the binding')
 })
 
+it('opens the pool or project live table a scenario binds, and nothing for a table of the run alone', async () => {
+  const onOpenTable = vi.fn()
+  const project = { alias: 'jobs', pool_id: '', scope: 'project' as const, project_table_id: 'table-1', access_mode: 'live' as const, selection_strategy: 'manual' as const }
+  // A run table that starts empty does not read the pool it once named.
+  const runTable = { alias: 'jobs', pool_id: 'p', access_mode: 'live' as const, selection_strategy: 'manual' as const, live_options: { seed_policy: 'empty' as const } }
+  const byAlias = new Map([['jobs', [
+    { scenarioId: 'a', scenarioName: 'Checkout', binding: { alias: 'jobs', pool_id: 'p', access_mode: 'read_only' as const, selection_strategy: 'sequential' as const }, choice: 'snapshot' as const },
+    { scenarioId: 'b', scenarioName: 'Fulfilment', binding: project, choice: 'project' as const },
+    { scenarioId: 'c', scenarioName: 'Returns', binding: runTable, choice: 'run' as const },
+  ]]])
+  await act(async () => root.render(<ScriptDataUsagePanel usage={usage} saved bindings={bindings({ byAlias })} onSelectStep={() => undefined} onOpenTable={onOpenTable} />))
+  const open = [...container.querySelectorAll<HTMLButtonElement>('button')].filter(button => button.textContent?.startsWith('Open '))
+  expect(open.map(button => [button.textContent, button.getAttribute('aria-label')])).toEqual([
+    ['Open pool', 'Open the pool Checkout binds as jobs'],
+    ['Open live table', 'Open the live table Fulfilment binds as jobs'],
+  ])
+  await act(async () => open[1].click())
+  expect(onOpenTable).toHaveBeenCalledWith('live-tables', 'table-1')
+})
+
 it('says when it cannot tell, and checks again on request', async () => {
   const retry = vi.fn()
   await act(async () => root.render(<ScriptDataUsagePanel usage={usage} saved bindings={bindings({ status: 'failed', byAlias: new Map(), retry })} onSelectStep={() => undefined} />))

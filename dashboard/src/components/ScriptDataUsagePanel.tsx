@@ -3,7 +3,8 @@ import { useId } from 'react'
 import { useDslActionCatalog } from './dslActionCatalog'
 import { DATA_TABLE_CHOICES, dataBindingMismatches } from './scenarioDataBindingModel'
 import { LIVE_TABLE_KIND_LABELS, type DataAliasStep, type DataAliasUsage } from './scriptDataUsageModel'
-import type { ScriptScenarioBindings } from './useScriptScenarioBindings'
+import type { SharedAssetsSection } from './sharedAssetsNavigation'
+import type { AliasBinding, ScriptScenarioBindings } from './useScriptScenarioBindings'
 import './ScriptDataUsagePanel.css'
 
 /**
@@ -11,12 +12,14 @@ import './ScriptDataUsagePanel.css'
  * whether it expects a row from the binding each iteration, and which saved
  * scenarios bind it. Aliases live in the script; scenarios choose the tables.
  */
-export default function ScriptDataUsagePanel({ usage, saved, bindings, onSelectStep }: {
+export default function ScriptDataUsagePanel({ usage, saved, bindings, onSelectStep, onOpenTable }: {
   usage: DataAliasUsage[]
   /** Whether the script is saved (only a saved script is in scenarios). */
   saved: boolean
   bindings: ScriptScenarioBindings
   onSelectStep: (step: DataAliasStep) => void
+  /** Opens the pool or project live table a scenario binds, in Shared assets. */
+  onOpenTable?: (section: SharedAssetsSection, resourceId: string) => void
 }) {
   const id = useId()
   const { catalog } = useDslActionCatalog()
@@ -47,11 +50,28 @@ export default function ScriptDataUsagePanel({ usage, saved, bindings, onSelectS
           <dt>Each iteration</dt>
           <dd>{item.readsEachIteration ? <>Expects a row from the binding (<code>{`{{data.${item.alias}.…}}`}</code>)</> : 'Expects no row from the binding'}</dd>
           <dt>Bound in</dt>
-          <dd>{bound.length ? <ul className="script-data-steps">{bound.map(entry => <li key={entry.scenarioId}>{entry.scenarioName}: {DATA_TABLE_CHOICES.find(choice => choice.value === entry.choice)!.label.toLowerCase()}{entry.kind ? ` (${LIVE_TABLE_KIND_LABELS[entry.kind]})` : ''}</li>)}</ul>
+          <dd>{bound.length ? <ul className="script-data-steps">{bound.map(entry => {
+            const table = sharedTableOf(entry)
+            return <li key={entry.scenarioId}>{entry.scenarioName}: {DATA_TABLE_CHOICES.find(choice => choice.value === entry.choice)!.label.toLowerCase()}{entry.kind ? ` (${LIVE_TABLE_KIND_LABELS[entry.kind]})` : ''}
+              {table && onOpenTable && <> <button type="button" className="link-button" aria-label={`Open the ${table.label} ${entry.scenarioName} binds as ${item.alias}`} onClick={() => onOpenTable(table.section, table.resourceId)}>{`Open ${table.label}`}</button></>}
+            </li>
+          })}</ul>
             : !saved || known ? <strong>Bind in a scenario before running</strong> : 'Not known yet'}</dd>
         </dl>
         {mismatches.map(problem => <p key={problem} className="script-data-mismatch" role="status">{problem}</p>)}
       </li>
     })}</ul>
   </section>
+}
+
+/**
+ * The shared table behind a binding, by the table it binds: a project live
+ * table, or the pool a snapshot reads or a run table starts from. A run table
+ * that starts empty has none.
+ */
+function sharedTableOf(entry: AliasBinding): { section: SharedAssetsSection; resourceId: string; label: string } | null {
+  if (entry.choice === 'project') return entry.binding.project_table_id ? { section: 'live-tables', resourceId: entry.binding.project_table_id, label: 'live table' } : null
+  // As the scenario's Data step decides whether a run table reads its pool.
+  if (entry.choice === 'run' && ['empty', 'original_seed'].includes(entry.binding.live_options?.seed_policy || '')) return null
+  return entry.binding.pool_id ? { section: 'test-data', resourceId: entry.binding.pool_id, label: 'pool' } : null
 }

@@ -1378,6 +1378,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       if (generation === projectDraftsGenerationRef.current && currentProjectIdRef.current === projectId) setLoadedProjectDrafts({ projectId, drafts: [] })
     }
   }, [activeProjectId, api])
+  // The project's pools alone, after one changed in Shared assets over the builder.
+  const reloadDataPools = useCallback(async () => {
+    const projectId = activeProjectId
+    if (!projectId) return
+    try {
+      const response = await api.listDataPools(projectId)
+      if (currentProjectIdRef.current === projectId) setDataPools(response.data_pools || [])
+    } catch { /* The pools shown stay; the next refresh retries. */ }
+  }, [activeProjectId, api])
   const refresh = useCallback(async () => {
     const projectId = activeProjectId
     const requestGeneration = ++refreshGenerationRef.current
@@ -4834,7 +4843,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           </details>
 
           {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} scenarioTag={scenarioBaseline?.etag} onSaved={() => void adoptBaselineAfterBindingsSave()} onScenarioChanged={() => setScenarioConflict(conflict => conflict || { reason: scenarioConflictReason(new ApiError('scenario changed', 412)), loading: false, current: null })} />}
-          <ScenarioDataBindings projectId={activeProjectId} bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} canManageLiveOutput={isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_data_pools')} onChange={updateDataBindings} />
+          <ScenarioDataBindings projectId={activeProjectId} bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} canManageLiveOutput={isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_data_pools')} onChange={updateDataBindings} onPoolsChanged={() => void reloadDataPools()} />
         </section>
       )
     }

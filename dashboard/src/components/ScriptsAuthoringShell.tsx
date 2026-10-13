@@ -21,7 +21,6 @@ interface Props {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
-  onConfigureSecrets?: (projectId: string) => void
   onEditDraft: ScriptsAuthoringSurfaceProps['onEditDraft']
   onReturnToDraftSource: () => void
   onStartExistingScript?: (script: StoredScript, options?: { migrateSecrets?: boolean }) => void
@@ -42,7 +41,6 @@ export default function ScriptsAuthoringShell({
   onOpenLibrary,
   onOpenCreateOptions,
   onImported,
-  onConfigureSecrets,
   onEditDraft,
   onReturnToDraftSource,
   onStartExistingScript,
@@ -126,7 +124,6 @@ export default function ScriptsAuthoringShell({
             onOpenLibrary={onOpenLibrary}
             onOpenCreateOptions={onOpenCreateOptions}
             onImported={onImported}
-            onConfigureSecrets={onConfigureSecrets}
             onEditDraft={onEditDraft}
             onReturnToDraftSource={onReturnToDraftSource}
           />

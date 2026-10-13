@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StoredScript, ScenarioDataPoolBinding } from '../types'
 import ScenarioDataBindings from './ScenarioDataBindings'
 
-const { api } = vi.hoisted(() => ({ api: { getScript: vi.fn(), getDataPool: vi.fn() } }))
+const { api, sharedAssets } = vi.hoisted(() => ({ api: { getScript: vi.fn(), getDataPool: vi.fn() }, sharedAssets: { props: null as null | Record<string, unknown> } }))
 vi.mock('../hooks/useApi', () => ({ useApi: () => api }))
+// Shared assets opens over the builder; its own behaviour is SharedAssetsDialog's test.
+vi.mock('./SharedAssetsDialog', () => ({ default: (props: { onClose: () => void }) => { sharedAssets.props = props; return <button type="button" onClick={props.onClose}>Close Shared assets</button> } }))
 
 const stored: StoredScript = {
   id: 'checkout', name: 'Checkout', protocol: 'http', version: '1', created_at: '',
@@ -137,6 +139,21 @@ describe('ScenarioDataBindings script-level data', () => {
     expect(need.textContent).toContain('usersNot bound')
     expect(need.textContent).toContain('Used by Other script · columns email · reads a row each iteration')
     expect(need.querySelector('button[aria-label="Bind users"]')).not.toBeNull()
+  })
+  it('opens the pool in Shared assets over the builder, and shows its rows as they are when it closes', async () => {
+    api.getDataPool.mockResolvedValue({ rows: [{ id: 'r1', data: { email: 'a@example.test' } }], total: 1 })
+    const onPoolsChanged = vi.fn()
+    await act(async () => root.render(<ScenarioDataBindings projectId="project-1" scripts={[]} bindings={[{ pool_id: 'pool', alias: 'users', access_mode: 'read_only', selection_strategy: 'sequential' }]} pools={[]} onChange={() => {}} canManage canManageLiveOutput onPoolsChanged={onPoolsChanged} />))
+    const preview = [...container.querySelectorAll('summary')].find(element => element.textContent === 'Preview rows and import CSV')!.parentElement as HTMLDetailsElement
+    await act(async () => { preview.open = true; preview.dispatchEvent(new Event('toggle')) })
+    expect(preview.textContent).toContain('1 rows in shared pool')
+    await act(async () => [...preview.querySelectorAll('button')].find(button => button.textContent === "Edit this pool's rows")!.click())
+    expect(sharedAssets.props).toMatchObject({ projectId: 'project-1', section: 'test-data', resourceId: 'pool' })
+    api.getDataPool.mockResolvedValue({ rows: [], total: 2 })
+    await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Close Shared assets')!.click())
+    expect(onPoolsChanged).toHaveBeenCalledOnce()
+    expect(api.getDataPool).toHaveBeenCalledTimes(2)
+    expect(preview.textContent).toContain('2 rows in shared pool')
   })
   it('bounds large data previews and ignores obsolete fetch responses after selection changes', async () => {
     let resolve!: (value: StoredScript) => void

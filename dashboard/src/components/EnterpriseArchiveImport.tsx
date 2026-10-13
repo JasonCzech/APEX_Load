@@ -36,7 +36,7 @@ import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
-import { prepareProjectSecretsNavigation, projectSecretsHref } from './projectSecretsNavigation'
+import SharedAssetsDialog from './SharedAssetsDialog'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import AuraOutcomeReview from './AuraOutcomeReview'
 import SalesforceCorrelationReview from './SalesforceCorrelationReview'
@@ -976,6 +976,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const [validationReviewPanelMinHeight, setValidationReviewPanelMinHeight] = useState(0)
   const [repairSourceFocus, setRepairSourceFocus] = useState({ id: '', file: '', revision: 0 })
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  // Shared assets › Secrets open over the review, and which of the preflight's
+  // missing secrets the project has had since it closed.
+  const [secretsOpen, setSecretsOpen] = useState(false)
+  const [configuredSecretNames, setConfiguredSecretNames] = useState<{ preflight: ReplayPreflight; names: Set<string> }>()
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
   const [settingsEditing, setSettingsEditing] = useState(false)
@@ -5003,9 +5007,20 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             credentialIntroduction={<div className="import-credentials-introduction">
               <ImportReviewSectionHeader title="Credential setup" description={secretBindingRequirements.length ? "Manage project bindings and preserved values. The inventory below counts unique groups; replay issues are tracked separately above." : "No credential bindings were reported for this draft. Runtime credentials are verified when debugging starts."} />
               {!currentRepairReview && (replayPreflight?.missing_secrets?.length || 0) > 0 && <>
-                <ul>{replayPreflight?.missing_secrets?.map(name => <li key={name}><code>{name}</code></li>)}</ul>
-                <p>Configure these exact names in the project secret provider, then validate again to refresh readiness.</p>
-                <a className="btn btn-secondary btn-sm" href={projectSecretsHref()} target="_blank" rel="noopener noreferrer" onClick={() => prepareProjectSecretsNavigation(projectId)}>Open Secrets in a new tab</a>
+                <ul>{replayPreflight?.missing_secrets?.map(name => <li key={name}><code>{name}</code>{configuredSecretNames?.preflight === replayPreflight && configuredSecretNames.names.has(name) ? ' · configured now' : ''}</li>)}</ul>
+                <p>Configure these exact names in the project's secrets, then validate again to refresh readiness.</p>
+                {projectId && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSecretsOpen(true)}>Open Secrets</button>}
+                {secretsOpen && projectId && <SharedAssetsDialog projectId={projectId} section="secrets" onClose={() => {
+                  setSecretsOpen(false)
+                  credentialReviewRef.current?.refreshStatuses()
+                  // Back in the review: say which missing names exist now (readiness itself needs a validation).
+                  // The marks belong to this preflight; a new validation shows its own list.
+                  const preflight = replayPreflight
+                  const names = preflight?.missing_secrets || []
+                  if (preflight && names.length) void api.getProjectSecretStatuses(projectId, names)
+                    .then(response => setConfiguredSecretNames({ preflight, names: new Set(response.secrets.filter(status => status.configured).map(status => status.name)) }))
+                    .catch(() => undefined)
+                }} />}
               </>}
             </div>}
             script={importedScript}

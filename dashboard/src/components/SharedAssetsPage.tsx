@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import type { Application, Project } from '../types'
@@ -8,7 +8,6 @@ import ObjectRepositoryPanel from './ObjectRepositoryPanel'
 import ProjectLiveTablesPanel from './ProjectLiveTablesPanel'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
 import SavedBlocksPanel from './SavedBlocksPanel'
-import { consumeProjectSecretsSettingsProjectId, requestedProjectSecretsProjectId } from './projectSecretsNavigation'
 import { DEFAULT_SHARED_ASSETS_SECTION, SHARED_ASSET_SECTIONS, sharedAssetsHref, type SharedAssetsSection } from './sharedAssetsNavigation'
 import { useSectionListKeys } from './ux/useSectionListKeys'
 import './SharedAssetsPage.css'
@@ -64,13 +63,14 @@ export default function SharedAssetsPage({ activeProject, applications = [], sec
         {entry.usage && <p id="shared-assets-usage" className="shared-assets-usage">{entry.usage}</p>}
         {!activeProject
           ? <p>Select a project to see what its scripts and scenarios share.</p>
-          : <SectionContent key={`${activeProject.id}:${current}:${resourceId || ''}`} section={current} project={activeProject} applications={applications} resourceId={resourceId} permissions={permissions} />}
+          : <SharedAssetSection key={`${activeProject.id}:${current}:${resourceId || ''}`} section={current} project={activeProject} applications={applications} resourceId={resourceId} permissions={permissions} />}
       </section>
     </div>
   </div>
 }
 
-function SectionContent({ section, project, applications, resourceId, permissions }: { section: SharedAssetsSection; project: Project; applications: Application[]; resourceId?: string; permissions: SharedAssetsPermissions }) {
+/** One section's panel, on the page or in a dialog over the page that asked for it. */
+export function SharedAssetSection({ section, project, applications, resourceId, permissions }: { section: SharedAssetsSection; project: Project; applications: Application[]; resourceId?: string; permissions: SharedAssetsPermissions }) {
   switch (section) {
     case 'test-data':
       return <DataPoolsManager activeProject={project} projects={[project]} preferredPoolId={resourceId} canManage={permissions.manageDataPools} />
@@ -92,19 +92,12 @@ function SectionContent({ section, project, applications, resourceId, permission
  * of the same name). Editors add secrets; project admins also rotate them.
  */
 function SecretsSection({ project, applications, applicationId, canCreate, canRotate }: { project: Project; applications: Application[]; applicationId?: string; canCreate: boolean; canRotate: boolean }) {
-  // A Configure secrets link names its project; never configure another one
-  // in its place. Read while rendering and cleared once mounted: StrictMode renders twice.
-  const [requestedProjectId] = useState(() => requestedProjectSecretsProjectId())
-  useEffect(() => { consumeProjectSecretsSettingsProjectId() }, [])
   const scopes = applications.filter(application => !application.project_id || application.project_id === project.id)
   // The application a link named, once the project's applications have
   // loaded (they may arrive after this mounts); the viewer's choice after that.
   const [chosenScope, setChosenScope] = useState<string>()
   const scope = chosenScope ?? (scopes.some(application => application.id === applicationId) ? applicationId! : '')
   const application = scopes.find(candidate => candidate.id === scope)
-  if (requestedProjectId && requestedProjectId !== project.id) {
-    return <p className="settings-notice" role="note">The secrets you were sent to configure belong to another project. Switch the workspace to that project to configure them.</p>
-  }
   return <>
     {scopes.length > 0 && <label className="shared-assets-scope">
       <span>Secrets of</span>

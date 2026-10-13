@@ -6,7 +6,8 @@ import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, 
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import { isSavedBlock } from './savedBlocks'
-import { sharedAssetsHref } from './sharedAssetsNavigation'
+import SharedAssetsDialog from './SharedAssetsDialog'
+import type { SharedAssetsSection } from './sharedAssetsNavigation'
 import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
 import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
 import { NO_RESPONSE_ACTION_TYPES, HTTP_RUNTIME_ACTION_TYPES, liveTableFormContext } from './catalogActionFormModel'
@@ -741,6 +742,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
   const api = useApi()
   const [secretBindingsOpen, setSecretBindingsOpen] = useState(false)
+  // A Shared assets section open over the editor (saved blocks, or a table a scenario binds).
+  const [sharedAssetsDialog, setSharedAssetsDialog] = useState<{ section: SharedAssetsSection; resourceId?: string } | null>(null)
   const saveAndConfigureRequestedRef = useRef(false)
   const pendingCreatedSecretNamesRef = useRef<string[]>([...(initialRetainedCreatedSecretNames || [])])
   const [scriptSecretStatus, setScriptSecretStatus] = useState<ScriptSecretStatus | null>(null)
@@ -6013,7 +6016,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                           })}
                           {authoringComponents.some(isSavedBlock) && (
                             <div className="reusable-blocks-group">
-                              <span className="reusable-blocks-group-label">Your Blocks <a href={sharedAssetsHref('saved-blocks')}>Manage saved blocks</a></span>
+                              <span className="reusable-blocks-group-label">Your Blocks {projectId && <button type="button" className="link-button" onClick={() => setSharedAssetsDialog({ section: 'saved-blocks' })}>Manage saved blocks</button>}</span>
                               {authoringComponents.filter(isSavedBlock).map(component => (
                                 <div key={component.id} className="starter-block-card user-block-card">
                                   <TooltipButton
@@ -6959,6 +6962,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         onLoad={() => { void loadCurrentAuthoringBaseline() }}
         onReload={() => adoptReviewedAuthoringBaseline(false)} onReapply={() => adoptReviewedAuthoringBaseline(true)}
       />}
+      {sharedAssetsDialog && projectId && <SharedAssetsDialog projectId={projectId} section={sharedAssetsDialog.section} resourceId={sharedAssetsDialog.resourceId} onClose={() => {
+        setSharedAssetsDialog(null)
+        // Back in the editor: what it shows of them, as they are now.
+        if (sharedAssetsDialog.section === 'saved-blocks') void reloadAuthoringComponents()
+        else scenarioBindings.retry()
+      }} />}
       {secretBindingsOpen && scriptId && projectId && (
         <ScriptSecretBindingsDialog
           scriptId={scriptId}
@@ -7659,7 +7668,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           {centerTabMountTarget('parameter-data') && createPortal(
             <ParameterDataCellDraftProvider onDraftChange={stageParameterDataCellEdit}>
               {renderStructuredCenterDocument('Parameters', (<>
-                {scenarioDataUsage.length > 0 && <ScriptDataUsagePanel usage={scenarioDataUsage} saved={Boolean(scriptId)} bindings={scenarioBindings} onSelectStep={focusDataStep} />}
+                {scenarioDataUsage.length > 0 && <ScriptDataUsagePanel usage={scenarioDataUsage} saved={Boolean(scriptId)} bindings={scenarioBindings} onSelectStep={focusDataStep}
+                  onOpenTable={projectId ? (section, resourceId) => setSharedAssetsDialog({ section, resourceId }) : undefined} />}
                 <ParameterDataDialog
               onAddDataset={addParameterDataset}
               onShowUsesInSource={selectOutlineParameter}

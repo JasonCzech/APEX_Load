@@ -50,7 +50,6 @@ export interface ScriptsAuthoringSurfaceProps {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
-  onConfigureSecrets?: (projectId: string) => void
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
   onReturnToDraftSource: () => void
 }
@@ -132,7 +131,6 @@ function ScriptsAuthoringContent({
   onOpenLibrary,
   onOpenCreateOptions,
   onImported,
-  onConfigureSecrets,
   onEditDraft,
   onReturnToDraftSource,
 }: ScriptsAuthoringSurfaceProps) {
@@ -236,7 +234,7 @@ function ScriptsAuthoringContent({
       )
     case 'bruno-import':
       return createOptionsSurface(
-        <BrunoImport initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onConfigureSecrets={onConfigureSecrets} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        <BrunoImport initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
         false,
         null,
       )

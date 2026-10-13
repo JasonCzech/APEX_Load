@@ -1,0 +1,51 @@
+/* A Shared assets section over the page that asked for it. */
+.shared-assets-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--modal-backdrop);
+  backdrop-filter: blur(8px);
+}
+
+.shared-assets-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 48px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.shared-assets-dialog-header,
+.shared-assets-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.shared-assets-dialog-header { border-bottom: 1px solid var(--border); }
+.shared-assets-dialog-header h2 { margin: 0; font-size: 17px; }
+.shared-assets-dialog-header p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-size-sm, 13px); }
+.shared-assets-dialog-footer { border-top: 1px solid var(--border); }
+
+/* The section scrolls; the header and Done stay in view. */
+.shared-assets-dialog-body {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+@media (max-width: 640px) {
+  .shared-assets-dialog-backdrop { padding: 12px; }
+  .shared-assets-dialog { max-height: calc(100vh - 24px); }
+}

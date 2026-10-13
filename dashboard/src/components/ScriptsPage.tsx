@@ -26,7 +26,7 @@ import { type ImportedSaveResult, type ScriptsAuthoringEntryView, type ScriptsAu
 import type { ScriptImportLauncherDescriptor } from '../scriptImportLaunchers'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
-import { openProjectSecretsPage } from './projectSecretsNavigation'
+import SharedAssetsDialog from './SharedAssetsDialog'
 import StoredScriptSecretBindingsDialog from './StoredScriptSecretBindingsDialog'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import {
@@ -245,12 +245,15 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     if (script.script) setSecretDialogQueue(queue => [...queue, script])
   }, [])
 
-  const openProjectSecrets = useCallback((script?: StoredScript) => {
-    if (script?.id && script.script) {
+  // A script listed without its definition: its project's secrets, over the library.
+  const [sharedSecretsFor, setSharedSecretsFor] = useState<{ projectId: string; script: StoredScript } | null>(null)
+  const openProjectSecrets = useCallback((script: StoredScript) => {
+    if (script.id && script.script) {
       setSecretDialogScript(script)
       return
     }
-    openProjectSecretsPage(script?.project_id || activeProjectId)
+    const projectId = script.project_id || activeProjectId
+    if (projectId) setSharedSecretsFor({ projectId, script })
   }, [activeProjectId])
 
   const secretStatusPlans = useMemo(
@@ -1125,7 +1128,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         onOpenLibrary={openLibrary}
         onOpenCreateOptions={openCreateOptions}
         onImported={handleImported}
-        onConfigureSecrets={() => openProjectSecrets()}
         onEditDraft={handleDraftEdit}
         onReturnToDraftSource={returnToDraftSource}
         onStartExistingScript={handleStartExistingScript}
@@ -1348,6 +1350,11 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           />
         </Suspense>
       )}
+      {sharedSecretsFor && <SharedAssetsDialog projectId={sharedSecretsFor.projectId} section="secrets" onClose={() => {
+        setSharedSecretsFor(null)
+        // Back in the library: the script's secrets as they are now.
+        retryScriptSecretStatus(sharedSecretsFor.script)
+      }} />}
       {secretDialogScript?.script && activeProjectId && (
         <StoredScriptSecretBindingsDialog key={`${activeProjectId}:${secretDialogScript.id}`}
           stored={secretDialogScript} projectId={activeProjectId}

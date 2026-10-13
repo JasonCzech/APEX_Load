@@ -2118,7 +2118,7 @@ describe('ScriptEditor', () => {
       { name: 'Run the job', type: 'GET', target: '/jobs/{{var.leased.values.id}}' },
     ] }] })
     try {
-      await act(async () => { root.render(<ScriptEditor initialScript={initialScript} />) })
+      await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
       await flushReact()
       await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')!.click() })
       const type = document.querySelector<HTMLSelectElement>('[role="dialog"] select[aria-label="Action type"]')!
@@ -2154,8 +2154,8 @@ describe('ScriptEditor', () => {
       await addAction()
       expect(placement().value).toBe('after')
       await act(async () => { placement().value = 'before'; placement().dispatchEvent(new Event('change', { bubbles: true })) })
-      // Saved blocks are managed (and deleted, with a confirmation) in Shared assets, linked from where they are inserted.
-      expect(document.querySelector<HTMLAnchorElement>('.reusable-blocks-group-label a')?.getAttribute('href')).toMatch(/^#\/shared-assets\?section=saved-blocks/)
+      // Saved blocks are managed (and deleted, with a confirmation) in Shared assets, opened over the editor from where they are inserted.
+      expect(document.querySelector<HTMLButtonElement>('.reusable-blocks-group-label button')?.textContent).toBe('Manage saved blocks')
       expect(document.querySelector('[aria-label^="Delete reusable block"]')).toBeNull()
       // A saved block whose result name is taken now gets a free one, and its own reference follows.
       await act(async () => { Array.from(document.querySelectorAll<HTMLButtonElement>('.reusable-blocks-panel .user-block-insert')).find(button => button.textContent?.includes('Take one job'))!.click() })

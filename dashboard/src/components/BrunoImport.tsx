@@ -29,6 +29,7 @@ import { nativeReviewGuidance } from './brunoNativeReviewGuidance';
 import { brunoSecretPresentation } from './brunoSecretPresentation';
 import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements';
 import { importFileLogicalPath } from '../importLogicalPath';
+import SharedAssetsDialog from './SharedAssetsDialog';
 import './BrunoImport.css';
 interface Props {
     initialFiles?: File[] | null;
@@ -39,7 +40,6 @@ interface Props {
     /** The authoring shell renders and owns the only visible destination control. */
     destinationFolderManagedExternally?: boolean;
     onImported?: (result: ImportedSaveResult) => void;
-    onConfigureSecrets?: (projectId: string) => void;
     onClose?: () => void;
     onOperationBusyChange?: (busy: boolean) => void;
 }
@@ -402,7 +402,7 @@ function CollectionTree({ items }: {
         </nav>)}
     </>);
 }
-export default function BrunoImport({ initialFiles, initialOutputMode, projectId, folderId, onFolderChange, destinationFolderManagedExternally = false, onImported, onConfigureSecrets, onClose, onOperationBusyChange }: Props) {
+export default function BrunoImport({ initialFiles, initialOutputMode, projectId, folderId, onFolderChange, destinationFolderManagedExternally = false, onImported, onClose, onOperationBusyChange }: Props) {
     const api = useApi();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const directoryInputRef = useRef<HTMLInputElement>(null);
@@ -453,6 +453,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('');
     const secretBindingsRef = useRef<Record<string, string>>({});
     const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null);
+    // Shared assets › Secrets open over the review, which keeps its place.
+    const [secretsOpen, setSecretsOpen] = useState(false);
     const [committed, setCommitted] = useState<CommitBrunoImportResponse | null>(null);
     // An inspected collection and its review choices live only here until committed.
     useUnsavedWorkGuard('bruno-import', 'Bruno import review', Boolean(inspection) && !committed, () => undefined);
@@ -1505,7 +1507,12 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   {!committed && (<>
                       <h3>Credentials</h3>
                       <p>Configure missing values now, or configure later — replay stays blocked until the selected bindings have usable values.</p>
-                      {onConfigureSecrets && projectId && <button className="btn btn-secondary" type="button" onClick={() => onConfigureSecrets(projectId)}>Open Secrets</button>}
+                      {projectId && <button className="btn btn-secondary" type="button" onClick={() => setSecretsOpen(true)}>Open Secrets</button>}
+                      {secretsOpen && projectId && <SharedAssetsDialog projectId={projectId} section="secrets" onClose={() => {
+                        setSecretsOpen(false)
+                        // Back in the review: the bindings' secrets as they are now.
+                        credentialReviewRef.current?.refreshStatuses()
+                      }} />}
                       <SecretBindingReview ref={credentialReviewRef} requirements={credentialRequirements} reviewGeneration={credentialReviewIdentity} disabled={loading || creatingFolder || protectedSessionExpired} projectId={projectId} sourceSecretSessionExpiresAt={inspection?.expires_at} sourceMigrationAllowed={sourceMigrationAvailable} externalSourceMigrationSelected={migrateSecrets} onExternalSourceMigrationChange={setMigrateSecrets} onApply={applyCredentialBindings} onPreparedChange={setPreparedSecrets} onRequirementDestinationStateChange={setCredentialDestinationState} onProjectSecretsConfigured={handleProjectSecretsConfigured}/>
                       {projectSecretsConfiguredForReview && (<div className="bruno-preflight" role="status">
                           Project-secret values configured during this review remain in Project Secrets independently of script saving.

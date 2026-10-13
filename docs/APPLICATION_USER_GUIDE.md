@@ -583,7 +583,7 @@ Once you have a recording:
 - **Correlation** finds the dynamic values (tokens, session IDs, view state) that must
   be captured from one response and replayed in the next request. **Correlation
   Diagnose** lets you review what was detected and see the evidence. To reuse the
-  rules, open **Shared assets** on the **Scripts** page, discover a ruleset from the
+  rules, open **Shared assets** › **Correlation rules**, discover a ruleset from the
   recorded script, then preview and apply it to other scripts.
 - **Parameterization review** suggests which recorded literals should become data-pool
   or template values, so the script drives varied data instead of one fixed path.
@@ -1211,8 +1211,8 @@ secrets; viewers see everything and can export pools.
   actions at it. A changed selector is then fixed once rather than in fourteen scripts.
 - **Saved blocks** hold steps saved from one script to insert into others: in the
   script editor, select steps in the outline and choose **Save as block**, then insert
-  one from **Add action from a block** (its **Manage saved blocks** link opens this
-  section). Preview a block's steps here, or delete it. Inserting copies the steps, so a
+  one from **Add action from a block** (its **Manage saved blocks** opens this
+  section over the editor). Preview a block's steps here, or delete it. Inserting copies the steps, so a
   block has no users to list, and deleting it changes no script. A domain's feature
   policy can turn saved blocks off.
 
@@ -1224,6 +1224,15 @@ cannot be deleted; its Delete lists what to change first. Applying a rule set co
 rules into the script, so deleting the set changes no script. Rotating a secret lists the
 scripts and connections whose value changes before it runs, and a lifecycle change to a
 live table lists the scenarios whose runs it affects.
+
+Where a script or scenario uses one of these, the asset opens in Shared assets over the
+page, which keeps its place: **Edit this pool's rows** at the scenario Data step, **Open
+pool** or **Open live table** beside a binding in the script editor's **Data this script
+uses**, **Manage saved blocks** in the Insert dialog, and **Open Secrets** in an import's
+credential review. **Done** closes it, asking first about anything left unsaved there, and
+the page underneath shows the asset as it is now: the pool's rows, the blocks that are
+left, the secrets the import still needs. **Open in Shared assets** leaves for the full
+page instead.
 
 Old addresses for these (Repository › Shared test data and Live tables, Project
 secrets, the Scripts page's Shared assets tab) open the matching section.

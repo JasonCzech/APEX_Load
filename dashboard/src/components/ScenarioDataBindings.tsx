@@ -9,14 +9,16 @@ import { useDslActionCatalog } from './dslActionCatalog'
 import { useProjectLiveTables } from './useProjectLiveTables'
 import DataRowGrid from './ux/DataRowGrid'
 import { orderedGridColumns } from './ux/dataRowGridModel'
-import { sharedAssetsHref } from './sharedAssetsNavigation'
+import SharedAssetsDialog from './SharedAssetsDialog'
 import ScenarioScriptData from './ScenarioScriptData'
 import LiveTableBindingOptions from './LiveTableBindingOptions'
 import ProjectLiveTableBinding from './ProjectLiveTableBinding'
 
-function PoolPreview({ binding, required, canManage, canEditPool, poolColumns }: { binding: ScenarioDataPoolBinding; required: string[]; canManage: boolean; canEditPool: boolean; poolColumns: string[] }) {
+function PoolPreview({ binding, required, canManage, canEditPool, poolColumns, projectId, onPoolChanged }: { binding: ScenarioDataPoolBinding; required: string[]; canManage: boolean; canEditPool: boolean; poolColumns: string[]; projectId?: string; onPoolChanged?: () => void }) {
   const api = useApi()
   const [open, setOpen] = useState(false)
+  // The pool open in Shared assets over the builder, which keeps its place.
+  const [editing, setEditing] = useState(false)
   const [rows, setRows] = useState<SharedDataPoolRow[]>([])
   const [total, setTotal] = useState<number | null>(null)
   const [error, setError] = useState('')
@@ -55,7 +57,13 @@ function PoolPreview({ binding, required, canManage, canEditPool, poolColumns }:
       {total === 0 && <p role="status">{binding.access_mode === 'live' ? 'This pool is empty. The live table starts empty if no rows are added before launch; producers can add runtime rows.' : 'This pool is empty. Add rows before configuring a run.'}</p>}
       {required.length > 0 && <p>Required columns: {required.join(', ')}. {rows.some(row => required.some(column => !(column in row.data))) ? 'Some preview rows are missing required columns.' : 'Validate the full pool before execution; the preview is only a sample.'}</p>}
       {!!rows.length && <DataRowGrid label={`Rows for ${binding.alias}`} columns={columns} rows={rows.map(row => ({ id: row.id, values: row.data }))} />}
-      {canEditPool && <p><a href={sharedAssetsHref('test-data', binding.pool_id)}>Edit this pool's rows in Shared assets</a></p>}
+      {canEditPool && projectId && <p><button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Edit this pool's rows</button></p>}
+      {editing && projectId && <SharedAssetsDialog projectId={projectId} section="test-data" resourceId={binding.pool_id} onClose={() => {
+        setEditing(false)
+        // Back from the pool: show its rows and columns as they are now.
+        setRevision(value => value + 1)
+        onPoolChanged?.()
+      }} />}
       <fieldset disabled={busy || !canManage}><legend>Append rows from CSV</legend>{!canManage && <p>Importing rows requires data-pool management permission.</p>}<p>Use a header row with column names. Preview the import before adding rows to the shared pool.</p>
         <ImportDropzone dropHint="Drop a CSV with a header row" accept=".csv,.tsv" file={file} onFile={next => { setFile(next); setInspection(null); setNotice('') }} onError={setError} disabled={busy} />
         {file && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void importRows(true)}>Preview CSV import</button>}
@@ -97,10 +105,12 @@ function DataNeeds({ needs, bindings, onBind }: { needs: ScenarioDataNeed[]; bin
   </section>
 }
 
-export default function ScenarioDataBindings({ bindings, pools, scripts, onChange, canManage, canManageLiveOutput = false, projectId }: {
+export default function ScenarioDataBindings({ bindings, pools, scripts, onChange, canManage, canManageLiveOutput = false, projectId, onPoolsChanged }: {
   projectId?: string
   bindings: ScenarioDataPoolBinding[]; pools: SharedDataPool[]; scripts: StoredScript[];
   onChange: (bindings: ScenarioDataPoolBinding[]) => void; canManage: boolean; canManageLiveOutput?: boolean
+  /** A pool may have changed in Shared assets: the builder reloads its pools. */
+  onPoolsChanged?: () => void
 }) {
   const api = useApi()
   const choiceName = useId()
@@ -158,7 +168,7 @@ export default function ScenarioDataBindings({ bindings, pools, scripts, onChang
       {mismatches.map(problem => <p key={problem} className="scenario-data-mismatch" role="status">{problem}</p>)}
       {isUntouchedDataBinding(binding) && <p className="new-test-inline-note">Choose a data pool, or a live table above.</p>}{binding.access_mode === 'live' ? binding.scope === 'project' ? <ProjectLiveTableBinding projectId={projectId} binding={binding} tablesState={projectTables} onChange={patch => update(index, patch)} /> : <LiveTableBindingOptions binding={binding} canManage={canManageLiveOutput} knownColumns={[...new Set([...(need?.columns || []), ...columns])]} onChange={patch => update(index, patch)} /> : <p>{binding.selection_strategy === 'unique' ? 'Unique selection assigns a stable row per VUser, reused across its iterations. The runtime wraps when rows are insufficient; scenario validation blocks known unique-row shortages. Validate the pool against peak VUsers before running.' : 'Sequential and random selection can reuse rows. Use unique selection when identities must not be reused.'} Rows are snapshotted when the run is created.</p>}
       <button type="button" className="btn btn-ghost" onClick={() => onChange(bindings.filter((_, i) => i !== index))}>Remove binding {index + 1}</button>
-      {binding.pool_id && !(binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')) && <PoolPreview canManage={canManage} canEditPool={canManageLiveOutput} key={binding.pool_id} binding={binding} poolColumns={columns} required={[...(requirements.get(binding.alias) || [])]} />}
+      {binding.pool_id && !(binding.access_mode === 'live' && ['empty', 'original_seed'].includes(binding.live_options?.seed_policy || '')) && <PoolPreview canManage={canManage} canEditPool={canManageLiveOutput} key={binding.pool_id} binding={binding} poolColumns={columns} required={[...(requirements.get(binding.alias) || [])]} projectId={projectId} onPoolChanged={onPoolsChanged} />}
     </fieldset>
     })}
     <button type="button" className="btn btn-secondary" onClick={() => onChange([...bindings, { pool_id: '', alias: '', access_mode: 'read_only', selection_strategy: 'sequential' }])}>Add data binding</button>

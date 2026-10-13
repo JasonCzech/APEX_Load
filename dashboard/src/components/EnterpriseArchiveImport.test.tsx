@@ -34,6 +34,10 @@ vi.mock('../hooks/useApi', () => ({
 
 // CodeMirror can't measure layout under jsdom; render the pane's text directly so
 // the source/DSL content is assertable. The real editor is verified in-browser.
+// Shared assets opens over the review; its own behaviour is SharedAssetsDialog's test.
+vi.mock('./SharedAssetsDialog', () => ({
+  default: ({ section, onClose }: { section: string; onClose: () => void }) => <button type="button" onClick={onClose}>{`Close Shared assets ${section}`}</button>,
+}))
 vi.mock('./LinkedCodePane', () => ({
   default: ({ value, ariaLabel }: { value: string; ariaLabel?: string }) => (
     <pre aria-label={ariaLabel}>{value}</pre>
@@ -1169,6 +1173,28 @@ describe('EnterpriseArchiveImport', () => {
       name: 'Parameterized Enterprise Script',
       actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
     }), 'project-1', undefined)
+  })
+
+  it('opens Shared assets over the review for the secrets its preflight misses, and says which exist on return', async () => {
+    const script = { name: 'Missing secrets', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '{{secret.API_TOKEN}}' } }] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, { preflight: { valid: false, action_count: 1, expected_action_count: 1, data_source_count: 0, parameter_count: 0, missing_secrets: ['API_TOKEN', 'API_USER'], checks: [] } }))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['test'], 'missing.zip', { type: 'application/zip' })] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Credentials')!)
+    await clickButton(findButton(container, 'Open Secrets')!)
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({ project_id: 'project-1', capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true }, secrets: [{ name: 'API_TOKEN', configured: true }, { name: 'API_USER', configured: false }] })
+    await clickButton(findButton(container, 'Close Shared assets secrets')!)
+    await flushPromises()
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenLastCalledWith('project-1', ['API_TOKEN', 'API_USER'])
+    const missing = [...container.querySelectorAll('.import-credentials-introduction li')].map(item => item.textContent)
+    expect(missing).toEqual(['API_TOKEN · configured now', 'API_USER'])
+    expect(findButton(container, 'Close Shared assets secrets')).toBeFalsy()
   })
 
   it('saves an inline credential edit from validation without reconverting the source archive', async () => {
