@@ -898,3 +898,30 @@ func TestConvertOrdersByCaptureTimeNotArrival(t *testing.T) {
 		t.Fatalf("click (capture ts 1000) must precede fill (capture ts 2000); got order %v", types)
 	}
 }
+
+// RA-14: a recorded socket URL carries per-session values (a token, a visit
+// id, a timestamp). Matching them never succeeds on replay, and they must
+// not name the step, so the wait matches scheme, host and path only.
+func TestWebSocketWaitMatchesSchemeHostAndPathOnly(t *testing.T) {
+	recorded := "wss://user:pw@telemetry.example.test/socket/v1?token=abc123def456&vu=7f3a&wu=91c2&ts=1760400000#frag"
+	for _, entry := range []timelineEntry{
+		{wsURL: recorded, wsOpen: true},
+		{wsURL: recorded, wsFrame: &WebSocketFrame{Direction: "received", Payload: `{"type":"ready"}`}},
+	} {
+		action, ok := websocketWaitAction(entry)
+		if !ok {
+			t.Fatal("no wait action")
+		}
+		if got := action.Params["url_contains"]; got != "wss://telemetry.example.test/socket/v1" {
+			t.Errorf("url_contains = %v, want scheme, host and path", got)
+		}
+		for _, leaked := range []string{"abc123def456", "7f3a", "1760400000", "pw", "?"} {
+			if strings.Contains(action.Name, leaked) {
+				t.Errorf("step name %q carries %q from the query or userinfo", action.Name, leaked)
+			}
+		}
+	}
+	if got := websocketURLMatch("/relative/socket?x=1"); got != "/relative/socket" {
+		t.Errorf("websocketURLMatch(relative) = %q", got)
+	}
+}

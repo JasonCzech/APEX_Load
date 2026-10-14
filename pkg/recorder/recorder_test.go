@@ -2045,3 +2045,38 @@ func TestRecorderStatusReadWriteIsRaceFree(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// RA-05: an exclude entry matches whole labels, so one that is only part of a
+// label ("27.0.0.1" inside "127.0.0.1") no longer drops the request.
+func TestExcludeHostsMatchWholeLabels(t *testing.T) {
+	allowPrivateProxyTargets(t)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	defer backend.Close()
+
+	rec := New(":0")
+	rec.StartSession("partial", "Partial label", SessionFilters{ExcludeHosts: []string{"27.0.0.1"}}, nil)
+	req, _ := http.NewRequest("GET", backend.URL+"/api/test", nil)
+	rec.handleProxy(httptest.NewRecorder(), req)
+	session, _ := rec.GetSession("partial")
+	if session == nil {
+		t.Fatal("session partial was not started")
+	}
+	if len(session.Requests) != 1 {
+		t.Fatalf("recorded %d requests, want 1: a partial label must not exclude the host", len(session.Requests))
+	}
+
+	// One active session per recorder.
+	whole := New(":0")
+	whole.StartSession("whole", "Whole host", SessionFilters{ExcludeHosts: []string{"127.0.0.1"}}, nil)
+	req, _ = http.NewRequest("GET", backend.URL+"/api/test", nil)
+	whole.handleProxy(httptest.NewRecorder(), req)
+	session, _ = whole.GetSession("whole")
+	if session == nil {
+		t.Fatal("session whole was not started")
+	}
+	if len(session.Requests) != 0 {
+		t.Fatalf("recorded %d requests, want the excluded host left out", len(session.Requests))
+	}
+}

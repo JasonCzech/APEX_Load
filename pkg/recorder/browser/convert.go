@@ -736,16 +736,17 @@ func assignTimelineSections(entries []timelineEntry) {
 }
 
 func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
+	socketURL := websocketURLMatch(entry.wsURL)
 	params := map[string]any{
-		"url_contains": entry.wsURL,
+		"url_contains": socketURL,
 		"count":        1,
 		"timeout_ms":   10000,
 	}
 	name := "Wait for WebSocket"
 	if entry.wsOpen {
 		params["direction"] = "open"
-		if entry.wsURL != "" {
-			name = "Wait for WebSocket open " + entry.wsURL
+		if socketURL != "" {
+			name = "Wait for WebSocket open " + socketURL
 		}
 		return dsl.Action{Name: name, Type: "browser_ws_wait", Params: params}, true
 	}
@@ -758,10 +759,29 @@ func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
 		params["match"] = truncateString(webSocketPayloadMatchHint(payload), 160)
 		params["match_mode"] = "contains"
 	}
-	if entry.wsURL != "" {
-		name = "Wait for WebSocket frame " + entry.wsURL
+	if socketURL != "" {
+		name = "Wait for WebSocket frame " + socketURL
 	}
 	return dsl.Action{Name: name, Type: "browser_ws_wait", Params: params}, true
+}
+
+// websocketURLMatch is the part of a recorded WebSocket URL a replay can
+// match: scheme, host and path. The query carries per-session values (a
+// token, a visit id, a timestamp) that differ on every run, so matching it
+// never succeeds, and it must not name the step either.
+func websocketURLMatch(raw string) string {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		if end := strings.IndexAny(raw, "?#"); end >= 0 {
+			return raw[:end]
+		}
+		return raw
+	}
+	parsed.User = nil
+	parsed.RawQuery, parsed.ForceQuery = "", false
+	parsed.Fragment, parsed.RawFragment = "", ""
+	return parsed.String()
 }
 
 func containsRedactedWebSocketValue(payload string) bool {

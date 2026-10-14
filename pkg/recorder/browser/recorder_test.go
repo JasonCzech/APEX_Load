@@ -348,12 +348,12 @@ func TestReadAttachedHARZipFiltersHostsBeforeEmbedding(t *testing.T) {
 	}, map[string][]byte{"resources/page.html": page, "resources/clip.mp4": make([]byte, 600<<10)})
 	const limit = 200 << 10
 
-	artifact, err := readAttachedHARZip(path, limit, HARFilters{ExcludeHosts: []string{"video.cdn"}})
+	artifact, err := readAttachedHARZip(path, limit, HARFilters{ExcludeHosts: []string{"*.cdn.example.test"}})
 	if err != nil {
 		t.Fatalf("readAttachedHARZip: %v", err)
 	}
-	if artifact.droppedEntries != 1 || artifact.omittedBodies != 0 {
-		t.Fatalf("artifact = dropped %d omitted %d, want the video host dropped and nothing omitted", artifact.droppedEntries, artifact.omittedBodies)
+	if artifact.hostFilter.dropped != 1 || artifact.omittedBodies != 0 {
+		t.Fatalf("artifact = dropped %d omitted %d, want the video host dropped and nothing omitted", artifact.hostFilter.dropped, artifact.omittedBodies)
 	}
 	if !strings.Contains(string(artifact.data), base64.StdEncoding.EncodeToString(page)) || strings.Contains(string(artifact.data), "clip.mp4") {
 		t.Fatalf("HAR = %.200s, want the page body and no video entry", artifact.data)

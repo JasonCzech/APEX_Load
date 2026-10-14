@@ -1896,3 +1896,46 @@ func TestMaskScriptSecretsPreservesOnlyKnownAgentforceSessionEndReason(t *testin
 		})
 	}
 }
+
+// RA-02: recorded browser steps carry CSS selectors as targets. Read as URLs,
+// "#react-external > … > h2" became a fragment to mask, and the credential
+// review offered each selector as a "Request target" secret.
+func TestBrowserLocatorTargetsAreNotSecretBindingRequirements(t *testing.T) {
+	const canary = "browser-navigate-canary-5d2e"
+	locators := []string{
+		"#react-external",
+		"#react-external > div > div > main > div > div:nth-of-type(1) > div:nth-of-type(2) > h2",
+		`a[aria-label="Learn more: Drive revenue growth with the #1 CRM"]`,
+	}
+	script := &dsl.Script{
+		Name: "Recorded browser", Version: "1", Protocol: "browser",
+		Actions: []dsl.Action{
+			{Name: "go", Type: "browser_navigate", Target: "https://www.example.test/start?access_token=" + canary},
+			{Name: "Hover react-external", Type: "browser_hover", Target: locators[0]},
+			{Name: "Hover Before you start", Type: "browser_hover", Target: locators[1]},
+			{Name: "Click Learn more", Type: "browser_click", Target: locators[2]},
+			{Name: "Switch to callback", Type: "browser_switch_window", Target: "https://app.example.test/callback?access_token=" + canary},
+		},
+	}
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	for index, want := range locators {
+		if got := masked.Actions[index+1].Target; got != want {
+			t.Errorf("projected locator %d = %q, want %q", index, got, want)
+		}
+	}
+	if strings.Contains(masked.Actions[0].Target, canary) {
+		t.Errorf("navigate target kept its access token: %q", masked.Actions[0].Target)
+	}
+	// A window switch to a URL is still masked as one.
+	if strings.Contains(masked.Actions[4].Target, canary) {
+		t.Errorf("switch_window URL target kept its access token: %q", masked.Actions[4].Target)
+	}
+	for _, requirement := range discoverSecretBindingRequirements(masked, 0) {
+		if requirement.Path != "/actions/0/target" && requirement.Path != "/actions/4/target" {
+			t.Errorf("requirement on %s (%s): a selector is not a secret", requirement.Path, requirement.Label)
+		}
+	}
+}

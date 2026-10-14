@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -215,5 +216,48 @@ func converterRequirementTestRequirement(id, sourcePath string) credentialpolicy
 			RequestKey: "Request", Field: "header_list", Index: 0,
 		}},
 		SourceValueStatus: credentialpolicy.SourceCredentialValueMissing,
+	}
+}
+
+// RA-15: a project secret the importer wrote into a request names that
+// request, so a telemetry beacon reads as one rather than as "Sample raw body
+// 1ee1a2332399 project secret".
+func TestReferencedImportSecretsAreNamedByTheirRequest(t *testing.T) {
+	const pathCredential = "path-credential-canary-7c41"
+	script := &dsl.Script{
+		Name: "Recorded HTTP", Version: "1", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://www.example.test"},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "har"}},
+		Actions: []dsl.Action{
+			{Name: "beacon", Type: "request", Method: "POST", Target: "https://telemetry.example.test/ctp?session=abc", Body: "{{secret.SAMPLE_RAW_BODY_1EE1A2332399}}"},
+			{Name: "beacon again", Type: "request", Method: "post", Target: "https://telemetry.example.test/v2/ctp", Body: "{{secret.SAMPLE_RAW_BODY_1EE1A2332399}}"},
+			{Name: "login", Type: "request", Method: "POST", Target: "/api/login", Headers: map[string]string{"Authorization": "Bearer {{secret.LOGIN_TOKEN}}"}},
+			{Name: "key", Type: "request", Method: "GET", Target: "/key", HeaderList: dsl.HeaderList{{Name: "X-API-Key", Value: "{{secret.API_KEY}}"}}},
+			{Name: "templated", Type: "request", Method: "PUT", Target: "{{env.API}}/v1/items/{{var.id}}?k=1", Body: "{{secret.TEMPLATED_BODY}}"},
+			// The path carries a credential the draft masks (the basic-auth
+			// password below); the label must not show it either.
+			{Name: "path secret", Type: "request", Method: "POST", Target: "/v1/key/" + pathCredential, Body: "{{secret.PATH_BODY}}"},
+		},
+	}
+	script.Config.HTTP.Auth = dsl.AuthConfig{Type: "basic", Username: "operator", Password: pathCredential}
+	merged := mergeReferencedImportCredentialRequirements([]*dsl.Script{script}, nil)
+	labels := map[string]string{}
+	for _, requirement := range merged {
+		labels[requirement.SuggestedName] = requirement.Label
+	}
+	if got, want := labels["SAMPLE_RAW_BODY_1EE1A2332399"], "Body of POST telemetry.example.test/ctp and 1 more request"; got != want {
+		t.Errorf("beacon label = %q, want %q", got, want)
+	}
+	if got, want := labels["LOGIN_TOKEN"], "Authorization header of POST www.example.test/api/login"; got != want {
+		t.Errorf("login label = %q, want %q", got, want)
+	}
+	if got, want := labels["API_KEY"], "X-API-Key header of GET www.example.test/key"; got != want {
+		t.Errorf("header list label = %q, want %q", got, want)
+	}
+	if got, want := labels["TEMPLATED_BODY"], "Body of PUT {{env.API}}/v1/items/{{var.id}}"; got != want {
+		t.Errorf("templated label = %q, want %q", got, want)
+	}
+	if got := labels["PATH_BODY"]; got == "" || strings.Contains(got, pathCredential) {
+		t.Errorf("path secret label = %q, want the masked path", got)
 	}
 }

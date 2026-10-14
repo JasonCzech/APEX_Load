@@ -1105,6 +1105,21 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				out[key] = projectJavaVuserApprovalEvidence(child)
 				continue
 			}
+			// A browser step's target is a URL only where the step navigates
+			// or matches responses. A locator or window title is not one: read
+			// as a URL, a CSS "#id" became a fragment to mask, and the review
+			// offered the selector as a secret.
+			if text, ok := child.(string); ok && key == "target" && !ctx.metadata && !ctx.opaqueMap {
+				actionType, _ := typed["type"].(string)
+				switch dsl.BrowserTargetValueKind(actionType, text) {
+				case dsl.BrowserTargetLocator:
+					out[key] = text
+					continue
+				case dsl.BrowserTargetScript:
+					out[key] = ctx.textMemo.scrubScriptText(text)
+					continue
+				}
+			}
 			if ctx.secretBindings {
 				if text, ok := child.(string); ok && isPortableSecretReference(text) {
 					out[key] = text

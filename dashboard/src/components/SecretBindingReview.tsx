@@ -1470,18 +1470,26 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     effectiveDestinationChoice(group, destinationChoices) === 'preserve'
   )).length
   const providerLabel = scopedStoreProvider.split(',').map(provider => ({ encrypted_database: 'Encrypted project store', environment_read_only: 'Environment bindings (read-only)' }[provider] || 'Project secret provider')).join(' · ') || 'Project secret store'
+  // Each group needs setup, is configured (or has a value entered), or keeps
+  // its imported value; the list leads with the groups that need setup. The
+  // order reads the group's proposed name and what the store says, never a
+  // name or value being typed, so a row does not move while it is filled in.
+  const groupState = (group: RequirementGroup, typed: boolean): 'setup' | 'ready' | 'preserved' => {
+    if (effectiveDestinationChoice(group, destinationChoices) === 'preserve') return 'preserved'
+    const name = (typed ? names[group.key] || '' : group.suggestedName).trim()
+    return scopedStatuses.get(name)?.configured === true || committedValueNamesSnapshot.names.has(name) || (typed && !!values[group.key])
+      ? 'ready'
+      : 'setup'
+  }
+  const groupStateOrder = { setup: 0, ready: 1, preserved: 2 } as const
   const filteredGroups = groups.filter(group => {
-    const preserved = effectiveDestinationChoice(group, destinationChoices) === 'preserve'
-    const name = (names[group.key] || '').trim()
-    const ready = !preserved && (scopedStatuses.get(name)?.configured === true || committedValueNamesSnapshot.names.has(name) || !!values[group.key])
-    if (credentialState === 'preserved' && !preserved) return false
-    if (credentialState === 'setup' && (preserved || ready)) return false
-    if (credentialState === 'ready' && !ready) return false
-    if (attentionOnly && effectiveDestinationChoice(group, destinationChoices) === 'preserve') return false
+    const state = groupState(group, true)
+    if (credentialState !== 'all' && credentialState !== state) return false
+    if (attentionOnly && state === 'preserved') return false
     const search = credentialSearch.trim().toLowerCase()
     return !search || group.requirements.some(requirement =>
       [requirement.label, requirement.context, requirement.path, requirement.script_name, names[group.key], ...(requirement.affected_paths || [])].some(value => value?.toLowerCase().includes(search)))
-  }).sort((left, right) => Number(effectiveDestinationChoice(left, destinationChoices) === 'preserve') - Number(effectiveDestinationChoice(right, destinationChoices) === 'preserve'))
+  }).sort((left, right) => groupStateOrder[groupState(left, false)] - groupStateOrder[groupState(right, false)])
   const credentialPageCount = Math.max(1, Math.ceil(filteredGroups.length / CREDENTIAL_GROUP_PAGE_SIZE))
   const safeCredentialPage = Math.min(credentialPage, credentialPageCount - 1)
   const credentialPageStart = safeCredentialPage * CREDENTIAL_GROUP_PAGE_SIZE
@@ -1540,8 +1548,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       {inlineEditing && <ImportCategoryHeading label="Credential handling" details={<p>Preserve a server-confirmed imported value or use a project-secret reference. Entered values are write-only; existing secret values are never revealed or overwritten here. Apply updates this draft in place. You can also leave a reference to configure later in Project Secrets.</p>} />}
       {inlineEditing && editing && <p role="status">Apply or cancel credential edits before saving or changing this import. New secret values stay private in this editor.</p>}
       <div className="credentials-card-summary" role="status">
-        <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
         <span>{prepared.configureLaterCount} {prepared.configureLaterCount === 1 ? 'binding needs' : 'bindings need'} setup</span>
+        <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
         <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} entered, not yet saved</span>
         <span>
           {scopedProbeState === 'loading'

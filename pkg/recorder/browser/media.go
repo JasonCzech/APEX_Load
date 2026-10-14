@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jasonczech/apexload/pkg/internal/hostpattern"
 )
 
 // thumbnailDataURL decodes a JPEG screenshot, downscales it to maxWidth using a
@@ -65,58 +67,94 @@ func isPrintableUTF8(s string) bool {
 	return true
 }
 
-// hostMatches reports whether host matches any of the substring patterns,
-// mirroring the proxy recorder's include/exclude semantics.
-func hostMatches(host string, patterns []string) bool {
-	host = strings.ToLower(host)
-	for _, p := range patterns {
-		p = strings.ToLower(strings.TrimSpace(p))
-		if p != "" && strings.Contains(host, p) {
-			return true
+// hostFilterResult says what a recording's host filters left out of its HAR.
+type hostFilterResult struct {
+	// applied is false when the HAR had no entries list to filter.
+	applied bool
+	dropped int
+	// notIncluded counts the entries no include host matched; excludedBy
+	// counts the entries each of excludeHosts left out, in the same order.
+	notIncluded  int
+	excludeHosts []string
+	excludedBy   []int
+}
+
+// summary says how many HAR entries each exclude host left out and which
+// matched nothing, so a mistyped or too-narrow entry shows after the stop.
+func (result hostFilterResult) summary() string {
+	var leftOut, unmatched []string
+	for index, host := range result.excludeHosts {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		if count := result.excludedBy[index]; count > 0 {
+			leftOut = append(leftOut, fmt.Sprintf("%s %d", host, count))
+		} else {
+			unmatched = append(unmatched, host)
 		}
 	}
-	return false
+	if result.notIncluded > 0 {
+		leftOut = append(leftOut, fmt.Sprintf("%d outside Include hosts", result.notIncluded))
+	}
+	var parts []string
+	if result.dropped > 0 {
+		noun := "entries"
+		if result.dropped == 1 {
+			noun = "entry"
+		}
+		parts = append(parts, fmt.Sprintf("Host filters left %d HAR %s out: %s.", result.dropped, noun, strings.Join(leftOut, ", ")))
+	}
+	if result.applied && len(unmatched) > 0 {
+		parts = append(parts, fmt.Sprintf("No request matched Exclude hosts %s.", strings.Join(unmatched, ", ")))
+	}
+	return strings.Join(parts, " ")
 }
 
 // filterHARByHost removes HAR log entries whose request host fails the
-// include/exclude host filters, returning the rewritten HAR and the number of
-// dropped entries. Unknown JSON shapes are left untouched.
-func filterHARByHost(data []byte, filters HARFilters) ([]byte, int, error) {
+// include/exclude host filters, returning the rewritten HAR and what was
+// left out. Unknown JSON shapes are left untouched.
+func filterHARByHost(data []byte, filters HARFilters) ([]byte, hostFilterResult, error) {
 	if filters.empty() {
-		return data, 0, nil
+		return data, hostFilterResult{}, nil
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, 0, fmt.Errorf("parse HAR: %w", err)
+		return nil, hostFilterResult{}, fmt.Errorf("parse HAR: %w", err)
 	}
-	dropped := filterHARDocumentByHost(doc, filters)
-	if dropped == 0 {
-		return data, 0, nil
+	result := filterHARDocumentByHost(doc, filters)
+	if result.dropped == 0 {
+		return data, result, nil
 	}
 	out, err := json.Marshal(doc)
 	if err != nil {
-		return nil, 0, fmt.Errorf("re-encode HAR: %w", err)
+		return nil, hostFilterResult{}, fmt.Errorf("re-encode HAR: %w", err)
 	}
-	return out, dropped, nil
+	return out, result, nil
 }
 
 // filterHARDocumentByHost removes a parsed HAR's log entries whose request
-// host fails the filters and returns how many it removed. Unknown JSON shapes
-// are left untouched.
-func filterHARDocumentByHost(doc map[string]any, filters HARFilters) int {
+// host fails the filters and says what it removed. A host entry matches that
+// host and its subdomains (see hostpattern.Match). Unknown JSON shapes are
+// left untouched.
+func filterHARDocumentByHost(doc map[string]any, filters HARFilters) hostFilterResult {
+	result := hostFilterResult{
+		excludeHosts: filters.ExcludeHosts,
+		excludedBy:   make([]int, len(filters.ExcludeHosts)),
+	}
 	if filters.empty() {
-		return 0
+		return result
 	}
 	log, ok := doc["log"].(map[string]any)
 	if !ok {
-		return 0
+		return result
 	}
 	entries, ok := log["entries"].([]any)
 	if !ok {
-		return 0
+		return result
 	}
+	result.applied = true
 	kept := make([]any, 0, len(entries))
-	dropped := 0
 	for _, raw := range entries {
 		entry, ok := raw.(map[string]any)
 		if !ok {
@@ -128,20 +166,22 @@ func filterHARDocumentByHost(doc map[string]any, filters HARFilters) int {
 			kept = append(kept, raw)
 			continue
 		}
-		if len(filters.IncludeHosts) > 0 && !hostMatches(host, filters.IncludeHosts) {
-			dropped++
+		if len(filters.IncludeHosts) > 0 && hostpattern.Index(host, filters.IncludeHosts) < 0 {
+			result.dropped++
+			result.notIncluded++
 			continue
 		}
-		if hostMatches(host, filters.ExcludeHosts) {
-			dropped++
+		if excluded := hostpattern.Index(host, filters.ExcludeHosts); excluded >= 0 {
+			result.dropped++
+			result.excludedBy[excluded]++
 			continue
 		}
 		kept = append(kept, raw)
 	}
-	if dropped > 0 {
+	if result.dropped > 0 {
 		log["entries"] = kept
 	}
-	return dropped
+	return result
 }
 
 func harEntryHost(entry map[string]any) string {
@@ -157,5 +197,6 @@ func harEntryHost(entry map[string]any) string {
 	if err != nil {
 		return ""
 	}
-	return parsed.Hostname()
+	// With its port, so an entry such as localhost:8080 can match.
+	return parsed.Host
 }

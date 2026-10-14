@@ -2150,10 +2150,10 @@ func readFileLimited(path string, limit int64) ([]byte, error) {
 // conversion: the entries the host filters keep, with their bodies embedded.
 type harArtifact struct {
 	data []byte
-	// droppedEntries were left out by the host filters; filterErr reports
+	// hostFilter is what the host filters left out; filterErr reports
 	// filters that could not be applied.
-	droppedEntries int
-	filterErr      error
+	hostFilter hostFilterResult
+	filterErr  error
 	// omittedBodies response bodies, omittedBytes of them encoded, were left
 	// out to keep the HAR under its size limit.
 	omittedBodies int
@@ -2165,8 +2165,8 @@ func (artifact harArtifact) warnings(limit int64) []string {
 	var warnings []string
 	if artifact.filterErr != nil {
 		warnings = append(warnings, fmt.Sprintf("HAR host filter skipped: %v", artifact.filterErr))
-	} else if artifact.droppedEntries > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d HAR entr(ies) dropped by host filters", artifact.droppedEntries))
+	} else if summary := artifact.hostFilter.summary(); summary != "" {
+		warnings = append(warnings, summary)
 	}
 	if artifact.omittedBodies > 0 {
 		warnings = append(warnings, fmt.Sprintf(
@@ -2190,10 +2190,10 @@ func readHARArtifact(path string, limit int64, filters HARFilters) (harArtifact,
 			return harArtifact{}, err
 		}
 		artifact := harArtifact{data: data}
-		if filtered, dropped, filterErr := filterHARByHost(data, filters); filterErr != nil {
+		if filtered, hostFilter, filterErr := filterHARByHost(data, filters); filterErr != nil {
 			artifact.filterErr = filterErr
 		} else {
-			artifact.data, artifact.droppedEntries = filtered, dropped
+			artifact.data, artifact.hostFilter = filtered, hostFilter
 		}
 		return artifact, nil
 	}
@@ -2262,7 +2262,7 @@ func readAttachedHARZip(path string, limit int64, filters HARFilters) (harArtifa
 	}
 	artifact := harArtifact{}
 	if root, ok := document.(map[string]any); ok {
-		artifact.droppedEntries = filterHARDocumentByHost(root, filters)
+		artifact.hostFilter = filterHARDocumentByHost(root, filters)
 	}
 
 	var attachments []harAttachment

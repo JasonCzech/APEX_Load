@@ -277,6 +277,37 @@ describe('SecretBindingReview', () => {
     expect(container.querySelector('button p')).toBeNull()
   })
 
+  it('leads with the groups that need setup and keeps a row in place while its value is typed', () => {
+    act(() => root.render(<SecretBindingReview requirements={[
+      { ...requirements[0], destination_value_preserved: true, value_group_id: 'preserved' },
+      requirements[1],
+    ]} onApply={vi.fn()} />))
+    expect(container.textContent?.indexOf('binding needs setup')).toBeLessThan(container.textContent?.indexOf('imported value preserved') ?? -1)
+    const rows = () => Array.from(container.querySelectorAll('.secret-binding-review-item')).map(row => row.textContent || '')
+    expect(rows()[0]).toContain('Refresh')
+    expect(rows()[1]).toContain('Create Order')
+    const value = container.querySelector<HTMLInputElement>('input[type="password"]')!
+    act(() => setInput(value, 'typed-value'))
+    expect(rows()[0]).toContain('Refresh')
+  })
+
+  it('keeps a row in place while its name is changed to a configured secret', async () => {
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true },
+      secrets: [{ name: 'CONFIGURED_TOKEN', configured: true, provider: 'database', writable: true }],
+    })
+    await act(async () => {
+      root.render(<SecretBindingReview projectId="project-1" requirements={requirements} onApply={vi.fn()} />)
+    })
+    await act(async () => Promise.resolve())
+    const rows = () => Array.from(container.querySelectorAll('.secret-binding-review-item')).map(row => row.textContent || '')
+    expect(rows()[0]).toContain('Create Order')
+    const nameInput = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(input => input.value === 'ORDER_API_TOKEN')!
+    act(() => setInput(nameInput, 'CONFIGURED_TOKEN'))
+    expect(rows()[0]).toContain('Create Order')
+  })
+
   it('groups only server-proven equal preserved values and keeps their controls collapsed', () => {
     const preserved = requirements.map((requirement, index) => ({ ...requirement, id:`equal-${index}`, affected_paths:[requirement.path], destination_value_preserved:true, value_group_id:'equal' }))
     const unknown = { ...preserved[0], id:'unverified', value_group_id:undefined }
@@ -2288,7 +2319,9 @@ describe('SecretBindingReview', () => {
     expect(container.textContent).toContain('Available from source')
     const migrationToggle = container.querySelector<HTMLInputElement>('.credentials-source-migration input')
     act(() => migrationToggle?.click())
-    const migratedRow = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))[2]
+    // Groups that need setup lead, so find the row by its name.
+    const migratedRow = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))
+      .find(row => row.textContent?.includes('MIGRATED_TOKEN') || Array.from(row.querySelectorAll('input')).some(input => input.value === 'MIGRATED_TOKEN'))!
     expect(migratedRow.querySelector('.script-health-token')?.textContent).toBe('Will be created')
     const valueInputs = container.querySelectorAll<HTMLInputElement>('input[type="password"]')
     act(() => setInput(valueInputs[0], 'manual-value'))

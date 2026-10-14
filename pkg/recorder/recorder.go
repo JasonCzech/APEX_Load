@@ -26,6 +26,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
+	"github.com/jasonczech/apexload/pkg/internal/hostpattern"
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
@@ -1399,23 +1400,13 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		return 0
 	}
 
-	if len(s.Filters.IncludeHosts) > 0 {
-		matched := false
-		for _, h := range s.Filters.IncludeHosts {
-			if strings.Contains(host, h) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return 0
-		}
+	// A host entry matches that host and its subdomains, as the browser
+	// recorder's HAR filters do.
+	if len(s.Filters.IncludeHosts) > 0 && hostpattern.Index(host, s.Filters.IncludeHosts) < 0 {
+		return 0
 	}
-
-	for _, h := range s.Filters.ExcludeHosts {
-		if strings.Contains(host, h) {
-			return 0
-		}
+	if hostpattern.Index(host, s.Filters.ExcludeHosts) >= 0 {
+		return 0
 	}
 	if len(s.Requests) >= maxRecordedRequests {
 		event = s.noteRequestDropLocked("request-count retention limit")

@@ -3331,7 +3331,7 @@ export default function RecordingStudio({
                     <div className="rec-label">
                       Exclude hosts{" "}
                       <span className="rec-hint">
-                        (comma-separated, HAR noise filter)
+                        (comma-separated; each also covers its subdomains)
                       </span>
                     </div>
                     <input
@@ -3842,7 +3842,7 @@ export default function RecordingStudio({
                   <label className="rec-label" htmlFor="rec-proxy-include-hosts">
                     Include hosts{" "}
                     <span className="rec-hint">
-                      (comma-separated, optional)
+                      (comma-separated, optional; each also covers its subdomains)
                     </span>
                   </label>
                   <input
@@ -3865,7 +3865,7 @@ export default function RecordingStudio({
                   <label className="rec-label" htmlFor="rec-proxy-exclude-hosts">
                     Exclude hosts{" "}
                     <span className="rec-hint">
-                      (comma-separated, optional)
+                      (comma-separated, optional; each also covers its subdomains)
                     </span>
                   </label>
                   <input

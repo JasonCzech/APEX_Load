@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1091,6 +1093,10 @@ func mergeReferencedImportCredentialRequirements(
 		if paths := importCredentialScriptSourcePaths(script); len(paths) > 0 {
 			sourcePath = paths[0]
 		}
+		// Labels name requests from the disclosure copy, so a label never shows
+		// more of a target than the reviewed draft does.
+		var maskedRaw any
+		maskedLoaded := false
 		for _, name := range names {
 			key := fmt.Sprintf("%d\x00%s", scriptIndex, name)
 			if _, exists := covered[key]; exists {
@@ -1100,7 +1106,8 @@ func mergeReferencedImportCredentialRequirements(
 			if err != nil {
 				continue
 			}
-			if len(findProtectedImportCredentialLocations(rawScript, reference)) == 0 {
+			locations := findProtectedImportCredentialLocations(rawScript, reference)
+			if len(locations) == 0 {
 				// Some runtime fields carry a bare logical name rather than a
 				// portable template. Their converter must provide a typed descriptor;
 				// do not invent a location that the binding endpoint cannot apply.
@@ -1108,7 +1115,15 @@ func mergeReferencedImportCredentialRequirements(
 			}
 			source := credentialpolicy.SourceRef{Format: sourceProfile, Path: sourcePath}
 			targets := []credentialpolicy.TargetRef{{RequestKey: script.Name, Field: "project_secret_reference"}}
-			label, purpose := generatedImportSecretPresentation(name, sourceProfile)
+			if !maskedLoaded {
+				maskedLoaded = true
+				if masked := maskScriptSecrets(script); masked != nil {
+					maskedRaw, _ = scriptAsJSONValue(masked)
+				}
+			}
+			label, purpose := generatedImportSecretPresentation(
+				name, sourceProfile, importSecretReferenceLocation(maskedRaw, locations),
+			)
 			merged = append(merged, credentialpolicy.Requirement{
 				ID:                credentialpolicy.StableID(source, targets, fmt.Sprintf("%s:%d", name, scriptIndex)),
 				Key:               name,
@@ -1167,13 +1182,140 @@ func scopeValueFreeImportCredentialRequirement(
 	return scoped
 }
 
-func generatedImportSecretPresentation(name, sourceProfile string) (string, string) {
+// importSecretReferenceLocation names the request a project secret reference
+// sits in, such as "Body of POST telemetry.example.test/ctp", and how many
+// other requests use it, so a reviewer can tell a third-party beacon from the
+// application's own login. It is empty when no location is in a request.
+func importSecretReferenceLocation(raw any, locations []protectedImportCredentialLocation) string {
+	first := ""
+	requests := make(map[string]struct{})
+	base := ""
+	if script, ok := raw.(map[string]any); ok {
+		if config, ok := script["config"].(map[string]any); ok {
+			base, _ = config["base_url"].(string)
+		}
+	}
+	for _, location := range locations {
+		request, field := importCredentialLocationRequest(raw, location.Path, base)
+		if request == "" {
+			continue
+		}
+		if first == "" {
+			first = field + " of " + request
+		}
+		requests[request] = struct{}{}
+	}
+	if first == "" {
+		return ""
+	}
+	switch others := len(requests) - 1; others {
+	case 0:
+		return first
+	case 1:
+		return first + " and 1 more request"
+	default:
+		return fmt.Sprintf("%s and %d more requests", first, others)
+	}
+}
+
+// importCredentialLocationRequest describes the HTTP request holding the
+// field at path, as its method, host and path ("POST
+// telemetry.example.test/ctp"), and names the field ("Body", "Authorization
+// header"). A relative target is read against base. Query strings stay out:
+// they often carry the very value.
+func importCredentialLocationRequest(raw any, path, base string) (string, string) {
+	tokens, err := splitJSONPointer(path)
+	if err != nil || len(tokens) == 0 {
+		return "", ""
+	}
+	var action map[string]any
+	fieldTokens := tokens
+	node := raw
+	for index, token := range tokens {
+		switch typed := node.(type) {
+		case map[string]any:
+			if _, hasTarget := typed["target"].(string); hasTarget {
+				action, fieldTokens = typed, tokens[index:]
+			}
+			node = typed[token]
+		case []any:
+			position, convErr := strconv.Atoi(token)
+			if convErr != nil || position < 0 || position >= len(typed) {
+				return "", ""
+			}
+			node = typed[position]
+		default:
+			return "", ""
+		}
+	}
+	// Only an HTTP request carries a method; a token-acquisition or other
+	// step with a target is not named as one.
+	method, _ := action["method"].(string)
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if action == nil || method == "" {
+		return "", ""
+	}
+	target, _ := action["target"].(string)
+	field := humanizeSecretLabel(fieldTokens[len(fieldTokens)-1])
+	switch {
+	case len(fieldTokens) >= 2 && strings.EqualFold(fieldTokens[len(fieldTokens)-2], "headers"):
+		field = fieldTokens[len(fieldTokens)-1] + " header"
+	case len(fieldTokens) >= 2 && strings.EqualFold(fieldTokens[0], "header_list"):
+		field = "Header"
+		if entries, ok := action["header_list"].([]any); ok {
+			if position, convErr := strconv.Atoi(fieldTokens[1]); convErr == nil && position >= 0 && position < len(entries) {
+				if entry, ok := entries[position].(map[string]any); ok {
+					if name, _ := entry["name"].(string); strings.TrimSpace(name) != "" {
+						field = strings.TrimSpace(name) + " header"
+					}
+				}
+			}
+		}
+	case strings.EqualFold(fieldTokens[0], "body") || strings.EqualFold(fieldTokens[0], "body_multipart"):
+		field = "Body"
+	case strings.EqualFold(fieldTokens[0], "target"):
+		field = "URL"
+	}
+	return method + " " + requestHostPath(target, base), field
+}
+
+// requestHostPath is a request target as host and path, without scheme or
+// query, resolved against base when it is relative. A templated target is
+// shown as written, since its host is only known at run time.
+func requestHostPath(target, base string) string {
+	target = strings.TrimSpace(target)
+	if end := strings.IndexAny(target, "?#"); end >= 0 {
+		target = target[:end]
+	}
+	if strings.Contains(target, "{{") {
+		return target
+	}
+	resolved, err := url.Parse(target)
+	if err == nil && resolved.Host == "" && strings.TrimSpace(base) != "" &&
+		!strings.Contains(base, "{{") {
+		if baseURL, baseErr := url.Parse(strings.TrimSpace(base)); baseErr == nil && baseURL.Host != "" {
+			resolved = baseURL.ResolveReference(resolved)
+		}
+	}
+	if err != nil || resolved.Host == "" {
+		return target
+	}
+	return resolved.Host + resolved.Path
+}
+
+// generatedImportSecretPresentation labels a project secret the import wrote
+// into the draft: by the request it sits in (where) when known, otherwise by
+// its name.
+func generatedImportSecretPresentation(name, sourceProfile, where string) (string, string) {
 	switch strings.ToUpper(strings.TrimSpace(name)) {
 	case "SALESFORCE_CLIENT_SECRET":
 		return "Salesforce client secret", "The Agentforce replay transform generated an OAuth token-acquisition step that uses project secret SALESFORCE_CLIENT_SECRET. Configure the Salesforce connected-app client secret before live replay."
 	default:
-		return humanizeSecretLabel(name) + " project secret",
-			fmt.Sprintf("The imported %s draft references project secret %s. Configure it before live replay.", sourceProfile, name)
+		label := humanizeSecretLabel(name) + " project secret"
+		if where != "" {
+			label = where
+		}
+		return label, fmt.Sprintf("The imported %s draft references project secret %s. Configure it before live replay.", sourceProfile, name)
 	}
 }
 

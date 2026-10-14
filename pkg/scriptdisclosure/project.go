@@ -63,6 +63,9 @@ type projectionContext struct {
 	scriptName          bool
 	extractor           bool
 	extractorList       bool
+	// browserTarget is set for a browser step's target that is a locator or
+	// script, which is never read as a URL.
+	browserTarget dsl.BrowserTargetKind
 }
 
 type projector struct {
@@ -281,6 +284,9 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				extractorList: ctx.action && normalized == "extractors",
 				scriptName:    depth == 0 && normalized == "name",
 			}
+			if ctx.action && !ctx.metadata {
+				childContext.browserTarget = nonURLBrowserTarget(typed, key)
+			}
 			if ctx.transactionParams && (key == "args" || key == "call_args") {
 				childContext.transactionFunction, _ = typed["function"].(string)
 			}
@@ -475,6 +481,12 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 	}
 	if isSensitiveKey(ctx.key) {
 		return projectSensitiveString(value)
+	}
+	switch ctx.browserTarget {
+	case dsl.BrowserTargetLocator:
+		return p.replaceKnown(value)
+	case dsl.BrowserTargetScript:
+		return p.replaceKnown(p.scrubText(value))
 	}
 	if isURLKey(ctx.key) {
 		return p.replaceKnown(projectURL(value))
@@ -1150,6 +1162,23 @@ func isSupportedPortableTemplate(value string) bool {
 		return err == nil && length > 0 && length <= dsl.MaxGeneratedParameterBytes
 	}
 	return false
+}
+
+// nonURLBrowserTarget says what the target under key holds when owner is a
+// browser step whose target is a locator or script rather than a URL: a CSS
+// "#id" is not a fragment. Anything else gives BrowserTargetNotBrowser.
+func nonURLBrowserTarget(owner map[string]any, key string) dsl.BrowserTargetKind {
+	if normalizeName(key) != "target" {
+		return dsl.BrowserTargetNotBrowser
+	}
+	actionType, _ := owner["type"].(string)
+	target, _ := owner[key].(string)
+	switch kind := dsl.BrowserTargetValueKind(actionType, target); kind {
+	case dsl.BrowserTargetLocator, dsl.BrowserTargetScript:
+		return kind
+	default:
+		return dsl.BrowserTargetNotBrowser
+	}
 }
 
 func isURLKey(key string) bool {

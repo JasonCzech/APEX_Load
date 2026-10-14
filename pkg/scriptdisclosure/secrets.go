@@ -139,7 +139,8 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 				default:
 					c.addNamedNode(key, child)
 				}
-			case isURLKey(key):
+			case isURLKey(key) && (ctx.metadata || ctx.untypedMap ||
+				nonURLBrowserTarget(typed, key) == dsl.BrowserTargetNotBrowser):
 				if text, ok := child.(string); ok {
 					c.collectURL(text)
 				}
