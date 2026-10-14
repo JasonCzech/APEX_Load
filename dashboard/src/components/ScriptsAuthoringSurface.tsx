@@ -39,6 +39,7 @@ export interface ScriptsAuthoringSurfaceProps {
   editingRetainedCreatedSecretNames?: string[]
   editingScript: ScriptDefinition | null
   editingActivity?: ObjectActivitySummary
+  editingWorkspace?: 'debug'
   projectId?: string
   // folderId is the destination folder for scripts saved from the authoring
   // surface. The server binds it on create and re-validates it when a review
@@ -128,6 +129,7 @@ function ScriptsAuthoringContent({
   editingRetainedJsonText,
   editingRetainedCreatedSecretNames,
   editingActivity,
+  editingWorkspace,
   draftInitiallyDirty,
   projectId,
   folderId,
@@ -229,7 +231,7 @@ function ScriptsAuthoringContent({
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
       // History opens from the editor's More menu; an archived script has no editor, so it keeps the panel.
-      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} /></>}</div>
+      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} initialWorkspace={editingWorkspace} /></>}</div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">

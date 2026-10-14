@@ -30,6 +30,8 @@ import { brunoSecretPresentation } from './brunoSecretPresentation';
 import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements';
 import { importFileLogicalPath } from '../importLogicalPath';
 import SharedAssetsDialog from './SharedAssetsDialog';
+import { scenarioDraftBuilderHash } from './importScenario';
+import { scenarioAuthoringDraftFromScripts } from './scenarioAuthoringDraft';
 import { useImportDestination } from './importDestinationContext';
 import './BrunoImport.css';
 interface Props {
@@ -570,6 +572,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     // reported at save, or as re-checked for that save when Secrets closed.
     // Null when unknown.
     const [rechecked, setRechecked] = useState<{ receipt: CommitBrunoImportResponse; names: string[] } | null>(null);
+    const [scenarioBusy, setScenarioBusy] = useState(false);
+    const [scenarioError, setScenarioError] = useState('');
     const secretsStillUnset = !committed
         ? null
         : rechecked?.receipt === committed ? rechecked.names : committed.unconfigured_secret_names ?? null;
@@ -1244,6 +1248,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             setMigrateSecrets(false);
             setPreparedSecrets(null);
             secretBindingsRef.current = {};
+            setScenarioError('');
             setCommitted(response);
             {
                 const updatedCount = response.updated_script_ids?.length ?? 0;
@@ -1302,6 +1307,35 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             const configured = new Set(response.secrets.filter(secret => secret.configured).map(secret => secret.name));
             setRechecked({ receipt, names: names.filter(name => !configured.has(name)) });
         }).catch(() => undefined);
+    };
+    // One scenario from the saved batch: a group per script, saved as a
+    // project draft and opened in the Scenario Builder to shape the load. A
+    // draft can hold scripts whose inputs are still missing, which a saved
+    // scenario refuses; the builder saves the scenario once they can run.
+    const createScenarioFromSaved = async () => {
+        if (!committed || !projectId || scenarioBusy)
+            return;
+        const scripts = committed.scripts.map(storedScriptFromDefinition);
+        const name = inspection?.result.collection.name || 'Imported Bruno collection';
+        setScenarioBusy(true);
+        setScenarioError('');
+        try {
+            const draft = await api.createScenarioDraft(projectId, { name, document: scenarioAuthoringDraftFromScripts(projectId, name, scripts) });
+            if (!mountedRef.current)
+                return;
+            window.location.hash = scenarioDraftBuilderHash(draft.id, projectId);
+        }
+        catch (cause) {
+            if (mountedRef.current) {
+                setScenarioError(cause instanceof ApiError && cause.status === 403
+                    ? 'Your role cannot create scenarios in this project. Ask a Project Administrator to create one from these scripts.'
+                    : getErrorMessage(cause, 'Unable to create the scenario.'));
+            }
+        }
+        finally {
+            if (mountedRef.current)
+                setScenarioBusy(false);
+        }
     };
     const handleProjectSecretsConfigured = useCallback((names: readonly string[]) => {
         if (names.length > 0)
@@ -1773,7 +1807,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
                   {!committed && (<section className="bruno-commit-bar">
                       <div>
-                        <p role="status">Before replay: {countLabel(readiness.secretsNotConfigured, 'secret')} not configured · {countLabel(readiness.inputsUnresolved, 'input')} unresolved · {countLabel(replayBlockingFindingCount, 'conversion repair')}.</p><p>Saving keeps this review open. Open a saved script in the Visual Editor to resolve remaining conversion requirements, then debug one iteration against a controlled target. Import More Files starts a new review.</p><strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
+                        <p role="status">Before replay: {countLabel(readiness.secretsNotConfigured, 'secret')} not configured · {countLabel(readiness.inputsUnresolved, 'input')} unresolved · {countLabel(replayBlockingFindingCount, 'conversion repair')}.</p><p>Saving keeps this review open. Then create a scenario from the saved scripts, or debug one iteration of a script against a controlled target; open a script in the Visual Editor to resolve remaining conversion requirements. Import More Files starts a new review.</p><strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
                         <span>{!nativeCreatesScripts && selectedNativeUpdates.length > 0
                         ? `Saving updates ${selectedNativeUpdates.length} existing script${selectedNativeUpdates.length === 1 ? '' : 's'} in place as a new version, atomically. No folder is used.`
                         : destinationFolderId
@@ -1851,7 +1885,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           {nativeSourceCandidate && (<BrunoNativeSourceDialog candidate={nativeSourceCandidate} importSessionId={inspection.import_session_id || ''} projectId={projectId || ''} loadSource={api.getBrunoImportSessionSource} onClose={() => setNativeSourceCandidateId(null)}/>)}
         </>)}
 
-      <ImportSaveConfirmation result={committed ? { scripts: committed.scripts.map(storedScriptFromDefinition) } : null} onImportMore={() => { selectFiles([]); fileInputRef.current?.click(); }} onOpen={saved => onImported?.(saved)} disabled={operationBusy}/>
+      <ImportSaveConfirmation result={committed ? { scripts: committed.scripts.map(storedScriptFromDefinition) } : null} onImportMore={() => { selectFiles([]); fileInputRef.current?.click(); }} onOpen={saved => onImported?.(saved)} disabled={operationBusy} onCreateScenario={projectId ? () => void createScenarioFromSaved() : undefined} scenarioBusy={scenarioBusy} scenarioError={scenarioError}/>
 
 
 

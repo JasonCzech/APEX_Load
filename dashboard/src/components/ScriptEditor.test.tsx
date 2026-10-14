@@ -1290,6 +1290,21 @@ describe('ScriptEditor', () => {
     expect(findButtonByText(container, 'Reset layout')).toBeTruthy()
   })
 
+  it('opens in Debug when asked to, as after Debug on an import', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptEditor initialScript={initialScript} projectId="project-1" initialWorkspace="debug" />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushReact()
+    const chips = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="topbar-contribution"] .script-mode-switcher .mode-chip'))
+    expect(chips.map(chip => chip.textContent?.trim())).toEqual(['Author', 'Debug'])
+    expect(chips[1]?.classList.contains('active')).toBe(true)
+  })
+
   it('publishes script identity and primary actions to the app topbar contribution', async () => {
     await act(async () => {
       root.render(

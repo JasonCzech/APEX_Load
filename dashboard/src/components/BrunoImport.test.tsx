@@ -25,6 +25,7 @@ const apiMock = {
   getProjectSecretStatuses: vi.fn(),
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
+  createScenarioDraft: vi.fn(),
   discardImportSecretSession: vi.fn(),
 }
 
@@ -2431,6 +2432,44 @@ describe('BrunoImport', () => {
     const unset = container.querySelector<HTMLElement>('.bruno-unset-secrets')
     expect(unset?.textContent).toContain('PARTNER_PASSWORD')
     expect(Array.from(unset?.querySelectorAll('button') || []).some(button => button.textContent === 'Open Secrets')).toBe(true)
+  })
+
+  it('creates one scenario draft from the saved scripts and opens it in the builder', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts[1].diagnostics = []
+    apiMock.createScenarioDraft.mockResolvedValueOnce({ id: 'draft-1', name: 'SOAP request', revision: 1 })
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" folderId="folder-1" />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create a scenario from these 2 scripts')
+    expect(create).toBeDefined()
+    await act(async () => {
+      create!.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledOnce()
+    const [projectId, draft] = apiMock.createScenarioDraft.mock.calls[0]
+    expect(projectId).toBe('project-1')
+    expect(draft.name).toBe('SOAP request')
+    expect(draft.document.form.groups.map((group: { script_id: string; vusers: number }) => [group.script_id, group.vusers])).toEqual([['planned-1', 1], ['planned-2', 1]])
+    expect(window.location.hash).toContain('draftId=draft-1')
+    // The link names the draft's project, which owns it.
+    expect(window.location.hash).toContain('projectId=project-1')
+    window.location.hash = ''
   })
 
   it('says project secrets need checking when a save could not report them', async () => {

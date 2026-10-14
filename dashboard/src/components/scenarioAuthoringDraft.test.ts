@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ScenarioFormState } from './TestHub'
-import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, migrateScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, migrateScenarioAuthoringDraft, parseScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, scenarioAuthoringDraftFromScripts, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
 const draft = (): ScenarioAuthoringDraft => ({ version: 3, projectId: 'project-a', savedAt: '2026-09-12T12:00:00Z', editingId: null, editingUpdatedAt: '', form: { name: '', duration: '', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: '', script_id: '', stages: [], vusers: 0, ramp_up: '', ramp_down: '', initialization: 'at_runtime' }] } as ScenarioFormState, source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: '', step: 'source', visited: 1 })
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 const flatMirrors = () => ({ runtime_pacing_type: '', runtime_ignore_think_time: false, runtime_log_level: '', runtime_auto_transactions: '', assignment_mode: 'auto', assignment_targets: [] as string[] })
@@ -139,4 +139,22 @@ it('round trips explicit live-table draft settings without reducing them to a re
  value.form.data_pools = [{ pool_id: '', alias: 'work', access_mode: 'live', selection_strategy: 'manual', live_options: { profile: 'native_queue', seed_policy: 'empty', columns: ['id'], durability: 'memory', end_mode: 'discard' } }]
  saveScenarioAuthoringDraft(value)
  expect(readScenarioAuthoringDraft('project-a')?.form.data_pools).toEqual(value.form.data_pools)
+})
+
+describe('a scenario draft built from imported scripts', () => {
+  it('opens in the builder at Model & Shape with one single-user group per script', () => {
+    const draft = scenarioAuthoringDraftFromScripts('project-a', 'Orders', [{ id: 's1', name: 'List orders' }, { id: 's2', name: 'Open cart' }])
+    // The builder refuses a project draft its parser does not accept.
+    const parsed = parseScenarioAuthoringDraft(JSON.parse(JSON.stringify(draft)), 'project-a')
+    expect(parsed).not.toBeNull()
+    expect(parsed!.step).toBe('source')
+    expect(parsed!.form.name).toBe('Orders')
+    expect(parsed!.form.groups.map(group => [group.name, group.script_id, group.vusers])).toEqual([['List orders', 's1', 1], ['Open cart', 's2', 1]])
+    expect(() => assertDraftHasNoInlineCredentials(draft.form)).not.toThrow()
+  })
+
+  it('names the groups of scripts that share a name apart, as the builder does', () => {
+    const draft = scenarioAuthoringDraftFromScripts('project-a', 'Users', [{ id: 's1', name: 'Get user' }, { id: 's2', name: 'Get user' }, { id: 's3', name: 'get user' }])
+    expect(draft.form.groups.map(group => group.name)).toEqual(['Get user', 'Get user (#2)', 'get user (#3)'])
+  })
 })

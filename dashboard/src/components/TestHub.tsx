@@ -90,6 +90,8 @@ import {
   seededScenarioRuntime,
   withAdaptedGoalBounds,
   withScenarioErrorHandlingFlag,
+  emptyScenarioForm,
+  emptyScenarioGroup,
 } from './scenarioFormModel'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllTestSummaries } from './testCatalogPagination'
@@ -123,6 +125,8 @@ interface Props {
   /** A scenario a link names, opened in the builder (at initialScenarioStep). */
   initialScenarioId?: string
   initialScenarioStep?: ScenarioWizardStep
+  /** A project scenario draft a link names, opened in the builder. */
+  initialScenarioDraftId?: string
   featurePolicySignal?: number
   onScriptWorkflowChange?: (active: boolean) => void
 }
@@ -230,33 +234,6 @@ function runSettingsTabId(item: { tab: RunSettingsTab; section?: ScenarioSetting
   return item.section ? `scenario-settings-${item.section}-tab` : `scenario-run-settings-${item.tab}-tab`
 }
 
-
-function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
-  return {
-    name: index === 0 ? '' : `Group ${index + 1}`,
-    script_id: scriptId,
-    vusers: DEFAULT_GROUP_VUSERS,
-    ramp_up: '',
-		ramp_down: '',
-		start_offset: '',
-    stages: [],
-    initialization: 'at_runtime',
-  }
-}
-
-function emptyScenarioForm(scriptId = ''): ScenarioFormState {
-  return {
-    name: '',
-    duration: '1m',
-    start_delay: '',
-    groups: [emptyScenarioGroup(scriptId)],
-    scenario_mode: 'vuser_driven',
-    script_shakeout: false,
-    resource_baseline: false,
-    // These are defaults for a new owned draft, not an edit-time replacement.
-    goal_config: { early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' } },
-  }
-}
 
 function mergeCloneWithScriptSelections(current: ScenarioFormState, cloned: ScenarioFormState): ScenarioFormState {
   const groups = cloned.groups.map((clonedGroup, index) => {
@@ -819,7 +796,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', initialScenarioId, initialScenarioStep, featurePolicySignal = 0 }: Props) {
+function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', initialScenarioId, initialScenarioStep, initialScenarioDraftId, featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -1946,6 +1923,28 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       }
     })
   }, [activeProjectId, effectiveAccessLoaded, initialScenarioId, initialScenarioStep])
+
+  // A link that names a project draft (an import's "Create a scenario") opens
+  // it once access is known, as a scenario link does, and leaves the library
+  // showing why when it cannot.
+  const openProjectDraftRef = useRef<(summary: ScenarioDraftSummary) => Promise<'opened' | 'failed' | 'skipped'>>(async () => 'skipped')
+  const openedDraftLinkRef = useRef('')
+  useEffect(() => {
+    if (!initialScenarioDraftId) {
+      openedDraftLinkRef.current = ''
+      return
+    }
+    if (!effectiveAccessLoaded || !activeProjectId) return
+    const key = `${activeProjectId}:${initialScenarioDraftId}`
+    if (openedDraftLinkRef.current === key) return
+    openedDraftLinkRef.current = key
+    void openProjectDraftRef.current({ id: initialScenarioDraftId, name: '' } as ScenarioDraftSummary).then(outcome => {
+      if (outcome === 'failed') {
+        setShowForm(false)
+        onScenarioViewChangeRef.current?.('library')
+      }
+    })
+  }, [activeProjectId, effectiveAccessLoaded, initialScenarioDraftId])
 
   const duplicateScenario = (scenario: StoredScenario) => {
     if (!canManageTests) {
@@ -3274,25 +3273,35 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       : openedName !== undefined ? `Opened the draft “${openedName}”. Save keeps it as a draft until it is complete, then saves it as a scenario.`
         : 'Resumed unsaved work from this browser. Validate the current scripts before configuring a run.')
   }
-  const openProjectDraft = async (summary: ScenarioDraftSummary) => {
+  // Opens a project draft in the builder; says whether it opened, failed (with
+  // the reason shown) or was set aside for something opened meanwhile.
+  const openProjectDraft = async (summary: ScenarioDraftSummary): Promise<'opened' | 'failed' | 'skipped'> => {
     const projectId = activeProjectId
-    if (!projectId || !canManageTests) return
+    if (!projectId) return 'skipped'
+    if (!canManageTests) {
+      setError('Current session can view scenarios but cannot create or edit them.')
+      return 'failed'
+    }
     const session = builderSessionRef.current
     const generation = ++openProjectDraftGenerationRef.current
     try {
       const stored = await api.getScenarioDraft(projectId, summary.id)
       // Something else was opened meanwhile.
-      if (currentProjectIdRef.current !== projectId || builderSessionRef.current !== session || openProjectDraftGenerationRef.current !== generation) return
+      if (currentProjectIdRef.current !== projectId || builderSessionRef.current !== session || openProjectDraftGenerationRef.current !== generation) return 'skipped'
       const draft = parseScenarioAuthoringDraft(stored.document, projectId)
       if (!draft) {
-        setError(`The draft “${summary.name}” cannot be opened by this version of the builder. Delete it, or open it where it was saved.`)
-        return
+        setError(`The draft “${stored.name || summary.name}” cannot be opened by this version of the builder. Delete it, or open it where it was saved.`)
+        return 'failed'
       }
       resumeDraftDocument(draft, { id: stored.id, revision: stored.revision }, stored.name)
+      return 'opened'
     } catch (cause) {
-      if (currentProjectIdRef.current === projectId) setError(getErrorMessage(cause, 'Unable to open the draft.'))
+      if (currentProjectIdRef.current !== projectId) return 'skipped'
+      setError(getErrorMessage(cause, 'Unable to open the draft.'))
+      return 'failed'
     }
   }
+  openProjectDraftRef.current = openProjectDraft
   const deleteProjectDraft = async (summary: ScenarioDraftSummary) => {
     const projectId = activeProjectId
     if (!projectId || !canManageTests) return

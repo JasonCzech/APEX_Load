@@ -45,6 +45,8 @@ export interface AuthoringState {
   editingRetainedCreatedSecretNames?: string[]
   editingScript: ScriptDefinition | null
   editingActivity?: ObjectActivitySummary
+  /** Opens the saved script's editor in Debug rather than Author. */
+  editingWorkspace?: 'debug'
   draftScript: ScriptDefinition | null
   draftInitiallyDirty: boolean
   draftEditorFocus: DraftEditorFocus | null
@@ -65,6 +67,8 @@ export interface ImportedSaveResult {
   stayInImportReview?: boolean
   /** Where the saved script's editor goes back to when it closes (the surface that saved it). */
   returnTarget?: AuthoringReturnTarget | null
+  /** Opens the first saved script in Debug, ready to debug one iteration. */
+  editorWorkspace?: 'debug'
 }
 
 interface UseScriptsAuthoringStateOptions {
@@ -122,7 +126,7 @@ interface ScriptsAuthoringStateModel {
   openCreateOptions: () => void
   openCreateOptionsWithNotice: (notice: string) => void
   handleEdit: (id: string) => Promise<void>
-  handleSavedScript: (script: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null) => void
+  handleSavedScript: (script: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null, workspace?: 'debug') => void
   handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
   returnToDraftSource: () => void
   startDraft: (factory: () => ScriptDefinition) => void
@@ -383,7 +387,7 @@ export function useScriptsAuthoringState({
   // active authoring surface through the initial-route effect below.
   const getScript = api.getScript
   const getScriptAuthoring = api.getScriptAuthoring
-  const handleEdit = useCallback(async (id: string, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null) => {
+  const handleEdit = useCallback(async (id: string, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null, workspace?: 'debug') => {
     const requestGeneration = ++editRequestGenerationRef.current
     const editReturnTarget = normalizeAuthoringReturnTarget(returnTarget)
     setAuthoringState(previous => previous.subView === 'edit'
@@ -391,6 +395,7 @@ export function useScriptsAuthoringState({
           subView: 'edit',
           editingId: id,
           editingScript: null,
+          editingWorkspace: workspace,
           draftScript: null,
           draftInitiallyDirty: false,
           draftEditorFocus: null,
@@ -414,6 +419,7 @@ export function useScriptsAuthoringState({
         editingRetainedNeedsReview: Boolean(retainedDraft),
         editingScript: res.script?.archived_at ? { ...authoring.projection.script, archived_at: res.script.archived_at } : authoring.projection.script,
         editingActivity: res.activity,
+        editingWorkspace: workspace,
         draftScript: null,
         draftInitiallyDirty: false,
         draftEditorFocus: null,
@@ -451,8 +457,8 @@ export function useScriptsAuthoringState({
   // the saved script opens. The return that follows the save in the same turn
   // (Save changes on the way back) leaves that load standing; a later Back or
   // Close returns to the source as usual and drops the load.
-  const reopenSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null) => {
-    void handleEdit(savedScript.id, notice, retainedDraft, retainedState, returnTarget)
+  const reopenSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null, workspace?: 'debug') => {
+    void handleEdit(savedScript.id, notice, retainedDraft, retainedState, returnTarget, workspace)
     const generation = editRequestGenerationRef.current
     savedScriptReopenRef.current = generation
     setTimeout(() => {
@@ -460,17 +466,17 @@ export function useScriptsAuthoringState({
     }, 0)
   }, [handleEdit])
 
-  const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null) => {
+  const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions, returnTarget?: AuthoringReturnTarget | null, workspace?: 'debug') => {
     // The saved script's editor closes where its draft would have; a reopen by
     // id (no projection in the response) keeps that too.
     const reopenReturnTarget = () => returnTarget !== undefined ? returnTarget : savedScriptReturnTarget(authoringStateRef.current, savedScript.id)
     let authoring: ScriptAuthoringBaseline
     try { authoring = baselineFromSavedScript(savedScript, savedScript.project_id) } catch {
-      reopenSavedScript(savedScript, notice, retainedDraft, retainedState, reopenReturnTarget())
+      reopenSavedScript(savedScript, notice, retainedDraft, retainedState, reopenReturnTarget(), workspace)
       return
     }
     if (!savedScript.script) {
-      reopenSavedScript(savedScript, notice, retainedDraft, retainedState, reopenReturnTarget())
+      reopenSavedScript(savedScript, notice, retainedDraft, retainedState, reopenReturnTarget(), workspace)
       return
     }
     invalidateEditRequest()
@@ -484,6 +490,7 @@ export function useScriptsAuthoringState({
       editingRetainedNeedsReview: false,
       editingScript: authoring.projection.script,
       editingActivity: savedScript.activity,
+      editingWorkspace: workspace,
       draftScript: null,
       draftInitiallyDirty: false,
       draftEditorFocus: null,

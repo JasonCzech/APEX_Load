@@ -721,6 +721,8 @@ interface Props {
   returnTarget?: { label: string; description?: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null
   /** Who created and last changed the stored script; History opens from the editor's More menu. */
   activity?: ObjectActivitySummary
+  /** Opens in this workspace instead of the route's or the last one used. */
+  initialWorkspace?: WorkbenchMode
 }
 
 function scriptHasAuthoredActions(script: ScriptData): boolean {
@@ -730,7 +732,7 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 const SAVED_SCRIPT_OPENING = 'This script was saved and is opening. Edits made after it was saved are not kept.'
 
-export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget, activity }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget, activity, initialWorkspace }: Props) {
   const [authorOverview, setAuthorOverview] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
@@ -1218,6 +1220,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 	  setHttpConversionError('')
 	}, [activeReplaySessionId, browserReplaySession, projectId, replayReport, script])
   const [workspaceTab, setWorkspaceTab] = useState<WorkbenchMode>(() => {
+    if (initialWorkspace) return initialWorkspace
     try {
       const route = new URLSearchParams(window.location.hash.split('?')[1] || '')
       if (route.get('workspace') === 'debug') return 'debug'

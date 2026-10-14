@@ -20,6 +20,7 @@ import {
   scenarioFormStateFromStoredScenario,
 } from './scenarioFormModel'
 import { applyEffectiveRuntimeSettingsToGroups, copyRuntimeSettingsForProtocol } from './runtimeSettingsApply'
+import { scenarioAuthoringDraftFromScripts } from './scenarioAuthoringDraft'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -4190,6 +4191,46 @@ describe('TestHub', () => {
     expect(container.textContent).toContain(message)
     expect(onScenarioViewChange).toHaveBeenCalledWith('library')
     expect(container.querySelector('.scenario-builder-mode')).toBeNull()
+  })
+
+  it('opens the project draft a link names, once access is known', async () => {
+    const document = scenarioAuthoringDraftFromScripts('project-1', 'Imported collection', [{ id: 'script-1', name: 'First request' }])
+    apiMock.getScenarioDraft.mockResolvedValueOnce({ id: 'linked-draft', project_id: 'project-1', name: 'Imported collection', revision: 1, created_at: '', updated_at: '', document })
+    const onScenarioViewChange = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioDraftId="linked-draft" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.getScenarioDraft).toHaveBeenCalledWith('project-1', 'linked-draft')
+    expect(container.textContent).toContain('Opened the draft “Imported collection”.')
+    expect(wizardStepButton('Model & shape')?.getAttribute('aria-current')).toBe('step')
+    // The same link is not reopened over the open draft on a re-render.
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioDraftId="linked-draft" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    expect(apiMock.getScenarioDraft).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a link to a draft that cannot be opened to the library, saying why', async () => {
+    apiMock.getScenarioDraft.mockRejectedValueOnce(new ApiError('scenario draft not found', 404))
+    const onScenarioViewChange = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioDraftId="gone-draft" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    await flushPromises()
+    expect(container.textContent).toContain('scenario draft not found')
+    expect(onScenarioViewChange).toHaveBeenCalledWith('library')
+    // The library shows, not an empty builder.
+    expect(container.querySelector('.scenario-wizard-step')).toBeNull()
+  })
+
+  it('tells a role that cannot edit why a draft link opened the library', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({ enabled: true, authenticated: true, resources: [{ id: 'tests_and_scenarios', name: 'Tests and Scenarios', description: '', operations: [{ id: 'manage_tests', label: 'Manage tests', allowed: false }] }] })
+    const onScenarioViewChange = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" initialScenarioDraftId="linked-draft" onScenarioViewChange={onScenarioViewChange} />))
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.getScenarioDraft).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Current session can view scenarios but cannot create or edit them.')
+    expect(onScenarioViewChange).toHaveBeenCalledWith('library')
+    expect(container.querySelector('.scenario-wizard-step')).toBeNull()
   })
 
   it('shows a goal-driven group\'s VUsers as sized automatically', async () => {

@@ -684,6 +684,14 @@ The review flow reports back a promotion status — `ready_for_validation`,
 together with the next action for each one. Map source values, confirm secret bindings,
 and save the reviewed draft.
 
+After a save, **Debug** opens the first saved script in Debug, ready to run one
+iteration against a controlled target. A Bruno collection's review also offers
+**Create a scenario from these scripts**: a project scenario draft with a group per
+saved script, each with one virtual user, opened in the Scenario Builder to shape the
+load. Save keeps it a draft until it is complete, with a load model chosen and every
+script ready, then saves it as a scenario. When many scripts were saved, each still
+opens from **Open a saved script in Visual Editor**.
+
 Coverage for the big legacy sources is documented and evidence-backed rather than
 claimed: see the [LoadRunner Coverage](LOADRUNNER_COVERAGE.md) reference (Web functions, Java `lr` functions, TruClient steps, Java Vuser imports) for exactly which
 functions convert, which are no-ops, and which are preserved for review.

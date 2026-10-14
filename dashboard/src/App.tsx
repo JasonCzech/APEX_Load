@@ -2462,10 +2462,11 @@ function AppShell({
 
   const handleScenarioViewChange = useCallback(
     (scenarioView: "library" | "builder" | "plans") => {
-      // A link that named a scenario has done its job once the builder opens
-      // it: replace that entry, so Back leaves rather than reopening it.
+      // A link that named a scenario or a draft has done its job once the
+      // builder opens it: replace that entry, so Back leaves rather than
+      // reopening it.
       const linked = viewRef.current;
-      if (linked.page === "tests" && linked.scenarioId) replaceRouteOnNextViewSync.current = true;
+      if (linked.page === "tests" && (linked.scenarioId || linked.scenarioDraftId)) replaceRouteOnNextViewSync.current = true;
       setView((current) => {
         if (current.page !== "tests") return current;
         const next: AppView =
@@ -3191,7 +3192,7 @@ function AppShell({
     // Scenario subviews share one editor instance. Re-keying on its own view
     // toggle loses the selected saved scenario and the save confirmation; a
     // link's scenario, once opened, leaves the address without re-keying it.
-    ...(view.page === "tests" ? { scenarioView: undefined, scenarioId: undefined, scenarioStep: undefined } : {}),
+    ...(view.page === "tests" ? { scenarioView: undefined, scenarioId: undefined, scenarioStep: undefined, scenarioDraftId: undefined } : {}),
     // Access subtabs share directory selections, filters, drafts, and issued keys.
     ...(view.page === "access" ? { accessView: undefined } : {}),
     // Report sections/lenses belong to the same run. Keep focus and population
@@ -3654,6 +3655,7 @@ function AppShell({
                   initialView={view.scenarioView}
                   initialScenarioId={view.scenarioId}
                   initialScenarioStep={view.scenarioStep}
+                  initialScenarioDraftId={view.scenarioDraftId}
                   testStatuses={testStatuses}
                   onSelectTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}
