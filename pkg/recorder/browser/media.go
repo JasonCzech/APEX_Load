@@ -89,13 +89,31 @@ func filterHARByHost(data []byte, filters HARFilters) ([]byte, int, error) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, 0, fmt.Errorf("parse HAR: %w", err)
 	}
+	dropped := filterHARDocumentByHost(doc, filters)
+	if dropped == 0 {
+		return data, 0, nil
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return nil, 0, fmt.Errorf("re-encode HAR: %w", err)
+	}
+	return out, dropped, nil
+}
+
+// filterHARDocumentByHost removes a parsed HAR's log entries whose request
+// host fails the filters and returns how many it removed. Unknown JSON shapes
+// are left untouched.
+func filterHARDocumentByHost(doc map[string]any, filters HARFilters) int {
+	if filters.empty() {
+		return 0
+	}
 	log, ok := doc["log"].(map[string]any)
 	if !ok {
-		return data, 0, nil
+		return 0
 	}
 	entries, ok := log["entries"].([]any)
 	if !ok {
-		return data, 0, nil
+		return 0
 	}
 	kept := make([]any, 0, len(entries))
 	dropped := 0
@@ -120,15 +138,10 @@ func filterHARByHost(data []byte, filters HARFilters) ([]byte, int, error) {
 		}
 		kept = append(kept, raw)
 	}
-	if dropped == 0 {
-		return data, 0, nil
+	if dropped > 0 {
+		log["entries"] = kept
 	}
-	log["entries"] = kept
-	out, err := json.Marshal(doc)
-	if err != nil {
-		return nil, 0, fmt.Errorf("re-encode HAR: %w", err)
-	}
-	return out, dropped, nil
+	return dropped
 }
 
 func harEntryHost(entry map[string]any) string {

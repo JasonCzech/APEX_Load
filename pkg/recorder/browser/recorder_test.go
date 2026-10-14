@@ -2,7 +2,9 @@ package browser
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -188,7 +190,7 @@ func TestShutdownOperationsDoNotStartAfterDeadline(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"log":{"entries":[]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := loadAndFilterHARUntil(path, maxBrowserHARBytes, HARFilters{}, time.Now().Add(-time.Millisecond)); err == nil || !strings.Contains(err.Error(), "deadline") {
+	if _, err := loadAndFilterHARUntil(path, maxBrowserHARBytes, HARFilters{}, time.Now().Add(-time.Millisecond)); err == nil || !strings.Contains(err.Error(), "deadline") {
 		t.Fatalf("expired HAR processing error = %v", err)
 	}
 }
@@ -256,10 +258,10 @@ func TestReadAttachedHARZipRejectsEntryFloodAndLongNames(t *testing.T) {
 	for index := 1; index <= maxAttachedHARZipEntries; index++ {
 		names = append(names, fmt.Sprintf("empty-%05d", index))
 	}
-	if _, err := readAttachedHARZip(writeArchive(t, names), maxBrowserHARBytes); err == nil || !strings.Contains(err.Error(), "entries") {
+	if _, err := readAttachedHARZip(writeArchive(t, names), maxBrowserHARBytes, HARFilters{}); err == nil || !strings.Contains(err.Error(), "entries") {
 		t.Fatalf("entry flood error = %v", err)
 	}
-	if _, err := readAttachedHARZip(writeArchive(t, []string{"har.har", strings.Repeat("x", maxAttachedHARZipNameBytes+1)}), maxBrowserHARBytes); err == nil || !strings.Contains(err.Error(), "name") {
+	if _, err := readAttachedHARZip(writeArchive(t, []string{"har.har", strings.Repeat("x", maxAttachedHARZipNameBytes+1)}), maxBrowserHARBytes, HARFilters{}); err == nil || !strings.Contains(err.Error(), "name") {
 		t.Fatalf("long-name error = %v", err)
 	}
 }
@@ -282,15 +284,162 @@ func TestReadHARArtifactRehydratesAttachedBodies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := readHARArtifact(path, 1<<20)
+	artifact, err := readHARArtifact(path, 1<<20, HARFilters{})
 	if err != nil {
 		t.Fatalf("readHARArtifact: %v", err)
 	}
+	data := artifact.data
 	if strings.Contains(string(data), `"_file"`) {
 		t.Fatalf("hydrated HAR retained detached reference: %s", data)
 	}
 	if !strings.Contains(string(data), `"encoding":"base64"`) || !strings.Contains(string(data), base64.StdEncoding.EncodeToString([]byte{0x00, 0xff, 0x01})) {
 		t.Fatalf("hydrated HAR did not embed binary body: %s", data)
+	}
+}
+
+// writeAttachedHAR writes a Playwright-style HAR archive: har.har plus the
+// attachment files its entries reference.
+func writeAttachedHAR(t *testing.T, entries []map[string]any, attachments map[string][]byte) string {
+	t.Helper()
+	document, err := json.Marshal(map[string]any{"log": map[string]any{"entries": entries}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "capture.har.zip")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	harEntry, _ := writer.Create("har.har")
+	_, _ = harEntry.Write(document)
+	names := make([]string, 0, len(attachments))
+	for name := range attachments {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		entry, _ := writer.Create(name)
+		_, _ = entry.Write(attachments[name])
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func attachedHAREntry(method, url, mimeType, file string) map[string]any {
+	return map[string]any{
+		"request":  map[string]any{"method": method, "url": url, "headers": []any{}},
+		"response": map[string]any{"status": 200, "headers": []any{}, "content": map[string]any{"mimeType": mimeType, "_file": file}},
+	}
+}
+
+// Host filters apply before bodies are embedded, so an excluded host's
+// bodies never count toward the HAR limit.
+func TestReadAttachedHARZipFiltersHostsBeforeEmbedding(t *testing.T) {
+	page := bytes.Repeat([]byte("<p>page</p>"), 100)
+	path := writeAttachedHAR(t, []map[string]any{
+		attachedHAREntry("GET", "https://app.example.test/", "text/html", "resources/page.html"),
+		attachedHAREntry("GET", "https://video.cdn.example.test/clip.mp4", "video/mp4", "resources/clip.mp4"),
+	}, map[string][]byte{"resources/page.html": page, "resources/clip.mp4": make([]byte, 600<<10)})
+	const limit = 200 << 10
+
+	artifact, err := readAttachedHARZip(path, limit, HARFilters{ExcludeHosts: []string{"video.cdn"}})
+	if err != nil {
+		t.Fatalf("readAttachedHARZip: %v", err)
+	}
+	if artifact.droppedEntries != 1 || artifact.omittedBodies != 0 {
+		t.Fatalf("artifact = dropped %d omitted %d, want the video host dropped and nothing omitted", artifact.droppedEntries, artifact.omittedBodies)
+	}
+	if !strings.Contains(string(artifact.data), base64.StdEncoding.EncodeToString(page)) || strings.Contains(string(artifact.data), "clip.mp4") {
+		t.Fatalf("HAR = %.200s, want the page body and no video entry", artifact.data)
+	}
+}
+
+// A HAR past its limit keeps every entry and request body and leaves out
+// response bodies, non-text and largest first, saying why.
+func TestReadAttachedHARZipLeavesOutResponseBodiesPastTheLimit(t *testing.T) {
+	request := bytes.Repeat([]byte(`{"q":"order"}`), 4<<10)
+	page := bytes.Repeat([]byte("<p>page</p>"), 9<<10)
+	image := make([]byte, 300<<10)
+	post := attachedHAREntry("POST", "https://app.example.test/api", "application/json", "resources/reply.json")
+	post["request"].(map[string]any)["postData"] = map[string]any{"mimeType": "application/json", "_file": "resources/request.json"}
+	path := writeAttachedHAR(t, []map[string]any{
+		post,
+		attachedHAREntry("GET", "https://app.example.test/logo.png", "image/png", "resources/logo.png"),
+		attachedHAREntry("GET", "https://app.example.test/page", "text/html; charset=utf-8", "resources/page.html"),
+	}, map[string][]byte{
+		"resources/request.json": request,
+		"resources/reply.json":   []byte(`{"ok":true}`),
+		"resources/logo.png":     image,
+		"resources/page.html":    page,
+	})
+	const limit = 250 << 10
+
+	artifact, err := readAttachedHARZip(path, limit, HARFilters{})
+	if err != nil {
+		t.Fatalf("readAttachedHARZip: %v", err)
+	}
+	if artifact.omittedBodies != 1 || artifact.omittedBytes != int64(base64.StdEncoding.EncodedLen(len(image))) || int64(len(artifact.data)) > limit {
+		t.Fatalf("artifact = omitted %d (%d bytes), %d bytes in all; want only the image left out, under %d", artifact.omittedBodies, artifact.omittedBytes, len(artifact.data), limit)
+	}
+	var document struct {
+		Log struct {
+			Entries []struct {
+				Request struct {
+					PostData map[string]any `json:"postData"`
+				} `json:"request"`
+				Response struct {
+					Content map[string]any `json:"content"`
+				} `json:"response"`
+			} `json:"entries"`
+		} `json:"log"`
+	}
+	if err := json.Unmarshal(artifact.data, &document); err != nil || len(document.Log.Entries) != 3 {
+		t.Fatalf("HAR entries = %d (%v), want all 3", len(document.Log.Entries), err)
+	}
+	entries := document.Log.Entries
+	if entries[0].Request.PostData["text"] != base64.StdEncoding.EncodeToString(request) || entries[0].Response.Content["text"] == nil {
+		t.Fatalf("POST entry = %v / %v, want its request and response bodies", entries[0].Request.PostData, entries[0].Response.Content)
+	}
+	if logo := entries[1].Response.Content; logo["text"] != nil || logo["_file"] != nil || !strings.Contains(fmt.Sprint(logo["comment"]), "left out") {
+		t.Fatalf("image content = %v, want its body left out with a comment", logo)
+	}
+	if entries[2].Response.Content["text"] != base64.StdEncoding.EncodeToString(page) {
+		t.Fatal("page body was not kept")
+	}
+	if warnings := artifact.warnings(limit); len(warnings) != 1 || !strings.Contains(warnings[0], "left out 1 response bod") {
+		t.Fatalf("warnings = %v, want the omission reported", warnings)
+	}
+
+	// A request body is what replay sends: past the limit, the HAR fails
+	// rather than leave it out.
+	if _, err := readAttachedHARZip(path, 40<<10, HARFilters{}); err == nil || !strings.Contains(err.Error(), "exceed") {
+		t.Fatalf("request body past the limit: error = %v, want a size error", err)
+	}
+}
+
+// Playwright stores identical bodies once, but the kept HAR embeds a copy in
+// every entry, so each copy counts toward the limit.
+func TestReadAttachedHARZipCountsEveryCopyOfASharedBody(t *testing.T) {
+	shared := bytes.Repeat([]byte(`{"items":[1,2,3]}`), 3<<10)
+	path := writeAttachedHAR(t, []map[string]any{
+		attachedHAREntry("GET", "https://app.example.test/a", "application/json", "resources/shared.json"),
+		attachedHAREntry("GET", "https://app.example.test/b", "application/json", "resources/shared.json"),
+	}, map[string][]byte{"resources/shared.json": shared})
+	encoded := base64.StdEncoding.EncodeToString(shared)
+
+	both, err := readAttachedHARZip(path, 2*int64(len(encoded))+(8<<10), HARFilters{})
+	if err != nil || both.omittedBodies != 0 || strings.Count(string(both.data), encoded) != 2 {
+		t.Fatalf("roomy limit: omitted %d, copies %d (%v); want the body in both entries", both.omittedBodies, strings.Count(string(both.data), encoded), err)
+	}
+	one, err := readAttachedHARZip(path, int64(len(encoded))+(8<<10), HARFilters{})
+	if err != nil || one.omittedBodies != 1 || strings.Count(string(one.data), encoded) != 1 {
+		t.Fatalf("one-copy limit: omitted %d, copies %d (%v); want one copy kept and one left out", one.omittedBodies, strings.Count(string(one.data), encoded), err)
 	}
 }
 

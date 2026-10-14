@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -147,6 +148,12 @@ type Recorder struct {
 	sidebarPush chan struct{}
 }
 
+// maxBrowserHARCaptureBytes bounds Playwright's raw HAR capture on disk. It
+// is larger than maxBrowserHARBytes, the HAR a recording keeps: the capture
+// still holds excluded hosts' bodies, which filtering removes, and hydration
+// reads only the bodies that fit the kept HAR.
+const maxBrowserHARCaptureBytes = 4 * maxBrowserHARBytes
+
 const (
 	maxBrowserHARBytes          = 100 << 20
 	maxBrowserPages             = 32
@@ -179,9 +186,12 @@ const (
 	maxBrowserStopDuration      = 10 * time.Second
 	maxBrowserOperationDuration = 2 * time.Second
 	maxBrowserHARFlushDuration  = 3 * time.Second
-	maxAttachedHARZipEntries    = 4_096
-	maxAttachedHARZipNameBytes  = 1 << 10
-	maxAttachedHARCentralBytes  = 4 << 20
+	// Playwright stores one attachment per distinct body, so a long
+	// recording holds tens of thousands; the central directory bound keeps
+	// opening the archive cheap.
+	maxAttachedHARZipEntries   = 32_768
+	maxAttachedHARZipNameBytes = 1 << 10
+	maxAttachedHARCentralBytes = 8 << 20
 )
 
 // controlNoncePlaceholder is the literal in capture.js that newControlNonce's
@@ -1439,7 +1449,7 @@ func (r *Recorder) Stop() (*Session, error) {
 				r.mu.Unlock()
 			}
 		} else {
-			exceeded, flushErr := policeHARFlushUntil(r.harCapturePath, maxBrowserHARBytes, func() error {
+			exceeded, flushErr := policeHARFlushUntil(r.harCapturePath, maxBrowserHARCaptureBytes, func() error {
 				return context.Close()
 			}, func() {
 				r.closeBrowserAsync()
@@ -1447,7 +1457,7 @@ func (r *Recorder) Stop() (*Session, error) {
 			if exceeded {
 				r.mu.Lock()
 				r.harLimitExceeded = true
-				r.appendWarningLocked(fmt.Sprintf("side-car HAR exceeded %d bytes during final flush and was discarded", maxBrowserHARBytes))
+				r.appendWarningLocked(fmt.Sprintf("side-car HAR capture exceeded %d bytes during final flush and was discarded", maxBrowserHARCaptureBytes))
 				r.mu.Unlock()
 			}
 			if flushErr != nil {
@@ -1493,16 +1503,14 @@ func (r *Recorder) Stop() (*Session, error) {
 		if r.harLimitExceeded {
 			_ = os.Remove(r.harCapturePath)
 		} else {
-			data, dropped, filterErr, err := loadAndFilterHARUntil(r.harCapturePath, maxBrowserHARBytes, r.opts.HARFilters, stopDeadline)
+			artifact, err := loadAndFilterHARUntil(r.harCapturePath, maxBrowserHARBytes, r.opts.HARFilters, stopDeadline)
 			if err != nil {
 				r.appendWarningLocked(fmt.Sprintf("side-car HAR unavailable: %v", err))
 			} else {
-				if filterErr != nil {
-					r.appendWarningLocked(fmt.Sprintf("HAR host filter skipped: %v", filterErr))
-				} else if dropped > 0 {
-					r.appendWarningLocked(fmt.Sprintf(
-						"%d HAR entr(ies) dropped by host filters", dropped))
+				for _, warning := range artifact.warnings(maxBrowserHARBytes) {
+					r.appendWarningLocked(warning)
 				}
+				data := artifact.data
 				r.session.HAR = data
 				if !r.harTemp && r.session.HARPath != r.harCapturePath {
 					path := r.session.HARPath
@@ -1525,42 +1533,31 @@ func (r *Recorder) Stop() (*Session, error) {
 }
 
 type harShutdownLoadResult struct {
-	data      []byte
-	dropped   int
-	filterErr error
-	err       error
+	artifact harArtifact
+	err      error
 }
 
-func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadline time.Time) ([]byte, int, error, error) {
+func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadline time.Time) (harArtifact, error) {
 	if !deadline.After(time.Now()) {
-		return nil, 0, nil, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
+		return harArtifact{}, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
 	}
 	done := make(chan harShutdownLoadResult, 1)
 	go func() {
-		data, err := readHARArtifact(path, limit)
-		result := harShutdownLoadResult{data: data, err: err}
-		if err == nil && !filters.empty() {
-			filtered, dropped, filterErr := filterHARByHost(data, filters)
-			result.filterErr = filterErr
-			if filterErr == nil {
-				result.data = filtered
-				result.dropped = dropped
-			}
-		}
-		if result.err == nil && result.filterErr == nil {
+		artifact, err := readHARArtifact(path, limit, filters)
+		if err == nil && artifact.filterErr == nil {
 			// Each entry names the browser as its version's source; import
 			// treats that as description only.
-			if tagged, tagErr := protocol.TagBrowserHARHTTPVersions(result.data, protocol.HARProvenanceBrowser); tagErr == nil {
-				result.data = tagged
+			if tagged, tagErr := protocol.TagBrowserHARHTTPVersions(artifact.data, protocol.HARProvenanceBrowser); tagErr == nil {
+				artifact.data = tagged
 			}
 		}
-		done <- result
+		done <- harShutdownLoadResult{artifact: artifact, err: err}
 	}()
 	select {
 	case result := <-done:
-		return result.data, result.dropped, result.filterErr, result.err
+		return result.artifact, result.err
 	case <-time.After(durationUntil(deadline, maxBrowserStopDuration)):
-		return nil, 0, nil, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
+		return harArtifact{}, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
 	}
 }
 
@@ -2042,41 +2039,103 @@ func readFileLimited(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-func readHARArtifact(path string, limit int64) ([]byte, error) {
+// harArtifact is a recording's side-car HAR as kept for export and
+// conversion: the entries the host filters keep, with their bodies embedded.
+type harArtifact struct {
+	data []byte
+	// droppedEntries were left out by the host filters; filterErr reports
+	// filters that could not be applied.
+	droppedEntries int
+	filterErr      error
+	// omittedBodies response bodies, omittedBytes of them encoded, were left
+	// out to keep the HAR under its size limit.
+	omittedBodies int
+	omittedBytes  int64
+}
+
+// warnings say what the side-car HAR left out.
+func (artifact harArtifact) warnings(limit int64) []string {
+	var warnings []string
+	if artifact.filterErr != nil {
+		warnings = append(warnings, fmt.Sprintf("HAR host filter skipped: %v", artifact.filterErr))
+	} else if artifact.droppedEntries > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d HAR entr(ies) dropped by host filters", artifact.droppedEntries))
+	}
+	if artifact.omittedBodies > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"the side-car HAR kept every request but left out %d response bod(ies) (%.1f MB) to stay under its %d MB limit; checks and correlations cannot use those responses. Exclude media or third-party hosts to keep them",
+			artifact.omittedBodies, float64(artifact.omittedBytes)/(1<<20), limit>>20))
+	}
+	return warnings
+}
+
+func readHARArtifact(path string, limit int64, filters HARFilters) (harArtifact, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return harArtifact{}, err
 	}
 	header := make([]byte, 4)
 	_, readErr := io.ReadFull(file, header)
 	_ = file.Close()
 	if readErr != nil || string(header[:2]) != "PK" {
-		return readFileLimited(path, limit)
+		data, err := readFileLimited(path, limit)
+		if err != nil {
+			return harArtifact{}, err
+		}
+		artifact := harArtifact{data: data}
+		if filtered, dropped, filterErr := filterHARByHost(data, filters); filterErr != nil {
+			artifact.filterErr = filterErr
+		} else {
+			artifact.data, artifact.droppedEntries = filtered, dropped
+		}
+		return artifact, nil
 	}
-	return readAttachedHARZip(path, limit)
+	return readAttachedHARZip(path, limit, filters)
 }
 
-func readAttachedHARZip(path string, limit int64) ([]byte, error) {
-	if err := validateAttachedHARZipStructure(path, limit); err != nil {
-		return nil, err
+// harAttachmentOverheadBytes bounds what embedding one attachment adds to the
+// HAR beyond its encoded body: the "text", "encoding" or "comment" fields that
+// replace its "_file" reference.
+const harAttachmentOverheadBytes = 128
+
+// harAttachment is one "_file" reference in a Playwright HAR.
+type harAttachment struct {
+	holder      map[string]any
+	name        string
+	rawName     string
+	encodedSize int64
+	// responseBody marks a response's content, which may be left out; any
+	// other attachment, such as a request body, is part of what replay sends.
+	responseBody bool
+	textLike     bool
+}
+
+// readAttachedHARZip reads a Playwright HAR archive and embeds its attached
+// bodies. Host filters apply first, so the entries they drop cost nothing.
+// When the bodies still exceed limit, the HAR keeps every entry and leaves
+// out response bodies, largest and non-text first, each with a comment
+// saying why.
+func readAttachedHARZip(path string, limit int64, filters HARFilters) (harArtifact, error) {
+	if err := validateAttachedHARZipStructure(path); err != nil {
+		return harArtifact{}, err
 	}
 	archive, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, err
+		return harArtifact{}, err
 	}
 	defer archive.Close()
 	if len(archive.File) > maxAttachedHARZipEntries {
-		return nil, fmt.Errorf("attached HAR archive exceeds %d entries", maxAttachedHARZipEntries)
+		return harArtifact{}, fmt.Errorf("attached HAR archive exceeds %d entries", maxAttachedHARZipEntries)
 	}
 	files := make(map[string]*zip.File, len(archive.File))
 	var harFile *zip.File
 	for _, file := range archive.File {
 		if len(file.Name) > maxAttachedHARZipNameBytes {
-			return nil, fmt.Errorf("attached HAR archive entry name exceeds %d bytes", maxAttachedHARZipNameBytes)
+			return harArtifact{}, fmt.Errorf("attached HAR archive entry name exceeds %d bytes", maxAttachedHARZipNameBytes)
 		}
 		name := strings.TrimPrefix(filepath.ToSlash(file.Name), "./")
 		if _, duplicate := files[name]; duplicate {
-			return nil, fmt.Errorf("attached HAR archive contains duplicate entry %q", name)
+			return harArtifact{}, fmt.Errorf("attached HAR archive contains duplicate entry %q", name)
 		}
 		files[name] = file
 		if name == "har.har" || (harFile == nil && strings.HasSuffix(strings.ToLower(name), ".har")) {
@@ -2084,23 +2143,24 @@ func readAttachedHARZip(path string, limit int64) ([]byte, error) {
 		}
 	}
 	if harFile == nil {
-		return nil, fmt.Errorf("attached HAR archive does not contain a HAR document")
+		return harArtifact{}, fmt.Errorf("attached HAR archive does not contain a HAR document")
 	}
 	harData, err := readHARZipEntry(harFile, limit)
 	if err != nil {
-		return nil, err
+		return harArtifact{}, err
 	}
 	var document any
 	if err := json.Unmarshal(harData, &document); err != nil {
-		return nil, fmt.Errorf("decode attached HAR document: %w", err)
+		return harArtifact{}, fmt.Errorf("decode attached HAR document: %w", err)
 	}
-	remaining := limit - int64(len(harData))
-	if remaining < 0 {
-		return nil, fmt.Errorf("HAR document exceeds maximum of %d bytes", limit)
+	artifact := harArtifact{}
+	if root, ok := document.(map[string]any); ok {
+		artifact.droppedEntries = filterHARDocumentByHost(root, filters)
 	}
-	encodedCache := make(map[string]string)
-	var hydrate func(any) error
-	hydrate = func(value any) error {
+
+	var attachments []harAttachment
+	var collect func(value any, key, parentKey string) error
+	collect = func(value any, key, parentKey string) error {
 		switch typed := value.(type) {
 		case map[string]any:
 			if rawName, ok := typed["_file"].(string); ok && strings.TrimSpace(rawName) != "" {
@@ -2109,54 +2169,126 @@ func readAttachedHARZip(path string, limit int64) ([]byte, error) {
 				if entry == nil {
 					return fmt.Errorf("HAR attachment %q is missing", rawName)
 				}
-				encoded, cached := encodedCache[name]
-				if !cached {
-					content, readErr := readHARZipEntry(entry, limit)
-					if readErr != nil {
-						return fmt.Errorf("read HAR attachment %q: %w", rawName, readErr)
-					}
-					encoded = base64.StdEncoding.EncodeToString(content)
-					encodedCache[name] = encoded
-				}
-				if int64(len(encoded)) > remaining {
-					return fmt.Errorf("HAR attachments exceed maximum of %d bytes", limit)
-				}
-				remaining -= int64(len(encoded))
-				typed["text"] = encoded
-				typed["encoding"] = "base64"
-				delete(typed, "_file")
+				mimeType, _ := typed["mimeType"].(string)
+				attachments = append(attachments, harAttachment{
+					holder:       typed,
+					name:         name,
+					rawName:      rawName,
+					encodedSize:  harEncodedSize(entry.UncompressedSize64),
+					responseBody: key == "content" && parentKey == "response",
+					textLike:     harTextMIMEType(mimeType),
+				})
 			}
-			for _, child := range typed {
-				if err := hydrate(child); err != nil {
+			keys := make([]string, 0, len(typed))
+			for childKey := range typed {
+				keys = append(keys, childKey)
+			}
+			sort.Strings(keys)
+			for _, childKey := range keys {
+				if err := collect(typed[childKey], childKey, key); err != nil {
 					return err
 				}
 			}
 		case []any:
 			for _, child := range typed {
-				if err := hydrate(child); err != nil {
+				if err := collect(child, key, parentKey); err != nil {
 					return err
 				}
 			}
 		}
 		return nil
 	}
-	if err := hydrate(document); err != nil {
-		return nil, err
+	if err := collect(document, "", ""); err != nil {
+		return harArtifact{}, err
+	}
+	base, err := json.Marshal(document)
+	if err != nil {
+		return harArtifact{}, err
+	}
+	remaining := limit - int64(len(base)) - int64(len(attachments))*harAttachmentOverheadBytes
+	if remaining < 0 {
+		return harArtifact{}, fmt.Errorf("HAR document exceeds maximum of %d bytes", limit)
+	}
+	// Bodies replay needs come first, then text responses, smallest first,
+	// so a limit reached leaves out the fewest, least useful bodies.
+	sort.SliceStable(attachments, func(i, j int) bool {
+		if attachments[i].responseBody != attachments[j].responseBody {
+			return !attachments[i].responseBody
+		}
+		if attachments[i].textLike != attachments[j].textLike {
+			return attachments[i].textLike
+		}
+		return attachments[i].encodedSize < attachments[j].encodedSize
+	})
+	encodedCache := make(map[string]string)
+	for _, attachment := range attachments {
+		encoded, cached := encodedCache[attachment.name]
+		if !cached && attachment.encodedSize <= remaining {
+			content, readErr := readHARZipEntry(files[attachment.name], limit)
+			if readErr != nil {
+				return harArtifact{}, fmt.Errorf("read HAR attachment %q: %w", attachment.rawName, readErr)
+			}
+			encoded = base64.StdEncoding.EncodeToString(content)
+			encodedCache[attachment.name] = encoded
+			cached = true
+		}
+		if !cached || int64(len(encoded)) > remaining {
+			if !attachment.responseBody {
+				return harArtifact{}, fmt.Errorf("HAR attachments exceed maximum of %d bytes", limit)
+			}
+			delete(attachment.holder, "_file")
+			attachment.holder["comment"] = fmt.Sprintf("response body left out to keep the recording HAR under %d MB", limit>>20)
+			artifact.omittedBodies++
+			artifact.omittedBytes += attachment.encodedSize
+			continue
+		}
+		remaining -= int64(len(encoded))
+		attachment.holder["text"] = encoded
+		attachment.holder["encoding"] = "base64"
+		delete(attachment.holder, "_file")
 	}
 	data, err := json.Marshal(document)
 	if err != nil {
-		return nil, err
+		return harArtifact{}, err
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("hydrated HAR exceeds maximum of %d bytes", limit)
+		return harArtifact{}, fmt.Errorf("hydrated HAR exceeds maximum of %d bytes", limit)
 	}
-	return data, nil
+	artifact.data = data
+	return artifact, nil
 }
 
-func validateAttachedHARZipStructure(path string, limit int64) error {
-	if limit <= 0 || limit > maxBrowserHARBytes {
-		limit = maxBrowserHARBytes
+// harEncodedSize is the base64 size of an attachment of size bytes, as the
+// archive declares it.
+func harEncodedSize(size uint64) int64 {
+	return int64((min(size, 1<<60) + 2) / 3 * 4)
+}
+
+// harTextMIMEType reports a response type that checks and correlation read:
+// markup, scripts, JSON, XML, forms and plain text.
+func harTextMIMEType(mimeType string) bool {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	if mediaType, _, found := strings.Cut(mimeType, ";"); found {
+		mimeType = strings.TrimSpace(mediaType)
 	}
+	switch {
+	case strings.HasPrefix(mimeType, "text/"):
+		return true
+	case strings.HasSuffix(mimeType, "+json"), strings.HasSuffix(mimeType, "+xml"):
+		return true
+	}
+	switch mimeType {
+	case "application/json", "application/javascript", "application/x-javascript", "application/ecmascript",
+		"application/xml", "application/xhtml+xml", "application/x-www-form-urlencoded", "application/graphql":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateAttachedHARZipStructure checks a raw HAR capture's ZIP structure
+// before it is opened; the capture may be up to maxBrowserHARCaptureBytes.
+func validateAttachedHARZipStructure(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -2169,8 +2301,8 @@ func validateAttachedHARZipStructure(path string, limit int64) error {
 	if info.Size() < 22 {
 		return fmt.Errorf("attached HAR archive is truncated")
 	}
-	if limit > 0 && info.Size() > limit {
-		return fmt.Errorf("attached HAR archive is %d bytes; maximum is %d", info.Size(), limit)
+	if info.Size() > maxBrowserHARCaptureBytes {
+		return fmt.Errorf("attached HAR archive is %d bytes; maximum is %d", info.Size(), maxBrowserHARCaptureBytes)
 	}
 	tailSize := min(info.Size(), int64(22+0xffff))
 	tail := make([]byte, tailSize)
@@ -2276,7 +2408,7 @@ func (r *Recorder) monitorHARSize(path string, context playwright.BrowserContext
 			return
 		case <-ticker.C:
 			info, err := os.Stat(path)
-			if err != nil || info.Size() <= maxBrowserHARBytes {
+			if err != nil || info.Size() <= maxBrowserHARCaptureBytes {
 				continue
 			}
 			r.mu.Lock()
@@ -2286,9 +2418,9 @@ func (r *Recorder) monitorHARSize(path string, context playwright.BrowserContext
 			}
 			r.context = nil
 			r.harLimitExceeded = true
-			r.appendWarningLocked(fmt.Sprintf("recording stopped because HAR exceeded %d bytes", maxBrowserHARBytes))
+			r.appendWarningLocked(fmt.Sprintf("recording stopped because the HAR capture exceeded %d bytes", maxBrowserHARCaptureBytes))
 			r.mu.Unlock()
-			_, _ = policeHARFlush(path, maxBrowserHARBytes, func() error {
+			_, _ = policeHARFlush(path, maxBrowserHARCaptureBytes, func() error {
 				return context.Close()
 			}, func() {
 				r.mu.Lock()
