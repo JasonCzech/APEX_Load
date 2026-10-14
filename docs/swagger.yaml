@@ -557,6 +557,13 @@ components:
           description: Native candidate ID to requested script name.
           additionalProperties:
             type: string
+        parameterization_selections:
+          type: object
+          description: Native candidate ID to the IDs of that candidate's parameterization suggestions to apply, such as a trace or message ID generated each iteration.
+          additionalProperties:
+            type: array
+            items:
+              type: string
         project_id:
           type: string
         secret_bindings:
@@ -862,6 +869,10 @@ components:
           type: array
           items:
             type: string
+        parameterization:
+          type: object
+          description: This request's shared parameter suggestions (generated values and data parameters), as the other importers report them. Select IDs through parameterization_selections on commit.
+          additionalProperties: true
         planned_script_id:
           type: string
         script:
@@ -241093,6 +241104,10 @@ paths:
                         order:
                           type: integer
                           format: int64
+                        protocols:
+                          type: array
+                          items:
+                            type: string
                         title:
                           type: string
                         visible:

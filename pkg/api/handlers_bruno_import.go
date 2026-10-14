@@ -137,11 +137,15 @@ type brunoCommitRequest struct {
 	// SharedValues maps a shared-value candidate ID to the operator's value.
 	// Bruno artifacts never leave the server, so the values are applied here at
 	// commit rather than through the generic shared-values apply endpoint.
-	SharedValues           map[string]string `json:"shared_values,omitempty"`
-	ConflictResolutions    map[string]string `json:"conflict_resolutions,omitempty"`
-	CandidateIDs           []string          `json:"candidate_ids,omitempty"`
-	NameOverrides          map[string]string `json:"name_overrides,omitempty"`
-	AcknowledgedFindingIDs []string          `json:"acknowledged_finding_ids,omitempty"`
+	SharedValues map[string]string `json:"shared_values,omitempty"`
+	// ParameterizationSelections maps a native candidate ID to the parameter
+	// suggestions (generated values, data parameters) from that candidate's
+	// inspection to apply. IDs repeat across candidates, so they are scoped.
+	ParameterizationSelections map[string][]string `json:"parameterization_selections,omitempty"`
+	ConflictResolutions        map[string]string   `json:"conflict_resolutions,omitempty"`
+	CandidateIDs               []string            `json:"candidate_ids,omitempty"`
+	NameOverrides              map[string]string   `json:"name_overrides,omitempty"`
+	AcknowledgedFindingIDs     []string            `json:"acknowledged_finding_ids,omitempty"`
 	// UpdateTargets maps a native candidate ID to the script an earlier import
 	// created from the same request. That script is updated as a new version
 	// instead of creating a duplicate.
@@ -610,6 +614,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		// structural (name, path, field) and never carry a value, so masking a
 		// credential cannot shift them.
 		sharedValues = buildImportSharedValues(brunoNativeCandidateScripts(responseResult))
+		// From the same masked projection, so the suggestion IDs are the ones
+		// the commit re-derives.
+		for index := range responseResult.Scripts {
+			responseResult.Scripts[index].Parameterization = brunoNativeCandidateParameterization(responseResult.Scripts[index].Script)
+		}
 	}
 	result.RawArchive = nil
 	result.SanitizedArchive = nil
@@ -862,6 +871,48 @@ func brunoNativeCandidateScripts(result *brunoconvert.Result) []*dsl.Script {
 	return scripts
 }
 
+// brunoNativeCandidateParameterization is the review copy of one request's
+// parameter suggestions, derived from its masked script as the commit
+// re-derives them. Nil when there is nothing to suggest.
+func brunoNativeCandidateParameterization(script *dsl.Script) *paramize.Result {
+	if script == nil {
+		return nil
+	}
+	result := sanitizeImportParameterization(buildTrustedImportParameterization(cloneScriptDefinition(script)))
+	if len(result.Suggestions) == 0 {
+		return nil
+	}
+	return result
+}
+
+var errBrunoNativeParameterizationStale = errors.New("native Bruno parameter suggestions are stale")
+
+// brunoNativeParameterizationPlan is one request's selected suggestions,
+// derived again from its masked inspection script.
+type brunoNativeParameterizationPlan struct {
+	suggestions []paramize.Suggestion
+	selected    map[string]bool
+}
+
+func planBrunoNativeParameterization(projected *dsl.Script, ids []string) (brunoNativeParameterizationPlan, error) {
+	if projected == nil {
+		return brunoNativeParameterizationPlan{}, errBrunoNativeParameterizationStale
+	}
+	trusted := buildTrustedImportParameterization(cloneScriptDefinition(projected))
+	available := make(map[string]bool, len(trusted.Suggestions))
+	for _, suggestion := range trusted.Suggestions {
+		available[suggestion.ID] = true
+	}
+	selected := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if !available[id] {
+			return brunoNativeParameterizationPlan{}, errBrunoNativeParameterizationStale
+		}
+		selected[id] = true
+	}
+	return brunoNativeParameterizationPlan{suggestions: trusted.Suggestions, selected: selected}, nil
+}
+
 func setBrunoDestinationPreservationEvidence(
 	requirement *brunoconvert.SecretRequirement,
 	sourceValueRetained bool,
@@ -1046,7 +1097,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		"project_id": {}, "import_session_id": {}, "mode": {}, "folder_id": {},
 		"candidate_ids": {}, "name_overrides": {}, "secret_bindings": {},
 		"migrate_secrets": {}, "acknowledged_finding_ids": {}, "shared_values": {},
-		"update_targets": {}, "header_repairs": {},
+		"update_targets": {}, "header_repairs": {}, "parameterization_selections": {},
 	}
 	var incompatible []string
 	for field := range fields {
@@ -1382,6 +1433,19 @@ func (s *Server) handleCommitBrunoNativeImport(
 		expectedUpdatedAt = append(expectedUpdatedAt, expected)
 	}
 
+	// The masked inspection the browser reviewed. Shared values and parameter
+	// suggestions re-derive their IDs from it.
+	var inspectionProjection *brunoconvert.Result
+	projectInspection := func() (*brunoconvert.Result, error) {
+		if inspectionProjection == nil {
+			projection, err := publicBrunoNativeInspectResult(session.Result)
+			if err != nil {
+				return nil, err
+			}
+			inspectionProjection = projection
+		}
+		return inspectionProjection, nil
+	}
 	// Collection-wide values are applied across the whole selected batch before
 	// anything is canonicalized or persisted: one value can touch every script,
 	// so a per-script pass would leave the batch inconsistent.
@@ -1390,7 +1454,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		// server-owned locations onto the selected batch. Re-detecting only the
 		// subset changes location-based IDs and can discard repeated literals
 		// whose other occurrences were deselected.
-		projection, projectionErr := publicBrunoNativeInspectResult(session.Result)
+		projection, projectionErr := projectInspection()
 		if projectionErr != nil {
 			writeError(w, http.StatusInternalServerError, "unable to project inspected Bruno values")
 			return
@@ -1436,6 +1500,44 @@ func (s *Server) handleCommitBrunoNativeImport(
 				})
 				return
 			}
+		}
+	}
+
+	// Parameter selections are checked here and applied after credentials are
+	// bound: a credential target names exact character positions in the
+	// inspected script, which a replacement earlier in the field would move.
+	parameterizationPlans := make(map[int]brunoNativeParameterizationPlan, len(request.ParameterizationSelections))
+	if len(request.ParameterizationSelections) > 0 {
+		projection, projectionErr := projectInspection()
+		if projectionErr != nil {
+			writeError(w, http.StatusInternalServerError, "unable to project inspected Bruno requests")
+			return
+		}
+		projected := make(map[string]*dsl.Script, len(projection.Scripts))
+		for _, candidate := range projection.Scripts {
+			projected[candidate.CandidateID] = candidate.Script
+		}
+		selectedIndex := make(map[string]int, len(candidateIDs))
+		for index, candidateID := range candidateIDs {
+			selectedIndex[candidateID] = index
+		}
+		selectionCandidates := make([]string, 0, len(request.ParameterizationSelections))
+		for candidateID := range request.ParameterizationSelections {
+			selectionCandidates = append(selectionCandidates, candidateID)
+		}
+		sort.Strings(selectionCandidates)
+		for _, candidateID := range selectionCandidates {
+			index, ok := selectedIndex[candidateID]
+			if !ok {
+				writeError(w, http.StatusBadRequest, "parameterization_selections names a request that is not being saved")
+				return
+			}
+			plan, planErr := planBrunoNativeParameterization(projected[candidateID], request.ParameterizationSelections[candidateID])
+			if planErr != nil {
+				writeError(w, http.StatusConflict, "selected Bruno parameter suggestions are stale or unavailable; inspect the source again")
+				return
+			}
+			parameterizationPlans[index] = plan
 		}
 	}
 
@@ -1492,6 +1594,27 @@ func (s *Server) handleCommitBrunoNativeImport(
 				})
 				return
 			}
+		}
+		if plan, planned := parameterizationPlans[index]; planned {
+			applied, _, applyErr := paramize.ApplySuggestions(bound, plan.suggestions, plan.selected)
+			if applyErr != nil {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":        "failed to apply Bruno parameter suggestions: " + applyErr.Error(),
+					"code":         "bruno_native_parameterization_failed",
+					"candidate_id": candidateIDs[index],
+				})
+				return
+			}
+			if issues := dsl.ValidateScriptIssues(applied); len(issues) > 0 {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":        "native Bruno script validation failed after applying parameter suggestions",
+					"code":         "bruno_native_script_validation_failed",
+					"candidate_id": candidateIDs[index],
+					"issues":       issues,
+				})
+				return
+			}
+			bound = applied
 		}
 		safeScript, persistErr := preparePersistentBrunoNativeScript(bound)
 		if persistErr != nil {
@@ -1920,13 +2043,17 @@ func (s *Server) brunoHeaderSecretsAwaitValue(r *http.Request, projectID, value 
 var errBrunoNativeUpdateTargetStale = errors.New("native Bruno update target is stale")
 
 // brunoNativeReceiptUpdatedScriptIDs returns, in receipt order, the scripts a
-// replayed batch updated rather than created. A V3 receipt's digest covers
-// update_targets, so a matching replay names exactly the batch's updates.
-// Earlier profiles could not update scripts.
+// replayed batch updated rather than created. A V3 or later receipt's digest
+// covers update_targets, so a matching replay names exactly the batch's
+// updates. Earlier profiles could not update scripts.
 func brunoNativeReceiptUpdatedScriptIDs(receipt *storage.BrunoNativeImportCommitResult, replay brunoCommitRequest) []string {
 	updated := []string{}
-	if receipt == nil || receipt.Batch == nil ||
-		strings.TrimSpace(receipt.Batch.RequestDigestProfile) != storage.ImportBatchDigestBrunoNativeCommitV3 {
+	if receipt == nil || receipt.Batch == nil {
+		return updated
+	}
+	switch strings.TrimSpace(receipt.Batch.RequestDigestProfile) {
+	case storage.ImportBatchDigestBrunoNativeCommitV3, storage.ImportBatchDigestBrunoNativeCommitV4:
+	default:
 		return updated
 	}
 	targets := make(map[string]struct{}, len(replay.UpdateTargets))
@@ -2525,6 +2652,35 @@ func normalizeBrunoNativeCommitRequest(request *brunoCommitRequest) error {
 		targets[candidateID] = target
 	}
 	request.UpdateTargets = targets
+	selections := make(map[string][]string, len(request.ParameterizationSelections))
+	for rawCandidateID, rawIDs := range request.ParameterizationSelections {
+		candidateID := strings.TrimSpace(rawCandidateID)
+		if candidateID == "" {
+			return errors.New("parameterization_selections cannot contain an empty candidate id")
+		}
+		if _, duplicate := selections[candidateID]; duplicate {
+			return fmt.Errorf("parameterization_selections contains keys that normalize to the same value %q", candidateID)
+		}
+		ids := make([]string, 0, len(rawIDs))
+		seen := make(map[string]struct{}, len(rawIDs))
+		for _, rawID := range rawIDs {
+			id := strings.TrimSpace(rawID)
+			if id == "" {
+				return fmt.Errorf("parameterization selections for %q contain an empty id", candidateID)
+			}
+			if _, duplicate := seen[id]; duplicate {
+				return fmt.Errorf("parameterization selections for %q contain duplicate id %q", candidateID, id)
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+		// A candidate with nothing selected is the same request as one left out.
+		if len(ids) > 0 {
+			sort.Strings(ids)
+			selections[candidateID] = ids
+		}
+	}
+	request.ParameterizationSelections = selections
 	return nil
 }
 
@@ -2752,7 +2908,7 @@ func brunoNativeOverridesMatchReceipt(
 
 // brunoNativeCommitCurrentDigestProfile is the profile new receipts are written
 // under. Replays must use the profile recorded on the receipt instead.
-const brunoNativeCommitCurrentDigestProfile = storage.ImportBatchDigestBrunoNativeCommitV3
+const brunoNativeCommitCurrentDigestProfile = storage.ImportBatchDigestBrunoNativeCommitV4
 
 func brunoNativeCommitRequestSHA(request brunoCommitRequest) (string, error) {
 	return brunoNativeCommitRequestSHAForProfile(brunoNativeCommitCurrentDigestProfile, request)
@@ -2766,6 +2922,8 @@ func brunoNativeCommitRequestSHAForProfile(profile string, request brunoCommitRe
 		return brunoNativeCommitRequestSHAV2(request)
 	case storage.ImportBatchDigestBrunoNativeCommitV3:
 		return brunoNativeCommitRequestSHAV3(request)
+	case storage.ImportBatchDigestBrunoNativeCommitV4:
+		return brunoNativeCommitRequestSHAV4(request)
 	default:
 		return "", fmt.Errorf("unsupported Bruno native commit request digest profile %q", profile)
 	}
@@ -2954,6 +3112,39 @@ func brunoNativeCommitRequestSHAV3(request brunoCommitRequest) (string, error) {
 		AcknowledgedFindingIDs: acknowledged,
 		CandidateIDsOmitted:    request.candidateIDsOmitted,
 		NameOverridesOmitted:   request.nameOverridesOmitted,
+	})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", sum[:]), nil
+}
+
+// brunoNativeCommitRequestSHAV4 is immutable once receipts exist. It hashes
+// the V3 digest together with parameterization_selections, so V3 stays as
+// frozen and the selections are covered.
+func brunoNativeCommitRequestSHAV4(request brunoCommitRequest) (string, error) {
+	v3, err := brunoNativeCommitRequestSHAV3(request)
+	if err != nil {
+		return "", err
+	}
+	selections := make(map[string][]string, len(request.ParameterizationSelections))
+	for candidateID, ids := range request.ParameterizationSelections {
+		if len(ids) == 0 {
+			continue
+		}
+		sorted := append([]string(nil), ids...)
+		sort.Strings(sorted)
+		selections[strings.TrimSpace(candidateID)] = sorted
+	}
+	payload, err := json.Marshal(struct {
+		Profile                    string              `json:"profile"`
+		V3RequestSHA256            string              `json:"v3_request_sha256"`
+		ParameterizationSelections map[string][]string `json:"parameterization_selections"`
+	}{
+		Profile:                    storage.ImportBatchDigestBrunoNativeCommitV4,
+		V3RequestSHA256:            v3,
+		ParameterizationSelections: selections,
 	})
 	if err != nil {
 		return "", err

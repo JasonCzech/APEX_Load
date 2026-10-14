@@ -2278,6 +2278,52 @@ describe('BrunoImport', () => {
     expect(payload.header_repairs).toEqual({ 'finding-cookie': 'trim' })
     expect(payload.acknowledged_finding_ids).toEqual([])
   })
+  it('generates recorded IDs and time stamps each iteration unless a row is unchecked', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts[1].diagnostics = []
+    const suggestion = (id: string, ruleId: string, varName: string, rationale: string, autoApply = true) => ({
+      id, kind: 'generated', var_name: varName, replacement: `{{var.${varName}}}`, confidence: autoApply ? 0.85 : 0.6,
+      rule_id: ruleId, rationale, auto_apply: autoApply, high_risk: false,
+    })
+    const trace = 'The idp-trace-id header sends the same recorded hex identifier every time. Generate a new random hex value of the same length each iteration.'
+    const stamp = 'The dateTimeStamp body field sends the same recorded time every time. Generate the current time in the same format each iteration.'
+    const session = 'The idpctx-session-id header sends the same recorded UUID every time. Generate a new UUID each iteration. Leave it if the target expects this exact value, such as a conversation, account or session it already holds.'
+    inspection.result.scripts.forEach((candidate, index) => {
+      ;(candidate as Record<string, unknown>).parameterization = {
+        suggestions: [
+          suggestion(`pz_trace_${index}`, 'generated.hex', 'idp_trace_id', trace),
+          suggestion(`pz_span_${index}`, 'generated.hex', 'idp_trace_id_2', trace),
+          suggestion(`pz_stamp_${index}`, 'generated.timestamp', 'datetimestamp', stamp),
+          ...(index === 0 ? [suggestion('pz_session_0', 'generated.uuid', 'idpctx_session_id', session, false)] : []),
+        ],
+        summary: { total: 0, by_kind: {}, auto_apply_count: 0, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      }
+    })
+    await renderAndInspect(inspection, 'folder-1')
+
+    const panel = container.querySelector('.bruno-generated-values')!
+    expect(panel.textContent).toContain('Generated values')
+    const rows = Array.from(panel.querySelectorAll('li'))
+    // One row per field across both requests; the session row waits for review.
+    expect(rows.map(row => [row.querySelector('span')?.textContent, row.querySelector<HTMLInputElement>('input')?.checked, row.querySelector('small')?.textContent])).toEqual([
+      [stamp, true, '2 selected APIs'],
+      [trace, true, '2 selected APIs'],
+      [session, false, '1 selected API · Not checked: confirm the target does not expect this exact value'],
+    ])
+    await act(async () => rows[0].querySelector<HTMLInputElement>('input')?.click())
+
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const payload = apiMock.commitBrunoImport.mock.calls[0][0]
+    expect(payload.parameterization_selections).toEqual({
+      [inspection.result.scripts[0].candidate_id]: ['pz_trace_0', 'pz_span_0'],
+      [inspection.result.scripts[1].candidate_id]: ['pz_trace_1', 'pz_span_1'],
+    })
+  })
+
   it('puts a left-out header back or leaves it out without an acknowledgement', async () => {
     const inspection = nativeInspectionFixture()
     inspection.result.scripts[1].diagnostics = [{

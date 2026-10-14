@@ -1084,3 +1084,8 @@
 .bruno-native-table td { overflow-wrap: anywhere; }
 .bruno-native-table td > small { white-space: normal; overflow: visible; }
 .bruno-native-table-wrap:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.bruno-generated-list { list-style: none; padding: 0; margin: 0; }
+.bruno-generated-list li { display: flex; flex-direction: column; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.bruno-generated-list label { display: flex; gap: 10px; align-items: flex-start; }
+.bruno-generated-list input { margin-top: 3px; flex: none; }
+.bruno-generated-list small { padding-left: 26px; color: var(--text-muted); }

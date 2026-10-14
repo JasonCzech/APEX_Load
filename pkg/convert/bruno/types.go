@@ -6,6 +6,7 @@ package bruno
 import (
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -243,6 +244,10 @@ type NativeScriptCandidate struct {
 	// ExistingScript is set when an earlier import of this source request
 	// already created a script in the project.
 	ExistingScript *NativeExistingScript `json:"existing_script,omitempty"`
+	// Parameterization is the review copy of the shared parameter suggestions
+	// for this request (generated values and data parameters). It is set on
+	// inspection responses only; a commit re-derives the suggestions it applies.
+	Parameterization *paramize.Result `json:"parameterization,omitempty"`
 }
 
 // NativeExistingScript is a script an earlier import created from the same

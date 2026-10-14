@@ -19,6 +19,9 @@ const (
 	// ImportBatchDigestBrunoNativeCommitV3 adds update_targets (re-import as a
 	// new version) and header_repairs to the hashed request.
 	ImportBatchDigestBrunoNativeCommitV3 = "bruno-native-commit-v3"
+	// ImportBatchDigestBrunoNativeCommitV4 adds parameterization_selections
+	// (generated values and data parameters per request) to V3.
+	ImportBatchDigestBrunoNativeCommitV4 = "bruno-native-commit-v4"
 )
 
 var (

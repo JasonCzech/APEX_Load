@@ -5,6 +5,8 @@
 //
 //   - correlation: dynamic values extracted from a response and reused in later
 //     requests (delegates detection to pkg/convert/correlate)
+//   - generated: identifiers and time stamps a client makes up per request
+//     (trace and message IDs, a request time stamp), generated each iteration
 //   - data_param: literal values that should come from a data source (user ids,
 //     emails, SKUs, ...) so each VUser gets distinct data
 //   - secret: credentials that should be externalized to {{env.KEY}} instead of
@@ -31,6 +33,7 @@ type Kind string
 
 const (
 	KindCorrelation Kind = "correlation"
+	KindGenerated   Kind = "generated"
 	KindDataParam   Kind = "data_param"
 	KindSecret      Kind = "secret"
 )
@@ -84,9 +87,9 @@ type Suggestion struct {
 	// Correlation-only: the extractor to add at the source action.
 	Extractor     *dsl.Extractor `json:"extractor,omitempty"`
 	FoundInAction *Location      `json:"found_in_action,omitempty"`
-	// DataParam-only: the parameter to materialize on apply. Its DataSource
-	// reference is finalized by ApplySuggestions when the consolidated data
-	// source is created.
+	// DataParam and Generated: the parameter to materialize on apply. A data
+	// parameter's DataSource reference is finalized by ApplySuggestions when
+	// the consolidated data source is created; a generated one needs none.
 	Parameter *dsl.Parameter `json:"parameter,omitempty"`
 }
 
@@ -132,8 +135,11 @@ type Options struct {
 	ObservationIDsZeroBased bool
 	// PreApplied lists correlations the converter already wired into the
 	// script; they surface as informational pre_applied suggestions.
-	PreApplied           []PreAppliedCorrelation
-	EnableCorrelation    bool
+	PreApplied        []PreAppliedCorrelation
+	EnableCorrelation bool
+	// EnableGenerated proposes generated parameters for per-request
+	// identifiers and time stamps.
+	EnableGenerated      bool
 	EnableDataParams     bool
 	EnableSecrets        bool
 	AuraInspectionBudget *AuraInspectionBudget `json:"-"`
@@ -168,6 +174,14 @@ func Suggest(script *dsl.Script, opts Options) Result {
 			suggestions = append(suggestions, secretAdvice...)
 		}
 	}
+	if opts.EnableGenerated {
+		generatedAdvice, err := generatedSuggestions(script, names, claimedValues(suggestions))
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Generated-value analysis was not completed and no generated-value suggestions were produced: %v", err))
+		} else {
+			suggestions = append(suggestions, generatedAdvice...)
+		}
+	}
 	if opts.EnableDataParams {
 		claimed := claimedValues(suggestions)
 		auraAdvice, coverage, warnings := auraPayloadSuggestions(script, names, claimed, opts.AuraInspectionBudget)
@@ -178,7 +192,13 @@ func Suggest(script *dsl.Script, opts Options) Result {
 		if coverage != nil {
 			skipBodies = coverage.skipBodies
 		}
-		dataAdvice, err := dataParamSuggestions(script, names, claimed, skipBodies)
+		var generatedParts []string
+		for _, suggestion := range suggestions {
+			if suggestion.Kind == KindGenerated {
+				generatedParts = append(generatedParts, suggestion.LiteralValue)
+			}
+		}
+		dataAdvice, err := dataParamSuggestions(script, names, claimed, skipBodies, generatedParts)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("Data-parameter analysis was not completed and no data-parameter suggestions were produced: %v", err))
 		} else {
@@ -231,7 +251,7 @@ func buildSummary(suggestions []Suggestion) Summary {
 	return summary
 }
 
-var kindOrder = map[Kind]int{KindCorrelation: 0, KindDataParam: 1, KindSecret: 2}
+var kindOrder = map[Kind]int{KindCorrelation: 0, KindGenerated: 1, KindDataParam: 2, KindSecret: 3}
 
 func sortSuggestions(suggestions []Suggestion) {
 	sort.SliceStable(suggestions, func(i, j int) bool {

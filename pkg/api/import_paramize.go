@@ -27,9 +27,9 @@ func scrubPreAppliedSampleValue(value string) string {
 
 // buildImportParameterization is the single shared hook every importer calls
 // before writing its response. Spec-only importers pass nil pre-applied
-// correlations, which limits the pass to data-param and secret detection; the
-// sample/HAR importers pass their converter-applied correlations so the review
-// panel shows them as already wired in.
+// correlations, which limits the pass to generated-value, data-param and
+// secret detection; the sample/HAR importers pass their converter-applied
+// correlations so the review panel shows them as already wired in.
 func buildImportParameterization(script *dsl.Script, preApplied []paramize.PreAppliedCorrelation) *paramize.Result {
 	// Shared safety net: guarantee case-insensitively-unique action names for
 	// every importer before the script is reviewed/persisted, so the dashboard
@@ -38,6 +38,7 @@ func buildImportParameterization(script *dsl.Script, preApplied []paramize.PreAp
 	uniquify.DeduplicateActionNames(script)
 	result := paramize.Suggest(script, paramize.Options{
 		PreApplied:       preApplied,
+		EnableGenerated:  true,
 		EnableDataParams: true,
 		EnableSecrets:    true,
 	})
@@ -47,13 +48,14 @@ func buildImportParameterization(script *dsl.Script, preApplied []paramize.PreAp
 // buildTrustedImportParameterization derives the selectable parameterization
 // instructions from the disclosure-safe script held by the server. Browser
 // supplied suggestion internals are descriptors only and are never replayed as
-// mutation instructions. Credential-shaped and redacted values are excluded;
-// those are handled exclusively by the guided Credentials workflow.
+// mutation instructions. Only data parameters and generated values are
+// selectable. Credential-shaped and redacted values are excluded; those are
+// handled exclusively by the guided Credentials workflow.
 func buildTrustedImportParameterization(script *dsl.Script) *paramize.Result {
 	result := buildImportParameterization(script, nil)
 	trusted := make([]paramize.Suggestion, 0, len(result.Suggestions))
 	for _, suggestion := range result.Suggestions {
-		if suggestion.Kind != paramize.KindDataParam || parameterizationSuggestionContainsMaskedSecret(suggestion) {
+		if (suggestion.Kind != paramize.KindDataParam && suggestion.Kind != paramize.KindGenerated) || parameterizationSuggestionContainsMaskedSecret(suggestion) {
 			continue
 		}
 		trusted = append(trusted, suggestion)
@@ -97,6 +99,7 @@ func buildMultiScriptParameterization(scripts []*dsl.Script) *paramize.Result {
 		}
 		uniquify.DeduplicateActionNames(script)
 		result := paramize.Suggest(script, paramize.Options{
+			EnableGenerated:      true,
 			EnableDataParams:     true,
 			EnableSecrets:        true,
 			AuraInspectionBudget: auraBudget,

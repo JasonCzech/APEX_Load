@@ -181,6 +181,7 @@ export interface components {
       "migrate_secrets"?: boolean;
       "mode": "create_native_batch";
       "name_overrides"?: Record<string, string>;
+      "parameterization_selections"?: Record<string, Array<string>>;
       "project_id": string;
       "secret_bindings"?: Record<string, string>;
       "shared_values"?: Record<string, string>;
@@ -274,6 +275,7 @@ export interface components {
       "fidelity": string;
       "method": string;
       "missing_variables"?: Array<string>;
+      "parameterization"?: Record<string, unknown>;
       "planned_script_id": string;
       "script": components["schemas"]["APEXScript"];
       "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
@@ -25475,6 +25477,7 @@ export interface operations {
                 "label": string;
               }>;
               "order": number;
+              "protocols"?: Array<string>;
               "title": string;
               "visible": boolean;
             }>;

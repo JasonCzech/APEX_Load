@@ -1567,6 +1567,10 @@ func safeParameterizationRationale(suggestion paramize.Suggestion) string {
 		return "Detected a runtime correlation; review the source and usage locations before applying."
 	case paramize.KindDataParam:
 		return "Detected per-user test data; apply to bind the listed locations to a generated data source."
+	case paramize.KindGenerated:
+		// Written by paramize without the recorded value: it names the field
+		// and what replaces the value.
+		return suggestion.Rationale
 	default:
 		return "Review the suggested parameterization and its usage locations before applying."
 	}

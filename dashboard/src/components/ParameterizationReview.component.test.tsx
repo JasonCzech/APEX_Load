@@ -212,6 +212,17 @@ describe('ParameterizationReview', () => {
     expect(applyButton?.textContent).toContain('Apply Selected (1)')
   })
 
+  it('shows generated values, and any kind it has no label for, so no checked row is hidden', () => {
+    render(buildParameterization([
+      suggestion({ id: 'pz_generated', kind: 'generated', var_name: 'messageid', confidence: 0.85, auto_apply: true }),
+      suggestion({ id: 'pz_future', kind: 'future_kind', var_name: 'later', confidence: 0.9, auto_apply: true }),
+    ]))
+
+    const groups = Array.from(container.querySelectorAll('.paramize-group summary span')).map(item => item.textContent)
+    expect(groups).toEqual(['Generated values', 'future_kind'])
+    expect(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')).toHaveLength(2)
+  })
+
   it('renders pre-applied suggestions without checkboxes', () => {
     render(buildParameterization([
       suggestion({ id: 'pz_pre', kind: 'correlation', var_name: 'corr_csrf', confidence: 1, pre_applied: true }),

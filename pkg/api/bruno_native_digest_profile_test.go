@@ -120,9 +120,9 @@ func TestBrunoNativeCommitV2DigestCoversSharedValues(t *testing.T) {
 }
 
 // New receipts must be written under the profile whose hash produced them.
-func TestBrunoNativeCommitDefaultDigestProfileIsV3(t *testing.T) {
-	if brunoNativeCommitCurrentDigestProfile != storage.ImportBatchDigestBrunoNativeCommitV3 {
-		t.Fatalf("current digest profile = %q, want v3", brunoNativeCommitCurrentDigestProfile)
+func TestBrunoNativeCommitDefaultDigestProfileIsV4(t *testing.T) {
+	if brunoNativeCommitCurrentDigestProfile != storage.ImportBatchDigestBrunoNativeCommitV4 {
+		t.Fatalf("current digest profile = %q, want v4", brunoNativeCommitCurrentDigestProfile)
 	}
 	request := brunoCommitRequest{ProjectID: "project-a", ImportSessionID: "session-1", Mode: "create_native_batch"}
 	if err := normalizeBrunoNativeCommitRequest(&request); err != nil {
@@ -132,7 +132,7 @@ func TestBrunoNativeCommitDefaultDigestProfileIsV3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV3, request)
+	want, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV4, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +229,70 @@ func TestBrunoNativeCommitV3DigestCoversUpdateTargetsAndHeaderRepairs(t *testing
 	}
 	if v2Base != v2Copy {
 		t.Fatal("v2 unexpectedly distinguishes update targets; this test documents why v3 exists")
+	}
+}
+
+func TestBrunoNativeCommitV4DigestGolden(t *testing.T) {
+	request := brunoNativeDigestGoldenRequest(t)
+	request.ParameterizationSelections = map[string][]string{"candidate-a": {"pz_b", "pz_a"}}
+	if err := normalizeBrunoNativeCommitRequest(&request); err != nil {
+		t.Fatal(err)
+	}
+	got, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV4, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "099a9a295ac4f1fb43d17d90b06d8f6c7449f28fb225681ab95c49b559cff1de"
+	if got != want {
+		t.Fatalf("digest = %q, want frozen %q", got, want)
+	}
+}
+
+// V4 covers the parameter selections V3 cannot see; an empty selection is the
+// same request as none.
+func TestBrunoNativeCommitV4DigestCoversParameterizationSelections(t *testing.T) {
+	base := brunoNativeDigestGoldenRequest(t)
+	digest := func(request brunoCommitRequest, profile string) string {
+		t.Helper()
+		if err := normalizeBrunoNativeCommitRequest(&request); err != nil {
+			t.Fatal(err)
+		}
+		got, err := brunoNativeCommitRequestSHAForProfile(profile, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	selected := base
+	selected.ParameterizationSelections = map[string][]string{" candidate-a ": {" pz_a "}}
+	other := base
+	other.ParameterizationSelections = map[string][]string{"candidate-b": {"pz_a"}}
+	empty := base
+	empty.ParameterizationSelections = map[string][]string{"candidate-a": {}}
+	v4 := storage.ImportBatchDigestBrunoNativeCommitV4
+	if digest(selected, v4) == digest(base, v4) || digest(selected, v4) == digest(other, v4) {
+		t.Fatal("v4 digest ignores parameterization selections")
+	}
+	if digest(empty, v4) != digest(base, v4) {
+		t.Fatal("an empty selection should hash like no selection")
+	}
+	v3 := storage.ImportBatchDigestBrunoNativeCommitV3
+	if digest(selected, v3) != digest(base, v3) {
+		t.Fatal("v3 unexpectedly distinguishes parameterization selections; this test documents why v4 exists")
+	}
+}
+
+func TestBrunoNativeCommitRequestRejectsInvalidParameterizationSelections(t *testing.T) {
+	for name, selections := range map[string]map[string][]string{
+		"empty candidate": {" ": {"pz_a"}},
+		"empty id":        {"candidate-a": {" "}},
+		"duplicate id":    {"candidate-a": {"pz_a", " pz_a "}},
+		"duplicate key":   {"candidate-a": {"pz_a"}, " candidate-a ": {"pz_b"}},
+	} {
+		request := brunoCommitRequest{ProjectID: "project-a", ImportSessionID: "session-1", Mode: "create_native_batch", ParameterizationSelections: selections}
+		if err := normalizeBrunoNativeCommitRequest(&request); err == nil {
+			t.Errorf("%s: normalize accepted %v", name, selections)
+		}
 	}
 }
 

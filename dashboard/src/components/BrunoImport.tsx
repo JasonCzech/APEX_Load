@@ -30,6 +30,8 @@ import { brunoSecretPresentation } from './brunoSecretPresentation';
 import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements';
 import { importFileLogicalPath } from '../importLogicalPath';
 import SharedAssetsDialog from './SharedAssetsDialog';
+import BrunoGeneratedValues from './BrunoGeneratedValues';
+import { brunoGeneratedValueGroups, brunoGeneratedValueSelections } from './brunoGeneratedValueGroups';
 import { scenarioDraftBuilderHash } from './importScenario';
 import { scenarioAuthoringDraftFromScripts } from './scenarioAuthoringDraft';
 import { useImportDestination } from './importDestinationContext';
@@ -598,6 +600,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         requestAnimationFrame(() => document.getElementById(`bruno-inspection-tab-${tab}`)?.focus());
     };
     const [sharedValueSelections, setSharedValueSelections] = useState<Record<string, string>>({});
+    // Generated-value rows the operator changed from their suggested state.
+    const [generatedValueChoices, setGeneratedValueChoices] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
@@ -889,6 +893,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const selectedNativeFinding = visibleNativeReviewFindings.find(finding => finding.id === selectedNativeFindingId) || visibleNativeReviewFindings[0];
     const nextNativeFinding = visibleNativeReviewFindings.find(finding => !acknowledgedFindingIdSet.has(finding.id) && !selectedHeaderRepairs[finding.id] && finding.id !== selectedNativeFinding?.id);
     const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections);
+    const generatedValueGroups = useMemo(() => brunoGeneratedValueGroups(selectedNativeCandidates), [selectedNativeCandidates]);
     // A match from the same collection updates by default. A match on the
     // request path alone may belong to another collection, so it defaults to a copy.
     const nativeSaveMode = (candidate: BrunoNativeScriptCandidate): NativeSaveMode => nativeSaveModes[candidate.candidate_id]
@@ -1043,6 +1048,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         // Candidate IDs are derived from one specific inspection. Carrying a
         // selection into a new session would send IDs the server cannot re-derive.
         setSharedValueSelections({});
+        setGeneratedValueChoices({});
     }, [inspection?.import_session_id]);
     useEffect(() => {
         setProtectedSessionNow(Date.now());
@@ -1206,6 +1212,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 setError(`The script folder “${autoCreateFolderName}” could not be created, so nothing was saved. See Native HTTP conversion for details.`);
                 return;
             }
+            const parameterizationSelections = brunoGeneratedValueSelections(generatedValueGroups, generatedValueChoices);
             const response = await api.commitBrunoImport({
                 project_id: projectId,
                 import_session_id: inspection.import_session_id,
@@ -1232,6 +1239,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 acknowledged_finding_ids: nativeReviewFindingIds.filter(id => !selectedHeaderRepairs[id]),
                 ...(Object.keys(sharedValueSelections).length > 0
                     ? { shared_values: sharedValueSelections }
+                    : {}),
+                ...(Object.keys(parameterizationSelections).length > 0
+                    ? { parameterization_selections: parameterizationSelections }
                     : {}),
             });
             const importedScripts = validatedNativeCommitScripts(response, selectedNativeCandidates, Object.fromEntries(selectedNativeUpdates.map(candidate => [candidate.candidate_id, candidate.existing_script!.script_id])));
@@ -1865,6 +1875,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
               <section className="bruno-tab-panel" id="bruno-inspection-panel-data" hidden={activeInspectionTab !== 'data'}>
                   {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
+                  {!committed && <BrunoGeneratedValues groups={generatedValueGroups} choices={generatedValueChoices} onChange={setGeneratedValueChoices} disabled={loading || protectedSessionExpired}/>}
               </section>
               {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" id={`bruno-inspection-panel-${section}`} hidden={activeInspectionTab !== section}>
                 {activeInspectionTab === section && (evidenceCandidate

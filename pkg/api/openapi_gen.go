@@ -1127,6 +1127,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Description: "Scrubbed, sanitized-source mappings that influenced this candidate.",
 					Items:       &oasSchema{Ref: "#/components/schemas/BrunoSourceMapping"},
 				},
+				"parameterization": {
+					Type:                 "object",
+					Description:          "This request's shared parameter suggestions (generated values and data parameters), as the other importers report them. Select IDs through parameterization_selections on commit.",
+					AdditionalProperties: boolPointer(true),
+				},
 			},
 			Required: []string{
 				"candidate_id", "planned_script_id", "source_path", "source_uid",
@@ -1251,6 +1256,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:                 "object",
 					Description:          "bruno_invalid_header_value finding ID to the fix to apply. A repaired finding needs no acknowledgement.",
 					AdditionalProperties: &oasSchema{Type: "string", Enum: []string{"trim", "remove"}},
+				},
+				"parameterization_selections": {
+					Type:                 "object",
+					Description:          "Native candidate ID to the IDs of that candidate's parameterization suggestions to apply, such as a trace or message ID generated each iteration.",
+					AdditionalProperties: &oasSchema{Type: "array", Items: &oasSchema{Type: "string"}},
 				},
 			},
 			Required: []string{"project_id", "import_session_id", "mode"},

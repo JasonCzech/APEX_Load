@@ -638,6 +638,8 @@ Once you have a recording:
   recorded script, then preview and apply it to other scripts.
 - **Parameterization review** suggests which recorded literals should become data-pool
   or template values, so the script drives varied data instead of one fixed path.
+  **Generated values** are identifiers and time stamps a client makes up per request,
+  such as trace and message IDs, regenerated each iteration instead of replayed.
 
 The result is an executable script you refine in the Script Editor just like a
 hand-authored one — and you should refine it. A raw recording replays one person's
@@ -652,7 +654,7 @@ If you already have tests in another tool, import them instead of rewriting. Ope
 | --- | --- | --- |
 | OpenAPI / Swagger | Contracts & collections | Executable API draft |
 | Postman collection | Contracts & collections | Executable API draft |
-| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review. Only operator-supplied credentials (authorization, API keys, auth tokens, passwords) go through credential review; cookies and session, anti-forgery and trace headers stay as imported and are listed under Kept as imported. Operating-system and version-control files, files Bruno's own ignore list excludes, and gitignored files Bruno does not load itself (such as logs) are skipped; a gitignored `.env`, environment or request is still imported, as Bruno would open it. The new script folder defaults to the collection's declared name, and the review says when the requests' own tests expect an error response, as a negative-test collection does |
+| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review. Only operator-supplied credentials (authorization, API keys, auth tokens, passwords) go through credential review; cookies and session, anti-forgery and trace headers stay as imported and are listed under Kept as imported. Operating-system and version-control files, files Bruno's own ignore list excludes, and gitignored files Bruno does not load itself (such as logs) are skipped; a gitignored `.env`, environment or request is still imported, as Bruno would open it. The new script folder defaults to the collection's declared name, and the review says when the requests' own tests expect an error response, as a negative-test collection does. Under **Data & parameters**, **Generated values** lists the trace and message IDs and time stamps the collection recorded once; checked values are generated again each iteration, and a session, conversation or transaction ID, or a GUID in another field, waits for you to check it |
 | WSDL / SOAP | Contracts & collections | Executable SOAP draft |
 | AsyncAPI / Kafka | Contracts & collections | Messaging draft |
 | RAML / Anypoint | Contracts & collections | API draft |

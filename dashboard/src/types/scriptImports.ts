@@ -74,7 +74,7 @@ export interface ImportRepairSuggestion {
   selector_signals?: string[]
 }
 
-export type ParameterizationKind = 'correlation' | 'data_param' | 'secret'
+export type ParameterizationKind = 'correlation' | 'generated' | 'data_param' | 'secret'
 
 export interface AuraParameterRoutePart {
   kind: 'key' | 'index' | 'json_string'
@@ -1408,8 +1408,9 @@ export type ImportSourceRevision = BrunoAPISchemas['ImportSourceRevision']
 export type BrunoCommitErrorResponse = BrunoAPISchemas['BrunoCommitErrorResponse']
 
 export type BrunoNativeScriptCandidate =
-  Omit<BrunoAPISchemas['BrunoNativeScriptCandidate'], 'script'> & {
+  Omit<BrunoAPISchemas['BrunoNativeScriptCandidate'], 'script' | 'parameterization'> & {
     script: ScriptDefinition
+    parameterization?: Parameterization
   }
 
 type BrunoNativeInspectResult =
