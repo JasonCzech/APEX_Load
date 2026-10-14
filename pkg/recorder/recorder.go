@@ -193,6 +193,9 @@ type Recorder struct {
 	// upstreamBodyInactivityTimeout is internal so tests can exercise stalled
 	// response handling without waiting for the production timeout.
 	upstreamBodyInactivityTimeout time.Duration
+	// streamingSnapshotDelay is internal so tests can choose whether a
+	// streamed response ends before or after its snapshot.
+	streamingSnapshotDelay time.Duration
 
 	// TLS interception fields
 	caOnce     sync.Once
@@ -267,6 +270,7 @@ func NewWithOptions(options Options) *Recorder {
 		caCertPath:                    caCertPath,
 		caKeyPath:                     caKeyPath,
 		upstreamBodyInactivityTimeout: recorderUpstreamBodyInactivityTimeout,
+		streamingSnapshotDelay:        streamingRecordDelay,
 	}
 }
 
@@ -1090,30 +1094,68 @@ func isStreamingResponse(resp *http.Response) bool {
 
 func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *Session, req *http.Request, reqBody []byte, resp *http.Response, startedAt time.Time, opts recordOptions) {
 	limit := responseCaptureLimit(session)
+	opts.requestStartedAt = startedAt
 
 	var (
+		// mu guards the capture, which the snapshot reads from the timer.
 		mu       sync.Mutex
 		captured []byte
 		wireSize int64
-		once     sync.Once
+		// recordMu orders the snapshot and the final record, so the final
+		// record knows which request, if any, the snapshot recorded.
+		recordMu    sync.Mutex
+		snapshotted bool
+		finished    bool
+		snapshotSeq int
 	)
-	record := func() {
+	capturedSoFar := func() ([]byte, int64) {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]byte(nil), captured...), wireSize
+	}
+	withResponse := func(truncated bool, size int64) recordOptions {
+		responseOpts := opts
+		responseOpts.forceResponseBodyTruncate = truncated
+		responseOpts.responseBodySizeBytes = boundedInt(size)
+		responseOpts.responseBodySizeKnown = true
+		return responseOpts
+	}
+	// snapshot records the response while it still streams, so a stream that
+	// never ends (an event stream, a long poll) still appears in the
+	// recording. Its body is incomplete, so it is marked truncated.
+	snapshot := func() {
 		if session == nil {
 			return
 		}
-		mu.Lock()
-		snapshot := append([]byte(nil), captured...)
-		size := wireSize
-		mu.Unlock()
-		opts.requestStartedAt = startedAt
-		opts.forceResponseBodyTruncate = true
-		opts.responseBodySizeBytes = boundedInt(size)
-		opts.responseBodySizeKnown = true
-		r.recordRequestWithOptions(session, req, reqBody, resp, snapshot, time.Since(startedAt), opts)
+		recordMu.Lock()
+		defer recordMu.Unlock()
+		if snapshotted || finished {
+			return
+		}
+		snapshotted = true
+		body, size := capturedSoFar()
+		snapshotSeq = r.recordRequestWithOptions(session, req, reqBody, resp, body, time.Since(startedAt), withResponse(true, size))
 	}
-	timer := time.AfterFunc(streamingRecordDelay, func() {
-		once.Do(record)
-	})
+	// finish records how the response ended. A body that reached EOF with
+	// every byte captured is complete; the request a snapshot recorded while
+	// it streamed is updated to match.
+	finish := func(reachedEOF bool) {
+		if session == nil {
+			return
+		}
+		recordMu.Lock()
+		defer recordMu.Unlock()
+		finished = true
+		body, size := capturedSoFar()
+		if snapshotted {
+			if snapshotSeq != 0 {
+				r.finishStreamedResponse(session, snapshotSeq, req, resp, body, size, reachedEOF, time.Since(startedAt))
+			}
+			return
+		}
+		r.recordRequestWithOptions(session, req, reqBody, resp, body, time.Since(startedAt), withResponse(streamTruncated(body, size, reachedEOF), size))
+	}
+	timer := time.AfterFunc(r.streamingSnapshotDelayOrDefault(), snapshot)
 	defer timer.Stop()
 
 	buf := make([]byte, 32*1024)
@@ -1122,7 +1164,8 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 		if n > 0 {
 			chunk := buf[:n]
 			if _, err := w.Write(chunk); err != nil {
-				once.Do(record)
+				// The client went away; the rest of the body was never read.
+				finish(false)
 				return
 			}
 			if flush != nil {
@@ -1142,14 +1185,27 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 			}
 			mu.Unlock()
 			if captureFull {
-				once.Do(record)
+				snapshot()
 			}
 		}
 		if readErr != nil {
-			once.Do(record)
+			finish(readErr == io.EOF)
 			return
 		}
 	}
+}
+
+// streamTruncated reports whether a streamed body is missing bytes: it
+// ended before EOF, or more arrived than were captured.
+func streamTruncated(captured []byte, size int64, reachedEOF bool) bool {
+	return !reachedEOF || size > int64(len(captured))
+}
+
+func (r *Recorder) streamingSnapshotDelayOrDefault() time.Duration {
+	if r != nil && r.streamingSnapshotDelay > 0 {
+		return r.streamingSnapshotDelay
+	}
+	return streamingRecordDelay
 }
 
 func responseCaptureLimit(session *Session) int {
@@ -1384,21 +1440,8 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
 
 	ct := resp.Header.Get("Content-Type")
-	// The browser receives the original wire bytes. Only a complete explicitly
-	// wire-captured snapshot can become decoded logical response content.
-	respBodyForCapture, capture := decodeRecordedResponse(req.Context(), req.Method, resp, respBody, s.Filters.BodyCaptureLimitBytes, opts.forceResponseBodyTruncate)
 	respHeaders := firstHeaderValues(respHeadersMulti)
-	respBodyStr, respBodyTruncated, respBodyEncoding := capturedBody(respBodyForCapture, ct, s.Filters.BodyCaptureLimitBytes)
-	if capture.Complete() && respBodyEncoding == "" && !requestimport.IsResponseContentText(respBodyForCapture) {
-		respBodyStr, respBodyEncoding = base64.StdEncoding.EncodeToString(respBodyForCapture), "base64"
-	}
-	if capture.Complete() && respBodyEncoding == "base64" {
-		capture.BodyKind = "binary"
-	}
-	if !capture.Complete() {
-		respBodyStr, respBodyEncoding = "", ""
-		respBodyTruncated = capture.ReasonCode == "response_content_truncated" || capture.ReasonCode == "response_content_decode_limit"
-	}
+	respBodyStr, respBodyEncoding, respBodyTruncated, capture := recordedResponseContent(req.Context(), req.Method, resp, respBody, s.Filters.BodyCaptureLimitBytes, opts.forceResponseBodyTruncate)
 	reqBodyStr, reqBodyTruncated, reqBodyEncoding := capturedRequestBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
 	if opts.forceRequestBodyTruncate {
 		reqBodyTruncated = true
@@ -1466,10 +1509,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		remainingBodyBytes -= len(*stored.body)
 		bodyBytesAdded += len(*stored.body)
 	}
-	if rec.ResponseBodyTruncated && rec.ResponseContentCapture.Complete() {
-		rec.ResponseBody, rec.ResponseBodyEncoding = "", ""
-		rec.ResponseContentCapture = requestimport.UnavailableResponseContent("wire", "response_content_truncated")
-	}
+	dropIncompleteResponseContent(&rec)
 	requestBytes := estimateRecordedRequestBytes(rec)
 	if requestBytes > maxRecordedSessionBytes-s.retainedBytes {
 		event = s.noteRequestDropLocked("session byte retention limit")
@@ -1500,6 +1540,85 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		}
 	}
 	return rec.Seq
+}
+
+// recordedResponseContent derives a recorded response's stored body, its
+// encoding and truncation, and its content capture from the captured bytes.
+func recordedResponseContent(ctx context.Context, method string, resp *http.Response, raw []byte, limit int, truncated bool) (string, string, bool, requestimport.ResponseContentCapture) {
+	// The browser receives the original wire bytes. Only a complete explicitly
+	// wire-captured snapshot can become decoded logical response content.
+	decoded, capture := decodeRecordedResponse(ctx, method, resp, raw, limit, truncated)
+	body, bodyTruncated, encoding := capturedBody(decoded, resp.Header.Get("Content-Type"), limit)
+	if capture.Complete() && encoding == "" && !requestimport.IsResponseContentText(decoded) {
+		body, encoding = base64.StdEncoding.EncodeToString(decoded), "base64"
+	}
+	if capture.Complete() && encoding == "base64" {
+		capture.BodyKind = "binary"
+	}
+	if !capture.Complete() {
+		body, encoding = "", ""
+		bodyTruncated = capture.ReasonCode == "response_content_truncated" || capture.ReasonCode == "response_content_decode_limit"
+	}
+	return body, encoding, bodyTruncated, capture
+}
+
+// dropIncompleteResponseContent keeps a response whose stored body was cut
+// from claiming complete content.
+func dropIncompleteResponseContent(rec *RecordedRequest) {
+	if rec.ResponseBodyTruncated && rec.ResponseContentCapture.Complete() {
+		rec.ResponseBody, rec.ResponseBodyEncoding = "", ""
+		rec.ResponseContentCapture = requestimport.UnavailableResponseContent("wire", "response_content_truncated")
+	}
+}
+
+// finishStreamedResponse completes the request a streamed response's
+// snapshot recorded, now that the response has ended: its body, size,
+// truncation and time become what was captured. A stopped session keeps
+// the snapshot it had when it stopped.
+func (r *Recorder) finishStreamedResponse(s *Session, seq int, req *http.Request, resp *http.Response, respBody []byte, size int64, reachedEOF bool, elapsed time.Duration) {
+	s.mu.Lock()
+	if s.Status != "recording" && s.Status != "paused" {
+		s.mu.Unlock()
+		return
+	}
+	for i := range s.Requests {
+		if s.Requests[i].Seq != seq {
+			continue
+		}
+		previous := s.Requests[i]
+		updated := previous
+		updated.ResponseBody, updated.ResponseBodyEncoding, updated.ResponseBodyTruncated, updated.ResponseContentCapture = recordedResponseContent(req.Context(), req.Method, resp, respBody, s.Filters.BodyCaptureLimitBytes, streamTruncated(respBody, size, reachedEOF))
+		updated.ResponseBodySizeBytes = boundedInt(size)
+		updated.ResponseTimeMs = float64(elapsed.Microseconds()) / 1000.0
+		storedBodyBytes := s.storedBodyBytes - min(s.storedBodyBytes, len(previous.ResponseBody))
+		baseBytes := s.retainedBytes - min(s.retainedBytes, estimateRecordedRequestBytes(previous))
+		if len(updated.ResponseBody) > maxRecordedBodyBytes-storedBodyBytes || estimateRecordedRequestBytes(updated) > maxRecordedSessionBytes-baseBytes {
+			updated.ResponseBody, updated.ResponseBodyEncoding, updated.ResponseBodyTruncated = "", "", true
+		}
+		dropIncompleteResponseContent(&updated)
+		newBytes := estimateRecordedRequestBytes(updated)
+		if newBytes > maxRecordedSessionBytes-baseBytes {
+			s.mu.Unlock()
+			return
+		}
+		s.storedBodyBytes = storedBodyBytes + len(updated.ResponseBody)
+		s.retainedBytes = baseBytes + newBytes
+		// A stream the client abandoned (an event stream or long poll closed
+		// on navigation) did not end a response the user waited for, so the
+		// next request's think time still counts from before it.
+		if responseEndedAt := updated.Timestamp.Add(elapsed); reachedEOF && responseEndedAt.After(s.lastReqEnd) {
+			s.lastReqEnd = responseEndedAt
+		}
+		s.Requests[i] = updated
+		eventRequest := recordingEventRequest(updated)
+		notify := s.notify
+		s.mu.Unlock()
+		if notify != nil {
+			notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &eventRequest})
+		}
+		return
+	}
+	s.mu.Unlock()
 }
 
 func (s *Session) noteRequestDropLocked(reason string) *SessionEvent {

@@ -1417,6 +1417,256 @@ func TestProxyStreamsSSEWithoutWaitingForEOF(t *testing.T) {
 	}
 }
 
+// A chunked response without Content-Length is streamed to the browser, but
+// once it ends with every byte captured it is recorded complete, whether it
+// ended before the streaming snapshot or after it.
+func TestProxyRecordsCompletedChunkedResponseComplete(t *testing.T) {
+	allowPrivateProxyTargets(t)
+	html := "<html><body>" + strings.Repeat("<p>recorded page</p>", 400) + "</body></html>"
+	for _, tc := range []struct {
+		name          string
+		snapshotDelay time.Duration
+		pause         time.Duration
+	}{
+		{name: "before the snapshot", snapshotDelay: time.Minute},
+		{name: "after the snapshot", snapshotDelay: 10 * time.Millisecond, pause: 150 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			compressed := gzipBytes(t, []byte(html))
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("Content-Encoding", "gzip")
+				half := len(compressed) / 2
+				_, _ = w.Write(compressed[:half])
+				w.(http.Flusher).Flush()
+				time.Sleep(tc.pause)
+				_, _ = w.Write(compressed[half:])
+			}))
+			defer backend.Close()
+
+			var mu sync.Mutex
+			var events []string
+			rec := New(":0")
+			rec.streamingSnapshotDelay = tc.snapshotDelay
+			if _, err := rec.StartSession("test", "Chunked Page", SessionFilters{BodyCaptureLimitBytes: 64 << 10}, func(event SessionEvent) {
+				mu.Lock()
+				events = append(events, event.Type)
+				mu.Unlock()
+			}); err != nil {
+				t.Fatal(err)
+			}
+			proxy := httptest.NewServer(http.HandlerFunc(rec.handleProxy))
+			defer proxy.Close()
+			proxyURL, _ := url.Parse(proxy.URL)
+			client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}, Timeout: 5 * time.Second}
+
+			resp, err := client.Get(backend.URL + "/products/")
+			if err != nil {
+				t.Fatalf("GET through proxy: %v", err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil || string(body) != html {
+				t.Fatalf("client body = %d bytes (%v), want the page", len(body), err)
+			}
+			if len(resp.TransferEncoding) == 0 || resp.TransferEncoding[0] != "chunked" {
+				t.Fatalf("response transfer encoding = %v, want chunked", resp.TransferEncoding)
+			}
+
+			deadline := time.Now().Add(3 * time.Second)
+			var recorded RecordedRequest
+			for {
+				session, _ := rec.GetSession("test")
+				if len(session.Requests) == 1 && !session.Requests[0].ResponseBodyTruncated {
+					recorded = session.Requests[0]
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("recorded requests = %+v, want one complete response", session.Requests)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if !recorded.ResponseContentCapture.Complete() || recorded.ResponseBody != html {
+				t.Fatalf("recorded body/capture = %d bytes/%+v, want the decoded page", len(recorded.ResponseBody), recorded.ResponseContentCapture)
+			}
+			if recorded.ResponseBodySizeBytes != len(compressed) {
+				t.Fatalf("response body size = %d, want %d wire bytes", recorded.ResponseBodySizeBytes, len(compressed))
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if tc.pause > 0 {
+				if recorded.ResponseTimeMs < float64(tc.pause.Milliseconds()) {
+					t.Fatalf("response time = %vms, want the whole response (at least %v)", recorded.ResponseTimeMs, tc.pause)
+				}
+				if strings.Join(events, ",") != "request_recorded,request_updated" {
+					t.Fatalf("events = %v, want the snapshot recorded then updated", events)
+				}
+			} else if strings.Join(events, ",") != "request_recorded" {
+				t.Fatalf("events = %v, want one record", events)
+			}
+		})
+	}
+}
+
+// slowFailingBody returns its data, waits past the streaming snapshot, then fails.
+type slowFailingBody struct {
+	data []byte
+	wait time.Duration
+	read bool
+}
+
+func (b *slowFailingBody) Read(p []byte) (int, error) {
+	if !b.read {
+		b.read = true
+		return copy(p, b.data), nil
+	}
+	time.Sleep(b.wait)
+	return 0, io.ErrUnexpectedEOF
+}
+
+func (b *slowFailingBody) Close() error { return nil }
+
+// A stream that fails before its end stays truncated, its size and time
+// updated to what arrived. A failed stream is not a response the user waited
+// for, so the next request's think time still counts from before it.
+func TestStreamAndRecordResponseKeepsAFailedStreamTruncated(t *testing.T) {
+	rec := New(":0")
+	rec.streamingSnapshotDelay = 10 * time.Millisecond
+	session, err := rec.StartSession("test", "Failed Stream", SessionFilters{BodyCaptureLimitBytes: 1024}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wait := range []time.Duration{0, 100 * time.Millisecond} {
+		req, _ := http.NewRequest("GET", "http://example.com/feed", nil)
+		resp := &http.Response{
+			StatusCode:       http.StatusOK,
+			Header:           http.Header{"Content-Type": []string{"text/html"}},
+			Body:             &slowFailingBody{data: []byte("<html><body>partial"), wait: wait},
+			TransferEncoding: []string{"chunked"},
+		}
+		var forwarded bytes.Buffer
+		startedAt := time.Now()
+		rec.streamAndRecordResponse(&forwarded, nil, session, req, nil, resp, startedAt, recordOptions{})
+
+		recorded := session.Requests[len(session.Requests)-1]
+		if !recorded.ResponseBodyTruncated || recorded.ResponseBody != "" || recorded.ResponseContentCapture.Complete() {
+			t.Fatalf("wait %v: recorded = truncated %v body %q capture %+v, want an incomplete capture", wait, recorded.ResponseBodyTruncated, recorded.ResponseBody, recorded.ResponseContentCapture)
+		}
+		if recorded.ResponseBodySizeBytes != len("<html><body>partial") {
+			t.Fatalf("wait %v: response size = %d, want what arrived", wait, recorded.ResponseBodySizeBytes)
+		}
+		if recorded.ResponseTimeMs < float64(wait.Milliseconds()) {
+			t.Fatalf("wait %v: response time = %vms, want the whole stream", wait, recorded.ResponseTimeMs)
+		}
+		if wait > 0 && !session.lastReqEnd.Before(startedAt.Add(wait)) {
+			t.Fatalf("last response end = %v after a failed stream started at %v, want it unmoved by the failure", session.lastReqEnd, startedAt)
+		}
+	}
+	if len(session.Requests) != 2 {
+		t.Fatalf("recorded requests = %d, want one per stream", len(session.Requests))
+	}
+}
+
+// pausedBody returns its data, waits, then ends.
+type pausedBody struct {
+	data  []byte
+	pause time.Duration
+	read  bool
+}
+
+func (b *pausedBody) Read(p []byte) (int, error) {
+	if !b.read {
+		b.read = true
+		return copy(p, b.data), nil
+	}
+	time.Sleep(b.pause)
+	return 0, io.EOF
+}
+
+func (b *pausedBody) Close() error { return nil }
+
+// A stream that fills the capture is recorded at once; when it ends, that
+// request takes the whole size and time, and stays truncated.
+func TestStreamAndRecordResponseUpdatesAFullCaptureWhenItEnds(t *testing.T) {
+	rec := New(":0")
+	rec.streamingSnapshotDelay = time.Minute
+	var events []string
+	session, err := rec.StartSession("test", "Full Capture", SessionFilters{BodyCaptureLimitBytes: 8}, func(event SessionEvent) {
+		events = append(events, event.Type)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("GET", "http://example.com/export", nil)
+	resp := &http.Response{
+		StatusCode:       http.StatusOK,
+		Header:           http.Header{"Content-Type": []string{"text/plain"}},
+		Body:             &pausedBody{data: []byte("0123456789abcdef"), pause: 50 * time.Millisecond},
+		TransferEncoding: []string{"chunked"},
+	}
+	startedAt := time.Now()
+	rec.streamAndRecordResponse(io.Discard, nil, session, req, nil, resp, startedAt, recordOptions{})
+
+	if strings.Join(events, ",") != "request_recorded,request_updated" {
+		t.Fatalf("events = %v, want the full capture recorded then updated", events)
+	}
+	recorded := session.Requests[0]
+	if !recorded.ResponseBodyTruncated || recorded.ResponseBodySizeBytes != 16 || recorded.ResponseTimeMs < 50 {
+		t.Fatalf("recorded = truncated %v size %d time %vms, want truncated, 16 bytes and the whole stream", recorded.ResponseBodyTruncated, recorded.ResponseBodySizeBytes, recorded.ResponseTimeMs)
+	}
+	if session.lastReqEnd.Before(startedAt.Add(50 * time.Millisecond)) {
+		t.Fatalf("last response end = %v, want the stream's end", session.lastReqEnd)
+	}
+}
+
+// A stream still open when the recording stops keeps the snapshot it had.
+func TestStreamAndRecordResponseLeavesAStoppedSessionAlone(t *testing.T) {
+	rec := New(":0")
+	rec.streamingSnapshotDelay = 10 * time.Millisecond
+	session, err := rec.StartSession("test", "Stopped Stream", SessionFilters{BodyCaptureLimitBytes: 1024}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr, pw := io.Pipe()
+	req, _ := http.NewRequest("GET", "http://example.com/events", nil)
+	resp := &http.Response{
+		StatusCode:       http.StatusOK,
+		Header:           http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:             pr,
+		TransferEncoding: []string{"chunked"},
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		rec.streamAndRecordResponse(io.Discard, nil, session, req, nil, resp, time.Now(), recordOptions{})
+	}()
+	if _, err := pw.Write([]byte("data: one\n\n")); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		current, _ := rec.GetSession("test")
+		if len(current.Requests) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the streaming snapshot")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := rec.StopSession("test"); err != nil {
+		t.Fatal(err)
+	}
+	_ = pw.Close()
+	<-done
+
+	stopped, _ := rec.GetSession("test")
+	recorded := stopped.Requests[0]
+	if !recorded.ResponseBodyTruncated || recorded.ResponseBodySizeBytes != len("data: one\n\n") {
+		t.Fatalf("recorded = truncated %v size %d, want the snapshot kept", recorded.ResponseBodyTruncated, recorded.ResponseBodySizeBytes)
+	}
+}
+
 func TestRecordRequestThinkTimeUsesPreviousResponseEnd(t *testing.T) {
 	rec := New(":0")
 	session, err := rec.StartSession("test", "Think Time Test", SessionFilters{}, nil)

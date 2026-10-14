@@ -109,6 +109,54 @@ func TestInactivityTimeoutBodyCancelsOwningRequestContext(t *testing.T) {
 	}
 }
 
+// mitmGet sends a GET for path to backend through the recorder's CONNECT
+// interception, as a browser using the recording proxy would.
+func mitmGet(t *testing.T, rec *Recorder, backend *url.URL, path string) *http.Response {
+	t.Helper()
+	if err := rec.initCA(); err != nil {
+		t.Fatalf("initCA failed: %v", err)
+	}
+	clientConn, proxyConn := net.Pipe()
+	t.Cleanup(func() {
+		clientConn.Close()
+		proxyConn.Close()
+	})
+	go rec.handleConnect(
+		&testHijackResponseWriter{conn: proxyConn, header: make(http.Header), hijacked: make(chan struct{})},
+		&http.Request{Method: "CONNECT", URL: &url.URL{Host: backend.Host}, Host: backend.Host, Header: make(http.Header)},
+	)
+
+	// Read the 200 for CONNECT, then complete the TLS handshake with the
+	// certificate the proxy generated.
+	clientReader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(clientReader, nil)
+	if err != nil {
+		t.Fatalf("failed to read CONNECT response: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200 from CONNECT, got %d", resp.StatusCode)
+	}
+	caPool := x509.NewCertPool()
+	caPool.AddCert(rec.caCert)
+	tlsConn := tls.Client(clientConn, &tls.Config{RootCAs: caPool, ServerName: backend.Hostname()})
+	t.Cleanup(func() { tlsConn.Close() })
+	if err := tlsConn.Handshake(); err != nil {
+		t.Fatalf("TLS handshake failed: %v", err)
+	}
+
+	// Like a browser, ask for a compressed response, which the proxy relays
+	// as the upstream sent it.
+	reqStr := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n", path, backend.Hostname())
+	if _, err := tlsConn.Write([]byte(reqStr)); err != nil {
+		t.Fatalf("failed to write request: %v", err)
+	}
+	tunnelResp, err := http.ReadResponse(bufio.NewReader(tlsConn), nil)
+	if err != nil {
+		t.Fatalf("failed to read tunnel response: %v", err)
+	}
+	return tunnelResp
+}
+
 func newTLSRecorder(t *testing.T) *Recorder {
 	t.Helper()
 	dir := t.TempDir()
@@ -394,80 +442,9 @@ func TestHTTPSInterception(t *testing.T) {
 		captured = append(captured, evt)
 	})
 
-	// Initialize CA so we can build a trust pool for the client.
-	if err := rec.initCA(); err != nil {
-		t.Fatalf("initCA failed: %v", err)
-	}
-
-	// Start the proxy server.
-	proxyServer := httptest.NewServer(http.HandlerFunc(rec.handleProxy))
-	defer proxyServer.Close()
-
-	// Parse backend URL to get host:port.
 	backendURL, _ := url.Parse(backend.URL)
 	backendHost := backendURL.Host
-
-	// Create a pipe to simulate the CONNECT tunnel.
-	clientConn, proxyConn := net.Pipe()
-	defer clientConn.Close()
-	defer proxyConn.Close()
-
-	// Run the proxy-side handler in a goroutine.
-	go func() {
-		// Build an HTTP request for CONNECT.
-		connectReq := &http.Request{
-			Method: "CONNECT",
-			URL:    &url.URL{Host: backendHost},
-			Host:   backendHost,
-			Header: make(http.Header),
-		}
-
-		// Create a response writer that wraps the pipe connection.
-		hijackWriter := &testHijackResponseWriter{
-			conn:     proxyConn,
-			header:   make(http.Header),
-			hijacked: make(chan struct{}),
-		}
-
-		rec.handleConnect(hijackWriter, connectReq)
-	}()
-
-	// On the client side: read the 200 response, then TLS handshake.
-	clientReader := bufio.NewReader(clientConn)
-	resp, err := http.ReadResponse(clientReader, nil)
-	if err != nil {
-		t.Fatalf("failed to read CONNECT response: %v", err)
-	}
-	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200 from CONNECT, got %d", resp.StatusCode)
-	}
-
-	// Perform TLS handshake with the proxy's generated cert.
-	caPool := x509.NewCertPool()
-	caPool.AddCert(rec.caCert)
-
-	tlsConn := tls.Client(clientConn, &tls.Config{
-		RootCAs:    caPool,
-		ServerName: backendURL.Hostname(),
-	})
-	defer tlsConn.Close()
-
-	if err := tlsConn.Handshake(); err != nil {
-		t.Fatalf("TLS handshake failed: %v", err)
-	}
-
-	// Send an HTTP request through the TLS tunnel.
-	reqStr := fmt.Sprintf("GET /api/secure HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", backendURL.Hostname())
-	if _, err := tlsConn.Write([]byte(reqStr)); err != nil {
-		t.Fatalf("failed to write request: %v", err)
-	}
-
-	// Read the response.
-	tlsReader := bufio.NewReader(tlsConn)
-	tunnelResp, err := http.ReadResponse(tlsReader, nil)
-	if err != nil {
-		t.Fatalf("failed to read tunnel response: %v", err)
-	}
+	tunnelResp := mitmGet(t, rec, backendURL, "/api/secure")
 	defer tunnelResp.Body.Close()
 
 	if tunnelResp.StatusCode != 200 {
@@ -500,6 +477,53 @@ func TestHTTPSInterception(t *testing.T) {
 	}
 	if recorded.StatusCode != 200 {
 		t.Fatalf("expected status 200, got %d", recorded.StatusCode)
+	}
+}
+
+// The proxy's HTTPS interception records a completed chunked page complete
+// and decodable, as its plain HTTP path does.
+func TestHTTPSInterceptionRecordsCompletedChunkedPageComplete(t *testing.T) {
+	allowPrivateProxyTargets(t)
+	t.Setenv(envRecorderTLSInsecure, "true")
+	html := "<html><body>" + strings.Repeat("<p>secure page</p>", 400) + "</body></html>"
+	compressed := gzipBytes(t, []byte(html))
+	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Encoding", "gzip")
+		half := len(compressed) / 2
+		_, _ = w.Write(compressed[:half])
+		w.(http.Flusher).Flush()
+		time.Sleep(150 * time.Millisecond)
+		_, _ = w.Write(compressed[half:])
+	}))
+	defer backend.Close()
+
+	rec := newTLSRecorder(t)
+	rec.streamingSnapshotDelay = 10 * time.Millisecond
+	if _, err := rec.StartSession("https-chunked", "HTTPS Chunked", SessionFilters{BodyCaptureLimitBytes: 64 << 10}, nil); err != nil {
+		t.Fatal(err)
+	}
+	backendURL, _ := url.Parse(backend.URL)
+	tunnelResp := mitmGet(t, rec, backendURL, "/products/")
+	defer tunnelResp.Body.Close()
+	if body, err := io.ReadAll(tunnelResp.Body); err != nil || string(body) != string(compressed) {
+		t.Fatalf("client body = %d bytes (%v), want the %d compressed bytes", len(body), err, len(compressed))
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		session, _ := rec.GetSession("https-chunked")
+		if len(session.Requests) == 1 && !session.Requests[0].ResponseBodyTruncated {
+			recorded := session.Requests[0]
+			if !recorded.ResponseContentCapture.Complete() || recorded.ResponseBody != html || recorded.ResponseBodySizeBytes != len(compressed) {
+				t.Fatalf("recorded body/size/capture = %d bytes/%d/%+v, want the decoded page", len(recorded.ResponseBody), recorded.ResponseBodySizeBytes, recorded.ResponseContentCapture)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recorded requests = %d, want one complete response", len(session.Requests))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
