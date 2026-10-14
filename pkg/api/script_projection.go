@@ -44,6 +44,11 @@ var scriptPortableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}
 var scriptPortableReferencePattern = regexp.MustCompile(`^(?:(?:env|data|var|param|file)\.[A-Za-z0-9_.:/@-]+|secret\.` + engine.LogicalSecretNameInputPattern + `)$`)
 var scriptPortableRandomPattern = regexp.MustCompile(`^fn\.random\(\s*-?\d+\s*,\s*-?\d+\s*\)$`)
 var scriptPortableRandomStringPattern = regexp.MustCompile(`^fn\.random_string\(\s*\d+\s*\)$`)
+
+// projectedXMLMessageID is how review shows a token-like XML message ID: as
+// a fresh UUID per request, rather than masked like a credential.
+const projectedXMLMessageID = "{{fn.uuid()}}"
+
 var redactedXMLMessageIDPattern = regexp.MustCompile(`(?is)(<(?:(?:[\w.-]+):)?messageId\b[^>]*>)\s*\[REDACTED\]\s*(</(?:(?:[\w.-]+):)?messageId\s*>)`)
 var xmlMessageIDValuePattern = regexp.MustCompile(`(?is)(<(?:(?:[\w.-]+):)?messageId\b[^>]*>)([^<>]*)(</(?:(?:[\w.-]+):)?messageId\s*>)`)
 var portableXMLSecretElementPattern = regexp.MustCompile(`(?is)<(?:[\w.-]+:)?[\w.-]+\b[^>]*>\s*\{\{\s*secret\.` + engine.LogicalSecretNameInputPattern + `\s*\}\}\s*</(?:[\w.-]+:)?[\w.-]+\s*>`)
@@ -935,7 +940,7 @@ func projectMaskedXMLMessageIDs(payload []byte) []byte {
 			continue
 		}
 		builder.WriteString(value[cursor:match[4]])
-		builder.WriteString("{{fn.uuid()}}")
+		builder.WriteString(projectedXMLMessageID)
 		cursor = match[5]
 		changed = true
 	}
@@ -944,6 +949,57 @@ func projectMaskedXMLMessageIDs(payload []byte) []byte {
 	}
 	builder.WriteString(value[cursor:])
 	return []byte(builder.String())
+}
+
+// rewrittenMessageIDs pairs each XML message ID review shows as
+// projectedXMLMessageID with the one raw records at the same position, as the
+// [start, end) of their contents: projected's, then raw's. ok is false when
+// raw and projected disagree on how many message IDs there are.
+func rewrittenMessageIDs(raw, projected string) (pairs [][4]int, ok bool) {
+	if !strings.Contains(projected, projectedXMLMessageID) {
+		return nil, true
+	}
+	projectedIDs := xmlMessageIDValuePattern.FindAllStringSubmatchIndex(projected, -1)
+	rawIDs := xmlMessageIDValuePattern.FindAllStringSubmatchIndex(raw, -1)
+	if len(projectedIDs) != len(rawIDs) {
+		return nil, false
+	}
+	for index, id := range projectedIDs {
+		if projected[id[4]:id[5]] == projectedXMLMessageID {
+			pairs = append(pairs, [4]int{id[4], id[5], rawIDs[index][4], rawIDs[index][5]})
+		}
+	}
+	return pairs, true
+}
+
+// projectedMessageIDsAsRecorded returns projected with each XML message ID
+// review shows as projectedXMLMessageID put back as raw recorded it. That
+// rewrite is the one change the projection makes without a [REDACTED]
+// sentinel, so aligning a field with its projection, and binding a
+// credential in it, compare against and keep the recorded ID there.
+// projected comes back unchanged when raw and projected disagree on how many
+// message IDs there are, or when a recorded ID it would put back is itself
+// the [REDACTED] placeholder: that would add a sentinel review never showed
+// and shift every later occurrence.
+func projectedMessageIDsAsRecorded(raw, projected string) string {
+	pairs, ok := rewrittenMessageIDs(raw, projected)
+	if !ok || len(pairs) == 0 {
+		return projected
+	}
+	var out strings.Builder
+	out.Grow(len(projected))
+	cursor := 0
+	for _, pair := range pairs {
+		recorded := raw[pair[2]:pair[3]]
+		if strings.Contains(recorded, maskedScriptSecret) {
+			return projected
+		}
+		out.WriteString(projected[cursor:pair[0]])
+		out.WriteString(recorded)
+		cursor = pair[1]
+	}
+	out.WriteString(projected[cursor:])
+	return out.String()
 }
 
 func maskStoredScript(stored *StoredScript) *StoredScript {
@@ -1770,7 +1826,7 @@ func scrubScriptTextWithProjector(value string, urlValue bool, projectText func(
 	for placeholder, separator := range urlSeparators {
 		protected = strings.ReplaceAll(protected, placeholder, separator)
 	}
-	protected = redactedXMLMessageIDPattern.ReplaceAllString(protected, `${1}{{fn.uuid()}}${2}`)
+	protected = redactedXMLMessageIDPattern.ReplaceAllString(protected, "${1}"+projectedXMLMessageID+"${2}")
 	return protected
 }
 

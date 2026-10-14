@@ -196,6 +196,7 @@ func extractProjectedRedactions(raw, projected string) ([]string, bool) {
 }
 
 func extractLinearlyProjectedRedactions(raw, projected string) ([]string, bool) {
+	projected = projectedMessageIDsAsRecorded(raw, projected)
 	parts := strings.Split(projected, maskedScriptSecret)
 	if len(parts) < 2 || !strings.HasPrefix(raw, parts[0]) {
 		return nil, false
@@ -323,6 +324,7 @@ func extractStructurallyProjectedJSONRedactions(raw, projected string) ([]string
 	if len(raw) > maxProjectedRedactionAlignmentWork || len(projected) > maxProjectedRedactionAlignmentWork {
 		return nil, false
 	}
+	projected = projectedMessageIDsAsRecorded(raw, projected)
 	rawValue, rawOK := decodeStructuredJSONValue(raw)
 	projectedValue, projectedOK := decodeStructuredJSONValue(projected)
 	if !rawOK || !projectedOK {

@@ -14,21 +14,15 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// A SOAP request whose WS-Addressing message ID looks like a token is shown
-// in review with that ID as {{fn.uuid()}}, so the body's disclosure
-// projection cannot be aligned byte for byte with its recorded bytes.
-// Swapping the WS-Security password for a project secret would then change
-// other recorded bytes in the body, which the binding route refuses. The
-// review must say so up front, keep the value as recorded, and let the draft
-// save.
-const unalignedSOAPMessageID = "Q2hhbGxlbmdlVG9rZW4tOWYzYTdjMWIyZDRlNWY2YTdiOGM5ZDBl"
-
-func unalignedSOAPBody(password, note string) string {
-	return `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsa="http://www.w3.org/2005/08/addressing" ` +
-		`xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><soap:Header>` +
-		`<wsa:MessageID>` + unalignedSOAPMessageID + `</wsa:MessageID><wsse:Security><wsse:UsernameToken>` +
-		`<wsse:Username>alice</wsse:Username><wsse:Password>` + password + `</wsse:Password></wsse:UsernameToken></wsse:Security>` +
-		`</soap:Header><soap:Body><Ping>` + note + `</Ping></soap:Body></soap:Envelope>`
+// An XML login whose password is a CDATA section holding the markup that
+// follows it: review shows <password>[REDACTED]</password><token>[REDACTED]
+// </token>, and the recorded bytes split into those two values in more than
+// one way, so no byte-exact alignment exists. Swapping the password for a
+// project secret could then move bytes that belong to the token, which the
+// binding route refuses. The review must say so up front, keep the value as
+// recorded, and let the draft save.
+func unalignedXMLBody(password, token string) string {
+	return `<login><password><![CDATA[` + password + `</password><token>tail]]></password><token>` + token + `</token></login>`
 }
 
 func loginScript(name, contentType, body string) *dsl.Script {
@@ -47,8 +41,8 @@ func loginScript(name, contentType, body string) *dsl.Script {
 	}
 }
 
-func unalignedSOAPCredentialScript(password string) *dsl.Script {
-	return loginScript("Unaligned SOAP", "text/xml; charset=utf-8", unalignedSOAPBody(password, ""))
+func unalignedXMLCredentialScript(password string) *dsl.Script {
+	return loginScript("Unaligned XML", "text/xml; charset=utf-8", unalignedXMLBody(password, "synthetic-xml-token-5b8e"))
 }
 
 // passwordRequirement is the requirement for the login body's first value,
@@ -68,8 +62,8 @@ func passwordRequirement(t *testing.T, requirements []SecretBindingRequirement) 
 }
 
 func TestUnalignedCredentialIsKeptAsRecordedAndNotOfferedForRebinding(t *testing.T) {
-	const password = "synthetic-soap-password-4d21"
-	script := unalignedSOAPCredentialScript(password)
+	const password = "synthetic-xml-password-4d21"
+	script := unalignedXMLCredentialScript(password)
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
 	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	if !requirement.DestinationValuePreserved || requirement.PreservationUnavailableReason != "" {
@@ -101,7 +95,7 @@ func TestUnalignedCredentialIsKeptAsRecordedAndNotOfferedForRebinding(t *testing
 }
 
 func TestUnalignedRebindRefusalNamesTheActionAndField(t *testing.T) {
-	script := unalignedSOAPCredentialScript("synthetic-soap-password-7c90")
+	script := unalignedXMLCredentialScript("synthetic-xml-password-7c90")
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
 	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	_, _, err := applyCredentialPreservingSecretBindings(script, 0, []secretBindingSelection{{
@@ -187,8 +181,8 @@ func TestStructurallyAlignedCredentialIsNotOfferedForRebinding(t *testing.T) {
 // having no usable value: the projection masking more than the recording
 // held means it replaced at least one real value.
 func TestUnalignedFieldWithUnrelatedPlaceholderTextKeepsItsCredential(t *testing.T) {
-	script := unalignedSOAPCredentialScript("synthetic-soap-password-3f8a")
-	script.Actions[1].Body = unalignedSOAPBody("synthetic-soap-password-3f8a", "<Note>"+maskedScriptSecret+"</Note>")
+	script := unalignedXMLCredentialScript("synthetic-xml-password-3f8a")
+	script.Actions[1].Body = unalignedXMLBody("synthetic-xml-password-3f8a", maskedScriptSecret)
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
 	password := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	if !password.DestinationValuePreserved || password.PreservationUnavailableReason != "" ||
@@ -201,7 +195,8 @@ func TestUnalignedFieldWithUnrelatedPlaceholderTextKeepsItsCredential(t *testing
 // the same misalignment rules out a project secret. Neither is offered, and
 // committing the draft keeps the placeholder rather than failing the save.
 func TestUnalignedPlaceholderCanBeNeitherKeptNorReboundButStillCommits(t *testing.T) {
-	script := unalignedSOAPCredentialScript(maskedScriptSecret)
+	script := unalignedXMLCredentialScript(maskedScriptSecret)
+	script.Actions[1].Body = unalignedXMLBody(maskedScriptSecret, maskedScriptSecret)
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
 	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	if requirement.DestinationValuePreserved || requirement.PreservationUnavailableReason != "redacted_source_value" {
@@ -250,8 +245,8 @@ func TestUnalignedCredentialImportDraftSavesThroughTheAPI(t *testing.T) {
 	}
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store})
-	const password = "synthetic-soap-password-api-9b3e"
-	script := unalignedSOAPCredentialScript(password)
+	const password = "synthetic-xml-password-api-9b3e"
+	script := unalignedXMLCredentialScript(password)
 	preview := server.newScriptImportResponseWithSourceSecrets(
 		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil),
 		scriptImportResponseOptions{Script: script, Scripts: []*dsl.Script{script}},
