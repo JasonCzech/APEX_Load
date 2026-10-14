@@ -3196,6 +3196,10 @@ type browserRecordingVerifyRequest struct {
 	Conversion      browserRecordingConvertRequest `json:"conversion,omitempty"`
 	ScriptIndex     int                            `json:"script_index,omitempty"`
 	ReplaySessionID string                         `json:"replay_session_id,omitempty"`
+	// VisibleBrowser replays in a visible browser rather than a headless
+	// one. Some sites refuse a headless browser they let a person's browser
+	// through; on the Recording Agent that browser opens on the workstation.
+	VisibleBrowser bool `json:"visible_browser,omitempty"`
 }
 
 type browserRecordingVerifyResponse struct {
@@ -3279,6 +3283,10 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 	}
 	if script.ID == "" {
 		script.ID = uuid.New().String()
+	}
+	if req.VisibleBrowser && strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
+		headless := false
+		script = applyBrowserReplayOverrides(script, BrowserReplayStartRequest{Browser: &dsl.BrowserConfig{Headless: &headless}})
 	}
 	ignoreThink := true
 	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())

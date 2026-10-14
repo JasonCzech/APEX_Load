@@ -2179,6 +2179,34 @@ describe('BrowserRecorderControlPanel', () => {
     expect(block?.textContent).toContain('500 https://shop.example/api')
   })
 
+  it('groups console and network issues by host and folds requests cancelled by navigation', async () => {
+    const at = '2026-05-12T20:00:03Z'
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...recordingSession,
+        start_url: 'https://shop.example/',
+        annotation_count: 5,
+        annotations: [
+          { kind: 'request_failed', text: 'POST https://beacon.tracker.test/c — net::ERR_ABORTED', url: 'https://beacon.tracker.test/c', timestamp: at },
+          { kind: 'request_failed', text: 'POST https://beacon.tracker.test/c — net::ERR_ABORTED', url: 'https://beacon.tracker.test/c', timestamp: at },
+          { kind: 'request_failed', text: '403 https://beacon.tracker.test/v', url: 'https://beacon.tracker.test/v', status: 403, timestamp: at },
+          { kind: 'request_failed', text: '403 https://beacon.tracker.test/w', url: 'https://beacon.tracker.test/w', status: 403, timestamp: at },
+          { kind: 'request_failed', text: '500 https://shop.example/api', url: 'https://shop.example/api', status: 500, timestamp: at },
+        ],
+      },
+    })
+    await renderPanel()
+    const block = container.querySelector('[data-testid="recording-annotations"]')!
+    const rows = Array.from(block.querySelectorAll('.brp-warning')).map(row => row.querySelector('.brp-issue-heading')?.textContent)
+    // The recorded site's own issue leads; the tracker's two 403s are one row.
+    expect(rows).toEqual([
+      '[request] shop.example · HTTP 500',
+      '[request] beacon.tracker.test · HTTP 403 · 2 times · third party',
+    ])
+    expect(block.querySelector('.brp-issues-cancelled summary')?.textContent).toContain('2 requests cancelled as the page moved on (net::ERR_ABORTED)')
+    expect(block.textContent).not.toContain('POST https://beacon.tracker.test/c')
+  })
+
   it('verifies the recording and shows replay progress', async () => {
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel()
@@ -2186,7 +2214,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(verify).not.toBeNull()
     await act(async () => { verify.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flushPromises()
-    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1', expect.stringMatching(/^[0-9a-f-]{36}$/), expect.objectContaining({ parameterize: false, split_at_transactions: false }), 0)
+    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1', expect.stringMatching(/^[0-9a-f-]{36}$/), expect.objectContaining({ parameterize: false, split_at_transactions: false }), 0, false)
     expect(container.querySelector('[data-testid="replay-progress"]')).not.toBeNull()
   })
 
@@ -2201,7 +2229,7 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel()
     await clickButton('Preview conversion')
     await clickButton('Verify output 2')
-    expect(apiMock.verifyBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.any(String), expect.objectContaining({ expected_script_count: 2 }), 1)
+    expect(apiMock.verifyBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.any(String), expect.objectContaining({ expected_script_count: 2 }), 1, false)
     await clickButton('Complete Replay')
     expect(container.textContent).toContain('Verification passed for this conversion')
     expect(container.textContent).toContain('Save unverified draft')
@@ -2540,6 +2568,38 @@ describe('BrowserRecorderControlPanel', () => {
     // The report sits with the output it verified.
     expect(container.querySelector('[aria-label^="Output 1:"] [data-testid="replay-progress"]')).not.toBeNull()
     expect(container.textContent).not.toContain('Replay verification has not completed for this recording.')
+  })
+
+  // RA-06: on the Recording Agent, verify can replay in a visible browser,
+  // and a refusal of the headless one points to it.
+  it('offers a visible-browser verify on the agent and suggests it when the site refuses the replay', async () => {
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:27777', token: 'tok', session_id: 's-1' }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Preview conversion')
+    await clickButton('Verify output 1')
+    expect(apiMock.verifyBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.any(String), expect.anything(), 0, false)
+    await clickButton('Fail Replay')
+    const status = () => container.querySelector('[aria-label^="Output 1:"] .brp-output-status')?.textContent
+    expect(status()).toContain('The site may have refused the automated browser; turn on Verify in a visible browser and verify again.')
+
+    const visible = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(input => input.parentElement?.textContent?.includes('Verify in a visible browser'))!
+    // The option sits above the outputs it applies to.
+    const firstOutput = container.querySelector('[aria-label^="Output 1:"]')!
+    expect(visible.compareDocumentPosition(firstOutput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await act(async () => { visible.click() })
+    // The advice follows how the failed replay ran, not the checkbox.
+    expect(status()).toContain('turn on Verify in a visible browser')
+    await clickButton('Verify output 1')
+    expect(apiMock.verifyBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.any(String), expect.anything(), 0, true)
+  })
+
+  it('offers no visible-browser verify without the agent', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Preview conversion')
+    expect(container.textContent).not.toContain('Verify in a visible browser')
   })
 
   it('follows a replay only after its start is accepted', async () => {

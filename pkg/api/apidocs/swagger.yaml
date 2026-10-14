@@ -36494,6 +36494,8 @@ paths:
                 script_index:
                   type: integer
                   format: int64
+                visible_browser:
+                  type: boolean
       responses:
         "201":
           description: Created

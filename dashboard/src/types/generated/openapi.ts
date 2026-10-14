@@ -179242,6 +179242,7 @@ export interface operations {
           };
           "replay_session_id"?: string;
           "script_index"?: number;
+          "visible_browser"?: boolean;
         };
       };
     };

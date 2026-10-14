@@ -1823,3 +1823,29 @@
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+
+/* Console and network issues, grouped by host and error. */
+.brp-warning-third-party {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.brp-issue-heading {
+  font-weight: 600;
+}
+
+.brp-issue-sample {
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.brp-issues-cancelled {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.brp-issues-cancelled > summary {
+  cursor: pointer;
+}

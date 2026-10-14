@@ -419,13 +419,20 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
+  // visibleBrowser replays in a visible browser, which some sites let
+  // through when they refuse a headless one.
   const verifyBrowserRecording = useCallback(
-    (id: string, replaySessionId?: string, conversion?: BrowserRecorderConvertRequest, scriptIndex = 0) =>
+    (id: string, replaySessionId?: string, conversion?: BrowserRecorderConvertRequest, scriptIndex = 0, visibleBrowser = false) =>
       recorderRequest<{ replay_session_id: string; replay_session: unknown; warnings: string[] }>(
         `/browser-recorder/sessions/${id}/verify`,
         {
           method: 'POST',
-          body: JSON.stringify({ replay_session_id: replaySessionId || undefined, conversion, script_index: scriptIndex }),
+          body: JSON.stringify({
+            replay_session_id: replaySessionId || undefined,
+            conversion,
+            script_index: scriptIndex,
+            ...(visibleBrowser ? { visible_browser: true } : {}),
+          }),
         },
       ),
     [recorderRequest],

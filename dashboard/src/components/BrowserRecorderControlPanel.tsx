@@ -47,6 +47,7 @@ import {
 } from './protectedImportSession'
 import { createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
 import { replayBlockedIssues, summarizeReplayBlockers, type ReplayBlockerGroup } from './replayBlockers'
+import { summarizeRecordingIssues } from './recordingIssues'
 import { HTTPVersionModeField } from './HTTPVersionModeField'
 import type { HTTPVersionImportMode } from './httpVersionModel'
 import './RecordingStudio.css'
@@ -304,6 +305,15 @@ export default function BrowserRecorderControlPanel({
   const [verifyProgress, setVerifyProgress] = useState<BrowserReplayProgressSummary | null>(null)
   const [stepSearch, setStepSearch] = useState('')
   const [showAllSteps, setShowAllSteps] = useState(false)
+  const [showAllIssues, setShowAllIssues] = useState(false)
+  // On the Recording Agent, verify can replay in a visible browser, which a
+  // site's bot wall may let through when it refuses a headless one.
+  const [verifyVisibleBrowser, setVerifyVisibleBrowser] = useState(false)
+  const visibleVerifyOffered = !!api.browserRecorderBridge
+  const issueSummary = useMemo(
+    () => summarizeRecordingIssues(session?.annotations ?? [], session?.start_url ?? ''),
+    [session?.annotations, session?.start_url],
+  )
   const steps = useMemo(() => session?.steps || [], [session?.steps])
   const stepSearchQuery = stepSearch.trim().toLowerCase()
   const visibleSteps = useMemo(() => [...steps].sort((a, b) => session?.status === 'stopped' ? a.seq - b.seq : b.seq - a.seq).filter(step => {
@@ -1285,7 +1295,7 @@ export default function BrowserRecorderControlPanel({
         secret_bindings: previewSaveBindingsRef.current,
         parameterization_selections: [...previewParameterizationSelectionsRef.current.entries()].map(([script_index, selected]) => ({ script_index, selected_ids: [...selected].sort() })),
         expected_script_count: preview ? importResultScripts(preview).length : undefined,
-      }, scriptIndex)
+      }, scriptIndex, visibleVerifyOffered && verifyVisibleBrowser)
       if (!isCurrentSession()) return false
       rememberVerification(res.replay_session_id)
       if (verificationRevisionRef.current !== revision) return false
@@ -1737,7 +1747,14 @@ export default function BrowserRecorderControlPanel({
     if (!report) return outputStartErrors[index] ? 'Verification could not start' : 'Unverified draft'
     if (report.success) return 'Verification passed for this conversion'
     const reason = verificationFailureReason(report)
-    return reason ? `Verification failed — ${reason}` : 'Verification incomplete or failed — review evidence'
+    if (!reason) return 'Verification incomplete or failed — review evidence'
+    // A bot wall can refuse the headless replay browser it let the recording
+    // through. Only a browser output's headless replay can do better visibly.
+    const refused = /\bHTTP (?:401|403|429)\b|refused the page|access denied/i.test(reason)
+    const headless = report.runtime_profile?.headless !== false
+    return refused && headless && visibleVerifyOffered && script.protocol === 'browser'
+      ? `Verification failed — ${reason}. The site may have refused the automated browser; turn on Verify in a visible browser and verify again.`
+      : `Verification failed — ${reason}`
   }
   // Why verification could not start: the review gates grouped by reason, so
   // a long refusal reads as a few lines with the hosts they call.
@@ -2059,9 +2076,32 @@ export default function BrowserRecorderControlPanel({
       {(session.annotations?.length ?? 0) > 0 && (
         <div className="brp-warnings" data-testid="recording-annotations">
           <div className="brp-warnings-title">Console & network issues ({session.annotation_count ?? session.annotations!.length})</div>
-          {session.annotations!.slice(-6).map((ann, idx) => (
-            <div key={idx} className="brp-warning">[{ann.kind === 'console_error' ? 'console' : 'request'}] {ann.text}</div>
+          {(showAllIssues ? issueSummary.groups : issueSummary.groups.slice(0, 6)).map(group => (
+            <div key={group.key} className={group.firstParty ? 'brp-warning' : 'brp-warning brp-warning-third-party'}>
+              <div className="brp-issue-heading">
+                [{group.kind}] {group.host || 'this page'} · {group.error}
+                {group.count > 1 && ` · ${group.count} times`}
+                {!group.firstParty && ' · third party'}
+              </div>
+              <div className="brp-issue-sample">{group.sample}</div>
+            </div>
           ))}
+          {issueSummary.groups.length > 6 && (
+            <button type="button" className="rec-inline-action" onClick={() => setShowAllIssues(current => !current)}>
+              {showAllIssues ? 'Show fewer' : `Show all ${issueSummary.groups.length} kinds of issue`}
+            </button>
+          )}
+          {issueSummary.cancelled.count > 0 && (
+            <details className="brp-issues-cancelled">
+              <summary>
+                {issueSummary.cancelled.count === 1 ? '1 request' : `${issueSummary.cancelled.count} requests`} cancelled as the page moved on (net::ERR_ABORTED), usually analytics beacons
+              </summary>
+              <div>
+                {issueSummary.cancelled.hosts.slice(0, 12).join(', ')}
+                {issueSummary.cancelled.hosts.length > 12 && ` and ${issueSummary.cancelled.hosts.length - 12} more hosts`}
+              </div>
+            </details>
+          )}
         </div>
       )}
 
@@ -2150,6 +2190,17 @@ export default function BrowserRecorderControlPanel({
             <input type="checkbox" checked={parameterizeInputs} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setParameterizeInputs(e.target.checked) }} />
             <span>Parameterize inputs</span>
           </label>
+          {visibleVerifyOffered && (
+            <label className="rec-checkbox-row">
+              <input
+                type="checkbox"
+                checked={verifyVisibleBrowser}
+                disabled={busy}
+                onChange={event => setVerifyVisibleBrowser(event.target.checked)}
+              />
+              <span>Verify in a visible browser on your computer (some sites refuse a headless one)</span>
+            </label>
+          )}
           {preview && (
             <div className="brp-preview-summary">
               {previewRequestKeyRef.current !== JSON.stringify(convertRequest()) && <p role="status">Conversion changed. Preview conversion again to review the current outputs.</p>}

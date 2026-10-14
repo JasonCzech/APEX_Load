@@ -2782,6 +2782,44 @@ func TestHandleVerifyBrowserRecordingUsesClientReplaySessionID(t *testing.T) {
 	}
 }
 
+// RA-06: a site's bot wall can refuse the headless replay browser it let the
+// recording through; verify can replay in a visible browser instead.
+func TestHandleVerifyBrowserRecordingCanUseAVisibleBrowser(t *testing.T) {
+	for _, tc := range []struct {
+		body         string
+		wantHeadless bool
+	}{
+		{body: `{}`, wantHeadless: true},
+		{body: `{"visible_browser":true}`, wantHeadless: false},
+	} {
+		fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+		server := newBrowserRecorderTestServer(t, fake)
+		id := startBrowserRecordingViaAPI(t, server)
+		stopBrowserRecordingViaAPI(t, server, id)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/verify", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusCreated {
+			t.Fatalf("verify %s status = %d body=%s", tc.body, resp.Code, resp.Body.String())
+		}
+		var payload struct {
+			ReplaySession struct {
+				RuntimeProfile struct {
+					Headless *bool `json:"headless"`
+				} `json:"runtime_profile"`
+			} `json:"replay_session"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		headless := payload.ReplaySession.RuntimeProfile.Headless
+		if got := headless == nil || *headless; got != tc.wantHeadless {
+			t.Errorf("verify %s replayed headless = %v, want %v", tc.body, got, tc.wantHeadless)
+		}
+	}
+}
+
 func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	exportDir := t.TempDir()
 	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir) // confine the persisted copy to a temp dir

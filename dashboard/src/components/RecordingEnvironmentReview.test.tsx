@@ -34,6 +34,23 @@ describe('recording environment review', () => {
     expect(script.metadata?.import?.preserved?.recording_environment).toBe(receipt)
   })
 
+  // RA-18: one line says what was recorded; the full receipt opens from it,
+  // and an engine mismatch stays in view.
+  it('folds the receipt behind a one-line summary and keeps a mismatch visible', () => {
+    render({ script })
+    const details = container.querySelector('details')!
+    expect(details.open).toBe(false)
+    expect(container.querySelector('h4')?.textContent).toBe('Recording environment')
+    expect(details.querySelector('summary')?.textContent).toBe('Chromium · iPad Air · 820 × 1180 · reported by the recorder')
+    const warning = container.querySelector('.recording-environment-warning')!
+    expect(warning.textContent).toContain('differs')
+    expect(details.contains(warning)).toBe(false)
+    render({ environment: { ...receipt, observation_source: 'agent_reported', emulated: false, device_profile: '', profile_browser_family: '', applied_context: {} }, agentReported: true, live: true })
+    expect(container.querySelector('summary')?.textContent).toBe('Chromium · no device emulation · reported by the Recording Agent')
+    render({ environment: { version: 99 } })
+    expect(container.querySelector('summary')?.textContent).toBe('Receipt could not be read')
+  })
+
   it('qualifies live agent reports and does not label them as controller observation', () => {
     render({ environment: receipt, agentReported: true, live: true })
     expect(field('Observation source')).toBe('Recording agent reported')
