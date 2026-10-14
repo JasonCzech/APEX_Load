@@ -126,20 +126,28 @@ type jsonProjectionParser struct {
 	graphQLQueries []string
 }
 
-// trustedUnquotedTemplate reports the template expression that starts at the
-// parser's position, when it is one the caller trusts as a whole value.
-func (parser *jsonProjectionParser) trustedUnquotedTemplate() (string, bool) {
+// unquotedRuntimeTemplate reports the template expression that starts at the
+// parser's position when it stands for a whole runtime value: one the caller
+// trusts, or a variable a prior response extractor proved (a correlated
+// number such as "ProjectId":{{var.corr_project_id}}). dynamic marks the
+// latter, which a sensitive member still records like a quoted one.
+func (parser *jsonProjectionParser) unquotedRuntimeTemplate() (template string, dynamic bool, ok bool) {
 	rest := parser.payload[parser.index:]
-	if len(parser.options.TrustedWholeValues) == 0 || !bytes.HasPrefix(rest, []byte("{{")) {
-		return "", false
+	if !bytes.HasPrefix(rest, []byte("{{")) {
+		return "", false, false
 	}
 	end := bytes.Index(rest[2:], []byte("}}"))
 	if end < 0 {
-		return "", false
+		return "", false, false
 	}
-	template := string(rest[:2+end+2])
-	_, trusted := parser.options.TrustedWholeValues[strings.TrimSpace(template)]
-	return template, trusted
+	template = string(rest[:2+end+2])
+	if _, trusted := parser.options.TrustedWholeValues[strings.TrimSpace(template)]; trusted {
+		return template, false, true
+	}
+	if kind, _ := ClassifyWholeTemplate(template, parser.options.ProvenVars); kind == TemplateDynamic {
+		return template, true, true
+	}
+	return "", false, false
 }
 
 func (parser *jsonProjectionParser) parseValue(
@@ -174,11 +182,30 @@ func (parser *jsonProjectionParser) parseValue(
 	if parser.index >= len(parser.payload) {
 		return errors.New("JSON value is missing")
 	}
-	if template, ok := parser.trustedUnquotedTemplate(); ok {
+	if template, dynamic, ok := parser.unquotedRuntimeTemplate(); ok {
 		// A converter may write a template where a value goes (a refreshed
-		// client timestamp stays a number). One the caller trusts is a
-		// runtime reference, not a literal, so it is kept as it is.
+		// client timestamp or a correlated id stays a number). It is a runtime
+		// reference, not a literal, so it is kept as it is.
 		parser.index += len(template)
+		if dynamic && sensitiveName != "" {
+			_, item, err := projectSensitiveScalar(
+				template,
+				sensitiveName,
+				parser.options.Source,
+				TargetRef{
+					RequestKey: parser.options.RequestKey,
+					Field:      firstNonEmpty(parser.options.TargetField, "json"),
+					Pointer:    pointer,
+					Index:      valueIndex,
+				},
+				valueIndex,
+				parser.options,
+			)
+			if err != nil {
+				return err
+			}
+			parser.result.Merge(item)
+		}
 		return nil
 	}
 	valueStart := parser.index

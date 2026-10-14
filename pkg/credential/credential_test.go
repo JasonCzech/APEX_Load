@@ -27,7 +27,22 @@ func TestSensitiveNamePreservesNormalizedVocabulary(t *testing.T) {
 		{"passphrase", true},
 		{"author", false},
 		{"tokenizer", false},
-		{"session_duration", true},
+		// A credential component followed by a property word describes the
+		// credential (a recorded Tableau session_feature_flags form field held
+		// feature toggles, and import asked for a secret).
+		{"session_duration", false},
+		{":session_feature_flags", false},
+		{"token_type", false},
+		{"auth.mode", false},
+		{"session_id", true},
+		{"user_session", true},
+		{"access_token_expires_in", true},
+		{"type_token", true},
+		{"flags", false},
+		{"session.flags.token", true},
+		// A URL can carry the credential (an Azure SAS URL holds its signature).
+		{"sas_url", true},
+		{"session_uri", true},
 	}
 	for _, test := range tests {
 		test := test

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -116,6 +117,8 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 	// Per origin: final h3 requests mapped by mode, and draft tokens seen.
 	h3Mapped := map[string]int{}
 	h3Drafts := map[string]int{}
+	var localEntries, braceEntries []int
+	localSchemes := map[string]int{}
 	for index, item := range items {
 		if origin := harOriginAdvertisingH3(item); origin != "" {
 			h3Advertised[origin] = true
@@ -133,6 +136,14 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			skipped++
 			continue
 		}
+		if scheme := harLocalRequestScheme(requestData); scheme != "" {
+			// The page made this URL itself (an object URL or inline data);
+			// nothing went on the network, so replay has nothing to send.
+			localEntries = append(localEntries, index+1)
+			localSchemes[scheme+":"]++
+			skipped++
+			continue
+		}
 		if isHARWebSocketUpgrade(item) {
 			// The connection becomes WebSocket steps (see harWebSockets),
 			// not an HTTP request.
@@ -146,6 +157,10 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			warnings = append(warnings, fmt.Sprintf("HAR entry %d was skipped: %s", index+1, err.Error()))
 			skipped++
 			continue
+		}
+		if escaped, changed := escapeLiteralTemplateBraces(ex.URL); changed {
+			ex.URL = escaped
+			braceEntries = append(braceEntries, index+1)
 		}
 		if ex.CacheValidatorsDropped {
 			revalidations++
@@ -197,6 +212,16 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			diagnostics.Add(diag.Blocker, "HTTP version", fmt.Sprintf("HAR entry %d", index+1), "Captured HTTP version evidence requires review before replay ("+capture.ReasonCode+").")
 		}
 		exchanges = append(exchanges, ex)
+	}
+	if len(localEntries) > 0 {
+		var schemes []string
+		for _, scheme := range slices.Sorted(maps.Keys(localSchemes)) {
+			schemes = append(schemes, fmt.Sprintf("%s %d", scheme, localSchemes[scheme]))
+		}
+		diagnostics.Add(diag.Info, "HAR local URLs", harEntryList(localEntries), fmt.Sprintf("%d URL(s) the browser made itself (%s) never reached the network, so they are not requests to replay", len(localEntries), strings.Join(schemes, ", ")))
+	}
+	if len(braceEntries) > 0 {
+		diagnostics.Add(diag.Info, "HAR URL braces", harEntryList(braceEntries), `these URLs hold a literal "{{" or "}}", which a script reads as a template, so their braces are sent as %7B and %7D; servers decode them to the same characters`)
 	}
 	if len(exchanges) > 1 {
 		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
@@ -311,6 +336,52 @@ func isStaticURL(rawURL string) bool {
 		}
 	}
 	return false
+}
+
+// harEntryList names HAR entries for one diagnostic: "HAR entries 3, 7, 9",
+// the first ten of a longer list followed by how many more.
+func harEntryList(entries []int) string {
+	const shown = 10
+	names := make([]string, 0, min(len(entries), shown))
+	for _, entry := range entries[:min(len(entries), shown)] {
+		names = append(names, strconv.Itoa(entry))
+	}
+	list := strings.Join(names, ", ")
+	if len(entries) > shown {
+		list += fmt.Sprintf(" and %d more", len(entries)-shown)
+	}
+	if len(entries) == 1 {
+		return "HAR entry " + list
+	}
+	return "HAR entries " + list
+}
+
+var templateBraceEscaper = strings.NewReplacer("{", "%7B", "}", "%7D")
+
+// escapeLiteralTemplateBraces percent-encodes the braces of a recorded URL
+// that holds a literal "{{" or "}}" (a page's own JSON in its query string,
+// such as {d:1,p:{cn:2}}), which the script would read as a template.
+func escapeLiteralTemplateBraces(raw string) (string, bool) {
+	if !strings.Contains(raw, "{{") && !strings.Contains(raw, "}}") {
+		return raw, false
+	}
+	return templateBraceEscaper.Replace(raw), true
+}
+
+// harLocalRequestScheme names the scheme of a HAR request the browser served
+// itself (blob:, data:, about:, extension pages), or "" for a network request.
+func harLocalRequestScheme(requestData map[string]any) string {
+	raw := strings.TrimSpace(stringValue(requestData["url"]))
+	scheme, _, found := strings.Cut(raw, ":")
+	if !found {
+		return ""
+	}
+	switch scheme = strings.ToLower(scheme); scheme {
+	case "blob", "data", "about", "file", "chrome-extension", "moz-extension", "filesystem", "javascript":
+		return scheme
+	default:
+		return ""
+	}
 }
 
 func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (exchange, error) {

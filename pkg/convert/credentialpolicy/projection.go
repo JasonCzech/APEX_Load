@@ -1492,11 +1492,28 @@ func composedCredentialName(value string, options Options) (string, bool) {
 			}
 		}
 	delimiter:
-		if cursor < len(value) && (value[cursor] == '=' || value[cursor] == ':') {
+		if cursor < len(value) && (value[cursor] == '=' || value[cursor] == ':') &&
+			!literalNonCredentialAt(value, cursor+1) {
 			return name, true
 		}
 	}
 	return "", false
+}
+
+// literalNonCredentialAt reports whether the value after a name's delimiter is
+// a JSON true, false or null, which holds no credential: a feature flag such
+// as "SingleUseRefreshToken":false names a credential without carrying one.
+func literalNonCredentialAt(value string, start int) bool {
+	for start < len(value) && (value[start] == ' ' || value[start] == '\t') {
+		start++
+	}
+	for _, literal := range []string{"true", "false", "null"} {
+		if strings.HasPrefix(value[start:], literal) {
+			end := start + len(literal)
+			return end == len(value) || !composedCredentialNameByte(value[end])
+		}
+	}
+	return false
 }
 
 func composedCredentialNameByte(value byte) bool {

@@ -89,10 +89,23 @@ var staticFields = map[string]struct{}{
 	"refresh_token": {}, "refreshtoken": {},
 }
 
+// credentialPropertyWords end a name that describes a credential rather
+// than holding one: session_feature_flags, token_type, session_duration.
+//
+// URL words are deliberately absent: a sas_url or session_url can carry the
+// credential itself.
+var credentialPropertyWords = map[string]struct{}{
+	"count": {}, "duration": {}, "enabled": {}, "expiration": {}, "expires": {}, "expiry": {},
+	"feature": {}, "features": {}, "flag": {}, "flags": {}, "length": {}, "method": {}, "mode": {},
+	"timeout": {}, "ttl": {}, "type": {}, "version": {},
+}
+
 // SensitiveName reports whether name denotes protected credential material.
 // It accepts common structured notations such as credentials[client_secret] and
 // auth.private_key, including percent-encoded names, while deliberately using
-// exact normalized components to avoid substring false positives.
+// exact normalized components to avoid substring false positives. A credential
+// component followed by a final property word (session_feature_flags,
+// token_type) names a property of the credential, not the credential.
 func SensitiveName(name string) bool {
 	name = decodeName(name)
 	if name == "" {
@@ -104,11 +117,15 @@ func SensitiveName(name string) bool {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
 		return !(unicode.IsLetter(r) || unicode.IsDigit(r))
 	})
+	describesCredential := false
+	if len(parts) > 1 {
+		_, describesCredential = credentialPropertyWords[NormalizeName(parts[len(parts)-1])]
+	}
 	for start := range parts {
 		var combined string
 		for end := start; end < len(parts) && end < start+4; end++ {
 			combined += NormalizeName(parts[end])
-			if _, ok := sensitiveNames[combined]; ok {
+			if _, ok := sensitiveNames[combined]; ok && !(describesCredential && end < len(parts)-1) {
 				return true
 			}
 		}

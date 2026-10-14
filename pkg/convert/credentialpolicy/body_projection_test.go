@@ -326,3 +326,52 @@ func TestProjectRequestBodyKeepsTrustedUnquotedTemplates(t *testing.T) {
 		t.Fatalf("untrusted template body = %s, %+v; want it refused or masked", projected, result)
 	}
 }
+
+// A correlated number becomes an unquoted reference to a variable a prior
+// response extractor proved ("ProjectId":{{var.corr_project_id}} in a recorded
+// Tableau event); it is a runtime value, not malformed JSON. An unproven one
+// still is, and a sensitive member keeps its value-free locator.
+func TestProjectRequestBodyKeepsProvenUnquotedVariables(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{"event":{"ProjectId":{{var.corr_project_id}},"Kind":"Bootstrap"},"token":{{var.corr_token}}}`)
+	options := Options{
+		Mode:       Preserve,
+		Source:     SourceRef{Format: "test"},
+		RequestKey: "event",
+		ProvenVars: map[string]struct{}{"corr_project_id": {}, "corr_token": {}},
+	}
+	projected, result, err := ProjectRequestBody(payload, "application/json", options)
+	if err != nil || result.Disposition == Rejected || result.Disposition == BlockedDraft {
+		t.Fatalf("projection = %v, %+v", err, result)
+	}
+	if !bytes.Equal(projected, payload) {
+		t.Fatalf("projected = %s, want the body kept as recorded", projected)
+	}
+	if len(result.PreservedTargets) != 1 || result.PreservedTargets[0].Pointer != "/token" {
+		t.Fatalf("preserved targets = %+v, want the sensitive token member located", result.PreservedTargets)
+	}
+
+	options.ProvenVars = map[string]struct{}{"corr_token": {}}
+	_, result, _ = ProjectRequestBody(payload, "application/json", options)
+	if result.Disposition != BlockedDraft && result.Disposition != Rejected {
+		t.Fatalf("unproven unquoted variable disposition = %+v, want the body still refused", result)
+	}
+}
+
+// A JSON true, false or null after a credential-like name in a field value
+// carries no credential: a recorded feature-flag object
+// ("SingleUseRefreshToken":false) once turned a whole form field into a
+// secret to configure.
+func TestComposedCredentialNameIgnoresBooleanAndNullValues(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{`{"SingleUseRefreshToken":false,"Beta":true}`, `{"refresh_token": null}`, `refreshToken=true`} {
+		if name, sensitive := composedCredentialName(value, Options{}); sensitive {
+			t.Fatalf("composedCredentialName(%q) = %q, want no credential", value, name)
+		}
+	}
+	for _, value := range []string{`{"refreshToken":"rt-synthetic-4411"}`, `refreshToken=trueish-synthetic`, `{"password":1234}`, `{"token":"null"}`} {
+		if _, sensitive := composedCredentialName(value, Options{}); !sensitive {
+			t.Fatalf("composedCredentialName(%q) found no credential", value)
+		}
+	}
+}

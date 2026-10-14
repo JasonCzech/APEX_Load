@@ -14,6 +14,12 @@ const protectedNames = new Set([
   'settlementtoken', 'signature', 'token', 'xsrf', 'xsrftoken',
 ])
 
+// Mirrors pkg/credential credentialPropertyWords (no URL words).
+const credentialPropertyWords = new Set([
+  'count', 'duration', 'enabled', 'expiration', 'expires', 'expiry',
+  'feature', 'features', 'flag', 'flags', 'length', 'method', 'mode',
+  'timeout', 'ttl', 'type', 'version',
+])
 const letterOrDigit = /^[\p{L}\p{Nd}]$/u
 function normalize(value: string): string {
   let output = ''
@@ -88,11 +94,13 @@ export function analysisProtectedIdentityColumn(path: string[]): boolean {
     name = decodedName(name)
     if (protectedNames.has(normalize(name))) return true
     const parts = name.split(/[^\p{L}\p{Nd}]+/u).filter(Boolean)
+    // A final property word describes the credential (session_count).
+    const describesCredential = parts.length > 1 && credentialPropertyWords.has(normalize(parts[parts.length - 1]))
     for (let start = 0; start < parts.length; start++) {
       let combined = ''
       for (let end = start; end < parts.length && end < start + 4; end++) {
         combined += normalize(parts[end])
-        if (protectedNames.has(combined)) return true
+        if (protectedNames.has(combined) && !(describesCredential && end < parts.length - 1)) return true
       }
     }
     return false

@@ -13,13 +13,15 @@ it('refuses the authoritative credential vocabulary in structured and percent-en
 })
 
 it('retains exact legitimate analytical labels and noncredential substrings', () => {
-  for (const path of [['source'], ['hostname'], ['service'], ['method'], ['partition'], ['monkey'], ['tokenization'], ['secretariat'], ['passwordless'], ['session_count'], ['密password'], ['a/b~c'], ['__proto__'], ['constructor'], ['safe%zz']]) {
-    // session_count contains an exact protected component and intentionally
-    // remains protected, whereas sessioncount is a distinct whole name.
-    const expected = path[0] === 'session_count'
-    expect(analysisProtectedIdentityColumn(path), JSON.stringify(path)).toBe(expected)
+  for (const path of [['source'], ['hostname'], ['service'], ['method'], ['partition'], ['monkey'], ['tokenization'], ['secretariat'], ['passwordless'], ['密password'], ['a/b~c'], ['__proto__'], ['constructor'], ['safe%zz']]) {
+    expect(analysisProtectedIdentityColumn(path), JSON.stringify(path)).toBe(false)
   }
   expect(analysisProtectedIdentityColumn(['sessioncount'])).toBe(false)
+  // A final property word describes the credential, as in pkg/credential.
+  expect(analysisProtectedIdentityColumn(['session_count'])).toBe(false)
+  expect(analysisProtectedIdentityColumn(['token_type'])).toBe(false)
+  expect(analysisProtectedIdentityColumn(['session', 'count'])).toBe(true)
+  expect(analysisProtectedIdentityColumn(['user_session'])).toBe(true)
 })
 
 it('admits finite path geometry before percent decoding or allocation', () => {
