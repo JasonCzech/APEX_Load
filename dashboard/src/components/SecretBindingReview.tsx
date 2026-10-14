@@ -20,7 +20,7 @@ import {
   type ProjectSecretWrite,
 } from '../types/secrets'
 import { getErrorMessage } from '../utils/errorUtils'
-import { collisionSafeSecretName, isValidSecretBindingName, MAX_SECRET_BINDING_NAME_LENGTH } from './secretBindingUtils'
+import { collisionSafeSecretName, isValidSecretBindingName, MAX_SECRET_BINDING_NAME_LENGTH, requirementCanUseProjectSecret } from './secretBindingUtils'
 import {
   formatSourceSecretSessionFailure,
   getSourceSecretSessionFailureMetadata,
@@ -80,6 +80,11 @@ const preservationUnavailableMessages: Record<PreservationUnavailableReason, str
 }
 
 const genericPreservationUnavailableMessage = 'The server could not verify an exact imported value at every generated destination. Use a project secret for this credential.'
+const genericProjectSecretUnavailableMessage = "APEX can't swap this credential for a project-secret reference without changing other recorded bytes in the same field, so the field keeps its recorded value. To use a project secret here, edit the request after saving."
+// Neither choice is possible: the import has no usable value to keep (a
+// placeholder or an ambiguously encoded value) and a project secret cannot be
+// spliced in. Saving keeps the recorded field as it is.
+const keptAsRecordedMessage = "APEX can't keep a usable imported value for this credential, and it can't swap in a project secret without changing other recorded bytes in this field. Saving keeps the field as recorded; edit this request to supply a working credential before running it."
 
 export interface PreparedSecretBindings {
   valid: boolean
@@ -126,11 +131,14 @@ function groupRequirements(requirements: SecretBindingRequirement[]): Requiremen
     // destination decisions even when the importer suggests the same logical
     // name. Grouping them together would make the unresolved occurrence force
     // an otherwise runnable imported literal into Project Secrets.
+    // An occurrence a project secret cannot replace is its own decision too:
+    // grouped with replaceable ones, it would block their binding.
+    const rebindable = requirementCanUseProjectSecret(requirement)
     const destinationClass = requirement.destination_value_preserved === true
       ? 'preserved'
-      : 'binding-required'
+      : rebindable ? 'binding-required' : 'kept-as-recorded'
     const key = requirement.value_group_id && requirement.destination_value_preserved
-      ? `${scope}:value:${requirement.value_group_id}`
+      ? `${scope}:value:${requirement.value_group_id}${rebindable ? '' : ':recorded'}`
       : requirement.destination_value_preserved
         ? `${scope}:requirement:${requirement.id}`
         : suggestedName
@@ -196,6 +204,8 @@ function semanticRequirementsIdentity(requirements: readonly SecretBindingRequir
       script_name: requirement.script_name ?? '',
       source_value_available: requirement.source_value_available === true,
       destination_value_preserved: requirement.destination_value_preserved === true,
+      rebind_unavailable_reason: requirement.rebind_unavailable_reason ?? '',
+      rebind_unavailable_description: requirement.rebind_unavailable_description ?? '',
       value_group_id: requirement.value_group_id ?? '',
       preservation_unavailable_reason: requirement.preservation_unavailable_reason ?? '',
       preservation_unavailable_description: requirement.preservation_unavailable_description ?? '',
@@ -216,6 +226,22 @@ function groupCanPreserveDestinationValue(group: RequirementGroup): boolean {
     group.requirements.length > 0
     && group.requirements.every(requirement => requirement.destination_value_preserved === true)
   )
+}
+
+function groupCanUseProjectSecret(group: RequirementGroup): boolean {
+  return group.requirements.every(requirementCanUseProjectSecret)
+}
+
+// Neither preserved as a usable value nor replaceable by a project secret.
+function groupKeptAsRecorded(group: RequirementGroup): boolean {
+  return !groupCanPreserveDestinationValue(group) && !groupCanUseProjectSecret(group)
+}
+
+function groupProjectSecretUnavailableMessages(group: RequirementGroup): string[] {
+  const messages = new Set(group.requirements
+    .filter(requirement => !requirementCanUseProjectSecret(requirement))
+    .map(requirement => requirement.rebind_unavailable_description?.trim() || genericProjectSecretUnavailableMessage))
+  return Array.from(messages)
 }
 
 function groupPreservationUnavailableMessages(
@@ -266,14 +292,18 @@ function groupHasAffectedSourcePaths(group: RequirementGroup): boolean {
 function initialDestinationChoices(groups: RequirementGroup[]): Record<string, DestinationChoice> {
   return Object.fromEntries(groups.map(group => [
     group.key,
-    groupCanPreserveDestinationValue(group) ? 'preserve' : 'project-secret',
+    groupCanPreserveDestinationValue(group) || !groupCanUseProjectSecret(group) ? 'preserve' : 'project-secret',
   ]))
 }
 
+// A group a project secret cannot replace keeps its recorded value, even when
+// that value cannot be preserved as a usable credential: the binding route
+// would refuse the only other choice.
 function effectiveDestinationChoice(
   group: RequirementGroup,
   choices: Readonly<Record<string, DestinationChoice>>,
 ): DestinationChoice {
+  if (!groupCanUseProjectSecret(group)) return 'preserve'
   if (!groupCanPreserveDestinationValue(group)) return 'project-secret'
   return choices[group.key] === 'project-secret' ? 'project-secret' : 'preserve'
 }
@@ -1386,7 +1416,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const reuseSets = new Map<string, RequirementGroup[]>()
   for (const group of groups) {
     const noun = credentialNoun(group.baseName)
-    if (!noun || group.destinationClass === 'preserved') continue
+    if (!noun || group.destinationClass !== 'binding-required') continue
     const key = `${noun}:${group.destinationClass}`
     const existing = reuseSets.get(key)
     if (existing) existing.push(group)
@@ -1426,6 +1456,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
 
   const updateDestinationChoice = (group: RequirementGroup, choice: DestinationChoice) => {
     if (choice === 'preserve' && !groupCanPreserveDestinationValue(group)) return
+    if (choice === 'project-secret' && !groupCanUseProjectSecret(group)) return
     setDestinationChoices(current => ({ ...current, [group.key]: choice }))
     if (choice === 'preserve') {
       setValues(current => {
@@ -1468,20 +1499,25 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const sourceMigrationSelectable = sourceMigrationOffered && !sourceSessionUnavailable && hasBoundSourceValues
   const preservedGroupCount = groups.filter(group => (
     effectiveDestinationChoice(group, destinationChoices) === 'preserve'
+    && groupCanPreserveDestinationValue(group)
   )).length
+  const keptAsRecordedGroupCount = groups.filter(groupKeptAsRecorded).length
   const providerLabel = scopedStoreProvider.split(',').map(provider => ({ encrypted_database: 'Encrypted project store', environment_read_only: 'Environment bindings (read-only)' }[provider] || 'Project secret provider')).join(' · ') || 'Project secret store'
   // Each group needs setup, is configured (or has a value entered), or keeps
   // its imported value; the list leads with the groups that need setup. The
   // order reads the group's proposed name and what the store says, never a
   // name or value being typed, so a row does not move while it is filled in.
-  const groupState = (group: RequirementGroup, typed: boolean): 'setup' | 'ready' | 'preserved' => {
+  const groupState = (group: RequirementGroup, typed: boolean): 'setup' | 'recorded' | 'ready' | 'preserved' => {
+    // Kept as recorded still needs an edit before running, so it is not
+    // filed with the preserved values.
+    if (groupKeptAsRecorded(group)) return 'recorded'
     if (effectiveDestinationChoice(group, destinationChoices) === 'preserve') return 'preserved'
     const name = (typed ? names[group.key] || '' : group.suggestedName).trim()
     return scopedStatuses.get(name)?.configured === true || committedValueNamesSnapshot.names.has(name) || (typed && !!values[group.key])
       ? 'ready'
       : 'setup'
   }
-  const groupStateOrder = { setup: 0, ready: 1, preserved: 2 } as const
+  const groupStateOrder = { setup: 0, recorded: 1, ready: 2, preserved: 3 } as const
   const filteredGroups = groups.filter(group => {
     const state = groupState(group, true)
     if (credentialState !== 'all' && credentialState !== state) return false
@@ -1550,6 +1586,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       <div className="credentials-card-summary" role="status">
         <span>{prepared.configureLaterCount} {prepared.configureLaterCount === 1 ? 'binding needs' : 'bindings need'} setup</span>
         <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
+        {keptAsRecordedGroupCount > 0 && <span>{keptAsRecordedGroupCount} kept as recorded, to edit before running</span>}
         <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} entered, not yet saved</span>
         <span>
           {scopedProbeState === 'loading'
@@ -1602,7 +1639,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
 
       <div className="import-review-toolbar">
         <label>Search credential locations<input type="search" disabled={applying || disabled} value={credentialSearch} onChange={event => { setCredentialSearch(event.target.value); setCredentialPage(0) }} /></label>
-        <label>Credential state<select disabled={applying || disabled} value={credentialState} onChange={event => { setCredentialState(event.target.value); setCredentialPage(0) }}><option value="all">All groups</option><option value="setup">Needs setup</option><option value="preserved">Preserved</option><option value="ready">Configured or value entered</option></select></label>
+        <label>Credential state<select disabled={applying || disabled} value={credentialState} onChange={event => { setCredentialState(event.target.value); setCredentialPage(0) }}><option value="all">All groups</option><option value="setup">Needs setup</option><option value="recorded">Kept as recorded</option><option value="preserved">Preserved</option><option value="ready">Configured or value entered</option></select></label>
         <label><input type="checkbox" disabled={applying || disabled} checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setCredentialPage(0) }} /> Show bindings needing review</label>
       </div>
       {filteredGroups.length === 0 && <p role="status">No credential groups match this filter.</p>}
@@ -1613,10 +1650,13 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           const nameErrorId = `${inputId}-name-error`
           const valueConflictErrorId = `${inputId}-value-conflict-error`
           const preservationHelpId = `${inputId}-preservation-help`
+          const projectSecretHelpId = `${inputId}-project-secret-help`
           const preserveId = `${inputId}-preserve`
           const projectSecretId = `${inputId}-project-secret`
           const name = names[group.key] ?? ''
           const canPreserveDestinationValue = groupCanPreserveDestinationValue(group)
+          const canUseProjectSecret = groupCanUseProjectSecret(group)
+          const keptAsRecorded = groupKeptAsRecorded(group)
           const bindingSelected = effectiveDestinationChoice(group, destinationChoices) === 'project-secret'
           const nameError = bindingSelected ? validationErrors[group.key] : ''
           const configured = scopedStatuses.get(name.trim())?.configured === true
@@ -1640,10 +1680,16 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           )
           const configuredNameCollision = configured && willCreate
           const unresolvedSourceNextStep = destinationGuidance(configuredNameCollision, configured, willCreate)
-          const preserveUnavailableMessages = canPreserveDestinationValue
+          const preserveUnavailableMessages = canPreserveDestinationValue || keptAsRecorded
             ? []
             : groupPreservationUnavailableMessages(group, unresolvedSourceNextStep)
-          const status = !bindingSelected
+          const projectSecretUnavailableMessages = keptAsRecorded
+            ? [keptAsRecordedMessage]
+            : canUseProjectSecret ? [] : groupProjectSecretUnavailableMessages(group)
+          const keepLabel = keptAsRecorded ? 'Keep recorded value' : 'Preserve imported value'
+          const status = keptAsRecorded
+            ? 'Kept as recorded'
+            : !bindingSelected
             ? 'Preserved in script'
             : configuredNameCollision
             ? 'Will use a new name'
@@ -1656,7 +1702,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
               : unresolvedSourceReference
                 ? 'Value needed before run'
                 : 'Configure later'
-          const statusTone = !bindingSelected
+          const statusTone = keptAsRecorded
+            ? 'warning'
+            : !bindingSelected
             ? 'healthy'
             : configuredNameCollision
             ? 'warning'
@@ -1709,19 +1757,20 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                 />
               </div>
               {inlineEditing && !editing && <div className="credential-inline-current">
-                <span>Destination</span><strong>{bindingSelected ? 'Project secret' : 'Preserve imported value'}</strong>
+                <span>Destination</span><strong>{bindingSelected ? 'Project secret' : keepLabel}</strong>
                 {bindingSelected && <code>{`{{secret.${name}}}`}</code>}
-                <span>Current value</span><strong>{!bindingSelected ? 'Preserved · hidden' : configured ? 'Configured · hidden' : 'Not configured'}</strong>
+                <span>Current value</span><strong>{keptAsRecorded ? 'Recorded · hidden' : !bindingSelected ? 'Preserved · hidden' : configured ? 'Configured · hidden' : 'Not configured'}</strong>
               </div>}
               <ControlContainer className="secret-binding-review-control" {...(!inlineEditing ? { open: bindingSelected ? true : undefined } : { hidden: !editing })}>
-                {!inlineEditing && <summary>{bindingSelected ? 'Configure binding' : 'Preserved — review or change binding'}</summary>}
+                {!inlineEditing && <summary>{bindingSelected ? 'Configure binding' : canUseProjectSecret ? 'Preserved — review or change binding' : 'Kept as recorded — see why'}</summary>}
                 {inlineEditing ? <div className="secret-binding-review-choice">
                   <label htmlFor={`${inputId}-destination`}>Destination handling</label>
                   <select id={`${inputId}-destination`} aria-label={`Destination for ${group.requirements[0]?.label || name}`} value={bindingSelected ? 'project-secret' : 'preserve'} disabled={applying || disabled} onChange={event => updateDestinationChoice(group, event.target.value as DestinationChoice)}>
-                    <option value="preserve" disabled={!canPreserveDestinationValue}>Preserve imported value</option>
-                    <option value="project-secret">Use project secret</option>
+                    <option value="preserve" disabled={!canPreserveDestinationValue && canUseProjectSecret}>{keepLabel}</option>
+                    <option value="project-secret" disabled={!canUseProjectSecret}>Use project secret</option>
                   </select>
                   {preserveUnavailableMessages.length > 0 && <details><summary>Why preservation is unavailable</summary>{preserveUnavailableMessages.map(message => <small key={message}>{message}</small>)}</details>}
+                  {projectSecretUnavailableMessages.length > 0 && <details><summary>Why a project secret is unavailable</summary>{projectSecretUnavailableMessages.map(message => <small key={message}>{message}</small>)}</details>}
                 </div> : <fieldset className="secret-binding-review-choice">
                   <legend>Destination handling</legend>
                   <label htmlFor={preserveId}>
@@ -1730,11 +1779,11 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                       type="radio"
                       name={`${idPrefix}-destination-${index}`}
                       checked={!bindingSelected}
-                      disabled={applying || disabled || !canPreserveDestinationValue}
+                      disabled={applying || disabled || (!canPreserveDestinationValue && canUseProjectSecret)}
                       aria-describedby={preserveUnavailableMessages.length > 0 ? preservationHelpId : undefined}
                       onChange={() => updateDestinationChoice(group, 'preserve')}
                     />
-                    Preserve imported value
+                    {keepLabel}
                   </label>
                   <label htmlFor={projectSecretId}>
                     <input
@@ -1742,7 +1791,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                       type="radio"
                       name={`${idPrefix}-destination-${index}`}
                       checked={bindingSelected}
-                      disabled={applying || disabled}
+                      disabled={applying || disabled || !canUseProjectSecret}
+                      aria-describedby={projectSecretUnavailableMessages.length > 0 ? projectSecretHelpId : undefined}
                       onChange={() => updateDestinationChoice(group, 'project-secret')}
                     />
                     Use project secret
@@ -1752,8 +1802,13 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                       {preserveUnavailableMessages.map(message => <small key={message}>{message}</small>)}
                     </div>
                   )}
+                  {projectSecretUnavailableMessages.length > 0 && (
+                    <div id={projectSecretHelpId} className="secret-binding-review-preservation-reasons">
+                      {projectSecretUnavailableMessages.map(message => <small key={message}>{message}</small>)}
+                    </div>
+                  )}
                 </fieldset>}
-                <SecretReferenceValueControl
+                {canUseProjectSecret && <SecretReferenceValueControl
                   id={inputId}
                   name={name}
                   value={values[group.key] || ''}
@@ -1780,14 +1835,14 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                           : scopedStoreWritable
                             ? 'Enter now or leave blank'
                             : 'Provider is read-only'}
-                />
+                />}
                 {bindingSelected && !configured && !values[group.key] && <p>Leaving this blank keeps the binding unresolved until a usable value is configured in Project Secrets. Saving a draft does not prove replay readiness.</p>}
                 {pendingReuse === group.key && <div role="alert">
                   <p>This will replace the selected reference name and optional value in {reuseSetSize} groups. Inspect the affected locations below. Only continue if these locations intentionally share one credential.</p>
                   <AffectedPathsDisclosure id={`${inputId}-reuse-scope`} paths={reuseSet.map(member => `${member.requirements[0]?.label || member.suggestedName}: ${member.requirements.map(requirement => requirement.path).join(', ')}`)} hasAffectedSourcePaths={false} />
                   <button type="button" onClick={() => setPendingReuse(null)}>Cancel reuse</button>
                 </div>}
-                {reuseSetSize > 1 && (
+                {canUseProjectSecret && reuseSetSize > 1 && (
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm secret-binding-review-reuse-all"

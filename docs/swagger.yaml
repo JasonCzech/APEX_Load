@@ -294798,6 +294798,10 @@ paths:
                               type: string
                             preservation_unavailable_reason:
                               type: string
+                            rebind_unavailable_description:
+                              type: string
+                            rebind_unavailable_reason:
+                              type: string
                             replacement:
                               type: string
                             script_id:
@@ -297983,6 +297987,10 @@ paths:
                             preservation_unavailable_description:
                               type: string
                             preservation_unavailable_reason:
+                              type: string
+                            rebind_unavailable_description:
+                              type: string
+                            rebind_unavailable_reason:
                               type: string
                             replacement:
                               type: string
@@ -302276,6 +302284,10 @@ paths:
                               type: string
                             preservation_unavailable_reason:
                               type: string
+                            rebind_unavailable_description:
+                              type: string
+                            rebind_unavailable_reason:
+                              type: string
                             replacement:
                               type: string
                             script_id:
@@ -305461,6 +305473,10 @@ paths:
                             preservation_unavailable_description:
                               type: string
                             preservation_unavailable_reason:
+                              type: string
+                            rebind_unavailable_description:
+                              type: string
+                            rebind_unavailable_reason:
                               type: string
                             replacement:
                               type: string
@@ -309750,6 +309766,10 @@ paths:
                         preservation_unavailable_description:
                           type: string
                         preservation_unavailable_reason:
+                          type: string
+                        rebind_unavailable_description:
+                          type: string
+                        rebind_unavailable_reason:
                           type: string
                         replacement:
                           type: string

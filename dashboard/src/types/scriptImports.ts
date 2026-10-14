@@ -278,6 +278,11 @@ export interface SecretBindingRequirement {
     | 'source_value_unavailable'
     | 'existing_secret_reference'
     | 'destination_mapping_incomplete'
+  // Set when the server cannot swap this occurrence for a project-secret
+  // reference without changing other imported bytes in the same field. The
+  // binding route refuses it, so the review keeps the recorded value.
+  rebind_unavailable_reason?: 'destination_bytes_unaligned'
+  rebind_unavailable_description?: string
 }
 
 // Multiple requirements may deliberately select the same logical name. That

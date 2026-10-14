@@ -31,7 +31,7 @@ import { useImportReviewGeneration } from './importReviewGeneration'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
-import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, requirementsPreserveDestinationValues, secretBindingRequirementsForScript, updateSecretBindingRequirementNames } from './secretBindingUtils'
+import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, requirementNeedsSecretBinding, requirementsPreserveDestinationValues, secretBindingRequirementsForScript, updateSecretBindingRequirementNames } from './secretBindingUtils'
 import {
   activeProtectedImportSessionId,
   credentialPreservingImportDraftRequiresSave,
@@ -1171,12 +1171,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     : secretBindingRequirements
   if (
     asyncAPIMultiScript
-    && asyncAPIArchiveSecretBindingRequirements.some(requirement => requirement.destination_value_preserved !== true)
+    && asyncAPIArchiveSecretBindingRequirements.some(requirementNeedsSecretBinding)
   ) {
     asyncAPICredentialBatchRequiredRef.current = true
   }
   const asyncAPISelectedNeedsCredentialPreparation = asyncAPIMultiScript
-    && secretBindingRequirements.some(requirement => requirement.destination_value_preserved !== true)
+    && secretBindingRequirements.some(requirementNeedsSecretBinding)
   const asyncAPIOtherPendingCredentialRequirements = asyncAPIMultiScript
     ? asyncAPIPendingScriptIndices
       .filter(index => index !== selectedScriptIndex)
@@ -1185,7 +1185,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         index,
         generatedScripts[index],
       ))
-      .filter(requirement => requirement.destination_value_preserved !== true)
+      .filter(requirementNeedsSecretBinding)
     : []
   const asyncAPIPrepareSelectedForBatch = asyncAPISelectedNeedsCredentialPreparation
     && asyncAPIOtherPendingCredentialRequirements.length > 0
@@ -1195,7 +1195,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     && asyncAPISelectedNeedsCredentialPreparation
     && asyncAPIOtherPendingCredentialRequirements.length === 0
   const defaultConfigureLaterCount = new Set(secretBindingRequirements
-      .filter(requirement => requirement.destination_value_preserved !== true)
+      .filter(requirementNeedsSecretBinding)
       .map(requirement => {
         const name = requirement.suggested_name?.trim()
         if (!name) return ''
@@ -1767,7 +1767,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           const script = latestResultRef.current?.scripts?.[index] || generatedScripts[index]
           return script
             ? secretBindingRequirementsForScript(latestResultRef.current?.secret_binding_requirements, index, script)
-              .filter(requirement => requirement.destination_value_preserved !== true)
+              .filter(requirementNeedsSecretBinding)
             : []
         })
       if (otherPendingRequirements.length > 0) {
@@ -2031,7 +2031,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         currentResult?.secret_binding_requirements,
         index,
         script,
-      ).some(requirement => requirement.destination_value_preserved !== true)
+      ).some(requirementNeedsSecretBinding)
     ))
     if (nextCredentialIndex < 0) return
     setPreparedCredentialSummary(null)

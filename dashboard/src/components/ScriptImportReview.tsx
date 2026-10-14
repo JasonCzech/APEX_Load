@@ -29,7 +29,7 @@ import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
-import { requirementsPreserveDestinationValues } from './secretBindingUtils'
+import { requirementNeedsSecretBinding, requirementsPreserveDestinationValues } from './secretBindingUtils'
 import type { IssueDetail } from './IssueDetailsDialog'
 import ImportIssueWorkspace from './ImportIssueWorkspace'
 import { groupImportWorkspaceIssues, importDiagnosticTitle, type GroupedImportWorkspaceIssue } from './importIssueWorkspaceModel'
@@ -658,7 +658,7 @@ export default function ScriptImportReview({
     : ''
   const defaultConfigureLaterCount = useMemo(
     () => new Set(secretBindingRequirements.filter(requirement => (
-      requirement.destination_value_preserved !== true
+      requirementNeedsSecretBinding(requirement)
     )).map(requirement => {
       const name = requirement.suggested_name?.trim()
       if (!name) return ''
@@ -677,7 +677,7 @@ export default function ScriptImportReview({
   const credentialHandlerUnavailable = hasUnresolvedSecretBindings && !onSecretBindingsApply
   const configureLaterCount = preparedSecrets?.configureLaterCount ?? defaultConfigureLaterCount
   const selectedBindingCount = preparedSecrets?.selectedBindingCount
-    ?? secretBindingRequirements.filter(requirement => requirement.destination_value_preserved !== true).length
+    ?? secretBindingRequirements.filter(requirementNeedsSecretBinding).length
   const deferredSaveLabel = /^Save to script library$/i.test(saveLabel) ? 'Save' : saveLabel
   const resolvedSaveLabel = hasUnresolvedSecretBindings && configureLaterCount > 0
     ? `${deferredSaveLabel} with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure`
@@ -1018,7 +1018,9 @@ export default function ScriptImportReview({
   const noteIssueCount = groupedReviewIssues.filter(issue => issue.severity === 'info').length
   const blockingIssueCount = groupedReviewIssues.filter(issue => issue.severity === 'blocker' || issue.severity === 'error').length
   const preservedCredentialCount = secretBindingRequirements.filter(requirement => requirement.destination_value_preserved === true).length
-  const credentialSetupCount = secretBindingRequirements.length - preservedCredentialCount
+  const credentialSetupCount = secretBindingRequirements.filter(requirementNeedsSecretBinding).length
+  // Neither kept as a usable value nor replaceable by a project secret.
+  const keptAsRecordedCredentialCount = secretBindingRequirements.length - preservedCredentialCount - credentialSetupCount
   const editableSharedCandidates = onSharedValuesApplied ? (sharedValues?.candidates || []).filter(candidate => !candidate.credential_shaped) : []
   const requiredDataCount = editableSharedCandidates.filter(candidate => candidate.kind === 'source_variable').length
   const optionalDataCount = editableSharedCandidates.length - requiredDataCount + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
@@ -1111,6 +1113,7 @@ export default function ScriptImportReview({
           : <span><strong>{groupedReviewIssueCount}</strong> finding{groupedReviewIssueCount === 1 ? '' : 's'} · {blockingIssueCount} blocking · {warningIssueCount} warning{warningIssueCount === 1 ? '' : 's'} · {noteIssueCount} note{noteIssueCount === 1 ? '' : 's'}</span>}
         {credentialSetupCount > 0 && <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{credentialSetupCount}</strong> credential binding{credentialSetupCount === 1 ? '' : 's'} to configure</button>}
         {preservedCredentialCount > 0 && <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{preservedCredentialCount}</strong> preserved credential{preservedCredentialCount === 1 ? '' : 's'} to review</button>}
+        {keptAsRecordedCredentialCount > 0 && <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{keptAsRecordedCredentialCount}</strong> credential{keptAsRecordedCredentialCount === 1 ? '' : 's'} kept as recorded, to edit before running</button>}
         {requiredDataCount > 0 && <button type="button" onClick={() => setActiveReviewTab('data')}><strong>{requiredDataCount}</strong> required data input{requiredDataCount === 1 ? '' : 's'}</button>}
         {optionalDataCount > 0 && <button type="button" onClick={() => setActiveReviewTab('data')}><strong>{optionalDataCount}</strong> optional data suggestion{optionalDataCount === 1 ? '' : 's'}</button>}
       </div>}

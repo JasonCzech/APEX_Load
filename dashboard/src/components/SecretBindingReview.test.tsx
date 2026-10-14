@@ -462,6 +462,118 @@ describe('SecretBindingReview', () => {
     }])
   })
 
+  // The server cannot swap these occurrences for a project-secret reference
+  // without changing other recorded bytes in the same field, and the binding
+  // route refuses them. The review must never offer, default to, or send that
+  // choice.
+  const notRebindable = {
+    rebind_unavailable_reason: 'destination_bytes_unaligned' as const,
+    rebind_unavailable_description: 'APEX can’t swap this credential for a project-secret reference without changing other recorded bytes in the same field.',
+  }
+
+  it('keeps a credential a project secret cannot replace as imported and never binds it', async () => {
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    const onPreparedChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          requirements={[{ ...requirements[0], destination_value_preserved: true, ...notRebindable }]}
+          onApply={onApply}
+          onPreparedChange={onPreparedChange}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const preserve = container.querySelector<HTMLInputElement>('input[id$="-preserve"]')
+    const projectSecret = container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')
+    expect(preserve?.checked).toBe(true)
+    expect(preserve?.disabled).toBe(false)
+    expect(preserve?.parentElement?.textContent).toContain('Preserve imported value')
+    expect(projectSecret?.disabled).toBe(true)
+    const help = document.getElementById(projectSecret!.getAttribute('aria-describedby')!)
+    expect(help?.textContent).toContain('without changing other recorded bytes')
+    expect(container.querySelector('input[aria-label^="Secret value"]')).toBeNull()
+    await act(async () => {
+      projectSecret?.click()
+      await Promise.resolve()
+    })
+    expect(preserve?.checked).toBe(true)
+    expect(onPreparedChange).toHaveBeenLastCalledWith(expect.objectContaining({ valid: true, configureLaterCount: 0, selectedBindingCount: 0 }))
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('keeps a credential as recorded when it can be neither preserved nor replaced', async () => {
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          requirements={[{ ...requirements[0], preservation_unavailable_reason: 'source_value_unavailable', ...notRebindable }]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const item = container.querySelector<HTMLElement>('.secret-binding-review-item')
+    expect(item?.querySelector('.script-health-token')?.textContent).toBe('Kept as recorded')
+    const keep = container.querySelector<HTMLInputElement>('input[id$="-preserve"]')
+    expect(keep?.checked).toBe(true)
+    expect(keep?.parentElement?.textContent).toContain('Keep recorded value')
+    expect(container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.disabled).toBe(true)
+    expect(item?.textContent).toContain('Saving keeps the field as recorded')
+    expect(item?.textContent).not.toContain('placeholder')
+    const summary = container.querySelector('.credentials-card-summary')?.textContent
+    expect(summary).toContain('0 imported values preserved')
+    expect(summary).toContain('1 kept as recorded, to edit before running')
+    // It still needs an edit, so the attention filter keeps it.
+    const attention = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(input => input.parentElement?.textContent?.includes('Show bindings needing review'))
+    await act(async () => {
+      attention?.click()
+      await Promise.resolve()
+    })
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(1)
+    // The preservation reason's advice ("use a project secret") would point at
+    // a choice the server refuses; only the combined explanation is shown.
+    expect(item?.textContent).not.toContain('source did not provide one exact recoverable value')
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('binds a replaceable credential without the same-named one a project secret cannot replace', async () => {
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          requirements={[
+            requirements[0],
+            { ...requirements[0], id: 'authorization-header-second', path: '/actions/1/headers/Authorization', ...notRebindable },
+          ]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(2)
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(onApply).toHaveBeenCalledWith([{ requirement_id: 'authorization-header', secret_name: 'ORDER_API_TOKEN' }])
+  })
+
   it.each([
     {
       reason: 'source_value_unavailable' as const,

@@ -39,6 +39,7 @@ import SecretBindingReview, {
 import {
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
+  requirementNeedsSecretBinding,
   secretBindingRequirementsForScript,
 } from './secretBindingUtils'
 import {
@@ -989,7 +990,7 @@ export default function BrowserRecorderControlPanel({
     if ((result.secret_binding_requirements?.length || 0) === 0) return importResultScripts(result)
     const selectedBindingCount = previewPreparedSecrets?.selectedBindingCount
       ?? result.secret_binding_requirements?.filter(requirement => (
-        requirement.destination_value_preserved !== true
+        requirementNeedsSecretBinding(requirement)
       )).length
       ?? 0
     const sourceGeneration = previewReviewGenerationRef.current
@@ -1573,7 +1574,7 @@ export default function BrowserRecorderControlPanel({
     if ((salesforceDraft.secret_binding_requirements?.length || 0) === 0) return importResultScripts(salesforceDraft)
     const selectedBindingCount = salesforcePreparedSecrets?.selectedBindingCount
       ?? salesforceDraft.secret_binding_requirements?.filter(requirement => (
-        requirement.destination_value_preserved !== true
+        requirementNeedsSecretBinding(requirement)
       )).length
       ?? 0
     const sourceGeneration = salesforceReviewGenerationRef.current
@@ -1695,7 +1696,7 @@ export default function BrowserRecorderControlPanel({
     ? 0
     : previewPreparedSecrets?.configureLaterCount ??
       new Set(previewSecretRequirements
-        .filter(requirement => requirement.destination_value_preserved !== true)
+        .filter(requirementNeedsSecretBinding)
         .map(requirement => requirement.suggested_name)).size
   // The HTTP output, when the preview made one, is the last output.
   const httpOutputCorrelations = preview && 'http_script' in preview ? previewCorrelations(preview) : null
@@ -1721,7 +1722,7 @@ export default function BrowserRecorderControlPanel({
     ? 0
     : salesforcePreparedSecrets?.configureLaterCount ??
       new Set(salesforceSecretRequirements
-        .filter(requirement => requirement.destination_value_preserved !== true)
+        .filter(requirementNeedsSecretBinding)
         .map(requirement => requirement.suggested_name)).size
   const salesforceSaveLabel = `Save Salesforce HTTP script${salesforceDeferredSecretCount > 0
     ? ` · ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`

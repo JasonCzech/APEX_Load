@@ -22,11 +22,16 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
 	secretBindingsRequiredCode           = "secret_bindings_required"
 	secretBindingRequirementsChangedCode = "secret_binding_requirements_changed"
+	secretBindingRebindUnavailableCode   = "secret_binding_rebind_unavailable"
+
+	secretBindingRebindUnavailableReason      = "destination_bytes_unaligned"
+	secretBindingRebindUnavailableDescription = "APEX can't swap this credential for a project-secret reference without changing other recorded bytes in the same field, so the field keeps its recorded value. To use a project secret here, edit the request after saving."
 )
 
 var (
@@ -62,6 +67,12 @@ type SecretBindingRequirement struct {
 	// value at this exact requirement path; it is independent of whether an
 	// optional source-secret migration session is available.
 	DestinationValuePreserved bool `json:"destination_value_preserved,omitempty"`
+	// RebindUnavailableReason is set when the occurrence cannot be swapped for
+	// a {{secret.NAME}} reference without changing other imported bytes in the
+	// same field. The binding route refuses such a selection, so the review
+	// keeps the recorded value instead of offering a project secret.
+	RebindUnavailableReason      string `json:"rebind_unavailable_reason,omitempty"`
+	RebindUnavailableDescription string `json:"rebind_unavailable_description,omitempty"`
 	// ValueGroupID identifies equal recoverable values within this response only.
 	// It is an occurrence ID, never a digest of credential material.
 	ValueGroupID string `json:"value_group_id,omitempty"`
@@ -93,6 +104,29 @@ type internalSecretBindingRequirement struct {
 
 type staleSecretBindingRequirementsError struct {
 	requirements []SecretBindingRequirement
+}
+
+// secretBindingRebindUnavailableError names, in words an operator can find
+// in the editor, a selected requirement whose occurrence cannot be replaced
+// without changing other imported bytes in its field.
+type secretBindingRebindUnavailableError struct {
+	requirement SecretBindingRequirement
+	location    string
+	// requirements is the refreshed, annotated list, so a review that predates
+	// the rebind flag can update itself instead of offering the choice again.
+	requirements []SecretBindingRequirement
+}
+
+func (err *secretBindingRebindUnavailableError) Error() string {
+	label := strings.TrimSpace(err.requirement.Label)
+	if label == "" {
+		label = "Credential"
+	}
+	return fmt.Sprintf(
+		"%s in %s can't use a project secret: APEX can't swap it in without changing other recorded bytes in that field. Keep its recorded value instead.",
+		label,
+		err.location,
+	)
 }
 
 // devFakeSecretsEnv opts a local workstation into substituting a placeholder for
@@ -825,6 +859,14 @@ func applySecretBindingsWithResolver(
 			combined := append(append([]SecretBindingRequirement(nil), protectedRemaining...), stale.requirements...)
 			return nil, combined, &staleSecretBindingRequirementsError{requirements: combined}
 		}
+		var unavailable *secretBindingRebindUnavailableError
+		if errors.As(err, &unavailable) {
+			// Like a stale refusal, the refreshed list is the whole review.
+			combined := append(append([]SecretBindingRequirement(nil), protectedRemaining...), unavailable.requirements...)
+			refusal := *unavailable
+			refusal.requirements = combined
+			return nil, combined, &refusal
+		}
 		return nil, nil, err
 	}
 	if err := validateJavaVMParameterDisclosureSafety(resolved); err != nil {
@@ -1156,7 +1198,13 @@ func applyPreservedRedactedSecretBindings(
 		replacementsByPath[requirement.Path][requirement.Occurrence] =
 			"{{secret." + name + "}}"
 	}
-	for path, replacements := range replacementsByPath {
+	paths := make([]string, 0, len(replacementsByPath))
+	for path := range replacementsByPath {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		replacements := replacementsByPath[path]
 		rawValue, rawOK := jsonPointerString(rawRoot, path)
 		projectedValue, projectedOK := jsonPointerString(projectedRoot, path)
 		if !rawOK || !projectedOK {
@@ -1164,10 +1212,14 @@ func applyPreservedRedactedSecretBindings(
 		}
 		removed, aligned := extractLinearlyProjectedRedactions(rawValue, projectedValue)
 		if !aligned {
-			return nil, requirements, fmt.Errorf(
-				"selected credential at %s cannot be rebound without changing imported wire bytes; preserve the destination value or re-import with a governed source reference",
-				path,
+			refreshed := annotateSingleScriptSecretBindingRequirements(
+				append([]SecretBindingRequirement(nil), requirements...), scriptIndex, rawRoot, projectedRoot, false,
 			)
+			return nil, refreshed, &secretBindingRebindUnavailableError{
+				requirement:  firstSelectedRequirementAt(path, selected, known),
+				location:     secretBindingLocation(projectedRoot, path),
+				requirements: refreshed,
+			}
 		}
 		parts := strings.Split(projectedValue, maskedScriptSecret)
 		if len(parts) != len(removed)+1 {
@@ -1213,16 +1265,101 @@ func applyPreservedRedactedSecretBindings(
 	if err != nil {
 		return nil, nil, err
 	}
-	// Alignment receives one script, while public descriptors retain the
-	// original batch index. Do not interpret that batch index as a local node.
-	for index := range remaining {
-		remaining[index].ScriptIndex = 0
-	}
-	remaining = annotateSecretBindingDestinationValuesWithPolicy(remaining, rawResult, projectedResultRoot, true)
-	for index := range remaining {
-		remaining[index].ScriptIndex = scriptIndex
-	}
+	remaining = annotateSingleScriptSecretBindingRequirements(remaining, scriptIndex, rawResult, projectedResultRoot, true)
 	return &result, remaining, nil
+}
+
+// annotateSingleScriptSecretBindingRequirements annotates the requirements of
+// one script. Alignment receives that script alone, while public descriptors
+// retain the original batch index; do not interpret that batch index as a
+// local node.
+func annotateSingleScriptSecretBindingRequirements(
+	requirements []SecretBindingRequirement,
+	scriptIndex int,
+	raw, projected any,
+	preserveExact bool,
+) []SecretBindingRequirement {
+	for index := range requirements {
+		requirements[index].ScriptIndex = 0
+	}
+	requirements = annotateSecretBindingDestinationValuesWithPolicy(requirements, raw, projected, preserveExact)
+	for index := range requirements {
+		requirements[index].ScriptIndex = scriptIndex
+	}
+	return requirements
+}
+
+// firstSelectedRequirementAt returns the selected requirement at path with
+// the lowest occurrence, so a refusal names the same one every time.
+func firstSelectedRequirementAt(
+	path string,
+	selected map[string]string,
+	known map[string]SecretBindingRequirement,
+) SecretBindingRequirement {
+	var first SecretBindingRequirement
+	found := false
+	for id := range selected {
+		requirement := known[id]
+		if requirement.Path != path {
+			continue
+		}
+		if !found || requirement.Occurrence < first.Occurrence ||
+			(requirement.Occurrence == first.Occurrence && requirement.ID < first.ID) {
+			first, found = requirement, true
+		}
+	}
+	return first
+}
+
+// secretBindingLocation names where a script field sits, by the action's
+// position and name as the editor lists them. A long JSON Pointer reads as
+// noise to an operator and is rewritten by error scrubbing.
+func secretBindingLocation(root any, path string) string {
+	tokens, err := splitJSONPointer(path)
+	if err == nil && len(tokens) >= 2 && isDecimalToken(tokens[1]) {
+		section := ""
+		switch tokens[0] {
+		case "init":
+			section = "init action"
+		case "actions":
+			section = "action"
+		case "teardown":
+			section = "teardown action"
+		}
+		if index, convErr := strconv.Atoi(tokens[1]); section != "" && convErr == nil {
+			location := fmt.Sprintf("%s %d", section, index+1)
+			name, _ := jsonPointerString(root, "/"+tokens[0]+"/"+tokens[1]+"/name")
+			if name = strings.TrimSpace(name); name != "" && !strings.Contains(name, maskedScriptSecret) {
+				location += fmt.Sprintf(" (%q)", name)
+			}
+			// A field inside a control-flow step or a batched request names
+			// that step too, so the operator can find it in the action.
+			nestedNames := map[string]string{
+				"steps": "step", "else": "else step", "default": "default step",
+				"cases": "case", "branches": "branch", "requests": "request",
+			}
+			for at := 2; at+1 < len(tokens); at++ {
+				noun, nested := nestedNames[tokens[at]]
+				if !nested || !isDecimalToken(tokens[at+1]) {
+					continue
+				}
+				position, _ := strconv.Atoi(tokens[at+1])
+				location += fmt.Sprintf(", %s %d", noun, position+1)
+				at++
+			}
+			return location
+		}
+	}
+	switch {
+	case strings.HasPrefix(path, "/config/"):
+		return "the script configuration"
+	case strings.HasPrefix(path, "/data_sources/"):
+		return "a data source"
+	case strings.HasPrefix(path, "/parameters/"):
+		return "a script parameter"
+	default:
+		return "the script"
+	}
 }
 
 func applySuggestedSecretBindings(script *dsl.Script, scriptIndex int) (*dsl.Script, []SecretBindingRequirement, error) {
@@ -1333,7 +1470,16 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 		script int
 		path   string
 	}
-	alignedValues := make(map[location][]string)
+	// One field's alignment, shared by its occurrences. linear reports the
+	// byte-exact alignment that binding splices with; values come from it or
+	// from the structural JSON fallback.
+	type fieldAlignment struct {
+		found       bool
+		linear      bool
+		values      []string
+		placeholder bool
+	}
+	alignments := make(map[location]fieldAlignment)
 	annotate := func(requirement *SecretBindingRequirement) {
 		scriptIndex := requirement.ScriptIndex
 		if scriptIndex < 0 || scriptIndex >= len(rawNodes) ||
@@ -1341,15 +1487,41 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 			return
 		}
 		key := location{scriptIndex, requirement.Path}
-		values, cached := alignedValues[key]
+		alignment, cached := alignments[key]
 		if !cached {
 			rawValue, rawOK := jsonPointerString(rawNodes[scriptIndex], requirement.Path)
 			projectedValue, projectedOK := jsonPointerString(projectedNodes[scriptIndex], requirement.Path)
 			if rawOK && projectedOK {
-				values, _ = extractProjectedRedactions(rawValue, projectedValue)
+				alignment.found = true
+				alignment.values, alignment.linear = extractLinearlyProjectedRedactions(rawValue, projectedValue)
+				if !alignment.linear {
+					alignment.values, _ = extractStructurallyProjectedJSONRedactions(rawValue, projectedValue)
+				}
+				alignment.placeholder = len(alignment.values) == 0 &&
+					recordedPlaceholdersCoverProjection(rawValue, projectedValue)
 			}
-			alignedValues[key] = values
+			alignments[key] = alignment
 		}
+		if !alignment.found {
+			return
+		}
+		if !alignment.linear {
+			requirement.RebindUnavailableReason = secretBindingRebindUnavailableReason
+			requirement.RebindUnavailableDescription = secretBindingRebindUnavailableDescription
+		}
+		if len(alignment.values) == 0 {
+			// No exact alignment isolates this occurrence, but the field still
+			// holds the imported bytes verbatim, so it stays as recorded. A
+			// field whose masked values were all recorded placeholders has no
+			// usable value.
+			if alignment.placeholder {
+				setSecretBindingPreservationUnavailable(requirement, credentialpolicy.SourceCredentialValueRedactedPlaceholder)
+			} else {
+				requirement.DestinationValuePreserved = true
+			}
+			return
+		}
+		values := alignment.values
 		if requirement.Occurrence < 0 || requirement.Occurrence >= len(values) {
 			return
 		}
@@ -1384,6 +1556,8 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 		requirement := &requirements[index]
 		requirement.ValueGroupID = ""
 		requirement.DestinationValuePreserved = false
+		requirement.RebindUnavailableReason = ""
+		requirement.RebindUnavailableDescription = ""
 		annotate(requirement)
 		if secretBindingInProvenance(requirement.Path) {
 			// Recorded provenance (an action's or the script's own metadata,
@@ -1398,6 +1572,19 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 	return requirements
 }
 
+// recordedPlaceholdersCoverProjection reports whether a field's recorded
+// bytes already hold every disclosure placeholder its projection shows, so
+// masking replaced nothing real. An unaligned field cannot say which recorded
+// bytes an occurrence is; a projection that adds placeholders masked at least
+// one real value, and the field then keeps a usable recording.
+func recordedPlaceholdersCoverProjection(raw, projected string) bool {
+	count := func(value string) int {
+		return strings.Count(strings.ToLower(value), strings.ToLower(maskedScriptSecret))
+	}
+	recorded := count(raw)
+	return recorded > 0 && recorded >= count(projected)
+}
+
 var secretBindingProvenancePath = regexp.MustCompile(`^/(?:(?:init|actions|teardown)/\d+/)?metadata(?:/|$)`)
 
 // secretBindingInProvenance reports whether a requirement sits in recorded
@@ -1410,7 +1597,10 @@ func secretBindingInProvenance(path string) bool {
 // replaceUnavailableImportCredentialValues removes disclosure placeholders
 // from the exact server-owned candidate before an opaque draft capability is
 // issued. The placeholder is replaced with the same deterministic governed
-// reference offered by review; it is never retained as executable auth data.
+// reference offered by review. The one exception is a field whose projection
+// cannot be aligned byte for byte with its recording: no reference can be
+// spliced in without changing other recorded bytes, so the field keeps its
+// recorded bytes and the review reports it as kept as recorded.
 func replaceUnavailableImportCredentialValues(script *dsl.Script) (*dsl.Script, error) {
 	if script == nil {
 		return nil, errors.New("script is required")
@@ -1439,8 +1629,14 @@ func replaceUnavailableImportCredentialValues(script *dsl.Script) (*dsl.Script, 
 		if !rawOK || !projectedOK {
 			continue
 		}
-		values, aligned := extractProjectedRedactions(rawValue, projectedValue)
-		if !aligned || requirement.Occurrence < 0 || requirement.Occurrence >= len(values) {
+		values, linear := extractLinearlyProjectedRedactions(rawValue, projectedValue)
+		if !linear {
+			// Only a byte-exact alignment can be rebound (see
+			// applyPreservedRedactedSecretBindings). The field keeps its
+			// recorded bytes, as the review reported for this requirement.
+			continue
+		}
+		if requirement.Occurrence < 0 || requirement.Occurrence >= len(values) {
 			continue
 		}
 		value := values[requirement.Occurrence]
@@ -1610,6 +1806,18 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 				"error":                       stale.Error(),
 				"code":                        secretBindingRequirementsChangedCode,
 				"secret_binding_requirements": stale.requirements,
+			})
+			return
+		}
+		var unavailable *secretBindingRebindUnavailableError
+		if errors.As(err, &unavailable) {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error":          scrub.Value(unavailable.Error(), scrub.Policy{}),
+				"code":           secretBindingRebindUnavailableCode,
+				"requirement_id": unavailable.requirement.ID,
+				"path":           unavailable.requirement.Path,
+				// A review that predates the rebind flag refreshes from these.
+				"secret_binding_requirements": unavailable.requirements,
 			})
 			return
 		}

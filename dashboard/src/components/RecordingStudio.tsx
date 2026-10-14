@@ -86,6 +86,7 @@ import {
   sentenceCaseNote,
 } from "./recordingReviewModel";
 import { isNoReusableCorrelationNote } from "./importIssueWorkspaceModel";
+import { requirementNeedsSecretBinding } from "./secretBindingUtils";
 import type { RecordingProfile } from "../types/recordingProfiles";
 import { formatDateTime } from "../utils/dateTime";
 
@@ -2303,7 +2304,7 @@ export default function RecordingStudio({
     const selectedBindingCount =
       convertedPreparedSecrets?.selectedBindingCount ??
       requirements.filter(
-        (requirement) => requirement.destination_value_preserved !== true,
+        requirementNeedsSecretBinding,
       ).length;
     const sourceGeneration = convertedReviewGenerationRef.current;
     const sourceRecorderScope = refreshScopeRef.current;
@@ -2529,7 +2530,7 @@ export default function RecordingStudio({
       const selectedBindingCount =
         salesforcePreparedSecrets?.selectedBindingCount ??
         result?.secret_binding_requirements?.filter(
-          (requirement) => requirement.destination_value_preserved !== true,
+          requirementNeedsSecretBinding,
         ).length ??
         0;
       const sourceGeneration = salesforceReviewGenerationRef.current;
@@ -2724,7 +2725,7 @@ export default function RecordingStudio({
     new Set(
       convertedSecretRequirements
         .filter(
-          (requirement) => requirement.destination_value_preserved !== true,
+          requirementNeedsSecretBinding,
         )
         .map((requirement) => requirement.suggested_name),
     ).size;
@@ -2756,7 +2757,7 @@ export default function RecordingStudio({
     new Set(
       salesforceSecretRequirements
         .filter(
-          (requirement) => requirement.destination_value_preserved !== true,
+          requirementNeedsSecretBinding,
         )
         .map((requirement) => requirement.suggested_name),
     ).size;

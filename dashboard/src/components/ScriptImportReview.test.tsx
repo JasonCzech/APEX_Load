@@ -239,6 +239,21 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector('[aria-label="Source Mapping"]')?.getAttribute('aria-selected')).toBe('true')
   })
 
+  it('counts a credential a project secret cannot replace as kept as recorded, not as setup', () => {
+    const base = { path: '/actions/0/body', label: 'Request body', context: 'Request', suggested_name: 'BODY' }
+    const notRebindable = { rebind_unavailable_reason: 'destination_bytes_unaligned' as const }
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="Sample review" script={script}
+      secretBindingRequirements={[
+        { ...base, id: 'setup' },
+        { ...base, id: 'preserved', occurrence: 1, destination_value_preserved: true, ...notRebindable },
+        { ...base, id: 'recorded', occurrence: 2, ...notRebindable },
+      ]} />))
+    const summary = container.querySelector('.import-review-readiness')?.textContent || ''
+    expect(summary).toContain('1 credential binding to configure')
+    expect(summary).toContain('1 preserved credential to review')
+    expect(summary).toContain('1 credential kept as recorded, to edit before running')
+  })
+
   it('falls back to legacy findings when a summary has no structured evidence', () => {
     act(() => root.render(<ScriptImportReview tabbed compactReview title="JMeter review" script={script}
       reviewSummary={{ blocking_behaviors: 0, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }}

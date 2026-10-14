@@ -144,6 +144,17 @@ describe('secret binding requirement scoping', () => {
     expect(refreshedSecretBindingRequirements(new Error('other'))).toBeNull()
   })
 
+  it('refreshes a review from a rebind refusal so it stops offering the refused choice', () => {
+    const refreshed = { ...requirement('kept', 0), rebind_unavailable_reason: 'destination_bytes_unaligned' as const }
+    const error = {
+      code: 'secret_binding_rebind_unavailable',
+      payload: { secret_binding_requirements: [refreshed] },
+    }
+
+    expect(refreshedSecretBindingRequirements(error)).toEqual([refreshed])
+    expect(refreshedSecretBindingRequirements({ code: 'secret_bindings_required', payload: { secret_binding_requirements: [refreshed] } })).toBeNull()
+  })
+
   it('persists each archive migration name without changing unrelated requirements', () => {
     const requirements = [requirement('first', 0), requirement('second', 1), requirement('third', 1)]
 

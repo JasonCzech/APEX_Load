@@ -47,6 +47,7 @@ import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
 import {
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
+  requirementNeedsSecretBinding,
   requirementsPreserveDestinationValues,
   secretBindingRequirementsForScript,
   updateSecretBindingRequirementNames,
@@ -1405,7 +1406,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   if (
     selectedItem
     && resultScripts.length > 1
-    && archiveSecretBindingRequirements.some(requirement => requirement.destination_value_preserved !== true)
+    && archiveSecretBindingRequirements.some(requirementNeedsSecretBinding)
   ) {
     credentialBatchReviewKeysRef.current.add(credentialBatchReviewKey)
   }
@@ -1413,7 +1414,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     selectedItem && enterpriseArchiveResultScriptIsSaved(selectedItem, index) ? [] : [index]
   ))
   const selectedNeedsCredentialPreparation = secretBindingRequirements.some(
-    requirement => requirement.destination_value_preserved !== true,
+    requirementNeedsSecretBinding,
   )
   const otherPendingCredentialRequirements = pendingResultScriptIndices
     .filter(index => index !== activeResultScriptIndex)
@@ -1422,7 +1423,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       index,
       resultScripts[index],
     ))
-    .filter(requirement => requirement.destination_value_preserved !== true)
+    .filter(requirementNeedsSecretBinding)
   const enterpriseCredentialBatchFlow = credentialBatchReviewKeysRef.current.has(credentialBatchReviewKey)
     && pendingResultScriptIndices.length > 1
   const enterprisePrepareSelectedForBatch = enterpriseCredentialBatchFlow
@@ -3675,7 +3676,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     }
     const unresolvedRequirements = pendingIndices.flatMap(index => (
       secretBindingRequirementsForScript(sourceResult.secret_binding_requirements, index, sourceScripts[index])
-        .filter(requirement => requirement.destination_value_preserved !== true)
+        .filter(requirementNeedsSecretBinding)
     ))
     if (unresolvedRequirements.length > 0) {
       setError(`Prepare the remaining ${unresolvedRequirements.length} credential ${unresolvedRequirements.length === 1 ? 'choice' : 'choices'} before the atomic script save.`)
@@ -3978,7 +3979,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         preparedResult.secret_binding_requirements,
         index,
         scripts[index],
-      ).some(requirement => requirement.destination_value_preserved !== true)
+      ).some(requirementNeedsSecretBinding)
     ))
     if (nextCredentialIndex !== undefined) {
       selectEnterpriseResultScript(nextCredentialIndex, true)
@@ -3988,7 +3989,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       preparedResult.secret_binding_requirements,
       preparedReview.scriptIndex,
       scripts[preparedReview.scriptIndex],
-    ).some(requirement => requirement.destination_value_preserved !== true)
+    ).some(requirementNeedsSecretBinding)
     if (unresolvedCurrent) {
       setError('Finish the selected script credential choices before continuing to the atomic save.')
       return

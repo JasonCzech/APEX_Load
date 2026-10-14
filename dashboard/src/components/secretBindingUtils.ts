@@ -66,8 +66,29 @@ export function requirementsPreserveDestinationValues(
   )
 }
 
+/** Whether the server can swap this occurrence for a project-secret reference. */
+export function requirementCanUseProjectSecret(requirement: SecretBindingRequirement): boolean {
+  return !requirement.rebind_unavailable_reason
+}
+
+/**
+ * Whether review binds this occurrence to a project secret by default: its
+ * imported value is not kept, and a project secret can replace it. An
+ * occurrence that can be neither stays as recorded.
+ */
+export function requirementNeedsSecretBinding(requirement: SecretBindingRequirement): boolean {
+  return requirement.destination_value_preserved !== true && requirementCanUseProjectSecret(requirement)
+}
+
+// A rebind refusal carries the refreshed review too: the selection could not
+// take a project secret, and the refreshed requirements say so.
+const REFRESHING_SECRET_BINDING_CODES: ReadonlySet<unknown> = new Set([
+  'secret_binding_requirements_changed',
+  'secret_binding_rebind_unavailable',
+])
+
 export function refreshedSecretBindingRequirements(error: unknown): SecretBindingRequirement[] | null {
-  if (!error || typeof error !== 'object' || (error as { code?: unknown }).code !== 'secret_binding_requirements_changed') {
+  if (!error || typeof error !== 'object' || !REFRESHING_SECRET_BINDING_CODES.has((error as { code?: unknown }).code)) {
     return null
   }
   const payload = (error as { payload?: unknown }).payload

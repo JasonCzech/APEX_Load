@@ -14647,6 +14647,8 @@ export interface operations {
               "path": string;
               "preservation_unavailable_description"?: string;
               "preservation_unavailable_reason"?: string;
+              "rebind_unavailable_description"?: string;
+              "rebind_unavailable_reason"?: string;
               "replacement"?: string;
               "script_id"?: string;
               "script_index": number;
@@ -15772,6 +15774,8 @@ export interface operations {
               "path": string;
               "preservation_unavailable_description"?: string;
               "preservation_unavailable_reason"?: string;
+              "rebind_unavailable_description"?: string;
+              "rebind_unavailable_reason"?: string;
               "replacement"?: string;
               "script_id"?: string;
               "script_index": number;
@@ -92984,6 +92988,8 @@ export interface operations {
               "path": string;
               "preservation_unavailable_description"?: string;
               "preservation_unavailable_reason"?: string;
+              "rebind_unavailable_description"?: string;
+              "rebind_unavailable_reason"?: string;
               "replacement"?: string;
               "script_id"?: string;
               "script_index": number;
@@ -115725,6 +115731,8 @@ export interface operations {
               "path": string;
               "preservation_unavailable_description"?: string;
               "preservation_unavailable_reason"?: string;
+              "rebind_unavailable_description"?: string;
+              "rebind_unavailable_reason"?: string;
               "replacement"?: string;
               "script_id"?: string;
               "script_index": number;
@@ -116850,6 +116858,8 @@ export interface operations {
               "path": string;
               "preservation_unavailable_description"?: string;
               "preservation_unavailable_reason"?: string;
+              "rebind_unavailable_description"?: string;
+              "rebind_unavailable_reason"?: string;
               "replacement"?: string;
               "script_id"?: string;
               "script_index": number;
