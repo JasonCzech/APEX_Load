@@ -65,8 +65,12 @@ let publishLateEnterpriseSave: (() => void) | null = null
 // Scripts the mock archive review heard were saved from the editor.
 let archiveDraftSaves: string[] = []
 
+// The api object the page sees; a test swaps it to stand for a new one, as
+// pairing the Recording Agent produces.
+let currentApi: typeof apiMock = apiMock
+
 vi.mock('../hooks/useApi', () => ({
-  useApi: () => apiMock,
+  useApi: () => currentApi,
 }))
 
 vi.mock('../hooks/api/useLibraryApi', () => ({
@@ -2096,6 +2100,57 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('policy unavailable')
     expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Retry')).toBe(true)
     expect(container.querySelectorAll('.script-workflow-card')).toHaveLength(0)
+  })
+
+  it('keeps an open importer mounted when the api object changes', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('Import Loadrunner Script Archive')
+    await flushPromises()
+    container.querySelector<HTMLInputElement>('input[aria-label="mock-enterprise-archive-state"]')!.value = 'work-in-progress'
+    const accessLoads = apiMock.getAuthEffectiveAccess.mock.calls.length
+
+    // Access reloads for the new api object without denying manage_scripts
+    // in between, which would unmount the importer and lose its work.
+    currentApi = { ...apiMock }
+    try {
+      await act(async () => {
+        root.render(<ScriptsPage initialMode="create-options" />)
+      })
+      await flushPromises()
+      expect(apiMock.getAuthEffectiveAccess.mock.calls.length).toBeGreaterThan(accessLoads)
+      expect(container.querySelector<HTMLInputElement>('input[aria-label="mock-enterprise-archive-state"]')?.value)
+        .toBe('work-in-progress')
+    } finally {
+      currentApi = apiMock
+    }
+  })
+
+  it('drops manage access when a reload is refused for the session or role', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('Import Loadrunner Script Archive')
+    await flushPromises()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+
+    apiMock.getAuthEffectiveAccess.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { status: 403 }))
+    currentApi = { ...apiMock }
+    try {
+      await act(async () => {
+        root.render(<ScriptsPage initialMode="create-options" />)
+      })
+      await flushPromises()
+      expect(container.querySelector('[data-testid="enterprise-archive-import"]')).toBeNull()
+      expect(container.textContent).toContain('can view scripts but not create or edit them')
+    } finally {
+      currentApi = apiMock
+    }
   })
 
   it('refreshes the library without leaving an enterprise archive that still has unsaved lanes', async () => {

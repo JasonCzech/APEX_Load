@@ -168,7 +168,7 @@ func (s *Server) bridgeRoutes() {
 		return
 	}
 	cors := bridge.corsMiddleware
-	log := loggingMiddleware
+	log := failureLoggingMiddleware
 	auth := bridge.authMiddleware
 
 	s.mux.Handle("GET "+bridgeSystemHealthPath, cors(log(http.HandlerFunc(s.handleHealthCheck))))

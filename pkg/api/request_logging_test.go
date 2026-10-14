@@ -425,3 +425,29 @@ func TestRecoveredPanicReleasesIdempotencyReservation(t *testing.T) {
 		})
 	}
 }
+
+// The Recording Agent's access log keeps failing requests only; a successful
+// status poll every couple of seconds would bury its terminal.
+func TestFailureLoggingMiddlewareSkipsSuccessfulRequests(t *testing.T) {
+	handler := failureLoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/missing") {
+			writeError(w, http.StatusNotFound, "no such agent session")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	// Routes are built before the agent's logger is set; it still applies.
+	logs := &lockedBuffer{}
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	for _, path := range []string{"/api/v1/agent-quiet-test/status", "/api/v1/agent-quiet-test/missing"} {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	if strings.Contains(logs.String(), "/api/v1/agent-quiet-test/status") {
+		t.Fatalf("a successful request was logged: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "/api/v1/agent-quiet-test/missing") || !strings.Contains(logs.String(), "no such agent session") {
+		t.Fatalf("a failing request was not logged with its reason: %s", logs.String())
+	}
+}

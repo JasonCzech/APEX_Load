@@ -12,6 +12,7 @@ import {
   bridgeFetch,
   bridgeRequest,
   clearBrowserRecorderBridge,
+  clearBrowserRecorderBridgeSession,
   pairBrowserRecorderBridge,
   readBrowserRecorderBridge,
   subscribeBrowserRecorderBridgeChanges,
@@ -457,9 +458,12 @@ export function useBrowserRecorderApi() {
     [],
   )
 
+  // With a session id, only that connection is cleared, not one that has
+  // replaced it in storage by now.
   const clearBrowserRecorderBridgeConnection = useCallback(
-    () => {
-      clearBrowserRecorderBridge()
+    (sessionId?: string) => {
+      if (sessionId === undefined) clearBrowserRecorderBridge()
+      else if (!clearBrowserRecorderBridgeSession(sessionId)) return
       setRecorderEndpoint({
         bridge: null,
         requestScope: recorderRequestScope(null),

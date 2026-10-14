@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { bridgeRequest, bridgeFetch, pairBrowserRecorderBridge, verifyBrowserRecorderBridgeAgent, type BrowserRecorderBridgeConnection } from './browserRecorderBridge'
+import { bridgeRequest, bridgeFetch, clearBrowserRecorderBridgeSession, pairBrowserRecorderBridge, readBrowserRecorderBridge, verifyBrowserRecorderBridgeAgent, writeBrowserRecorderBridge, type BrowserRecorderBridgeConnection } from './browserRecorderBridge'
 
 describe('browser recorder bridge requests', () => {
   afterEach(() => {
@@ -40,5 +40,24 @@ describe('browser recorder bridge requests', () => {
     await bridgeFetch(connection, '/browser-recorder/sessions/test/export', { credentials: 'include' })
     expect(fetchMock).toHaveBeenCalledTimes(3)
     for (const call of fetchMock.mock.calls) expect(call[1]?.credentials).toBe('omit')
+  })
+})
+
+describe('clearBrowserRecorderBridgeSession', () => {
+  it('clears the stored connection only while it is the named session', () => {
+    const connection: BrowserRecorderBridgeConnection = {
+      origin: 'http://127.0.0.1:27777',
+      token: 'tok',
+      session_id: 'session-new',
+      paired_at: new Date().toISOString(),
+    }
+    writeBrowserRecorderBridge(connection)
+    // A refused older session must not clear the pairing that replaced it.
+    expect(clearBrowserRecorderBridgeSession('session-old')).toBe(false)
+    expect(readBrowserRecorderBridge()?.session_id).toBe('session-new')
+    expect(clearBrowserRecorderBridgeSession('session-new')).toBe(true)
+    expect(readBrowserRecorderBridge()).toBeNull()
+    // Nothing stored (cleared without an event here): the caller drops its copy.
+    expect(clearBrowserRecorderBridgeSession('session-new')).toBe(true)
   })
 })

@@ -70,6 +70,7 @@ const apiMock = {
   suggestBrowserRecordingTransactions: vi.fn(),
   pairBrowserRecorderBridge: vi.fn(),
   verifyBrowserRecorderBridgeAgent: vi.fn(),
+  getHealth: vi.fn(),
   clearBrowserRecorderBridge: vi.fn(),
   getBrowserRecorderBridgeStatus: vi.fn(),
   exportBrowserRecording: vi.fn(),
@@ -415,6 +416,7 @@ describe("RecordingStudio", () => {
         paired: true,
       },
     });
+    apiMock.getHealth.mockResolvedValue({ status: "healthy", version: "1.4.0", commit: "abc1234", ws_clients: 0, test_count: 0 });
     apiMock.verifyBrowserRecorderBridgeAgent.mockResolvedValue({
       status: "healthy",
       version: "test",
@@ -3534,7 +3536,7 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("3Connect to the agent");
     expect(container.querySelectorAll(".rec-bridge-step-number")).toHaveLength(3);
     expect(container.textContent).toContain(
-      "Paste this command into Terminal or PowerShell",
+      "Paste this command into Terminal (PowerShell on Windows), in the folder you extracted the agent into.",
     );
     expect(container.textContent).toContain("Token entered at prompt");
     expect(container.textContent).toContain("paste this pairing token");
@@ -3549,8 +3551,9 @@ describe("RecordingStudio", () => {
     const generatedToken =
       container.querySelector('[data-testid="browser-recorder-bridge-token"]')
         ?.textContent || "";
+    // Run from the extracted folder, which is not on PATH.
     expect(command).toContain(
-      "apexload-record-agent --addr 127.0.0.1:27777 --token-stdin",
+      "./apexload-record-agent --addr 127.0.0.1:27777 --token-stdin",
     );
     expect(command).not.toContain("--token ");
     expect(command).toContain("--allow-origin");
@@ -3584,9 +3587,205 @@ describe("RecordingStudio", () => {
       generatedToken,
     );
     expect(container.textContent).toContain(
-      "Local browser recording bridge paired",
+      "Connected to the Recording Agent",
     );
     expect(container.textContent).toContain("Start browser recording");
+  });
+
+  const unavailableBrowserStatus = {
+    proxy_addr: ":8081",
+    ca_cert_path: "artifacts/recorder/ca-cert.pem",
+    active: null,
+    browser: {
+      availability: { available: false, reason: "browser recording is disabled in production mode" },
+      active: null,
+    },
+  };
+
+  async function readBridgeToken() {
+    await revealBridgeToken(container);
+    const token = container.querySelector('[data-testid="browser-recorder-bridge-token"]')?.textContent || "";
+    const hide = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Hide token");
+    await act(async () => {
+      hide?.click();
+    });
+    return token;
+  }
+
+  it("keeps the pairing token across studio loads until it is regenerated", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    await act(async () => {
+      root.render(<RecordingStudio key="first" />);
+    });
+    await flushPromises();
+    const first = await readBridgeToken();
+    expect(first).toMatch(/^[0-9a-f]{48}$/);
+
+    // An agent started with that token still pairs after the studio reloads.
+    await act(async () => {
+      root.render(<RecordingStudio key="second" />);
+    });
+    await flushPromises();
+    expect(await readBridgeToken()).toBe(first);
+
+    const regenerate = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Regenerate token");
+    await act(async () => {
+      regenerate!.click();
+    });
+    const second = await readBridgeToken();
+    expect(second).toMatch(/^[0-9a-f]{48}$/);
+    expect(second).not.toBe(first);
+    await act(async () => {
+      root.render(<RecordingStudio key="third" />);
+    });
+    await flushPromises();
+    expect(await readBridgeToken()).toBe(second);
+  });
+
+  it("says how to recover when the agent was started with another pairing token", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    apiMock.pairBrowserRecorderBridge.mockRejectedValueOnce(
+      Object.assign(new Error("browser recorder bridge token is missing or invalid"), { status: 401 }),
+    );
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    const connect = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Connect");
+    await act(async () => {
+      connect!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(container.textContent).toContain(
+      "was started with a different pairing token. Stop it with Ctrl-C, run the command above again and paste the pairing token shown here.",
+    );
+    expect(container.textContent).not.toContain("browser recorder bridge token is missing or invalid");
+
+    apiMock.pairBrowserRecorderBridge.mockRejectedValueOnce(
+      Object.assign(new Error("browser recorder bridge pairing token has expired; restart the APEX Load Recording Agent"), { status: 401 }),
+    );
+    await act(async () => {
+      connect!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(container.textContent).toContain(
+      "is no longer accepting new pairings. Stop it with Ctrl-C, run the command above again and paste the pairing token shown here.",
+    );
+  });
+
+  it("says to connect again when the paired agent no longer knows this connection", async () => {
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:27777", token: "tok", session_id: "s-old" };
+    apiMock.browserRecorderRequestScope = "bridge:http://127.0.0.1:27777:s-old";
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    apiMock.getBrowserRecorderBridgeStatus.mockRejectedValue(
+      Object.assign(new Error("browser recorder bridge token is missing or invalid"), { status: 401 }),
+    );
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    // The dead connection is dropped, so the studio stops polling the agent
+    // with it; the reason shows once the studio is back on the controller.
+    expect(apiMock.clearBrowserRecorderBridge).toHaveBeenCalledTimes(1);
+    expect(apiMock.clearBrowserRecorderBridge).toHaveBeenCalledWith("s-old");
+    apiMock.browserRecorderBridge = null;
+    apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    // Restarting the agent cannot fix a stale connection; pairing again does.
+    expect(container.querySelector(".rec-bridge-status")?.textContent).toContain(
+      "The Recording Agent at http://127.0.0.1:27777 no longer accepts this connection: it was restarted or the connection expired. Click Connect to pair again.",
+    );
+    expect(container.textContent).not.toContain("was started with a different pairing token");
+  });
+
+  it("keeps a pairing that replaced a refused connection", async () => {
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:27777", token: "tok", session_id: "s-old" };
+    apiMock.browserRecorderRequestScope = "bridge:http://127.0.0.1:27777:s-old";
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    apiMock.getBrowserRecorderBridgeStatus.mockRejectedValueOnce(
+      Object.assign(new Error("browser recorder bridge token is missing or invalid"), { status: 401 }),
+    );
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:27777", token: "tok", session_id: "s-new" };
+    apiMock.browserRecorderRequestScope = "bridge:http://127.0.0.1:27777:s-new";
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    expect(container.textContent).not.toContain("no longer accepts this connection");
+    expect(container.querySelector('[data-testid="browser-recorder-bridge-connected"]')).not.toBeNull();
+  });
+
+  it("explains the drop when another tab cleared the refused connection first", async () => {
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:27777", token: "tok", session_id: "s-old" };
+    apiMock.browserRecorderRequestScope = "bridge:http://127.0.0.1:27777:s-old";
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    apiMock.getBrowserRecorderBridgeStatus.mockRejectedValueOnce(
+      Object.assign(new Error("browser recorder bridge token is missing or invalid"), { status: 401 }),
+    );
+    // Another tab already cleared storage; this tab's clear finds nothing.
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    apiMock.browserRecorderBridge = null;
+    apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    expect(container.querySelector(".rec-bridge-status")?.textContent).toContain("no longer accepts this connection");
+  });
+
+  it("gives Windows the agent command PowerShell runs", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    const platform = container.querySelector('select[aria-label="Recording Agent platform"]') as HTMLSelectElement;
+    await act(async () => {
+      platform.value = "windows-amd64";
+      platform.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const command = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || "";
+    expect(command.startsWith(".\\apexload-record-agent.exe --addr")).toBe(true);
+  });
+
+  it("says when the paired agent is a different build from this controller", async () => {
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:49152", token: "tok", session_id: "ws-1" };
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    apiMock.verifyBrowserRecorderBridgeAgent.mockResolvedValue({ status: "healthy", display_version: "0.1.0-dev", commit: "e497d9f" });
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    expect(container.querySelector('[data-testid="recording-agent-build-notice"]')?.textContent).toBe(
+      "This Recording Agent (0.1.0-dev) is a different build from this controller (1.4.0). If recording, conversion or saving misbehaves, disconnect, download the agent again and restart it. If this note stays after that, the controller's agent download is out of date; tell your administrator.",
+    );
+
+    // The same version from another commit is told apart by the commits.
+    apiMock.verifyBrowserRecorderBridgeAgent.mockResolvedValue({ status: "healthy", version: "1.4.0", commit: "e497d9f" });
+    await act(async () => {
+      root.render(<RecordingStudio key="same-version" />);
+    });
+    await flushPromises();
+    expect(container.querySelector('[data-testid="recording-agent-build-notice"]')?.textContent).toContain(
+      "This Recording Agent (1.4.0, commit e497d9f) is a different build from this controller (1.4.0, commit abc1234).",
+    );
+
+    apiMock.verifyBrowserRecorderBridgeAgent.mockResolvedValue({ status: "healthy", version: "1.4.0", commit: "abc1234" });
+    await act(async () => {
+      root.render(<RecordingStudio key="same-build" />);
+    });
+    await flushPromises();
+    expect(container.querySelector('[data-testid="recording-agent-build-notice"]')).toBeNull();
   });
 
   it("shows the selected Recording Agent platform and staged SHA-256", async () => {
@@ -3879,7 +4078,7 @@ describe("RecordingStudio", () => {
       await Promise.resolve();
     });
     await flushPromises();
-    expect(container.textContent).toContain("Local browser recording bridge paired");
+    expect(container.textContent).toContain("Connected to the Recording Agent");
     expect(container.textContent).toContain("Start browser recording");
   });
 
@@ -4201,7 +4400,7 @@ describe("RecordingStudio", () => {
       ),
     ).not.toBeNull();
     expect(container.textContent).toContain(
-      "Local bridge: http://127.0.0.1:49152",
+      "Recording Agent: http://127.0.0.1:49152",
     );
   });
 
@@ -4698,7 +4897,7 @@ describe("RecordingStudio", () => {
 
     const card = container.querySelector('[data-testid="browser-recorder-unavailable"]')!;
     expect(card.textContent).not.toContain("isn't installed on this controller");
-    expect(card.textContent).toContain("Run the command again on your computer");
+    expect(card.textContent).toContain("If the agent is not running, run the command again on your computer");
     expect(
       Array.from(card.querySelectorAll("button")).some((button) =>
         button.textContent?.includes("Install recording browser"),
@@ -5040,7 +5239,7 @@ describe("RecordingStudio", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain("Local browser recording bridge paired");
+    expect(container.textContent).not.toContain("Connected to the Recording Agent");
     expect(container.textContent).not.toContain("Connected to http://127.0.0.1:27777");
   });
 
@@ -5096,8 +5295,46 @@ describe("RecordingStudio", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain("Local browser recording bridge paired");
+    expect(container.textContent).toContain("Connected to the Recording Agent");
     expect(container.textContent).toContain("Start browser recording");
+  });
+
+  it("keeps the connect and disconnect confirmations when the studio moves to and from the agent afterwards", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+    apiMock.pairBrowserRecorderBridge.mockResolvedValueOnce({
+      origin: "http://127.0.0.1:27777",
+      token: "paired-token",
+      session_id: "paired-session",
+      status: { availability: { available: true }, api_origin: "http://127.0.0.1:27777", paired: true },
+    });
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+    const connect = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Connect")!;
+    await act(async () => {
+      connect.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    // In a browser the move to the agent renders after pairing has finished.
+    apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:27777", token: "paired-token", session_id: "paired-session" };
+    apiMock.browserRecorderRequestScope = "bridge:http://127.0.0.1:27777:paired-session";
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    expect(container.textContent).toContain("Connected to the Recording Agent");
+
+    const disconnect = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Disconnect")!;
+    await act(async () => {
+      disconnect.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    apiMock.browserRecorderBridge = null;
+    apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    expect(container.textContent).toContain("Disconnected from the Recording Agent");
   });
 
   it("ignores an agent verification result after the recorder API origin changes", async () => {

@@ -325,9 +325,30 @@ function generateBridgePairingToken(): string {
   );
 }
 
+// The pairing token lives for this tab, so an agent started with it still
+// pairs after the studio reloads or is opened again. Regenerate replaces it.
+const BRIDGE_PAIRING_TOKEN_SESSION_KEY = "apexload.recorder.pairingToken";
+const BRIDGE_PAIRING_TOKEN_PATTERN = /^[0-9a-f]{32,128}$/;
+
+function rememberBridgePairingToken(token: string): void {
+  try {
+    window.sessionStorage.setItem(BRIDGE_PAIRING_TOKEN_SESSION_KEY, token);
+  } catch {
+    // Storage blocked: the token still works until this page reloads.
+  }
+}
+
 function initialBridgePairingToken(): string {
   try {
-    return generateBridgePairingToken();
+    const remembered = window.sessionStorage.getItem(BRIDGE_PAIRING_TOKEN_SESSION_KEY);
+    if (remembered && BRIDGE_PAIRING_TOKEN_PATTERN.test(remembered)) return remembered;
+  } catch {
+    // Storage blocked: generate a token for this page.
+  }
+  try {
+    const token = generateBridgePairingToken();
+    rememberBridgePairingToken(token);
+    return token;
   } catch {
     return "";
   }
@@ -435,9 +456,37 @@ function bridgeListenAddress(bridgeOrigin: string): string {
   }
 }
 
-function bridgeRecordAgentCommand(bridgeOrigin: string): string {
+// Whether the paired agent is a different build from this controller. They
+// share the conversion and import-review code, so a mismatch can explain odd
+// behavior; builds are compared by commit, which both health answers carry.
+function recordingAgentBuildNotice(
+  agent: { version?: string; display_version?: string; commit?: string },
+  controller: { version?: string; display_version?: string; commit?: string },
+): string {
+  const agentCommit = (agent.commit || "").trim();
+  const controllerCommit = (controller.commit || "").trim();
+  if (!agentCommit || !controllerCommit || agentCommit === controllerCommit) return "";
+  let agentLabel = agent.display_version || agent.version || agentCommit;
+  let controllerLabel = controller.display_version || controller.version || controllerCommit;
+  // Same version, different commits: the commits are what tell them apart.
+  if (agentLabel === controllerLabel) {
+    agentLabel = `${agentLabel}, commit ${agentCommit}`;
+    controllerLabel = `${controllerLabel}, commit ${controllerCommit}`;
+  }
+  return `This Recording Agent (${agentLabel}) is a different build from this controller (${controllerLabel}). If recording, conversion or saving misbehaves, disconnect, download the agent again and restart it. If this note stays after that, the controller's agent download is out of date; tell your administrator.`;
+}
+
+// The agent runs from the folder its download was extracted into, which is
+// not on PATH: ./name on macOS and Linux, .\name.exe in Windows PowerShell.
+function recordingAgentExecutable(platform: string): string {
+  return platform.toLowerCase().startsWith("windows")
+    ? `.\\${RECORDING_AGENT_COMMAND}.exe`
+    : `./${RECORDING_AGENT_COMMAND}`;
+}
+
+function bridgeRecordAgentCommand(bridgeOrigin: string, platform = ""): string {
   const parts = [
-    RECORDING_AGENT_COMMAND,
+    recordingAgentExecutable(platform),
     "--addr",
     bridgeListenAddress(bridgeOrigin),
     "--token-stdin",
@@ -484,7 +533,7 @@ function proxyUnavailableExplanation(
   return { summary, details: availability.reason?.trim() || "" };
 }
 
-function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
+function bridgeUnreachableMessage(error: any, bridgeOrigin: string): string {
   const message = error?.message || "";
   if (
     error instanceof TypeError ||
@@ -492,7 +541,38 @@ function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
   ) {
     return `Could not reach ${bridgeOrigin}. Confirm ${RECORDING_AGENT_COMMAND} is running; if this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`;
   }
-  return message || "Failed to pair with the local recording bridge";
+  return "";
+}
+
+function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
+  const unreachable = bridgeUnreachableMessage(error, bridgeOrigin);
+  if (unreachable) return unreachable;
+  const message = error?.message || "";
+  // Pairing answers 401 once the agent's pairing window has closed, or for a
+  // token it was not started with; both are fixed by starting it again.
+  if (/pairing token has expired/i.test(message)) {
+    return `The Recording Agent at ${bridgeOrigin} is no longer accepting new pairings. Stop it with Ctrl-C, run the command above again and paste the pairing token shown here.`;
+  }
+  if (error?.status === 401 || /token is missing or invalid/i.test(message)) {
+    return `The Recording Agent at ${bridgeOrigin} was started with a different pairing token. Stop it with Ctrl-C, run the command above again and paste the pairing token shown here.`;
+  }
+  return message || "Failed to pair with the Recording Agent";
+}
+
+// A paired agent answers 401 once it no longer knows this connection: it was
+// restarted, or the paired session expired. Pairing again fixes both, and
+// pairing says if the agent itself needs restarting.
+function bridgeConnectionRejected(error: any): boolean {
+  return error?.status === 401 || /token is missing or invalid|pairing session is invalid or expired/i.test(error?.message || "");
+}
+
+function bridgeConnectionErrorMessage(error: any, bridgeOrigin: string): string {
+  const unreachable = bridgeUnreachableMessage(error, bridgeOrigin);
+  if (unreachable) return unreachable;
+  if (bridgeConnectionRejected(error)) {
+    return `The Recording Agent at ${bridgeOrigin} no longer accepts this connection: it was restarted or the connection expired. Click Connect to pair again.`;
+  }
+  return error?.message || `The Recording Agent at ${bridgeOrigin} is not responding`;
 }
 
 function bridgeVerificationErrorMessage(
@@ -504,7 +584,7 @@ function bridgeVerificationErrorMessage(
     error instanceof TypeError ||
     /failed to fetch|networkerror/i.test(message)
   ) {
-    return `APEX Load Recording Agent is not reachable at ${bridgeOrigin}. Download and run the agent command, then verify again. If this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`;
+    return `APEX Load Recording Agent is not reachable at ${bridgeOrigin}. Download and run the agent command, then click Connect. If this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`;
   }
   return (
     message || `APEX Load Recording Agent is not reachable at ${bridgeOrigin}`
@@ -727,6 +807,7 @@ export default function RecordingStudio({
   const [bridgePairing, setBridgePairing] = useState(false);
   const [bridgeVerifying, setBridgeVerifying] = useState(false);
   const [bridgeStatus, setBridgeStatus] = useState("");
+  const [agentBuildNotice, setAgentBuildNotice] = useState("");
   const [bridgeStatusTone, setBridgeStatusTone] = useState<
     "info" | "success" | "error"
   >("info");
@@ -850,6 +931,11 @@ export default function RecordingStudio({
   );
   const previousRecorderRequestScopeRef = useRef(recorderRequestScope);
   const feedbackTimerRef = useRef<number | null>(null);
+  // What to show once a recorder endpoint change this studio made (connecting
+  // to the agent, or leaving it) has landed. The change resets the studio and
+  // can render after the handler has finished, so the reset applies this when
+  // the studio has moved to a matching scope.
+  const endpointArrivalRef = useRef<{ scopePrefix: string; apply: () => void } | null>(null);
 
   if (
     refreshScopeRef.current.projectId !== activeProject?.id ||
@@ -1104,6 +1190,7 @@ export default function RecordingStudio({
     if (bridgeToken) return bridgeToken;
     try {
       const token = generateBridgePairingToken();
+      rememberBridgePairingToken(token);
       setBridgeToken(token);
       return token;
     } catch (e: any) {
@@ -1118,9 +1205,9 @@ export default function RecordingStudio({
   const handleCopyBridgeCommand = async () => {
     ensureBridgeToken();
     await copyProxyCommand(
-      bridgeRecordAgentCommand(bridgeOrigin),
-      "Terminal command copied. Paste it into a local terminal, then paste the pairing token at the prompt.",
-      "Failed to copy local bridge command",
+      bridgeRecordAgentCommand(bridgeOrigin, recordingAgentPlatform),
+      "Terminal command copied. Run it in the folder you extracted the agent into, then paste the pairing token at the prompt.",
+      "Failed to copy the agent command",
     );
   };
 
@@ -1136,10 +1223,12 @@ export default function RecordingStudio({
 
   const handleRegenerateBridgeToken = () => {
     try {
-      setBridgeToken(generateBridgePairingToken());
+      const token = generateBridgePairingToken();
+      rememberBridgePairingToken(token);
+      setBridgeToken(token);
       setBridgeStatus("");
       setBridgeStatusTone("info");
-      showFeedback("New local bridge pairing token generated");
+      showFeedback("New pairing token generated. Start the Recording Agent again with it before you connect.");
     } catch (e: any) {
       showFeedback(
         e.message || "Failed to generate bridge pairing token",
@@ -1292,14 +1381,29 @@ export default function RecordingStudio({
             }
           } catch (e: any) {
             if (!isCurrentScope()) return;
-            setBrowserAvailability({
-              available: false,
-              reason: bridgePairingErrorMessage(
-                e,
-                api.browserRecorderBridge.origin,
-              ),
-            });
-            setBridgeStatus("Local recording bridge is not responding");
+            const message = bridgeConnectionErrorMessage(
+              e,
+              api.browserRecorderBridge.origin,
+            );
+            if (bridgeConnectionRejected(e)) {
+              // The agent will not take this connection again. Drop it, so
+              // the studio stops polling the agent with it (each refusal is a
+              // line in the agent's terminal), and say why by Connect. Only
+              // this connection: a pairing that replaced it meanwhile stays,
+              // and the next move consumes the reason without showing it.
+              endpointArrivalRef.current = {
+                scopePrefix: "api:",
+                apply: () => {
+                  setBridgeStatusTone("error");
+                  setBridgeStatus(message);
+                  showFeedback(message, "error");
+                },
+              };
+              api.clearBrowserRecorderBridge(api.browserRecorderBridge.session_id);
+              return;
+            }
+            setBrowserAvailability({ available: false, reason: message });
+            setBridgeStatus("The Recording Agent is not responding");
           }
         } else if (recorderStatus.browser) {
           setBrowserAvailability(recorderStatus.browser.availability);
@@ -1338,7 +1442,7 @@ export default function RecordingStudio({
       if (refreshInFlightRef.current?.request === request)
         refreshInFlightRef.current = null;
     }
-  }, [api, activeProject?.id, recorderRequestScope]);
+  }, [api, activeProject?.id, recorderRequestScope, showFeedback]);
 
   // Saved login states change only when one is saved or expires, so they are
   // listed on entry, when the browser options open and after a save — not on
@@ -1427,6 +1531,11 @@ export default function RecordingStudio({
       setBridgeStatusTone("info");
     }
     setFeedback("");
+    if (recorderEndpointChanged) {
+      const arrival = endpointArrivalRef.current;
+      endpointArrivalRef.current = null;
+      if (arrival && recorderRequestScope.startsWith(arrival.scopePrefix)) arrival.apply();
+    }
     setConvertedParameterizationApplying(false);
     setSalesforceParameterizationApplying(false);
     setConvertedCredentialActionInProgress(false);
@@ -1511,7 +1620,7 @@ export default function RecordingStudio({
     const sourceRecorderScope = refreshScopeRef.current;
     const origin = bridgeOrigin.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/.+/i.test(origin)) {
-      const message = `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`;
+      const message = `Enter the agent address ${RECORDING_AGENT_COMMAND} shows, for example ${DEFAULT_BRIDGE_ORIGIN}`;
       setBridgeStatusTone("error");
       setBridgeStatus(message);
       showFeedback(message, "error");
@@ -1537,11 +1646,18 @@ export default function RecordingStudio({
       ) {
         return;
       }
-      setBridgeStatusTone("success");
-      setBridgeStatus(`Connected to ${origin}`);
-      setBrowserAvailability(paired.status.availability);
-      setInstallState(null);
-      showFeedback("Local browser recording bridge paired");
+      const arrive = () => {
+        setBridgeStatusTone("success");
+        setBridgeStatus(`Connected to ${origin}`);
+        setBrowserAvailability(paired.status.availability);
+        setInstallState(null);
+        showFeedback("Connected to the Recording Agent");
+      };
+      arrive();
+      // The move to the agent resets the studio; arrive again once it lands.
+      if (currentScope.recorderRequestScope !== pairedRequestScope) {
+        endpointArrivalRef.current = { scopePrefix: pairedRequestScope, apply: arrive };
+      }
     } catch (e: any) {
       if (refreshScopeRef.current !== sourceRecorderScope) return;
       const message = bridgePairingErrorMessage(e, origin);
@@ -1563,7 +1679,7 @@ export default function RecordingStudio({
     if (!/^https?:\/\/.+/i.test(origin)) {
       setBridgeStatusTone("error");
       setBridgeStatus(
-        `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`,
+        `Enter the agent address ${RECORDING_AGENT_COMMAND} shows, for example ${DEFAULT_BRIDGE_ORIGIN}`,
       );
       return false;
     }
@@ -1599,11 +1715,35 @@ export default function RecordingStudio({
     if (await verifyBridgeAgent()) await handlePairBridge();
   };
 
+  const pairedAgentOrigin = api.browserRecorderBridge?.origin || "";
+  const { verifyBrowserRecorderBridgeAgent, getHealth } = api;
+  useEffect(() => {
+    if (!pairedAgentOrigin) {
+      setAgentBuildNotice("");
+      return;
+    }
+    let cancelled = false;
+    Promise.all([verifyBrowserRecorderBridgeAgent(pairedAgentOrigin), getHealth()])
+      .then(([agent, controller]) => {
+        if (!cancelled) setAgentBuildNotice(recordingAgentBuildNotice(agent, controller));
+      })
+      .catch(() => {
+        if (!cancelled) setAgentBuildNotice("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pairedAgentOrigin, verifyBrowserRecorderBridgeAgent, getHealth]);
+
   const handleDisconnectBridge = () => {
+    const leave = () => {
+      setBridgeStatusTone("info");
+      setBridgeStatus("");
+      showFeedback("Disconnected from the Recording Agent");
+    };
+    endpointArrivalRef.current = { scopePrefix: "api:", apply: leave };
     api.clearBrowserRecorderBridge();
-    setBridgeStatusTone("info");
-    setBridgeStatus("");
-    showFeedback("Local recording bridge disconnected");
+    leave();
   };
 
   const handleBrowserStartAddressChange = (value: string) => {
@@ -2677,7 +2817,7 @@ export default function RecordingStudio({
     ? browserRecorderInstallTone(installState.status)
     : "info";
   const installStatusVisible = !!installState && installState.status !== "idle";
-  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin);
+  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin, recordingAgentPlatform);
   const agentDownload = recordingAgentDownloadConfig();
   const agentDownloadHref =
     agentDownload.managed && recordingAgentPlatform
@@ -2805,7 +2945,7 @@ export default function RecordingStudio({
                 </div>
                 <p className="rec-bridge-lead">
                   {api.browserRecorderBridge
-                    ? "Run the command again on your computer, then connect to the Recording Agent."
+                    ? "If the agent is not running, run the command again on your computer; then connect to the Recording Agent."
                     : browserInstallOffered
                       ? "The browser opens on your computer instead, through the APEX Load Recording Agent."
                       : "This controller can't open a browser for you, so the browser opens on your computer instead, through the APEX Load Recording Agent."}
@@ -2896,8 +3036,8 @@ export default function RecordingStudio({
                         Run the local command
                       </div>
                       <div className="rec-bridge-step-desc">
-                        Paste this command into Terminal or PowerShell on your
-                        workstation.
+                        Paste this command into Terminal (PowerShell on
+                        Windows), in the folder you extracted the agent into.
                       </div>
                       <div
                         className="rec-bridge-terminal"
@@ -3050,7 +3190,7 @@ export default function RecordingStudio({
                   className="rec-bridge-connected"
                   data-testid="browser-recorder-bridge-connected"
                 >
-                  <span>Local bridge: {api.browserRecorderBridge.origin}</span>
+                  <span>Recording Agent: {api.browserRecorderBridge.origin}</span>
                   <button
                     type="button"
                     className="rec-inline-action"
@@ -3058,6 +3198,11 @@ export default function RecordingStudio({
                   >
                     Disconnect
                   </button>
+                </div>
+              )}
+              {api.browserRecorderBridge && agentBuildNotice && (
+                <div className="rec-feedback" role="status" data-testid="recording-agent-build-notice">
+                  {agentBuildNotice}
                 </div>
               )}
               <div className="rec-form-row">

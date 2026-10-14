@@ -566,10 +566,18 @@ remotely or cannot launch a headed browser:
 1. Install the `apexload-record-agent` package from the dashboard's **Download the
    APEX Load Recording Agent** link.
 2. Open **Recording Studio** in the dashboard.
-3. Copy the generated terminal command and paste it into Terminal or PowerShell.
+3. Copy the generated terminal command and paste it into Terminal (PowerShell on
+   Windows) in the folder you extracted the agent into. The command starts with
+   `./apexload-record-agent`, or `.\apexload-record-agent.exe` on Windows, because
+   that folder is usually not on `PATH`.
 4. When the agent asks, paste the pairing token shown under the command. The token
-   never appears in the command or its process arguments.
+   never appears in the command or its process arguments, and the agent does not
+   print it back.
 5. Click **Connect**. The studio checks that the agent answers, then pairs with it.
+
+The studio keeps the pairing token for the browser tab, so an agent started with it
+still pairs after the page reloads; **Regenerate token** replaces it. If the agent
+was restarted or the connection expired, click **Connect** to pair again.
 
 When the controller cannot open a browser itself (a hosted or Kubernetes controller,
 or one without a display), Recording Studio leads with these steps under **Record

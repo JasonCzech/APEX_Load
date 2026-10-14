@@ -224,6 +224,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [releaseFilter, setReleaseFilter] = useLibraryFilter<string>(filterScope, 'release', 'all')
   const [folderFilter, setFolderFilter] = useLibraryFilter<string>(filterScope, 'folder', 'all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  // The project, domain and repository the loaded access answers for.
+  const effectiveAccessScopeRef = useRef('')
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
   // Why a create/edit link opened the library instead (role without edit rights).
@@ -886,8 +888,17 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   useEffect(() => {
     let cancelled = false
     const scope = { ...projectScopeRef.current }
-    setEffectiveAuthAccessResources([])
-    setEffectiveAccessLoaded(false)
+    // Access is cleared only when the scope it answers for changes. A new api
+    // object alone (the Recording Agent connecting, for one) reloads it in
+    // place: clearing it would deny manage_scripts for a moment and unmount
+    // the authoring surface the user is working in.
+    const accessScope = `${activeProjectId || ''}|${activeProject?.domain_id || ''}|${applicationRepository?.id || ''}`
+    const reload = effectiveAccessScopeRef.current === accessScope
+    effectiveAccessScopeRef.current = accessScope
+    if (!reload) {
+      setEffectiveAuthAccessResources([])
+      setEffectiveAccessLoaded(false)
+    }
     const loadEffectiveAccess = async () => {
       try {
         const response = await api.getAuthEffectiveAccess(activeProjectId, {
@@ -897,8 +908,11 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         if (!cancelled && isProjectScopeCurrent(scope)) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
-      } catch {
-        if (!cancelled && isProjectScopeCurrent(scope)) {
+      } catch (error) {
+        // A reload that fails keeps the access already shown for this scope,
+        // unless the answer was that the session or role no longer allows it.
+        const status = (error as { status?: number } | null)?.status
+        if (!cancelled && isProjectScopeCurrent(scope) && (!reload || status === 401 || status === 403)) {
           setEffectiveAuthAccessResources([])
         }
       } finally {

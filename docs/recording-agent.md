@@ -10,18 +10,39 @@ short-lived token.
 1. Install the trusted `apexload-record-agent` package from the dashboard's
    **Download the APEX Load Recording Agent** link.
 2. Open Recording Studio in the dashboard.
-3. Copy the generated terminal command and paste it into Terminal or PowerShell.
+3. Copy the generated terminal command and paste it into Terminal (PowerShell
+   on Windows) in the folder you extracted the agent into. The studio writes
+   `./apexload-record-agent`, or `.\apexload-record-agent.exe` for a Windows
+   package, because that folder is usually not on `PATH`.
 4. When the agent asks, paste the pairing token shown under the command.
 5. Click **Connect** in the dashboard. It checks that the agent answers, then
    pairs with it.
 
 The command reads the token from standard input (`--token-stdin`), so it never
-appears in the command line or the process arguments.
+appears in the command line or the process arguments, and the agent does not
+print it back. The studio keeps the token for the browser tab, so an agent
+started with it still pairs after the studio reloads; **Regenerate token**
+replaces it, after which the agent must be started again. If Connect reports
+that the agent was started with a different pairing token, stop it with Ctrl-C
+and run the command again. If the studio says the agent no longer accepts the
+connection (it was restarted, or the connection expired), click **Connect**
+to pair again.
+
+Once paired, the studio compares the agent's build with the controller's and
+says so when they differ; download the agent again if recording, conversion or
+saving misbehaves.
+
+The agent's terminal shows its startup details, each pairing and failing
+requests; successful requests are not logged there.
+
+Credential bindings and parameterization chosen while reviewing a recording
+are applied by the agent, which converted the recording; saving then hands the
+reviewed scripts to the controller.
 
 Example:
 
 ```bash
-apexload-record-agent --addr 127.0.0.1:27777 --token-stdin --allow-origin 'https://apexload.example.com'
+./apexload-record-agent --addr 127.0.0.1:27777 --token-stdin --allow-origin 'https://apexload.example.com'
 ```
 
 ## Privileges

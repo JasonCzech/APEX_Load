@@ -105,6 +105,45 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return requestLoggingMiddleware(nil)(next)
 }
 
+// failureLoggingMiddleware is loggingMiddleware writing only failing
+// requests (4xx/5xx) and panics. The Recording Agent runs in a terminal the
+// user watches; a line for every status poll there buries its startup text
+// and real errors.
+func failureLoggingMiddleware(next http.Handler) http.Handler {
+	return requestLoggingMiddleware(slog.New(minimumLevelHandler{minimum: slog.LevelWarn}))(next)
+}
+
+// minimumLevelHandler drops records below minimum and passes the rest to
+// handler, or, while handler is nil, to slog.Default() as it is when each
+// record is logged, so a later SetDefault still applies.
+type minimumLevelHandler struct {
+	handler slog.Handler
+	minimum slog.Level
+}
+
+func (h minimumLevelHandler) next() slog.Handler {
+	if h.handler != nil {
+		return h.handler
+	}
+	return slog.Default().Handler()
+}
+
+func (h minimumLevelHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.minimum && h.next().Enabled(ctx, level)
+}
+
+func (h minimumLevelHandler) Handle(ctx context.Context, record slog.Record) error {
+	return h.next().Handle(ctx, record)
+}
+
+func (h minimumLevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return minimumLevelHandler{handler: h.next().WithAttrs(attrs), minimum: h.minimum}
+}
+
+func (h minimumLevelHandler) WithGroup(name string) slog.Handler {
+	return minimumLevelHandler{handler: h.next().WithGroup(name), minimum: h.minimum}
+}
+
 // requestLoggingMiddleware is loggingMiddleware with an injectable logger;
 // nil resolves slog.Default() per request so a later SetDefault applies.
 func requestLoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {

@@ -42,6 +42,8 @@ export type BrowserRecorderBridgeStatusEnvelope = {
 export type BrowserRecorderBridgeHealth = {
   status: string
   version?: string
+  display_version?: string
+  commit?: string
   environment?: string
   build_time?: string
 }
@@ -89,6 +91,16 @@ export function clearBrowserRecorderBridge(remoteOrigin = API_ORIGIN): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(BROWSER_RECORDER_BRIDGE_CHANGED_EVENT))
   }
+}
+
+// Clears the stored connection unless another session has replaced it, so a
+// pairing made after a refused connection is kept. True when no connection
+// other than this session is stored any more.
+export function clearBrowserRecorderBridgeSession(sessionId: string, remoteOrigin = API_ORIGIN): boolean {
+  const stored = readBrowserRecorderBridge(remoteOrigin)
+  if (stored && stored.session_id !== sessionId) return false
+  if (stored) clearBrowserRecorderBridge(remoteOrigin)
+  return true
 }
 
 function withBridgeToken(connection: BrowserRecorderBridgeConnection, options?: RequestInit): RequestInit {

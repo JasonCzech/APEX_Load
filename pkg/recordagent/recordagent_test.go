@@ -2,6 +2,7 @@ package recordagent
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -90,7 +91,7 @@ func TestRunCommandReadsPairingTokenFromStdin(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("code = %d, want validation failure", code)
 	}
-	if !strings.Contains(stderr.String(), "Bridge pairing token: ") {
+	if !strings.Contains(stderr.String(), "Paste the pairing token the Recording Studio shows: ") {
 		t.Fatalf("stderr missing prompt: %q", stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "invalid bridge pairing token") {
@@ -112,5 +113,49 @@ func TestRunRejectsWeakPairingToken(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+// stopAfterStartup stops the agent once it starts printing; Run prints all of
+// its startup text before it waits on the context, so nothing is cut short and
+// no deadline races server start-up.
+type stopAfterStartup struct {
+	bytes.Buffer
+	stop context.CancelFunc
+}
+
+func (w *stopAfterStartup) Write(p []byte) (int, error) {
+	w.stop()
+	return w.Buffer.Write(p)
+}
+
+func runUntilStarted(t *testing.T, args Args) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	out := &stopAfterStartup{stop: cancel}
+	if err := Run(ctx, args, out, "apexload-record-agent"); err != nil {
+		t.Fatalf("Run(format %q) = %v", args.Format, err)
+	}
+	return out.String()
+}
+
+// The startup text names the studio's real control, and a token the operator
+// supplied is never echoed back to the terminal or JSON output.
+func TestRunNeverEchoesASuppliedPairingToken(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef"
+	for _, format := range []string{"", "json"} {
+		out := runUntilStarted(t, Args{Addr: DefaultDynamicAddr, Token: token, Format: format})
+		if strings.Contains(out, token) {
+			t.Fatalf("output (%q) echoed the supplied token:\n%s", format, out)
+		}
+		if format == "" && (!strings.Contains(out, "Return to the Recording Studio and click Connect.") || strings.Contains(out, "Pair Local Bridge")) {
+			t.Fatalf("startup text = %s", out)
+		}
+	}
+
+	out := runUntilStarted(t, Args{Addr: DefaultDynamicAddr})
+	if !strings.Contains(out, "(generated here)") || !strings.Contains(out, "run the command the studio gives you") {
+		t.Fatalf("a generated token is printed with how to pair instead: %s", out)
 	}
 }

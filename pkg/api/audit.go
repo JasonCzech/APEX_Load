@@ -47,11 +47,21 @@ func operationAuditDetails(operationID, outcome string, details map[string]any) 
 }
 
 func (s *Server) recordAuditEvent(r *http.Request, action string, status string, resourceType string, resourceID string, projectID string, details map[string]any) {
+	if s.agentWithoutAuditTrail() {
+		return
+	}
 	if err := s.persistAuditEvent(r, action, status, resourceType, resourceID, projectID, details); err != nil {
 		slog.Warn("failed to persist audit event", "action", action, "resource_type", resourceType, "resource_id", resourceID, "error", err)
 		s.activityWarning(r, err)
 	}
 	s.recordObjectActivity(r, action, status, resourceType, resourceID, projectID, details)
+}
+
+// agentWithoutAuditTrail reports a Recording Agent, which has no store and so
+// no audit trail by design: the controller audits what the user saves. Its
+// best-effort audit calls are skipped instead of warning on every action.
+func (s *Server) agentWithoutAuditTrail() bool {
+	return s != nil && s.bridgeMode && s.store == nil
 }
 
 // persistAuditEvent is the fail-closed counterpart to recordAuditEvent. Callers
@@ -77,6 +87,9 @@ func (s *Server) persistAuditEvent(r *http.Request, action string, status string
 // and use this helper so the governance record is not reassigned to the default
 // project or stripped of its original domain.
 func (s *Server) recordAuditEventWithProjectSnapshot(r *http.Request, action string, status string, resourceType string, resourceID string, projectID string, domainID string, details map[string]any) {
+	if s.agentWithoutAuditTrail() {
+		return
+	}
 	if err := s.persistAuditEventWithProjectSnapshot(r, action, status, resourceType, resourceID, projectID, domainID, details); err != nil {
 		slog.Warn("failed to persist audit event", "action", action, "resource_type", resourceType, "resource_id", resourceID, "error", err)
 	}

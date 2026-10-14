@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -305,6 +306,22 @@ func TestBrowserRecorderBridgeServesImportDraftReviewSteps(t *testing.T) {
 		if resp.Code != http.StatusBadRequest {
 			t.Fatalf("%s with the bridge token = %d %s, want the handler's 400", path, resp.Code, resp.Body.String())
 		}
+	}
+}
+
+// The agent has no store and so no audit trail; recording actions there must
+// not log an audit failure each time.
+func TestBrowserRecorderBridgeSkipsAuditWithoutWarning(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, nil)
+	logs := &lockedBuffer{}
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions", nil)
+	server.recordAuditEvent(req, "browser_recording.agent_audit_test", "success", "browser_recording", "rec-agent-audit-test", "", nil)
+	server.recordAuditEventWithProjectSnapshot(req, "browser_recording.agent_audit_test", "success", "browser_recording", "rec-agent-audit-test", "", "", nil)
+	if strings.Contains(logs.String(), "rec-agent-audit-test") {
+		t.Fatalf("agent audit call logged: %s", logs.String())
 	}
 }
 

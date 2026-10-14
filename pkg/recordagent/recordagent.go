@@ -145,7 +145,7 @@ func readTokenFromStdin(stdin io.Reader, stderr io.Writer) (string, error) {
 	if stdin == nil {
 		return "", fmt.Errorf("--token-stdin requires stdin")
 	}
-	fmt.Fprint(stderr, "Bridge pairing token: ")
+	fmt.Fprint(stderr, "Paste the pairing token the Recording Studio shows: ")
 	scanner := bufio.NewScanner(stdin)
 	if !scanner.Scan() {
 		if err := scanner.Err(); err != nil {
@@ -162,12 +162,13 @@ func readTokenFromStdin(stdin io.Reader, stderr io.Writer) (string, error) {
 
 func Run(ctx context.Context, args Args, stdout io.Writer, program string) error {
 	token := strings.TrimSpace(args.Token)
-	if token == "" {
-		generated, err := api.GenerateBrowserRecorderBridgeToken()
+	generated := token == ""
+	if generated {
+		fresh, err := api.GenerateBrowserRecorderBridgeToken()
 		if err != nil {
 			return fmt.Errorf("generate bridge token: %w", err)
 		}
-		token = generated
+		token = fresh
 	} else if err := api.ValidateBrowserRecorderBridgePairingToken(token); err != nil {
 		return fmt.Errorf("invalid bridge pairing token: %w", err)
 	}
@@ -192,8 +193,12 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 	payload := map[string]any{
 		"status":             "running",
 		"api_origin":         server.BrowserURL(),
-		"pairing_token":      token,
 		"pairing_expires_at": server.BridgePairingExpiresAt().Format(time.RFC3339),
+	}
+	// A token the operator supplied is never echoed back; only one the agent
+	// generated is printed, since nothing else knows it.
+	if generated {
+		payload["pairing_token"] = token
 	}
 	if args.Format == "json" {
 		b, _ := json.MarshalIndent(payload, "", "  ")
@@ -203,13 +208,21 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 			program = "APEX Load Recording Agent"
 		}
 		fmt.Fprintf(stdout, "%s is running.\n", program)
-		fmt.Fprintf(stdout, "  Local URL:      %s\n", server.BrowserURL())
-		fmt.Fprintf(stdout, "  Pairing token:  %s\n", token)
-		fmt.Fprintf(stdout, "  Expires:        %s\n", server.BridgePairingExpiresAt().Format(time.RFC3339))
+		fmt.Fprintf(stdout, "  Agent address:  %s\n", server.BrowserURL())
+		if generated {
+			fmt.Fprintf(stdout, "  Pairing token:  %s (generated here)\n", token)
+		} else {
+			fmt.Fprintln(stdout, "  Pairing token:  the one you supplied")
+		}
+		fmt.Fprintf(stdout, "  Pair before:    %s\n", server.BridgePairingExpiresAt().Local().Format("15:04:05 MST"))
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "If the dashboard generated this command, click Pair Local Bridge there.")
-		fmt.Fprintln(stdout, "For manual starts, paste the local URL and pairing token into the Recording Studio bridge panel.")
-		fmt.Fprintln(stdout, "Press Ctrl-C to stop the bridge.")
+		if generated {
+			fmt.Fprintln(stdout, "The Recording Studio pairs with the token it shows, not this one: stop this agent")
+			fmt.Fprintln(stdout, "and run the command the studio gives you, then click Connect there.")
+		} else {
+			fmt.Fprintln(stdout, "Return to the Recording Studio and click Connect.")
+		}
+		fmt.Fprintln(stdout, "Press Ctrl-C to stop the agent.")
 	}
 
 	select {
