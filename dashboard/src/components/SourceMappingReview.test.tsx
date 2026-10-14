@@ -2,7 +2,7 @@
 
 import { act, StrictMode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import SourceMappingReview from './SourceMappingReview'
 import { ImportSourceIssueFocusContext } from './ImportSourceIssueFocus'
@@ -1073,6 +1073,71 @@ describe('SourceMappingReview', () => {
     })
     await flushPromises()
     expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+  })
+
+  it('retains a mapping an issue focus names when StrictMode replays mount effects', async () => {
+    // The issue names the second mapping; the first one is the default pick.
+    await act(async () => {
+      root.render(<StrictMode><ImportSourceIssueFocusContext.Provider value={{ revision: 1, title: 'Captured correlation request', source: 'logout', description: 'Inspect the exact original source mapping.' }}>
+        <SourceMappingReview sourceReview={sourceReview} script={script} />
+      </ImportSourceIssueFocusContext.Provider></StrictMode>)
+    })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+    expect(sourceFileSelect(container).value).toBe('vuser_end.c')
+  })
+
+  it('retains a file the caller names when StrictMode replays mount effects', async () => {
+    await act(async () => {
+      root.render(<StrictMode><SourceMappingReview focusedSourceFile="vuser_end.c" focusRequestId={1} sourceReview={sourceReview} script={script} /></StrictMode>)
+    })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+    expect(sourceFileSelect(container).value).toBe('vuser_end.c')
+  })
+
+  it('applies a later focus request after the reviewer moved the selection', async () => {
+    const renderWithRequest = (focusRequestId: number) => root.render(
+      <SourceMappingReview focusedMappingId="logout" focusRequestId={focusRequestId} sourceReview={sourceReview} script={script} />,
+    )
+    await act(async () => { renderWithRequest(1) })
+    await flushPromises()
+    await act(async () => {
+      container.querySelector('tr[data-mapping-id="homepage"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
+
+    await act(async () => { renderWithRequest(2) })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+  })
+
+  it('applies a later issue focus and clears a copy confirmation from the earlier selection', async () => {
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => true) })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+    const renderWithRevision = (revision: number) => root.render(
+      <ImportSourceIssueFocusContext.Provider value={{ revision, title: 'Captured correlation request', source: 'logout', description: 'Inspect the exact original source mapping.' }}>
+        <SourceMappingReview sourceReview={sourceReview} script={script} />
+      </ImportSourceIssueFocusContext.Provider>,
+    )
+    await act(async () => { renderWithRevision(1) })
+    await flushPromises()
+    await act(async () => {
+      container.querySelector('tr[data-mapping-id="homepage"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const copySource = () => Array.from(container.querySelectorAll('button')).find(button => /^(Copy mapped source|Copied)$/.test(button.textContent || ''))
+    await act(async () => { copySource()?.click() })
+    await flushPromises()
+    expect(copySource()?.textContent).toBe('Copied')
+
+    await act(async () => { renderWithRevision(2) })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+    expect(copySource()?.textContent).toBe('Copy mapped source')
   })
 
   it('keeps a clicked table row from snapping back to an earlier external focus target', async () => {

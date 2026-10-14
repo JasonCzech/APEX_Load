@@ -289,9 +289,45 @@ export default function SourceMappingReview({
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const reviewRootRef = useRef<HTMLElement | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
-  const lastAppliedFocusRequestRef = useRef<number | null>(null)
-  const lastAppliedIssueFocusRef = useRef<number | null>(null)
   const lastTableScrollFocusRequestRef = useRef<number | null>(null)
+  // A focus request (an issue's source, or a mapping or file the caller names)
+  // is applied while rendering, keyed by the revision it carries. Applying it
+  // in an effect raced the selection-sync effect: StrictMode runs effects
+  // twice on mount, and the second run of that effect, reading the
+  // pre-focus selection, overwrote the focused mapping.
+  const [appliedIssueFocusRevision, setAppliedIssueFocusRevision] = useState<number | null>(null)
+  const [appliedFocusRequestId, setAppliedFocusRequestId] = useState<number | null>(null)
+  if (sourceIssueFocus && appliedIssueFocusRevision !== sourceIssueFocus.revision) {
+    setAppliedIssueFocusRevision(sourceIssueFocus.revision)
+    const target = issueSourceTarget(sourceIssueFocus, files, mappings, sourcePathResolver)
+    setUnmappedIssueFocus(target.mapping ? null : { filePath: target.file?.path || '', line: target.line, title: sourceIssueFocus.title })
+    setInspectedUnmappedFilePath('')
+    setSelectedMappingId(target.mapping?.id || '')
+    setSelectedFilePath(target.file?.path || '')
+    setCategoryFilter('')
+    setFilter('')
+    setNoOriginTarget('')
+    setRevealRequestId(value => value + 1)
+    setCopied('')
+  } else if (!sourceIssueFocus && (focusedMappingId || focusedSourceFile) && appliedFocusRequestId !== focusRequestId) {
+    const requestedFile = focusedSourceFile ? findSourceFile(files, focusedSourceFile, sourcePathResolver) : null
+    const nextMapping = focusedMappingId
+      ? mappings.find(mapping => mapping.id === focusedMappingId)
+      : requestedFile ? findFirstMappingForFile(mappings, requestedFile.path, sourcePathResolver) : undefined
+    // A request for a mapping or file not loaded yet waits for them.
+    if (nextMapping || requestedFile) {
+      setAppliedFocusRequestId(focusRequestId)
+      const nextFile = requestedFile || (nextMapping?.source_file ? findSourceFile(files, nextMapping.source_file, sourcePathResolver) : null)
+      setInspectedUnmappedFilePath(nextMapping ? '' : nextFile?.path || '')
+      setSelectedMappingId(nextMapping?.id || '')
+      setSelectedFilePath(nextFile?.path || '')
+      setCategoryFilter('')
+      setFilter('')
+      setNoOriginTarget('')
+      setRevealRequestId(value => value + 1)
+      setCopied('')
+    }
+  }
 
   const selectedMapping = useMemo(
     () => mappings.find(mapping => mapping.id === selectedMappingId) || null,
@@ -380,41 +416,6 @@ export default function SourceMappingReview({
     sourcePathResolver,
     sourceFileOptions,
   ])
-
-  useEffect(() => {
-    if (!sourceIssueFocus || lastAppliedIssueFocusRef.current === sourceIssueFocus.revision) return
-    lastAppliedIssueFocusRef.current = sourceIssueFocus.revision
-    const target = issueSourceTarget(sourceIssueFocus, files, mappings, sourcePathResolver)
-    setUnmappedIssueFocus(target.mapping ? null : { filePath: target.file?.path || '', line: target.line, title: sourceIssueFocus.title })
-    setInspectedUnmappedFilePath('')
-    setSelectedMappingId(target.mapping?.id || '')
-    setSelectedFilePath(target.file?.path || '')
-    setCategoryFilter('')
-    setFilter('')
-    setNoOriginTarget('')
-    setRevealRequestId(value => value + 1)
-  }, [files, mappings, sourceIssueFocus, sourcePathResolver])
-
-  useEffect(() => {
-    if (sourceIssueFocus) return
-    if (!focusedMappingId && !focusedSourceFile) return
-    if (lastAppliedFocusRequestRef.current === focusRequestId) return
-    const requestedFile = focusedSourceFile ? findSourceFile(files, focusedSourceFile, sourcePathResolver) : null
-    const nextMapping = focusedMappingId
-      ? mappings.find(mapping => mapping.id === focusedMappingId)
-      : requestedFile ? findFirstMappingForFile(mappings, requestedFile.path, sourcePathResolver) : undefined
-    if (!nextMapping && !requestedFile) return
-    lastAppliedFocusRequestRef.current = focusRequestId
-    const nextFile = requestedFile || (nextMapping?.source_file ? findSourceFile(files, nextMapping.source_file, sourcePathResolver) : null)
-    setInspectedUnmappedFilePath(nextMapping ? '' : nextFile?.path || '')
-    setSelectedMappingId(nextMapping?.id || '')
-    setSelectedFilePath(nextFile?.path || '')
-    setCategoryFilter('')
-    setFilter('')
-    setNoOriginTarget('')
-    setRevealRequestId(value => value + 1)
-    setCopied('')
-  }, [files, focusedMappingId, focusedSourceFile, focusRequestId, mappings, sourcePathResolver, sourceIssueFocus])
 
   const filteredMappings = useMemo(() => {
     const needle = filter.trim().toLowerCase()
