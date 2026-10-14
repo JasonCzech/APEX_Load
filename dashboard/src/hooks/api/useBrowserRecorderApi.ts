@@ -107,6 +107,16 @@ export type BrowserRecorderSession = {
   warnings?: string[]
 }
 
+// A login state saved from one of the project's browser recordings; path is
+// what a recording start takes as storage_state_path.
+export type BrowserRecorderStorageState = {
+  path: string
+  name: string
+  recording_id?: string
+  saved_at: string
+  expires_at?: string
+}
+
 export type BrowserRecorderAvailability = {
   available: boolean
   code?: string
@@ -244,6 +254,22 @@ export function useBrowserRecorderApi() {
 
   const deleteBrowserRecording = useCallback(
     (id: string) => recorderRequest<{ deleted: string; session: BrowserRecorderSession }>(`/browser-recorder/sessions/${id}`, { method: 'DELETE' }),
+    [recorderRequest],
+  )
+
+  // Keeps a stopped recording's login state for later recordings to reuse;
+  // the answer is the kept state's path (a recorder that predates
+  // persist_only answers with the scrubbed state instead, without a path).
+  const saveBrowserRecordingStorageState = useCallback(
+    (id: string) => recorderRequest<{ path?: string }>(`/browser-recorder/sessions/${id}/storage-state?persist_only=true`),
+    [recorderRequest],
+  )
+
+  const listBrowserRecordingStorageStates = useCallback(
+    (projectId?: string) => {
+      const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+      return recorderRequest<{ states: BrowserRecorderStorageState[]; count: number }>(`/browser-recorder/storage-states${query}`)
+    },
     [recorderRequest],
   )
 
@@ -461,6 +487,8 @@ export function useBrowserRecorderApi() {
       getRawBrowserRecording,
       listBrowserRecordings,
       deleteBrowserRecording,
+      saveBrowserRecordingStorageState,
+      listBrowserRecordingStorageStates,
       stopBrowserRecording,
       forceStopBrowserRecording,
       pauseBrowserRecording,
@@ -496,6 +524,8 @@ export function useBrowserRecorderApi() {
       getRawBrowserRecording,
       listBrowserRecordings,
       deleteBrowserRecording,
+      saveBrowserRecordingStorageState,
+      listBrowserRecordingStorageStates,
       stopBrowserRecording,
       forceStopBrowserRecording,
       pauseBrowserRecording,

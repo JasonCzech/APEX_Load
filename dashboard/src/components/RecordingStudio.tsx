@@ -4,6 +4,7 @@ import {
   useEffect,
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   type MouseEvent,
   type ReactNode,
@@ -25,6 +26,7 @@ import {
 import {
   type BrowserRecorderAvailability,
   type BrowserRecorderSession,
+  type BrowserRecorderStorageState,
 } from "../hooks/api/useBrowserRecorderApi";
 import { getDesktopBridge, isDesktopSurface } from "../desktop/desktopBridge";
 import {
@@ -79,6 +81,12 @@ import {
 } from "./recordingProxyCommands";
 import "./RecordingStudio.css";
 import RecordingProfilesCard from "./RecordingProfilesCard";
+import {
+  RECORDING_REVIEW_STEP_LIMIT,
+  recordedScriptSteps,
+  sentenceCaseNote,
+} from "./recordingReviewModel";
+import { isNoReusableCorrelationNote } from "./importIssueWorkspaceModel";
 import type { RecordingProfile } from "../types/recordingProfiles";
 import { formatDateTime } from "../utils/dateTime";
 
@@ -130,6 +138,23 @@ interface RecordingSession {
     include_hosts?: string[];
     capture_cookies?: boolean;
   };
+}
+
+type RecentRecording =
+  | { kind: "browser"; session: BrowserRecorderSession; at: string }
+  | { kind: "proxy"; session: RecordingSession; at: string };
+
+function recordingTime(at: string): number {
+  const time = new Date(at).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+const STORAGE_STATE_NOT_KEPT =
+  "The recorder could not keep this login state, so it cannot be reused.";
+
+// hostFilterList is a profile's host filter without blank entries.
+function hostFilterList(hosts?: string[]): string[] {
+  return (hosts || []).map((host) => host.trim()).filter(Boolean);
 }
 
 // confidenceTone buckets a 0..1 correlation confidence for badge styling.
@@ -615,7 +640,11 @@ interface RecordingStudioProps {
   onEdit?: (script: ScriptDefinition) => void;
   /** The recording method, when the page holds it (to route it). */
   method?: "browser" | "proxy";
-  onMethodChange?: (method: "browser" | "proxy") => void;
+  /** byUser is false when the studio changes the method itself. */
+  onMethodChange?: (
+    method: "browser" | "proxy",
+    choice: { byUser: boolean },
+  ) => void;
   onClose?: () => void;
   onOperationBusyChange?: (busy: boolean) => void;
 }
@@ -633,8 +662,8 @@ export default function RecordingStudio({
 }: RecordingStudioProps) {
   const [internalRecordingMode, setInternalRecordingMode] = useState<'browser' | 'proxy'>('browser');
   const recordingMode = method ?? internalRecordingMode;
-  const setRecordingMode = useCallback((nextMode: 'browser' | 'proxy') => {
-    if (onMethodChange) onMethodChange(nextMode);
+  const setRecordingMode = useCallback((nextMode: 'browser' | 'proxy', byUser = true) => {
+    if (onMethodChange) onMethodChange(nextMode, { byUser });
     else setInternalRecordingMode(nextMode);
   }, [onMethodChange]);
   const [browserURLError, setBrowserURLError] = useState('');
@@ -665,6 +694,8 @@ export default function RecordingStudio({
   const [caCertPath, setCaCertPath] = useState("");
   const [proxyAvailability, setProxyAvailability] =
     useState<RecorderProxyAvailability | null>(null);
+  // Whether the last recorder status poll failed.
+  const [recorderStatusFailed, setRecorderStatusFailed] = useState(false);
   // Whether this browser runs on the controller's host; null until known.
   const [localClient, setLocalClient] = useState<boolean | null>(null);
   const [macOSNetworkService, setMacOSNetworkService] = useState(
@@ -679,9 +710,14 @@ export default function RecordingStudio({
   const [recordingProfileLevel, setRecordingProfileLevel] = useState<
     "url" | "html" | undefined
   >(undefined);
+  // The selected profile, to show the host filters it adds to the form's.
+  const [recordingProfile, setRecordingProfile] = useState<
+    RecordingProfile | undefined
+  >(undefined);
   const selectRecordingProfile = useCallback(
     (id: string, profile?: RecordingProfile) => {
       setRecordingProfileId(id);
+      setRecordingProfile(id ? profile : undefined);
       setRecordingProfileLevel(profile?.http_script_level || undefined);
       // Show the profile's cookie capture; the session records what is shown.
       setCaptureCookies(profile?.capture_cookies === true);
@@ -744,7 +780,18 @@ export default function RecordingStudio({
   const [browserScreenshots, setBrowserScreenshots] = useState(false);
   const [browserWSPayloads, setBrowserWSPayloads] = useState(false);
   const [browserDisableQUIC, setBrowserDisableQUIC] = useState(false);
+  // The saved login state (its storage_state_path) a recording starts with.
   const [browserStorageState, setBrowserStorageState] = useState("");
+  const [storageStates, setStorageStates] = useState<
+    BrowserRecorderStorageState[]
+  >([]);
+  // Whether this recorder lists saved login states; null until it answers.
+  const [storageStatesListed, setStorageStatesListed] = useState<
+    boolean | null
+  >(null);
+  const [storageStateSavingId, setStorageStateSavingId] = useState<
+    string | null
+  >(null);
   const [browserExcludeHosts, setBrowserExcludeHosts] = useState("");
   const [browserSidebar, setBrowserSidebar] = useState(true);
   const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false);
@@ -768,6 +815,7 @@ export default function RecordingStudio({
   const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] =
     useState("");
   const convertTask = useAsyncTask<RecorderImportResult>();
+  const convertResultRef = useRef<HTMLDivElement | null>(null);
   const salesforceTask = useAsyncTask<SalesforceImportResult>();
   const convertedCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(
     null,
@@ -905,19 +953,17 @@ export default function RecordingStudio({
   }, [activeSession]);
 
   // Leave the HTTP proxy method once the controller says this browser cannot
-  // use it, unless there is a proxy recording to show there: a live one (so it
-  // can be stopped) or earlier ones (to convert, export or delete).
-  const hasStoppedProxySessions = sessions.some((session) => session.status === "stopped");
+  // use it, unless a live proxy recording needs it to be stopped. Earlier
+  // proxy recordings stay in Recent recordings, which every method shows.
   useEffect(() => {
     if (
       proxyAvailability?.available === false &&
       !activeSession &&
-      !hasStoppedProxySessions &&
       recordingMode === "proxy"
     ) {
-      setRecordingMode("browser");
+      setRecordingMode("browser", false);
     }
-  }, [activeSession, hasStoppedProxySessions, proxyAvailability?.available, recordingMode, setRecordingMode]);
+  }, [activeSession, proxyAvailability?.available, recordingMode, setRecordingMode]);
 
   // A proxy recording that stays empty suggests the browser is not sending
   // its traffic through the proxy; say so once it has been quiet a while.
@@ -1355,8 +1401,11 @@ export default function RecordingStudio({
         } else {
           setActiveSession(null);
         }
+        if (isCurrentScope()) setRecorderStatusFailed(false);
       } catch {
-        /* API not ready */
+        // The API may not be ready; the next poll retries. Until one answers,
+        // say the proxy could not be checked rather than "checking".
+        if (isCurrentScope()) setRecorderStatusFailed(true);
       }
     })();
     refreshInFlightRef.current = { projectId, recorderRequestScope, request };
@@ -1367,6 +1416,55 @@ export default function RecordingStudio({
         refreshInFlightRef.current = null;
     }
   }, [api, activeProject?.id, recorderRequestScope]);
+
+  // Saved login states change only when one is saved or expires, so they are
+  // listed on entry, when the browser options open and after a save — not on
+  // every poll. A selection that has gone (expired) is cleared.
+  // Only the latest listing is shown: an earlier one that answers later
+  // must not hide a state saved since.
+  const storageStatesRequestRef = useRef(0);
+  const refreshStorageStates = useCallback(async () => {
+    const scope = refreshScopeRef.current;
+    const request = ++storageStatesRequestRef.current;
+    const isLatest = () =>
+      refreshScopeRef.current === scope &&
+      storageStatesRequestRef.current === request;
+    try {
+      const res = await api.listBrowserRecordingStorageStates(scope.projectId);
+      const states = res.states || [];
+      if (isLatest()) {
+        setStorageStates(states);
+        setStorageStatesListed(true);
+        setBrowserStorageState((current) =>
+          current && !states.some((state) => state.path === current)
+            ? ""
+            : current,
+        );
+      }
+      return states;
+    } catch (e: any) {
+      // A recorder that predates the listing (404) cannot offer a saved state;
+      // another failure keeps what was listed, or offers nothing yet.
+      if (isLatest()) {
+        if (e?.status === 404) {
+          setStorageStates([]);
+          setStorageStatesListed(false);
+          setBrowserStorageState("");
+        } else {
+          setStorageStatesListed((listed) => listed ?? false);
+        }
+      }
+      return null;
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void refreshStorageStates();
+  }, [refreshStorageStates, activeProject?.id, recorderRequestScope]);
+
+  useEffect(() => {
+    if (browserOptionsOpen) void refreshStorageStates();
+  }, [browserOptionsOpen, refreshStorageStates]);
 
   useLayoutEffect(() => {
     const recorderEndpointChanged =
@@ -1384,9 +1482,14 @@ export default function RecordingStudio({
     setSelectedRequest(null);
     setBrowserSessions([]);
     setBrowserPanelSessionId(null);
+    setStorageStates([]);
+    setStorageStatesListed(null);
+    setBrowserStorageState("");
+    setStorageStateSavingId(null);
     browserStartScopeRef.current = null;
     setBrowserStartInProgress(false);
     if (recorderEndpointChanged) {
+      setRecorderStatusFailed(false);
       setProxyAddr("");
       setProxyAuthToken("");
       setCaCertPath("");
@@ -1666,8 +1769,54 @@ export default function RecordingStudio({
   const handleOpenBrowserRecordingSession = (
     session: BrowserRecorderSession,
   ) => {
+    // The control panel lives on the browser method's card; opening one is
+    // not a choice of method to remember.
+    setRecordingMode("browser", false);
     setBrowserPanelSessionId(session.id);
-    showFeedback(`Opened browser recording "${session.name}"`);
+    showFeedback(
+      activeSession
+        ? `Opened browser recording "${session.name}". Your HTTP proxy recording is still running; choose HTTP proxy to stop it.`
+        : `Opened browser recording "${session.name}"`,
+    );
+  };
+
+  // Saving keeps the recording's cookies and storage on the controller (never
+  // in the browser) so a later recording can start signed in with them.
+  const handleSaveBrowserLoginState = async (
+    session: BrowserRecorderSession,
+  ) => {
+    const scope = refreshScopeRef.current;
+    setStorageStateSavingId(session.id);
+    try {
+      const saved = await api.saveBrowserRecordingStorageState(session.id);
+      if (refreshScopeRef.current !== scope) return;
+      const states = await refreshStorageStates();
+      if (refreshScopeRef.current !== scope) return;
+      // The recorder answers with the kept state's path; one that predates
+      // that answer is checked against the list instead.
+      const answeredPath = typeof saved?.path === "string" && saved.path !== "";
+      if (
+        !answeredPath &&
+        states !== null &&
+        !states.some((state) => state.recording_id === session.id)
+      ) {
+        showFeedback(STORAGE_STATE_NOT_KEPT, "error");
+      } else if (states === null) {
+        showFeedback(
+          `Saved the login state from "${session.name}", but the saved login states could not be listed. Open Advanced options to try again.`,
+        );
+      } else {
+        showFeedback(
+          `Saved the login state from "${session.name}". Choose it under Start signed in to record signed in.`,
+        );
+      }
+    } catch (e: any) {
+      // The recorder refuses (500) a state it could not keep.
+      if (refreshScopeRef.current === scope)
+        showFeedback(e?.status === 500 ? STORAGE_STATE_NOT_KEPT : e.message, "error");
+    } finally {
+      if (refreshScopeRef.current === scope) setStorageStateSavingId(null);
+    }
   };
 
   const handleDeleteBrowserRecordingSession = async (
@@ -1838,7 +1987,7 @@ export default function RecordingStudio({
   };
 
   const runRecordingConversion = useCallback(
-    async (session: RecordingSession, mode: "script" | "review") => {
+    async (session: RecordingSession) => {
       const sourceGeneration = advanceConvertedReviewGeneration();
       const sourceScope = refreshScopeRef.current;
       const sourceProjectId = sourceScope.projectId;
@@ -1878,10 +2027,14 @@ export default function RecordingStudio({
           { clearValue: true },
         );
         if (!requestIsCurrent()) return;
-        const message = mode === "script"
-          ? `Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`
-          : `Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`;
-        showFeedback(message);
+        const steps = recordedScriptSteps(recorderImportReviewScript(result)).length;
+        const correlations = result.correlations?.length || 0;
+        showFeedback(
+          `Converted "${session.name}": ${steps} ${steps === 1 ? "step" : "steps"}, ${correlations} ${correlations === 1 ? "correlation" : "correlations"}. Review them below, then save.`,
+        );
+        window.requestAnimationFrame(() =>
+          convertResultRef.current?.scrollIntoView?.({ block: "start" }),
+        );
       } catch (e: any) {
         if (requestIsCurrent()) {
           sourceSecretSessions.clear("converted");
@@ -1901,12 +2054,8 @@ export default function RecordingStudio({
     ],
   );
 
-  const handlePreviewConversion = async (session: RecordingSession) => {
-    void runRecordingConversion(session, "review");
-  };
-
-  const handleConvert = async (session: RecordingSession) => {
-    void runRecordingConversion(session, "script");
+  const handleConvert = (session: RecordingSession) => {
+    void runRecordingConversion(session);
   };
 
   const handleExportHAR = async (session: RecordingSession) => {
@@ -2474,13 +2623,21 @@ export default function RecordingStudio({
   };
 
   const stoppedSessions = sessions.filter((s) => s.status === "stopped");
-  const recentBrowserSessions = browserSessions
-    .filter((s) => s.status === "stopped" || s.status === "failed")
-    .sort(
-      (a, b) =>
-        new Date(b.stopped_at || b.started_at).getTime() -
-        new Date(a.stopped_at || a.started_at).getTime(),
-    );
+  // One list of both methods' finished recordings, newest first.
+  const recentRecordings: RecentRecording[] = [
+    ...browserSessions
+      .filter((s) => s.status === "stopped" || s.status === "failed")
+      .map((session): RecentRecording => ({
+        kind: "browser",
+        session,
+        at: session.stopped_at || session.started_at,
+      })),
+    ...stoppedSessions.map((session): RecentRecording => ({
+      kind: "proxy",
+      session,
+      at: session.stopped_at || session.started_at,
+    })),
+  ].sort((a, b) => recordingTime(b.at) - recordingTime(a.at));
   const convertResult = convertTask.value;
   // Informational observations (for example origins that advertise HTTP/3);
   // warnings and blockers arrive in convertResult.warnings.
@@ -2490,6 +2647,21 @@ export default function RecordingStudio({
   const convertedStoredScript = recorderImportStoredScript(convertResult);
   const convertedReviewScript = recorderImportReviewScript(convertResult);
   const convertedScript = convertedReviewScript || convertedStoredScript;
+  const convertedSteps = useMemo(
+    () => recordedScriptSteps(convertedReviewScript),
+    [convertedReviewScript],
+  );
+  const convertedExcludedRequests = Number(
+    (convertResult?.stats as { requests_excluded?: unknown } | undefined)
+      ?.requests_excluded ?? 0,
+  ) || 0;
+  // "No correlation found" is information; the rest stay warnings.
+  const convertedWarnings = (convertResult?.warnings || []).filter(
+    (warning) => !isNoReusableCorrelationNote(warning),
+  );
+  const convertedInfoNotes = (convertResult?.warnings || []).filter(
+    isNoReusableCorrelationNote,
+  );
   const convertedSecretRequirements =
     convertResult?.secret_binding_requirements || [];
   const convertedRequiresCredentialPreservingSave =
@@ -2567,6 +2739,27 @@ export default function RecordingStudio({
     !api.browserRecorderBridge &&
     !!installState &&
     (canRetryBrowserInstall || installState.status === "installing");
+  // A profile's host filters add to the typed ones: the proxy merges them when
+  // a recording starts, and a browser recording's HTTP conversion applies them.
+  const profileIncludeHosts = hostFilterList(recordingProfile?.include_hosts);
+  const profileExcludeHosts = hostFilterList(recordingProfile?.exclude_hosts);
+  const profileBrowserHostsNote =
+    profileIncludeHosts.length > 0 || profileExcludeHosts.length > 0
+      ? `Recording profile “${recordingProfile?.name}” also filters the HTTP script converted from this recording: ${[
+          profileIncludeHosts.length > 0
+            ? `keeps only ${profileIncludeHosts.join(", ")}`
+            : "",
+          profileExcludeHosts.length > 0
+            ? `leaves out ${profileExcludeHosts.join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("; ")}.`
+      : "";
+  // The browser control panel holds the destination while it is open; the
+  // proxy conversion review shows it otherwise (never both at once).
+  const destinationInBrowserPanel =
+    !!browserPanelSessionId && recordingMode === "browser";
   const proxyOffered = proxyAvailability?.available === true;
   // A live proxy session keeps the proxy method usable so it can be stopped.
   const proxyCanRecord = proxyOffered || !!activeSession;
@@ -2625,7 +2818,7 @@ export default function RecordingStudio({
         <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>
       )}
 
-      {proxyCanRecord || hasStoppedProxySessions ? (
+      {proxyCanRecord ? (
         <div className="rec-mode-picker" role="group" aria-label="Recording method">
           <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
           <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
@@ -3077,26 +3270,47 @@ export default function RecordingStudio({
                     <input
                       className="rec-input"
                       aria-label="Exclude hosts"
+                      aria-describedby={profileBrowserHostsNote ? "rec-profile-browser-hosts" : undefined}
                       value={browserExcludeHosts}
                       onChange={(e) => setBrowserExcludeHosts(e.target.value)}
                       placeholder="analytics.google.com, cdn.example.com"
                     />
-                  </div>
-                  <div className="rec-form-row">
-                    <div className="rec-label">
-                      Reuse session state{" "}
-                      <span className="rec-hint">
-                        (saved storage-state path, skip login)
+                    {profileBrowserHostsNote && (
+                      <span className="rec-hint" id="rec-profile-browser-hosts">
+                        {profileBrowserHostsNote}
                       </span>
-                    </div>
-                    <input
-                      className="rec-input"
-                      aria-label="Reuse session state path"
-                      value={browserStorageState}
-                      onChange={(e) => setBrowserStorageState(e.target.value)}
-                      placeholder="/path/to/state.json"
-                    />
+                    )}
                   </div>
+                  {storageStatesListed && (
+                    <div className="rec-form-row">
+                      <label className="rec-label" htmlFor="rec-browser-storage-state">
+                        Start signed in{" "}
+                        <span className="rec-hint">
+                          (a login state saved from an earlier recording)
+                        </span>
+                      </label>
+                      <select
+                        id="rec-browser-storage-state"
+                        className="rec-input"
+                        value={browserStorageState}
+                        onChange={(e) => setBrowserStorageState(e.target.value)}
+                      >
+                        <option value="">No, start signed out</option>
+                        {storageStates.map((state) => (
+                          <option key={state.path} value={state.path}>
+                            {`${state.name} · saved ${formatDateTime(state.saved_at)}`}
+                          </option>
+                        ))}
+                      </select>
+                      {storageStates.length === 0 && (
+                        <span className="rec-hint" data-testid="rec-storage-state-empty">
+                          None saved yet. Stop a recording after signing in,
+                          then choose Save login state on it in Recent
+                          recordings.
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3128,7 +3342,7 @@ export default function RecordingStudio({
 
           {browserPanelSessionId && (
             <BrowserRecorderControlPanel
-              destinationControl={recordingMode === 'browser' ? destinationControl : undefined}
+              destinationControl={destinationInBrowserPanel ? destinationControl : undefined}
               sessionId={browserPanelSessionId}
               recordingProfileId={recordingProfileId || undefined}
               recordingProfileHTTPScriptLevel={recordingProfileLevel}
@@ -3144,63 +3358,6 @@ export default function RecordingStudio({
             />
           )}
 
-          {recentBrowserSessions.length > 0 && (
-            <div
-              className="rec-browser-session-section"
-              data-testid="browser-recording-recovery-list"
-            >
-              <div className="rec-feed-header">
-                <span>Recent Browser Recordings</span>
-                <span className="rec-feed-count">
-                  {recentBrowserSessions.length}
-                </span>
-              </div>
-              <div className="rec-browser-session-list">
-                {recentBrowserSessions.map((session) => (
-                  <div key={session.id} className="rec-browser-session-row">
-                    <button
-                      type="button"
-                      className="rec-browser-session-main"
-                      onClick={() => handleOpenBrowserRecordingSession(session)}
-                    >
-                      <span className="rec-session-name">
-                        {session.name || "Browser Recording"}
-                      </span>
-                      <span className="rec-session-meta">
-                        <span>{session.step_count || 0} steps</span>
-                        <span>
-                          {session.network_request_count || 0} requests
-                        </span>
-                        <span>
-                          {formatDateTime(session.stopped_at || session.started_at, { seconds: true })}
-                        </span>
-                      </span>
-                    </button>
-                    <div className="rec-browser-session-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-secondary"
-                        onClick={() =>
-                          handleOpenBrowserRecordingSession(session)
-                        }
-                      >
-                        Open
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={(event) =>
-                          handleDeleteBrowserRecordingSession(session, event)
-                        }
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         <div
@@ -3619,10 +3776,18 @@ export default function RecordingStudio({
                   </div>
                   <input
                     className="rec-input"
+                    aria-describedby={profileIncludeHosts.length > 0 ? "rec-profile-include-hosts" : undefined}
                     value={includeHosts}
                     onChange={(e) => setIncludeHosts(e.target.value)}
                     placeholder="e.g. api.example.com, app.example.com"
                   />
+                  {profileIncludeHosts.length > 0 && (
+                    <span className="rec-hint" id="rec-profile-include-hosts">
+                      Recording profile “{recordingProfile?.name}” records
+                      only these hosts, plus any typed here:{" "}
+                      {profileIncludeHosts.join(", ")}
+                    </span>
+                  )}
                 </div>
                 <div className="rec-form-row">
                   <div className="rec-label">
@@ -3633,10 +3798,17 @@ export default function RecordingStudio({
                   </div>
                   <input
                     className="rec-input"
+                    aria-describedby={profileExcludeHosts.length > 0 ? "rec-profile-exclude-hosts" : undefined}
                     value={excludeHosts}
                     onChange={(e) => setExcludeHosts(e.target.value)}
                     placeholder="e.g. analytics.google.com, cdn.example.com"
                   />
+                  {profileExcludeHosts.length > 0 && (
+                    <span className="rec-hint" id="rec-profile-exclude-hosts">
+                      Recording profile “{recordingProfile?.name}” also
+                      leaves out: {profileExcludeHosts.join(", ")}
+                    </span>
+                  )}
                 </div>
                 <label className="rec-checkbox-row">
                   <input
@@ -3785,131 +3957,214 @@ export default function RecordingStudio({
           </div>
           </>
           ) : (
-            // Earlier proxy recordings stay reachable below; a new one cannot start.
+            // Earlier proxy recordings stay in Recent recordings; a new one cannot start.
             <div className="rec-method-note" data-testid="recording-proxy-card-unavailable">
               <p>
-                {proxyUnavailableNote?.summary ||
-                  "HTTP proxy recording isn't available on this controller."}{" "}
-                Earlier proxy recordings are listed below.
+                {proxyAvailability === null
+                  ? recorderStatusFailed
+                    ? "Could not check whether this controller can record through its HTTP proxy. Retrying…"
+                    : "Checking whether this controller can record through its HTTP proxy…"
+                  : proxyUnavailableNote?.summary ||
+                    "HTTP proxy recording isn't available on this controller."}
               </p>
             </div>
           )}
         </div>
       </div>
 
-      <div hidden={recordingMode !== 'proxy'}>
-      {/* Previous Sessions */}
-      {stoppedSessions.length > 0 && (
-        <div className="rec-sessions-section">
-          <h3 className="rec-section-title">Recorded Sessions</h3>
-          <label className="rec-convert-option">
-            <input
-              type="checkbox"
-              checked={parameterizeInputs}
-              onChange={(e) => {
-                sourceSecretSessions.clear("converted");
-                advanceConvertedReviewGeneration();
-                resetConvertTask();
-                convertedPreparedScriptRef.current = null;
-                convertedSourceRecordingSessionIDRef.current = null;
-                convertedBatchSaveOperationRef.current = null;
-                setConvertedPreparedSecrets(null);
-                setParameterizeInputs(e.target.checked);
-              }}
-            />
-            Parameterize input values (promote recorded form/query inputs into a
-            data source)
-          </label>
+      {/* Recent recordings, of both methods */}
+      {recentRecordings.length > 0 && (
+        <div className="rec-sessions-section" data-testid="recent-recordings">
+          <h3 className="rec-section-title">Recent recordings</h3>
+          {stoppedSessions.length > 0 && (
+            <label className="rec-convert-option">
+              <input
+                type="checkbox"
+                checked={parameterizeInputs}
+                onChange={(e) => {
+                  sourceSecretSessions.clear("converted");
+                  advanceConvertedReviewGeneration();
+                  resetConvertTask();
+                  convertedPreparedScriptRef.current = null;
+                  convertedSourceRecordingSessionIDRef.current = null;
+                  convertedBatchSaveOperationRef.current = null;
+                  setConvertedPreparedSecrets(null);
+                  setParameterizeInputs(e.target.checked);
+                }}
+              />
+              Parameterize input values when converting an HTTP proxy
+              recording (promote recorded form/query inputs into a data
+              source)
+            </label>
+          )}
           <div className="rec-sessions-list">
-            {stoppedSessions.map((session) => (
-              <div
-                key={session.id}
-                className={`rec-session-card ${selectedSession?.id === session.id ? "selected" : ""}`}
-              >
-                <button
-                  aria-label={`Select recording session ${session.name}`}
-                  type="button"
-                  className="rec-session-select"
-                  aria-pressed={selectedSession?.id === session.id}
-                  onClick={() => handleSelectSession(session)}
+            {recentRecordings.map((recording) =>
+              recording.kind === "browser" ? (
+                <div
+                  key={`browser:${recording.session.id}`}
+                  className={`rec-session-card ${browserPanelSessionId === recording.session.id ? "selected" : ""}`}
                 >
-                  <span className="rec-session-header">
-                    <span className="rec-session-name">{session.name}</span>
-                    <span className="rec-session-count">
-                      {session.request_count ?? session.requests?.length ?? 0}{" "}
-                      requests
+                  <button
+                    aria-label={`Open browser recording ${recording.session.name || "Browser Recording"}`}
+                    type="button"
+                    className="rec-session-select"
+                    aria-pressed={browserPanelSessionId === recording.session.id}
+                    onClick={() =>
+                      handleOpenBrowserRecordingSession(recording.session)
+                    }
+                  >
+                    <span className="rec-session-header">
+                      <span className="rec-session-name">
+                        {recording.session.name || "Browser Recording"}
+                      </span>
+                      <span className="rec-recording-kind">Browser</span>
                     </span>
-                  </span>
-                  <span className="rec-session-meta">
-                    <span>{session.base_url || "No base URL"}</span>
-                    {(session.rejected_requests ?? 0) > 0 && (
-                      <span>{session.rejected_requests} blocked (private address)</span>
+                    <span className="rec-session-meta">
+                      <span>{recording.session.step_count || 0} steps</span>
+                      <span>
+                        {recording.session.network_request_count || 0}{" "}
+                        requests
+                      </span>
+                      {recording.session.status === "failed" && (
+                        <span>Failed</span>
+                      )}
+                      <span>
+                        {formatDateTime(recording.at, { seconds: true })}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="rec-session-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={() =>
+                        handleOpenBrowserRecordingSession(recording.session)
+                      }
+                    >
+                      Open
+                    </button>
+                    {recording.session.storage_state_available &&
+                      storageStatesListed && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          disabled={storageStateSavingId !== null}
+                          onClick={() => {
+                            void handleSaveBrowserLoginState(recording.session);
+                          }}
+                        >
+                          {storageStateSavingId === recording.session.id
+                            ? "Saving login state…"
+                            : storageStates.some(
+                                  (state) =>
+                                    state.recording_id === recording.session.id,
+                                )
+                              ? "Save login state again"
+                              : "Save login state"}
+                        </button>
+                      )}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      onClick={(event) =>
+                        handleDeleteBrowserRecordingSession(
+                          recording.session,
+                          event,
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={`proxy:${recording.session.id}`}
+                  className={`rec-session-card ${selectedSession?.id === recording.session.id ? "selected" : ""}`}
+                >
+                  <button
+                    aria-label={`Select recording session ${recording.session.name}`}
+                    type="button"
+                    className="rec-session-select"
+                    aria-pressed={selectedSession?.id === recording.session.id}
+                    onClick={() => handleSelectSession(recording.session)}
+                  >
+                    <span className="rec-session-header">
+                      <span className="rec-session-name">
+                        {recording.session.name}
+                      </span>
+                      <span className="rec-recording-kind">HTTP proxy</span>
+                    </span>
+                    <span className="rec-session-meta">
+                      <span>
+                        {recording.session.request_count ??
+                          recording.session.requests?.length ??
+                          0}{" "}
+                        requests
+                      </span>
+                      <span>{recording.session.base_url || "No base URL"}</span>
+                      {(recording.session.rejected_requests ?? 0) > 0 && (
+                        <span>
+                          {recording.session.rejected_requests} blocked
+                          (private address)
+                        </span>
+                      )}
+                      <span>
+                        {formatDateTime(recording.at, { seconds: true })}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="rec-session-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleConvert(recording.session);
+                      }}
+                      disabled={converting}
+                    >
+                      {converting ? "Converting…" : "Convert to script"}
+                    </button>
+                    {recordingLooksSalesforce(recording.session) && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReviewSalesforceSession(recording.session);
+                        }}
+                        disabled={reviewingSalesforce}
+                      >
+                        {reviewingSalesforce
+                          ? "Reviewing…"
+                          : "Review Salesforce HTTP"}
+                      </button>
                     )}
-                    <span>{formatDateTime(session.started_at, { seconds: true })}</span>
-                  </span>
-                </button>
-                <div className="rec-session-actions">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleConvert(session);
-                    }}
-                    disabled={converting}
-                  >
-                    {converting ? "Converting…" : "Convert to Script"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-secondary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePreviewConversion(session);
-                    }}
-                    disabled={converting}
-                  >
-                    Review Script
-                  </button>
-                  {recordingLooksSalesforce(session) && (
                     <button
                       type="button"
                       className="btn btn-sm btn-secondary"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleReviewSalesforceSession(session);
+                        handleExportHAR(recording.session);
                       }}
-                      disabled={reviewingSalesforce}
                     >
-                      {reviewingSalesforce
-                        ? "Reviewing…"
-                        : "Review Salesforce HTTP"}
+                      Export HAR
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-secondary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleExportHAR(session);
-                    }}
-                  >
-                    Export HAR
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-secondary"
-                    style={{ color: "var(--danger)" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(session.id);
-                    }}
-                  >
-                    Delete
-                  </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(recording.session.id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ),
+            )}
           </div>
         </div>
       )}
@@ -4127,9 +4382,9 @@ export default function RecordingStudio({
 
       {/* Convert Result */}
       {convertResult && convertedScript && (
-        <div className="rec-convert-result">
-          <h3 className="rec-section-title">Conversion Result</h3>
-          {recordingMode === 'proxy' && destinationControl}
+        <div className="rec-convert-result" ref={convertResultRef}>
+          <h3 className="rec-section-title">Review the converted script</h3>
+          {!destinationInBrowserPanel && destinationControl}
           {convertedSecretRequirements.length > 0 && (
             <SecretBindingReview
               ref={convertedCredentialReviewRef}
@@ -4185,12 +4440,73 @@ export default function RecordingStudio({
               </span>
             </div>
             <div className="rec-result-item">
-              <span className="rec-result-label">Script ID</span>
-              <code className="rec-result-value">
-                {convertedStoredScript?.id || "preview"}
-              </code>
+              <span className="rec-result-label">Steps</span>
+              <span className="rec-result-value">{convertedSteps.length}</span>
             </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">Correlations</span>
+              <span className="rec-result-value">
+                {convertResult.correlations?.length || 0}
+              </span>
+            </div>
+            {convertedExcludedRequests > 0 && (
+              <div className="rec-result-item">
+                <span className="rec-result-label">Left out</span>
+                <span className="rec-result-value">
+                  {convertedExcludedRequests} excluded{" "}
+                  {convertedExcludedRequests === 1 ? "request" : "requests"}
+                </span>
+              </div>
+            )}
+            {convertedStoredScript?.id && (
+              <div className="rec-result-item">
+                <span className="rec-result-label">Script ID</span>
+                <code className="rec-result-value">
+                  {convertedStoredScript.id}
+                </code>
+              </div>
+            )}
           </div>
+          {convertedSteps.length > 0 && (
+            <div className="rec-detail-table-wrap rec-review-steps">
+              <table className="rec-detail-table" aria-label="Converted steps">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Step</th>
+                    <th>Method</th>
+                    <th>Target</th>
+                    <th>Transaction</th>
+                    <th>Think time</th>
+                    <th>Checks</th>
+                    <th>Extracts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {convertedSteps.slice(0, RECORDING_REVIEW_STEP_LIMIT).map((step) => (
+                    <tr key={step.index}>
+                      <td className="cell-mono">{step.index}</td>
+                      <td>{step.name}</td>
+                      <td className="cell-mono">{step.method}</td>
+                      <td className="cell-mono rec-review-target" title={step.target}>
+                        {step.target}
+                      </td>
+                      <td>{step.transaction}</td>
+                      <td>{step.thinkTime}</td>
+                      <td>{step.checks || ""}</td>
+                      <td>{step.extracts || ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {convertedSteps.length > RECORDING_REVIEW_STEP_LIMIT && (
+                <p className="rec-hint">
+                  And {convertedSteps.length - RECORDING_REVIEW_STEP_LIMIT}{" "}
+                  more steps; open the script in the editor to see them all.
+                </p>
+              )}
+            </div>
+          )}
           <div className="rec-result-actions">
             <button
               className="btn btn-primary"
@@ -4284,17 +4600,22 @@ export default function RecordingStudio({
               </div>
             )}
 
-          {convertResult.warnings && convertResult.warnings.length > 0 && (
+          {convertedWarnings.length > 0 && (
             <div className="rec-warnings">
-              {convertResult.warnings.map((w, i) => (
+              {convertedWarnings.map((w, i) => (
                 <div key={i} className="rec-warning-item">
-                  {w}
+                  {sentenceCaseNote(w)}
                 </div>
               ))}
             </div>
           )}
-          {recordingNotes.length > 0 && (
+          {(convertedInfoNotes.length > 0 || recordingNotes.length > 0) && (
             <div className="rec-notes" role="group" aria-label="Recording notes">
+              {convertedInfoNotes.map((note, i) => (
+                <div key={`note-${i}`} className="rec-note-item">
+                  {sentenceCaseNote(note)}
+                </div>
+              ))}
               {recordingNotes.map((note) => (
                 <div key={`${note.code}-${note.location}`} className="rec-note-item">
                   {note.element}
@@ -4434,7 +4755,6 @@ export default function RecordingStudio({
           )}
         </div>
       )}
-      </div>
     </div>
   );
 }

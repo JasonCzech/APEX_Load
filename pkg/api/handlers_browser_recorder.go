@@ -97,6 +97,9 @@ func browserRecordingAvailabilityFromStartError(err error) (browserRecordingAvai
 // where recording storage states are persisted and read back for login reuse.
 const browserStorageStateDir = "browser-recorder-state"
 
+// browserStorageStateFileSuffix ends every saved login state's file name.
+const browserStorageStateFileSuffix = "-state.json"
+
 // browserStorageStateProjectDir is the project-scoped directory segment used by
 // browserStorageStateExportLocation; a nil/empty project maps to "unassigned".
 func browserStorageStateProjectDir(projectID string) string {
@@ -160,9 +163,83 @@ func browserStorageStateExportLocation(info *BrowserRecordingSession) (relativeP
 	if sessionID := sanitizeDownloadName(info.ID); sessionID != "" {
 		filename += "-" + sessionID
 	}
-	stateFile = filename + "-state.json"
+	stateFile = filename + browserStorageStateFileSuffix
 	relativePath = filepath.ToSlash(filepath.Join(browserStorageStateDir, projectDir, stateFile))
 	return relativePath, stateFile
+}
+
+// browserStorageStateSummary is a login state saved from one of a project's
+// browser recordings. Path is what a recording start takes as
+// storage_state_path; the file itself is never served.
+type browserStorageStateSummary struct {
+	Path        string     `json:"path"`
+	Name        string     `json:"name"`
+	RecordingID string     `json:"recording_id,omitempty"`
+	SavedAt     time.Time  `json:"saved_at"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+}
+
+// browserStorageStateIDSuffix is the recording ID a saved state's file name
+// ends with; a state whose recording is gone is named without it.
+var browserStorageStateIDSuffix = regexp.MustCompile(`-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// handleListBrowserRecordingStorageStates lists the login states saved from
+// the project's browser recordings, newest first, so a recording can start
+// signed in. Expired states are pruned first, as a save does.
+func (s *Server) handleListBrowserRecordingStorageStates(w http.ResponseWriter, r *http.Request) {
+	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
+	now := time.Now()
+	pruneBrowserStorageStateExports(now)
+	projectDir := browserStorageStateProjectDir(projectID)
+	states := []browserStorageStateSummary{}
+	// The directory a save writes into (handleExportBrowserRecordingStorageState).
+	probe, err := resolveConfinedExportPath(exportBaseDir(), filepath.Join(browserStorageStateDir, projectDir), "probe.json")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	entries, err := os.ReadDir(filepath.Dir(probe))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		writeError(w, http.StatusInternalServerError, "list saved login states: "+err.Error())
+		return
+	}
+	// Name each state by the recording it came from while that recording is kept.
+	recordings := map[string]*BrowserRecordingSession{}
+	for _, session := range s.browserRecording.List(projectID) {
+		if session != nil {
+			recordings[sanitizeDownloadName(session.ID)] = session
+		}
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), browserStorageStateFileSuffix) {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		stem := strings.TrimSuffix(entry.Name(), browserStorageStateFileSuffix)
+		state := browserStorageStateSummary{Path: projectDir + "/" + entry.Name(), Name: stem, SavedAt: info.ModTime().UTC()}
+		if name := browserStorageStateIDSuffix.ReplaceAllString(stem, ""); name != "" {
+			state.Name = name
+		}
+		if defaultBrowserRecordingRetention > 0 {
+			expires := info.ModTime().Add(defaultBrowserRecordingRetention).UTC()
+			state.ExpiresAt = &expires
+		}
+		for id, session := range recordings {
+			if id != "" && strings.HasSuffix(stem, "-"+id) {
+				state.RecordingID = session.ID
+				if name := strings.TrimSpace(session.Name); name != "" {
+					state.Name = name
+				}
+				break
+			}
+		}
+		states = append(states, state)
+	}
+	sort.SliceStable(states, func(i, j int) bool { return states[i].SavedAt.After(states[j].SavedAt) })
+	writeJSON(w, http.StatusOK, map[string]any{"states": states, "count": len(states)})
 }
 
 func pruneBrowserStorageStateExports(now time.Time) {
@@ -3052,10 +3129,17 @@ func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter,
 		writeError(w, http.StatusConflict, "no storage state is available (the recording is still running or captured none)")
 		return
 	}
-	data, err := scrubBrowserStorageState(artifact.StorageState)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to scrub storage state: "+err.Error())
-		return
+	// persist_only=true keeps the state for later recordings without sending
+	// even the scrubbed copy; it fails unless the state was kept.
+	persistOnly := r.URL.Query().Get("persist_only") == "true"
+	var data []byte
+	if !persistOnly {
+		scrubbed, err := scrubBrowserStorageState(artifact.StorageState)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to scrub storage state: "+err.Error())
+			return
+		}
+		data = scrubbed
 	}
 	relativePath, stateFile := browserStorageStateExportLocation(info)
 	// Persist a confined copy under the export dir so it can be supplied as a
@@ -3063,15 +3147,27 @@ func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter,
 	// state: it is read only server-side to seed a Playwright context (login
 	// reuse), never served to a client — seeding a context with the scrubbed
 	// [REDACTED] cookie values silently breaks session restore. The client
-	// download below still receives the scrubbed state. Best effort; failures
-	// still allow the caller to download the scrubbed state.
+	// download below still receives the scrubbed state. For a download the copy
+	// is best effort (a failure still allows the download); persist_only fails
+	// unless it was kept.
 	pruneBrowserStorageStateExports(time.Now())
+	persisted := false
 	if confined, err := resolveConfinedExportPath(exportBaseDir(), filepath.Dir(relativePath), filepath.Base(relativePath)); err == nil {
 		if mkErr := os.MkdirAll(filepath.Dir(confined), 0o755); mkErr == nil {
 			if writeErr := os.WriteFile(confined, artifact.StorageState, 0o600); writeErr == nil {
 				w.Header().Set("X-APEXLoad-StorageState-Path", relativePath)
+				persisted = true
 			}
 		}
+	}
+	if persistOnly {
+		if !persisted {
+			writeError(w, http.StatusInternalServerError, "the login state could not be kept on this recorder")
+			return
+		}
+		// The path in the form the saved-state list and a recording start use.
+		writeJSON(w, http.StatusOK, map[string]any{"path": browserStorageStateProjectDir(info.ProjectID) + "/" + stateFile})
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, stateFile))

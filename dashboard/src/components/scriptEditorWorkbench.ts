@@ -224,7 +224,7 @@ function containerExpandKey(phase: string, actionIndex: number, stepPath: string
 // containerChildSteps returns the static child steps of a container action paired
 // with the step-path segment the engine assigns each (requests[i] / then[i] /
 // else[i] / case[n][i] / default[i] / loop[i]).
-function containerChildSteps(action: ScriptActionDefinition, kind: string): Array<{ action: ScriptActionDefinition; segment: string; requestIndex?: number }> {
+export function containerChildSteps(action: ScriptActionDefinition, kind: string): Array<{ action: ScriptActionDefinition; segment: string; requestIndex?: number }> {
   if (kind === 'http_sequence') {
     return httpSequenceRequests(action).map((child, i) => ({ action: child, segment: `requests[${i}]`, requestIndex: i }))
   }

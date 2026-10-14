@@ -648,6 +648,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
 .rec-session-name {
@@ -663,7 +664,9 @@
 
 .rec-session-meta {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
+  gap: 4px 12px;
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -1250,53 +1253,32 @@
   color: var(--text-primary);
 }
 
-.rec-browser-session-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+/* Which method made a recording in Recent recordings. */
+.rec-recording-kind {
+  flex: none;
+  padding: 1px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.rec-review-steps {
+  margin: 12px 0;
+}
+
+.rec-review-steps .rec-hint {
+  display: block;
+  padding: 8px 12px;
+}
+
+.rec-review-target {
+  max-width: 420px;
   overflow: hidden;
-}
-
-.rec-browser-session-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.rec-browser-session-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
-}
-
-.rec-browser-session-main {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0;
-  text-align: left;
-}
-
-.rec-browser-session-main .rec-session-meta {
-  justify-content: flex-start;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.rec-browser-session-actions {
-  display: flex;
-  gap: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rec-bridge-panel {

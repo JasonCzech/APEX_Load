@@ -65,7 +65,7 @@ test('HTTP proxy captures HTTP and HTTPS, edits requests, correlates and replays
     expect(har.log.entries.length).toBeGreaterThan(0)
     await info.attach('proxy.har', {body:JSON.stringify(har,null,2),contentType:'application/json'})
     const reviewed=page.waitForResponse(r=>r.url().endsWith(`/recorder/${session.id}/convert/preview`))
-    await page.getByRole('button',{name:'Review Script',exact:true}).click()
+    await page.getByRole('button',{name:'Convert to script',exact:true}).click()
     const convertedResponse=await reviewed; expect(convertedResponse.ok(),await convertedResponse.text()).toBeTruthy()
     const converted=await convertedResponse.json()
     expect(converted.script.protocol).toBe('http')
@@ -74,7 +74,7 @@ test('HTTP proxy captures HTTP and HTTPS, edits requests, correlates and replays
     expect(converted.correlations.find((c:{expression:string})=>c.expression==='$.order_id')?.review_action).toBe('manual_review_required')
     await info.attach('proxy-conversion',{body:JSON.stringify(converted,null,2),contentType:'application/json'})
     const saved=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/scripts/import/commit-batch'))
-    await page.getByRole('button',{name:'Save To Script Library',exact:true}).click()
+    await page.getByRole('button',{name:'Save to script library',exact:true}).click()
     const savedResponse=await saved; expect(savedResponse.ok(),await savedResponse.text()).toBeTruthy()
     const payload=await savedResponse.json()
     const id=payload.scripts?.[0]?.id||payload.stored_script?.id||payload.script_id||payload.id
@@ -98,9 +98,9 @@ test('HTTP proxy captures HTTP and HTTPS, edits requests, correlates and replays
     expect(new Set(orders.map(o=>o.csrf_token)).size).toBe(3)
     expect(new Set(orders.map(o=>o.order_id)).size).toBe(3)
     await studio(page,h)
-    await page.getByRole('button',{name:'HTTP proxy (advanced)',exact:true}).click()
-    await page.getByRole('button',{name:'Select recording session Proxy checkout',exact:true}).click()
-    await page.getByRole('button',{name:'Delete',exact:true}).click()
+    // Recent recordings lists both methods' recordings; delete this one's.
+    const proxyRecording=page.getByTestId('recent-recordings').locator('.rec-session-card').filter({has:page.getByRole('button',{name:'Select recording session Proxy checkout',exact:true})})
+    await proxyRecording.getByRole('button',{name:'Delete',exact:true}).click()
     await page.getByRole('alertdialog').getByRole('button',{name:'Delete',exact:true}).click()
     await expect(page.getByRole('button',{name:'Select recording session Proxy checkout',exact:true})).toHaveCount(0)
   } finally { await browser.close() }

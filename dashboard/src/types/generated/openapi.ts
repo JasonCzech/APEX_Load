@@ -56091,6 +56091,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "persist_only"?: string;
+      };
     };
     requestBody?: never;
     responses: {
@@ -94869,6 +94872,39 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListBrowserRecordingStorageStates": {
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -180296,6 +180332,9 @@ export interface paths {
   };
   "/api/v1/browser-recorder/sessions/{id}/verify": {
     "post": operations["handleVerifyBrowserRecording"];
+  };
+  "/api/v1/browser-recorder/storage-states": {
+    "get": operations["handleListBrowserRecordingStorageStates"];
   };
   "/api/v1/browser-replay/sessions/{session_id}": {
     "get": operations["handleGetBrowserReplaySession"];

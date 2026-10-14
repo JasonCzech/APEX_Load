@@ -20,8 +20,12 @@ profiles.
 ## Selecting a profile
 
 - **Proxy recorder.** `POST /api/v1/recorder/start` takes
-  `recording_profile_id`. The profile fills any host filters, body capture
-  limit and cookie capture the request leaves unset. The session remembers the
+  `recording_profile_id`. The profile's `include_hosts` and `exclude_hosts`
+  are added to the request's (profile hosts first, duplicates dropped without
+  regard to case), so typing one more host never drops the profile's list.
+  The profile fills the body capture limit and cookie capture when the
+  request leaves them unset. Recording Studio shows the hosts a selected
+  profile adds under each host field. The session remembers the
   profile, and converting or previewing the session applies it, unless the
   convert request names a different `recording_profile_id`. Cookie capture
   is decided when recording starts (an explicit `capture_cookies` wins over

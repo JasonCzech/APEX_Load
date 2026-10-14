@@ -74,6 +74,8 @@ const apiMock = {
   clearBrowserRecorderBridge: vi.fn(),
   getBrowserRecorderBridgeStatus: vi.fn(),
   exportBrowserRecording: vi.fn(),
+  saveBrowserRecordingStorageState: vi.fn(),
+  listBrowserRecordingStorageStates: vi.fn(),
   getRecordingProfiles: vi.fn(),
   saveRecordingProfiles: vi.fn(),
   browserRecorderBridge: null as any,
@@ -133,6 +135,10 @@ describe("RecordingStudio", () => {
     apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
     apiMock.getRecordingProfiles.mockReset();
     apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [], rules: [], updated_at: "2026-10-09T00:00:00Z" });
+    apiMock.saveBrowserRecordingStorageState.mockReset();
+    apiMock.saveBrowserRecordingStorageState.mockResolvedValue({});
+    apiMock.listBrowserRecordingStorageStates.mockReset();
+    apiMock.listBrowserRecordingStorageStates.mockResolvedValue({ states: [], count: 0 });
     clipboardWriteMock.mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1008,11 +1014,11 @@ describe("RecordingStudio", () => {
     await flushPromises();
     await openProxyAdvanced(container);
 
-    expect(container.textContent).toContain("Recorded Sessions");
+    expect(container.textContent).toContain("Recent recordings");
     expect(container.textContent).toContain("Checkout Capture");
 
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Review Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     expect(reviewButton).toBeTruthy();
     if (!reviewButton) {
@@ -1031,10 +1037,16 @@ describe("RecordingStudio", () => {
       false,
     );
     expect(container.textContent).toContain(
-      "Preview generated with 1 actions and 1 correlations",
+      'Converted "Checkout Capture": 1 step, 1 correlation. Review them below, then save.',
     );
+    expect(container.textContent).toContain("Review the converted script");
     expect(container.textContent).toContain("Checkout Preview");
-    expect(container.textContent).toContain("review dynamic headers");
+    // The review lists the steps before anything is saved, and no preview ID.
+    const steps = container.querySelector('[aria-label="Converted steps"]');
+    expect(steps?.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(steps?.textContent).toContain("01 - GET /");
+    expect(container.textContent).not.toContain("Script ID");
+    expect(container.querySelector(".rec-warnings")?.textContent).toContain("Review dynamic headers");
     const notes = container.querySelector('[aria-label="Recording notes"]');
     expect(notes?.textContent).toContain(
       "HTTP/3 advertisement (https://shop.example.test): The origin advertises HTTP/3 (Alt-Svc), but no captured request used it.",
@@ -1244,7 +1256,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
     const reviewButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Review Script");
+    ).find((button) => button.textContent?.trim() === "Convert to script");
     await act(async () => reviewButton?.click());
     await flushPromises();
 
@@ -1347,7 +1359,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
 
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Review Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     await act(async () => {
       reviewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1457,7 +1469,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
     await openProxyAdvanced(container);
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Review Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     await act(async () => {
       reviewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1571,7 +1583,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
     await openProxyAdvanced(container);
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Review Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     await act(async () => {
       reviewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1683,7 +1695,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
     const reviewButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Review Script");
+    ).find((button) => button.textContent?.trim() === "Convert to script");
     await act(async () => reviewButton?.click());
     await flushPromises();
     const editButton = Array.from(
@@ -1756,7 +1768,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
     const reviewButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Review Script")!;
+    ).find((button) => button.textContent?.trim() === "Convert to script")!;
     await act(async () => reviewButton.click());
     await flushPromises();
     const saveButton = Array.from(
@@ -1824,7 +1836,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
 
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Review Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     expect(reviewButton).toBeDefined();
     await act(async () => {
@@ -2063,9 +2075,9 @@ describe("RecordingStudio", () => {
     await flushPromises();
 
     const recoveryList = container.querySelector(
-      '[data-testid="browser-recording-recovery-list"]',
+      '[data-testid="recent-recordings"]',
     );
-    expect(recoveryList?.textContent).toContain("Recent Browser Recordings");
+    expect(recoveryList?.textContent).toContain("Recent recordings");
     expect(recoveryList?.textContent).toContain("Checkout Browser");
     expect(recoveryList?.textContent).toContain("4 steps");
     expect(recoveryList?.textContent).toContain("9 requests");
@@ -2124,7 +2136,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
 
     const convertButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Convert to Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     expect(convertButton).toBeTruthy();
     if (!convertButton) return;
@@ -2469,7 +2481,7 @@ describe("RecordingStudio", () => {
     });
 
     const convertButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Convert to Script",
+      (button) => button.textContent?.trim() === "Convert to script",
     );
     expect(convertButton).toBeTruthy();
     if (!convertButton) return;
@@ -2591,6 +2603,401 @@ describe("RecordingStudio", () => {
     expect(apiMock.startRecording).toHaveBeenCalledWith(
       expect.objectContaining({ project_id: "proj-1", recording_profile_id: "checkout", capture_cookies: true }),
     );
+  });
+
+  it("shows the host filters a selected profile adds beside the fields they add to", async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({
+      profiles: [{ id: "checkout", name: "Checkout profile", include_hosts: ["api.example.com", " "], exclude_hosts: ["cdn.example.com"] }],
+      rules: [],
+      updated_at: "2026-10-09T00:00:00Z",
+    });
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    expect(container.querySelector("#rec-profile-browser-hosts")).toBeNull();
+    const picker = container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement;
+    await act(async () => {
+      picker.value = "checkout";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const advanced = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("#rec-profile-browser-hosts")?.textContent).toBe(
+      "Recording profile “Checkout profile” also filters the HTTP script converted from this recording: keeps only api.example.com; leaves out cdn.example.com.",
+    );
+    expect(
+      container.querySelector('input[aria-label="Exclude hosts"]')?.getAttribute("aria-describedby"),
+    ).toBe("rec-profile-browser-hosts");
+
+    await openProxyAdvanced(container);
+    expect(container.querySelector("#rec-profile-include-hosts")?.textContent?.replace(/\s+/g, " ")).toBe(
+      "Recording profile “Checkout profile” records only these hosts, plus any typed here: api.example.com",
+    );
+    expect(container.querySelector("#rec-profile-exclude-hosts")?.textContent?.replace(/\s+/g, " ")).toBe(
+      "Recording profile “Checkout profile” also leaves out: cdn.example.com",
+    );
+
+    // No profile, no hints.
+    await act(async () => {
+      picker.value = "";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector("#rec-profile-include-hosts")).toBeNull();
+    expect(container.querySelector("#rec-profile-exclude-hosts")).toBeNull();
+  });
+
+  it("lists browser and proxy recordings together, newest first, and opens a browser one on its own method", async () => {
+    apiMock.listBrowserRecordings.mockResolvedValue({
+      sessions: [
+        {
+          id: "brec-new",
+          name: "Newer Browser",
+          status: "stopped",
+          start_url: "https://shop.example/login",
+          capture_har: true,
+          started_at: "2026-05-13T08:00:00Z",
+          stopped_at: "2026-05-13T08:05:00Z",
+          step_count: 2,
+          navigation_count: 1,
+          network_request_count: 3,
+          websocket_count: 0,
+          warning_count: 0,
+          har_available: true,
+        },
+        {
+          id: "brec-old",
+          name: "Older Browser",
+          status: "failed",
+          start_url: "https://shop.example/login",
+          capture_har: true,
+          started_at: "2026-05-11T08:00:00Z",
+          stopped_at: "2026-05-11T08:01:00Z",
+          step_count: 0,
+          navigation_count: 0,
+          network_request_count: 0,
+          websocket_count: 0,
+          warning_count: 0,
+          har_available: false,
+        },
+      ],
+      count: 2,
+    });
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    const recent = container.querySelector('[data-testid="recent-recordings"]')!;
+    const rows = Array.from(recent.querySelectorAll(".rec-session-card"));
+    expect(rows.map((row) => row.querySelector(".rec-session-name")?.textContent)).toEqual([
+      "Newer Browser",
+      "Checkout Capture",
+      "Older Browser",
+    ]);
+    expect(rows.map((row) => row.querySelector(".rec-recording-kind")?.textContent)).toEqual([
+      "Browser",
+      "HTTP proxy",
+      "Browser",
+    ]);
+    expect(rows[2].textContent).toContain("Failed");
+    // One Delete style for both methods.
+    expect(
+      rows.map((row) => Array.from(row.querySelectorAll("button")).find((button) => button.textContent === "Delete")?.className),
+    ).toEqual(["btn btn-sm btn-danger", "btn btn-sm btn-danger", "btn btn-sm btn-danger"]);
+
+    const proxyMethod = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "HTTP proxy (advanced)",
+    )!;
+    await act(async () => {
+      proxyMethod.click();
+    });
+    expect(container.querySelector('[data-testid="recent-recordings"]')).not.toBeNull();
+    const open = Array.from(rows[0].querySelectorAll("button")).find((button) => button.textContent === "Open")!;
+    await act(async () => {
+      open.click();
+    });
+    await flushPromises();
+    expect(proxyMethod.getAttribute("aria-pressed")).toBe("false");
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith("brec-new");
+  });
+
+  it("saves a browser recording's login state and starts a later recording signed in with it", async () => {
+    apiMock.listBrowserRecordings.mockResolvedValue({
+      sessions: [
+        {
+          id: "brec-login",
+          name: "Signed-in Browser",
+          status: "stopped",
+          start_url: "https://shop.example/login",
+          capture_har: true,
+          started_at: "2026-05-13T08:00:00Z",
+          stopped_at: "2026-05-13T08:05:00Z",
+          step_count: 2,
+          navigation_count: 1,
+          network_request_count: 3,
+          websocket_count: 0,
+          warning_count: 0,
+          har_available: true,
+          storage_state_available: true,
+        },
+      ],
+      count: 1,
+    });
+    const saved = {
+      path: "proj-1/Signed-in-Browser-brec-login-state.json",
+      name: "Signed-in Browser",
+      recording_id: "brec-login",
+      saved_at: "2026-05-13T08:06:00Z",
+    };
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    expect(apiMock.listBrowserRecordingStorageStates).toHaveBeenCalledWith("proj-1");
+
+    const advanced = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    // Nothing saved yet: say how to save one, not a path to type.
+    const signedIn = container.querySelector("#rec-browser-storage-state") as HTMLSelectElement;
+    expect(signedIn.options).toHaveLength(1);
+    expect(container.querySelector('[data-testid="rec-storage-state-empty"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("/path/to/state.json");
+
+    apiMock.listBrowserRecordingStorageStates.mockResolvedValue({ states: [saved], count: 1 });
+    apiMock.saveBrowserRecordingStorageState.mockResolvedValue({ path: saved.path });
+    const save = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Save login state",
+    )!;
+    await act(async () => {
+      save.click();
+    });
+    await flushPromises();
+    expect(apiMock.saveBrowserRecordingStorageState).toHaveBeenCalledWith("brec-login");
+    expect(container.textContent).toContain(
+      'Saved the login state from "Signed-in Browser". Choose it under Start signed in to record signed in.',
+    );
+    expect(
+      Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Save login state again"),
+    ).toBe(true);
+    expect(container.querySelector('[data-testid="rec-storage-state-empty"]')).toBeNull();
+
+    await act(async () => {
+      signedIn.value = saved.path;
+      signedIn.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!;
+      setter.call(urlInput, "shop.example/account");
+      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const recordButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Start browser recording"),
+    );
+    await act(async () => {
+      recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ storage_state_path: saved.path }),
+    );
+  });
+
+  it("reports a login state the recorder could not keep, and hides the choice when it cannot list them", async () => {
+    apiMock.listBrowserRecordings.mockResolvedValue({
+      sessions: [
+        {
+          id: "brec-login",
+          name: "Signed-in Browser",
+          status: "stopped",
+          start_url: "https://shop.example/login",
+          capture_har: true,
+          started_at: "2026-05-13T08:00:00Z",
+          stopped_at: "2026-05-13T08:05:00Z",
+          step_count: 2,
+          navigation_count: 1,
+          network_request_count: 3,
+          websocket_count: 0,
+          warning_count: 0,
+          har_available: true,
+          storage_state_available: true,
+        },
+      ],
+      count: 1,
+    });
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    const save = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Save login state",
+    )!;
+    await act(async () => {
+      save.click();
+    });
+    await flushPromises();
+    expect(container.querySelector(".rec-feedback.error")?.textContent).toBe(
+      "The recorder could not keep this login state, so it cannot be reused.",
+    );
+    // A recorder that refuses the save says the same, not its raw message.
+    apiMock.saveBrowserRecordingStorageState.mockRejectedValueOnce(
+      Object.assign(new Error("the login state could not be kept on this recorder"), { status: 500 }),
+    );
+    await act(async () => {
+      save.click();
+    });
+    await flushPromises();
+    expect(container.querySelector(".rec-feedback.error")?.textContent).toBe(
+      "The recorder could not keep this login state, so it cannot be reused.",
+    );
+
+    // A listing that fails once keeps what was listed...
+    apiMock.listBrowserRecordingStorageStates.mockRejectedValue(
+      Object.assign(new Error("unavailable"), { status: 503 }),
+    );
+    const advanced = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(container.querySelector("#rec-browser-storage-state")).not.toBeNull();
+
+    // ...and a recorder without the listing offers neither the choice nor the save.
+    apiMock.listBrowserRecordingStorageStates.mockRejectedValue(
+      Object.assign(new Error("not found"), { status: 404 }),
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(container.querySelector("#rec-browser-storage-state")).toBeNull();
+    expect(
+      Array.from(container.querySelectorAll("button")).some((button) => button.textContent?.startsWith("Save login state")),
+    ).toBe(false);
+  });
+
+  it("keeps the newest saved login states when an older listing answers later", async () => {
+    const saved = {
+      path: "proj-1/Signed-in-Browser-brec-login-state.json",
+      name: "Signed-in Browser",
+      recording_id: "brec-login",
+      saved_at: "2026-05-13T08:06:00Z",
+    };
+    let answerFirst!: (value: unknown) => void;
+    apiMock.listBrowserRecordingStorageStates
+      .mockReturnValueOnce(new Promise((resolve) => { answerFirst = resolve; }))
+      .mockResolvedValue({ states: [saved], count: 1 });
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    const advanced = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    const signedIn = container.querySelector("#rec-browser-storage-state") as HTMLSelectElement;
+    expect(signedIn.options).toHaveLength(2);
+    await act(async () => {
+      answerFirst({ states: [], count: 0 });
+    });
+    await flushPromises();
+    expect((container.querySelector("#rec-browser-storage-state") as HTMLSelectElement).options).toHaveLength(2);
+  });
+
+  it("says when the proxy could not be checked, and leaves an unavailable proxy without it counting as a choice", async () => {
+    const onMethodChange = vi.fn();
+    apiMock.getRecorderStatus.mockRejectedValue(new Error("controller restarting"));
+    await act(async () => {
+      root.render(<RecordingStudio method="proxy" onMethodChange={onMethodChange} />);
+    });
+    await flushPromises();
+    expect(
+      container.querySelector('[data-testid="recording-proxy-card-unavailable"]')?.textContent,
+    ).toBe("Could not check whether this controller can record through its HTTP proxy. Retrying…");
+    expect(onMethodChange).not.toHaveBeenCalled();
+
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "",
+      proxy: { available: false, running: false, reason_code: "production_disabled", reason: "disabled in production mode" },
+      local_client: false,
+      active: null,
+      browser: { availability: { available: true }, active: null },
+    });
+    await act(async () => {
+      root.render(<RecordingStudio key="again" method="proxy" onMethodChange={onMethodChange} />);
+    });
+    await flushPromises();
+    expect(onMethodChange).toHaveBeenCalledWith("browser", { byUser: false });
+  });
+
+  it("shows a no-correlation note as information and leaves real warnings as warnings", async () => {
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: {
+        name: "Checkout Preview",
+        protocol: "http",
+        actions: [
+          {
+            name: "Login",
+            type: "http_sequence",
+            target: "",
+            params: {
+              requests: [
+                { name: "POST /login", type: "http", method: "post", target: "/login", metadata: { source_transaction: "Sign in" }, think_time: { type: "fixed", mean_ms: 1500 }, think_time_after: true, assertions: [{ type: "status", value: "200" }] },
+                { name: "GET /home", type: "http", method: "GET", target: "/home", extractors: [{ name: "token", type: "regex", expression: "t=(\\w+)" }] },
+              ],
+            },
+          },
+        ],
+      },
+      correlations: [],
+      warnings: ["no reusable correlation values were detected across the provided samples", "body was truncated"],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      stats: { requests_recorded: 5, requests_excluded: 2 },
+      summary: {},
+    });
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    const convert = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Convert to script",
+    )!;
+    await act(async () => {
+      convert.click();
+    });
+    await flushPromises();
+    expect(container.querySelector(".rec-warnings")?.textContent).toBe("Body was truncated");
+    expect(container.querySelector('[aria-label="Recording notes"]')?.textContent).toContain(
+      "No reusable correlation values were detected across the provided samples",
+    );
+    expect(container.textContent).toContain("2 excluded requests");
+    const rows = Array.from(container.querySelectorAll('[aria-label="Converted steps"] tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent),
+    );
+    expect(rows).toEqual([
+      ["1", "POST /login", "POST", "/login", "Sign in", "1.5 s after", "1", ""],
+      ["2", "GET /home", "GET", "/home", "", "", "", "1"],
+    ]);
   });
 
   it("copies macOS start and restore proxy commands from the setup shortcut", async () => {
@@ -4313,19 +4720,22 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
 
-    const proxyButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "HTTP proxy (advanced)",
-    );
-    expect(proxyButton).toBeDefined();
-    await act(async () => {
-      proxyButton!.click();
-    });
-    await flushPromises();
-    // The recording can still be converted; a new one cannot be started.
-    expect(container.textContent).toContain("Last week");
+    // A new proxy recording cannot start, so the method is not offered...
     expect(
       Array.from(container.querySelectorAll("button")).some(
-        (button) => button.textContent === "Convert to Script",
+        (button) => button.textContent === "HTTP proxy (advanced)",
+      ),
+    ).toBe(false);
+    expect(
+      container.querySelector('[data-testid="recording-proxy-unavailable"]'),
+    ).not.toBeNull();
+    // ...but the earlier recording is in Recent recordings and converts.
+    const recent = container.querySelector('[data-testid="recent-recordings"]');
+    expect(recent?.textContent).toContain("Last week");
+    expect(recent?.textContent).toContain("HTTP proxy");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent === "Convert to script",
       ),
     ).toBe(true);
     expect(container.textContent).not.toContain("Proxy Setup");
@@ -4334,10 +4744,6 @@ describe("RecordingStudio", () => {
         (button) => button.textContent?.includes("Start Recording"),
       ),
     ).toBe(false);
-    expect(
-      container.querySelector('[data-testid="recording-proxy-card-unavailable"]')
-        ?.textContent,
-    ).toContain("Earlier proxy recordings are listed below.");
   });
 
   it("does not offer to install the browser on the controller for a paired agent's missing browser", async () => {

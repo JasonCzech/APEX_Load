@@ -112,6 +112,21 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	// Saved login states seed a signed-in recording: listing them is for those
+	// who can record in the project (the states themselves are never served).
+	if path == "/api/v1/browser-recorder/storage-states" && method == http.MethodGet {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+			return accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		return accessRequirement{
+			GlobalRoles:  []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles: []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: func(r *http.Request, _ storage.Store) (string, int, string) {
+				return resolveRecorderListProjectID(r)
+			},
+		}, true
+	}
+
 	if path == "/api/v1/ws" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
 			// An unfiltered socket receives events from every project. A baseline

@@ -59,12 +59,10 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if profile != nil {
-		if len(req.IncludeHosts) == 0 {
-			req.IncludeHosts = profile.IncludeHosts
-		}
-		if len(req.ExcludeHosts) == 0 {
-			req.ExcludeHosts = profile.ExcludeHosts
-		}
+		// A profile's host filters add to the ones the request names: typing
+		// one more host must not silently drop the profile's list.
+		req.IncludeHosts = mergeRecorderHostFilters(profile.IncludeHosts, req.IncludeHosts)
+		req.ExcludeHosts = mergeRecorderHostFilters(profile.ExcludeHosts, req.ExcludeHosts)
 		if req.BodyCaptureLimitBytes == 0 {
 			req.BodyCaptureLimitBytes = profile.BodyCaptureLimitBytes
 		}
@@ -517,9 +515,22 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 		Warnings:                result.Warnings,
 		Diagnostics:             result.Diagnostics,
 		Correlations:            result.Correlations,
+		Stats:                   recordingConversionStats(session),
 		RecordingSessionID:      id,
 		RecordingSnapshotDigest: snapshotDigest,
 	})
+}
+
+// recordingConversionStats counts the session's recorded requests and the
+// ones marked excluded, which a conversion leaves out, for the review.
+func recordingConversionStats(session *recorder.Session) map[string]int {
+	excluded := 0
+	for _, req := range session.Requests {
+		if req.Excluded {
+			excluded++
+		}
+	}
+	return map[string]int{"requests_recorded": len(session.Requests), "requests_excluded": excluded}
 }
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
@@ -657,6 +668,28 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// mergeRecorderHostFilters is the profile's hosts followed by the request's,
+// trimmed, once each (hosts compare case-insensitively).
+func mergeRecorderHostFilters(profileHosts, requestHosts []string) []string {
+	merged := make([]string, 0, len(profileHosts)+len(requestHosts))
+	seen := make(map[string]bool, len(profileHosts)+len(requestHosts))
+	for _, hosts := range [][]string{profileHosts, requestHosts} {
+		for _, host := range hosts {
+			host = strings.TrimSpace(host)
+			key := strings.ToLower(host)
+			if host == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			merged = append(merged, host)
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
 // recorderProxyLoopbackOnly is the reason code for a proxy listening only on
 // the controller host's loopback interface, out of a remote browser's reach.
 const recorderProxyLoopbackOnly = "loopback_only"
@@ -743,7 +776,18 @@ func (s *Server) sessionRecordingProfile(session *recorder.Session, profileID st
 	if profileID == "" {
 		profileID = session.Filters.RecordingProfileID
 	}
-	return s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
+	profile, err := s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
+	if err != nil || profile == nil || !strings.EqualFold(profile.ID, session.Filters.RecordingProfileID) {
+		return profile, err
+	}
+	// The session recorded the profile's hosts merged with the ones typed at
+	// start; converting with that profile merges them the same way, so a typed
+	// include host is not dropped again by the profile's own list (and a host
+	// the profile now excludes still is).
+	scoped := *profile
+	scoped.IncludeHosts = mergeRecorderHostFilters(profile.IncludeHosts, session.Filters.IncludeHosts)
+	scoped.ExcludeHosts = mergeRecorderHostFilters(profile.ExcludeHosts, session.Filters.ExcludeHosts)
+	return &scoped, nil
 }
 
 // recorderCaptureCookies is a proxy session's cookie capture: the request's

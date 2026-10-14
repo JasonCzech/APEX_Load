@@ -84,9 +84,14 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 			} `json:"actions"`
 		} `json:"script"`
 		SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+		Stats                     map[string]int             `json:"stats"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	// The review says what the conversion left out.
+	if result.Stats["requests_recorded"] != 2 || result.Stats["requests_excluded"] != 1 {
+		t.Fatalf("stats = %#v, want 2 recorded and 1 excluded", result.Stats)
 	}
 	if result.Script.Name != "Checkout Preview" {
 		t.Fatalf("script name = %q, want Checkout Preview", result.Script.Name)

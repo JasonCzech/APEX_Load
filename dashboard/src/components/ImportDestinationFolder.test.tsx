@@ -115,7 +115,23 @@ describe('ImportDestinationFolder', () => {
     expect(select).not.toBeNull()
     expect(select?.value).toBe('')
     expect(select?.querySelectorAll('option')).toHaveLength(1)
-    expect(container.textContent).toContain('No script folders exist in this project')
+    expect(container.textContent).toContain('No script folders exist in this project yet. Imports will save to Project root, or create a folder below.')
+    expect(container.textContent).not.toContain('Project Administrator creates one')
+  })
+
+  it('does not offer a folder to someone who cannot create one', async () => {
+    apiMock.listFolders.mockResolvedValue({ folders: [], count: 0 })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      resources: [{
+        id: 'projects_and_folders',
+        operations: [{ id: 'manage_projects', allowed: false }],
+      }],
+    })
+
+    await render()
+
+    expect(container.textContent).toContain('No script folders exist in this project. Imports will save to Project root.')
+    expect(container.textContent).not.toContain('create a folder below')
   })
 
   it('shows a disabled Project root choice before a project is selected, without calling the API', async () => {

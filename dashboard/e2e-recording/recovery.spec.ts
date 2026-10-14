@@ -59,7 +59,8 @@ test('mobile recording reuses exported session state with HAR disabled',async({p
     await verifyOutputs(page,1)
     await studio(page,h)
     await page.getByRole('button',{name:'Advanced options',exact:true}).click()
-    await page.getByLabel('Reuse session state path',{exact:true}).fill(statePath)
+    // The saved state is offered by name; its value is the project-relative path.
+    await page.getByLabel(/^Start signed in/).selectOption(statePath.replace(/^browser-recorder-state\//,''))
     const next=await startRecording(page,h,false,{har:false})
     await expect(next.target.locator('#stored-state')).toHaveText('remembered-by-recording')
     await stopRecording(page)

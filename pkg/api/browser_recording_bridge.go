@@ -178,6 +178,7 @@ func (s *Server) bridgeRoutes() {
 	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(auth(http.HandlerFunc(s.handleGetBrowserReplaySession)))))
 
 	s.mux.Handle("GET /api/v1/browser-recorder/sessions", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecordings)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/storage-states", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecordingStorageStates)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions", cors(log(auth(http.HandlerFunc(s.handleStartBrowserRecording)))))
 	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}", cors(log(auth(http.HandlerFunc(s.handleGetBrowserRecording)))))
 	s.mux.Handle("DELETE /api/v1/browser-recorder/sessions/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteBrowserRecording)))))

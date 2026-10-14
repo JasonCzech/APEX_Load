@@ -193,7 +193,13 @@ vi.mock('./JMeterImport', () => ({
 }))
 
 vi.mock('./RecordingStudio', () => ({
-  default: () => <div data-testid="recording-studio">recording-studio</div>,
+  default: ({ method, onMethodChange }: { method?: string, onMethodChange?: (method: 'browser' | 'proxy', choice: { byUser: boolean }) => void }) => (
+    <div data-testid="recording-studio">
+      recording-studio:{method}
+      <button onClick={() => onMethodChange?.('proxy', { byUser: true })}>mock-record-proxy</button>
+      <button onClick={() => onMethodChange?.('browser', { byUser: false })}>mock-fallback-browser</button>
+    </div>
+  ),
 }))
 
 vi.mock('./SampleScriptImport', () => ({
@@ -472,6 +478,7 @@ describe('ScriptsPage', () => {
     window.localStorage.removeItem('apexload.settings.focusSection')
     window.localStorage.removeItem('apexload.settings.projectSubsection')
     window.localStorage.removeItem('apexload.settings.projectId')
+    window.localStorage.removeItem('apexload.recordingMethod')
   })
 
   afterEach(async () => {
@@ -484,6 +491,7 @@ describe('ScriptsPage', () => {
     window.localStorage.removeItem('apexload.settings.focusSection')
     window.localStorage.removeItem('apexload.settings.projectSubsection')
     window.localStorage.removeItem('apexload.settings.projectId')
+    window.localStorage.removeItem('apexload.recordingMethod')
   })
 
   it('opens the script-scoped bindings dialog from library health without navigating away', async () => {
@@ -1084,6 +1092,33 @@ describe('ScriptsPage', () => {
     // And to the library.
     await render({ step: 'list' })
     expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ subView: 'list' }))
+  })
+
+  it('reopens Recording Studio with the method last used when the route names none', async () => {
+    const onAuthoringStateChange = vi.fn()
+    const renderRecorder = async () => {
+      await act(async () => {
+        root.render(<ScriptsPage initialMode="create" builderRoute={{ step: 'record' }} onAuthoringStateChange={onAuthoringStateChange} />)
+      })
+      await act(async () => {
+        await vi.dynamicImportSettled()
+      })
+      await flushPromises()
+    }
+    await renderRecorder()
+    expect(container.querySelector('[data-testid="recording-studio"]')?.textContent).toContain('recording-studio:browser')
+    await clickButton('mock-record-proxy')
+    expect(window.localStorage.getItem('apexload.recordingMethod')).toBe('proxy')
+    // The studio's own fallback (proxy unavailable) is not a choice to keep.
+    await clickButton('mock-fallback-browser')
+    expect(container.querySelector('[data-testid="recording-studio"]')?.textContent).toContain('recording-studio:browser')
+    expect(window.localStorage.getItem('apexload.recordingMethod')).toBe('proxy')
+
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await renderRecorder()
+    expect(container.querySelector('[data-testid="recording-studio"]')?.textContent).toContain('recording-studio:proxy')
+    expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ subView: 'recorder', recordMethod: 'proxy' }))
   })
 
   it('consolidates template and manual choices under Start New Script', async () => {

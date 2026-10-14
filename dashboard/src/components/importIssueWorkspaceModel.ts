@@ -53,7 +53,7 @@ function issuePresentation(issue: ImportWorkspaceIssue): ImportWorkspaceIssue {
     impact: 'The generated request still uses the imported credential value. Confirm that retaining it is intentional before replay.',
     resolution: 'Review the preserved value in Credentials. Keep it for exact replay, or bind an approved project secret where available.',
   }
-  if (/no reusable correlation values were detected/.test(evidence)) return {
+  if (isNoReusableCorrelationNote(evidence)) return {
     ...issue,
     title: 'No reusable correlation values detected',
     impact: 'The draft does not extract and reuse a response value. Later requests may need an extractor if they depend on dynamic data.',
@@ -79,6 +79,12 @@ const diagnosticKindTitles: Record<string, string> = {
   jmeter_timestamp_timezone_required: 'Timestamp timezone policy required',
   jmeter_invalid_header_value: 'Invalid header value',
   jmeter_review_traversal_failed: 'Review traversal failed',
+}
+
+// isNoReusableCorrelationNote tells the importers' "no correlation found" note,
+// which is information rather than a problem.
+export function isNoReusableCorrelationNote(note: string): boolean {
+  return /no reusable correlation values were detected/i.test(note)
 }
 
 // Titles a normalized import diagnostic by what is wrong, then where. The

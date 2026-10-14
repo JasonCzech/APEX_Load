@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -69,6 +71,71 @@ func TestRecordingProfileEndpoints(t *testing.T) {
 
 	if missing := do(http.MethodPost, "/api/v1/recorder/start", `{"project_id":"`+project.ID+`","recording_profile_id":"nope"}`); missing.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown profile must be refused: %d %s", missing.Code, missing.Body.String())
+	}
+}
+
+// A profile's host filters add to the ones a start names, once each.
+func TestMergeRecorderHostFilters(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		profile, request []string
+		want             []string
+	}{
+		{name: "neither", want: nil},
+		{name: "profile only", profile: []string{"api.example.com"}, want: []string{"api.example.com"}},
+		{name: "request only", request: []string{" app.example.com "}, want: []string{"app.example.com"}},
+		{name: "both, profile first, once each", profile: []string{"api.example.com", "cdn.example.com"}, request: []string{"API.example.com", "app.example.com", ""}, want: []string{"api.example.com", "cdn.example.com", "app.example.com"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mergeRecorderHostFilters(tt.profile, tt.request); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("merge = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Converting a proxy session with the profile it was recorded with keeps the
+// hosts typed at start: the profile's own include list must not drop them.
+func TestSessionRecordingProfileKeepsTypedHosts(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+	created := do(http.MethodPost, "/api/v1/projects", `{"name":"Shop"}`)
+	var project storage.Project
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &project) != nil {
+		t.Fatalf("create project: %d %s", created.Code, created.Body.String())
+	}
+	if put := do(http.MethodPut, "/api/v1/projects/"+project.ID+"/recording-profiles", `{"profiles":[{"id":"shop","name":"Shop","include_hosts":["api.example.com"],"exclude_hosts":["cdn.example.com"]},{"id":"other","name":"Other","include_hosts":["api.example.com"]}]}`); put.Code != http.StatusOK {
+		t.Fatalf("put profiles: %d %s", put.Code, put.Body.String())
+	}
+	session := &recorder.Session{ProjectID: project.ID, Filters: recorder.SessionFilters{
+		RecordingProfileID: "shop",
+		IncludeHosts:       []string{"api.example.com", "app.example.com"},
+		ExcludeHosts:       []string{"cdn.example.com", "ads.example.com"},
+	}}
+
+	profile, err := server.sessionRecordingProfile(session, "")
+	if err != nil || profile == nil {
+		t.Fatalf("session profile = %v, %v", profile, err)
+	}
+	if !profile.RecordsHost("app.example.com") || !profile.RecordsHost("api.example.com") || profile.RecordsHost("ads.example.com") || profile.RecordsHost("cdn.example.com") {
+		t.Fatalf("session profile hosts = include %v exclude %v, want the session's merged filters", profile.IncludeHosts, profile.ExcludeHosts)
+	}
+	// Another profile named at conversion applies its own hosts.
+	other, err := server.sessionRecordingProfile(session, "other")
+	if err != nil || other == nil || other.RecordsHost("app.example.com") {
+		t.Fatalf("other profile = %+v, %v; want its own include list", other, err)
 	}
 }
 

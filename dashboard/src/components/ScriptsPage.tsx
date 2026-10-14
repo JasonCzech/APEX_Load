@@ -85,6 +85,26 @@ interface Props {
   } | null
 }
 
+// Recording Studio reopens with the method last used when the route names
+// none. Browser storage can be unavailable; the browser method is the default.
+const RECORD_METHOD_STORAGE_KEY = 'apexload.recordingMethod'
+
+function rememberedRecordMethod(): ScriptsRecordMethod {
+  try {
+    return window.localStorage.getItem(RECORD_METHOD_STORAGE_KEY) === 'proxy' ? 'proxy' : 'browser'
+  } catch {
+    return 'browser'
+  }
+}
+
+function rememberRecordMethod(method: ScriptsRecordMethod) {
+  try {
+    window.localStorage.setItem(RECORD_METHOD_STORAGE_KEY, method)
+  } catch {
+    // Not remembered; the next visit starts with the browser method.
+  }
+}
+
 type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
 
 type ScriptSecretStatusPlan = {
@@ -520,7 +540,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [builderTabs, setBuilderTabs] = useState<{ workflow: ScriptsBuilderWorkflow; category: ScriptsBuilderCategory; method: ScriptsRecordMethod }>(() => ({
     workflow: builderRoute?.workflow ?? initialCreateWorkflow ?? 'start-new',
     category: builderRoute?.category ?? 'editors',
-    method: builderRoute?.method ?? 'browser',
+    method: builderRoute?.method ?? rememberedRecordMethod(),
   }))
   const routedWorkflow = builderRoute?.workflow
   const routedCategory = builderRoute?.category
@@ -540,7 +560,12 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const builderRouted = Boolean(onAuthoringStateChange)
   const setCreateWorkflow = useCallback((workflow: ScriptsBuilderWorkflow) => setBuilderTabs(previous => previous.workflow === workflow ? previous : { ...previous, workflow }), [])
   const setCreateCategory = useCallback((category: ScriptsBuilderCategory) => setBuilderTabs(previous => previous.category === category ? previous : { ...previous, category }), [])
-  const setRecordMethod = useCallback((method: ScriptsRecordMethod) => setBuilderTabs(previous => previous.method === method ? previous : { ...previous, method }), [])
+  // Only a method the tester chose is remembered, not the studio's own
+  // fallback when the proxy is unavailable.
+  const setRecordMethod = useCallback((method: ScriptsRecordMethod, choice?: { byUser: boolean }) => {
+    if (choice?.byUser) rememberRecordMethod(method)
+    setBuilderTabs(previous => previous.method === method ? previous : { ...previous, method })
+  }, [])
   const handleSavedScript = useCallback((...args: Parameters<typeof acceptSavedScript>) => {
     acceptSavedScript(...args)
     onScriptSaved?.(args[0])

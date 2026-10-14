@@ -586,6 +586,22 @@ though locked-down workstations may need IT approval to run a signed binary, lau
 browser automation, or allow private-network access from the dashboard origin to
 loopback.
 
+Finished recordings of both methods are listed under **Recent recordings**, newest
+first, with a **Browser** or **HTTP proxy** badge. Recording Studio reopens with the
+method you used last.
+
+- **Convert to script** turns an HTTP proxy recording into a draft and shows it for
+  review before anything is saved: each step with its method, target, transaction,
+  think time, checks and extracts, the correlations found, and how many requests you
+  excluded. Save it to the script library or open it in the editor from there.
+- **Save login state** on a stopped browser recording keeps its cookies and storage
+  on the controller (or on the Recording Agent). Choose it later under **Advanced
+  options › Start signed in** to begin a new recording already signed in. Saved
+  states expire after 24 hours.
+- A selected **recording profile** shows the host filters it adds: on an HTTP proxy
+  recording they are added to the hosts you type; on a browser recording they filter
+  the HTTP script converted from it.
+
 Once you have a recording:
 
 - **Replay** the captured flow with self-healing selectors that tolerate small UI

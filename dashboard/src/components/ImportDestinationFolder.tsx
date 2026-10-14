@@ -213,7 +213,9 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
           : loadingFolders
             ? 'Loading script folders… Project root remains the default destination.'
             : options.length === 0 && !loadError
-              ? 'No script folders exist in this project. Imports will save to Project root unless a Project Administrator creates one.'
+              ? folderCreationAccess === 'allowed'
+                ? 'No script folders exist in this project yet. Imports will save to Project root, or create a folder below.'
+                : 'No script folders exist in this project. Imports will save to Project root.'
               : value
                 ? 'Imported scripts will be saved in the selected script folder.'
                 : 'Imported scripts will be saved at Project root.'}

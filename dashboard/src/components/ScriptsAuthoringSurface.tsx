@@ -53,7 +53,7 @@ export interface ScriptsAuthoringSurfaceProps {
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
   /** Recording Studio's method, when the page holds it (to route it). */
   recordMethod?: 'browser' | 'proxy'
-  onRecordMethodChange?: (method: 'browser' | 'proxy') => void
+  onRecordMethodChange?: (method: 'browser' | 'proxy', choice: { byUser: boolean }) => void
   onReturnToDraftSource: () => void
 }
 

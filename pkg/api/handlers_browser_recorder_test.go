@@ -9,11 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -2821,6 +2823,135 @@ func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	// A different project must not be able to reuse proj-1's raw storage state.
 	if _, err := confineStorageStatePath(storagePath, "proj-2"); err == nil {
 		t.Errorf("storage_state_path from another project must be rejected, got no error")
+	}
+}
+
+// A saved login state is listed for its project, by the recording it came
+// from and the path a recording start takes; another project's are not.
+func TestListBrowserRecordingStorageStates(t *testing.T) {
+	exportDir := t.TempDir()
+	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)
+	artifact := recordedBrowserArtifact()
+	artifact.StorageState = []byte(`{"cookies":[{"name":"sid","value":"cookie-secret"}]}`)
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(artifact))
+	list := func(projectID string) []browserStorageStateSummary {
+		t.Helper()
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/storage-states?project_id="+projectID, nil))
+		if resp.Code != http.StatusOK {
+			t.Fatalf("list status = %d body=%s", resp.Code, resp.Body.String())
+		}
+		if strings.Contains(resp.Body.String(), "cookie-secret") {
+			t.Fatalf("the list served a saved state's content: %s", resp.Body.String())
+		}
+		var payload struct {
+			States []browserStorageStateSummary `json:"states"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload.States
+	}
+	if states := list("proj-1"); len(states) != 0 {
+		t.Fatalf("states before any save = %+v, want none", states)
+	}
+
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+	// A persist-only save keeps the state and answers with its path, not the
+	// (scrubbed) state itself.
+	save := httptest.NewRecorder()
+	server.mux.ServeHTTP(save, httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/storage-state?persist_only=true", nil))
+	if save.Code != http.StatusOK {
+		t.Fatalf("save status = %d body=%s", save.Code, save.Body.String())
+	}
+	var saved struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(save.Body.Bytes(), &saved); err != nil || saved.Path == "" || strings.Contains(save.Body.String(), "cookies") {
+		t.Fatalf("persist-only save = %s, want only the kept path", save.Body.String())
+	}
+
+	states := list("proj-1")
+	if len(states) != 1 {
+		t.Fatalf("states = %+v, want the one saved", states)
+	}
+	state := states[0]
+	if state.RecordingID != id || state.Name != "Checkout" || state.SavedAt.IsZero() || state.ExpiresAt == nil || !state.ExpiresAt.After(state.SavedAt) {
+		t.Fatalf("state = %+v, want recording %s named Checkout with a save and expiry time", state, id)
+	}
+	if state.Path != saved.Path {
+		t.Fatalf("listed path %q, saved path %q; want the same", state.Path, saved.Path)
+	}
+	// The path is the form a recording start accepts, within this project only.
+	if _, err := confineStorageStatePath(state.Path, "proj-1"); err != nil {
+		t.Fatalf("listed path %q is not reusable in its project: %v", state.Path, err)
+	}
+	if _, err := confineStorageStatePath(state.Path, "proj-2"); err == nil {
+		t.Fatalf("listed path %q is reusable from another project", state.Path)
+	}
+	if others := list("proj-2"); len(others) != 0 {
+		t.Fatalf("another project's states = %+v, want none", others)
+	}
+
+	// A state whose recording is gone is named without the recording ID.
+	orphan := filepath.Join(exportDir, browserStorageStateDir, "proj-1", "Old-Run-"+uuid.New().String()+browserStorageStateFileSuffix)
+	if err := os.WriteFile(orphan, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{}
+	for _, listed := range list("proj-1") {
+		names = append(names, listed.Name)
+	}
+	if !slices.Contains(names, "Old-Run") {
+		t.Fatalf("names = %v, want the orphaned state named Old-Run", names)
+	}
+}
+
+// A persist-only save refuses, rather than reports success, when the recorder
+// cannot keep the state.
+func TestPersistOnlyStorageStateSaveFailsUnlessKept(t *testing.T) {
+	notADir := filepath.Join(t.TempDir(), "exports")
+	if err := os.WriteFile(notADir, []byte("a file, not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APEXLOAD_EXPORT_DIR", notADir)
+	artifact := recordedBrowserArtifact()
+	artifact.StorageState = []byte(`{"cookies":[{"name":"sid","value":"cookie-secret"}]}`)
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(artifact))
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	save := httptest.NewRecorder()
+	server.mux.ServeHTTP(save, httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/storage-state?persist_only=true", nil))
+	// A 5xx detail is logged, not served; persist-only has no other 500 (it
+	// skips the scrub), and a kept state would carry its path header.
+	if save.Code != http.StatusInternalServerError || save.Header().Get("X-APEXLoad-StorageState-Path") != "" || strings.Contains(save.Body.String(), "cookie") {
+		t.Fatalf("persist-only save = %d %v %s, want 500 with nothing kept and no state", save.Code, save.Header(), save.Body.String())
+	}
+}
+
+// Saved login states are for those who can record in the project.
+func TestListBrowserRecordingStorageStatesNeedsRecordingAccess(t *testing.T) {
+	t.Setenv("APEXLOAD_EXPORT_DIR", t.TempDir())
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+	for _, tt := range []struct {
+		role string
+		want int
+	}{
+		{role: RoleViewer, want: http.StatusForbidden},
+		{role: RoleEditor, want: http.StatusOK},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/storage-states?project_id="+projectID, nil)
+		req.Header.Set("X-Auth-Request-User", tt.role+"-user")
+		req.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+tt.role)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != tt.want {
+			t.Fatalf("%s list = %d, want %d body=%s", tt.role, resp.Code, tt.want, resp.Body.String())
+		}
 	}
 }
 

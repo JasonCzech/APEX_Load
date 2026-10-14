@@ -36231,6 +36231,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: persist_only
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Browser Recorder
       x-handler: handleExportBrowserRecordingStorageState
@@ -38355,6 +38361,50 @@ paths:
       tags:
         - Browser Recorder
       x-handler: handleVerifyBrowserRecording
+  /api/v1/browser-recorder/storage-states:
+    get:
+      summary: List Browser Recording Storage States
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Editor, ProjectAdmin'
+      operationId: handleListBrowserRecordingStorageStates
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Browser Recorder
+      x-handler: handleListBrowserRecordingStorageStates
   /api/v1/browser-replay/sessions/{session_id}:
     get:
       summary: Get Browser Replay Session
