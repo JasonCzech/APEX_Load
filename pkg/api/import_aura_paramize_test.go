@@ -386,11 +386,11 @@ func bodyPlacements(request dsl.Action) map[string]dsl.Action {
 	}
 }
 
-// A body difference review cannot locate, here a SOAP body whose token-like
-// message ID review shows as {{fn.uuid()}}, is protected by the draft's exact
-// execution digest.
+// A body difference review cannot locate, here an XML password whose CDATA
+// holds the markup after it, is protected by the draft's exact execution
+// digest.
 func TestRequestBodyProjectionDifferenceRequiresExactDraftProtection(t *testing.T) {
-	request := dsl.Action{Type: "POST", Target: "/ws", Body: unalignedSOAPBody("synthetic-credential", "")}
+	request := dsl.Action{Type: "POST", Target: "/login", Body: unalignedXMLBody("synthetic-credential", "synthetic-token")}
 	for name, action := range bodyPlacements(request) {
 		t.Run(name, func(t *testing.T) {
 			script := &dsl.Script{Name: "safe", Protocol: "http", Actions: []dsl.Action{action}}
@@ -410,20 +410,26 @@ func TestRequestBodyProjectionDifferenceRequiresExactDraftProtection(t *testing.
 	}
 }
 
-// A credential nested in a JSON form value keeps its recorded encoding, so
-// review locates it and its digest protects the draft, as for any guided body
-// credential, instead of the draft's exact execution digest.
-func TestLocatedNestedFormCredentialKeepsGuidedDraftProtection(t *testing.T) {
-	request := dsl.Action{Type: "POST", Target: "/aura", Body: "message=" + url.QueryEscape(`{"actions":[{"id":"synthetic-id","descriptor":"synthetic://save","params":{"apiToken":"synthetic-credential","recordId":"safe"}}]}`)}
-	for name, action := range bodyPlacements(request) {
-		t.Run(name, func(t *testing.T) {
-			script := &dsl.Script{Name: "safe", Protocol: "http", Actions: []dsl.Action{action}}
-			fingerprint, err := fingerprintImportDraftCredentials(script)
-			if err != nil || !fingerprint.HasRawCredentials || fingerprint.FullDigest != "" ||
-				fingerprint.StructureDigest == "" || len(fingerprint.CredentialDigests) != 1 {
-				t.Fatalf("fingerprint = %+v, %v; want the located credential's digest", fingerprint, err)
-			}
-		})
+// A credential nested in a JSON form value keeps its recorded encoding, and a
+// WS-Security password lines up with its recording although review shows the
+// message ID beside it as a fresh UUID. Review locates each, and its digest
+// protects the draft, as for any guided body credential, instead of the
+// draft's exact execution digest.
+func TestLocatedBodyCredentialsKeepGuidedDraftProtection(t *testing.T) {
+	for body, request := range map[string]dsl.Action{
+		"nested form": {Type: "POST", Target: "/aura", Body: "message=" + url.QueryEscape(`{"actions":[{"id":"synthetic-id","descriptor":"synthetic://save","params":{"apiToken":"synthetic-credential","recordId":"safe"}}]}`)},
+		"SOAP":        {Type: "POST", Target: "/ws", Body: soapLoginBody("synthetic-credential")},
+	} {
+		for name, action := range bodyPlacements(request) {
+			t.Run(body+"/"+name, func(t *testing.T) {
+				script := &dsl.Script{Name: "safe", Protocol: "http", Actions: []dsl.Action{action}}
+				fingerprint, err := fingerprintImportDraftCredentials(script)
+				if err != nil || !fingerprint.HasRawCredentials || fingerprint.FullDigest != "" ||
+					fingerprint.StructureDigest == "" || len(fingerprint.CredentialDigests) != 1 {
+					t.Fatalf("fingerprint = %+v, %v; want the located credential's digest", fingerprint, err)
+				}
+			})
+		}
 	}
 }
 

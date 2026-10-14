@@ -1210,6 +1210,10 @@ func applyPreservedRedactedSecretBindings(
 		if !rawOK || !projectedOK {
 			return nil, requirements, &staleSecretBindingRequirementsError{requirements: requirements}
 		}
+		// The field is rebuilt from the projection's text around each
+		// sentinel, so that text must hold the recorded message IDs, not the
+		// UUID template review shows in their place.
+		projectedValue = projectedMessageIDsAsRecorded(rawValue, projectedValue)
 		removed, aligned := extractLinearlyProjectedRedactions(rawValue, projectedValue)
 		if !aligned {
 			refreshed := annotateSingleScriptSecretBindingRequirements(
@@ -1576,12 +1580,19 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 // bytes already hold every disclosure placeholder its projection shows, so
 // masking replaced nothing real. An unaligned field cannot say which recorded
 // bytes an occurrence is; a projection that adds placeholders masked at least
-// one real value, and the field then keeps a usable recording.
+// one real value, and the field then keeps a usable recording. A placeholder
+// recorded as an XML message ID does not count: review shows that ID as
+// projectedXMLMessageID, not as a placeholder.
 func recordedPlaceholdersCoverProjection(raw, projected string) bool {
 	count := func(value string) int {
 		return strings.Count(strings.ToLower(value), strings.ToLower(maskedScriptSecret))
 	}
 	recorded := count(raw)
+	if pairs, ok := rewrittenMessageIDs(raw, projected); ok {
+		for _, pair := range pairs {
+			recorded -= count(raw[pair[2]:pair[3]])
+		}
+	}
 	return recorded > 0 && recorded >= count(projected)
 }
 
