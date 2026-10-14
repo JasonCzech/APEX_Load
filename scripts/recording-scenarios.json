@@ -8,7 +8,7 @@
   "recorded browser flow consumes a fresh browser extraction result",
   "controller: capture checkout, verify, save and replay",
   "agent: capture checkout, verify, save and replay",
-  "unavailable and disconnected agent can be verified and paired again",
+  "unavailable and disconnected agent can be connected again",
   "dashboard and closed-shadow toolbar control the same live session",
   "capture modern web surfaces and preserve conversion warnings",
   "conversion preview is ephemeral and changing options invalidates verification before unverified save",

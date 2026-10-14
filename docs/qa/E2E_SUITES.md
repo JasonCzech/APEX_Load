@@ -502,7 +502,7 @@ selections run a subset with the same zero-skip and zero-retry requirement.
 | `reject duplicate capture, survive dashboard reload and recover after window closure` (`recovery`) | Invalid URL; duplicate active session; dashboard reload; window-close recovery; minimal toolbar stop and HAR off | Invalid field, 409 duplicate, adopted live session, preserved steps/`browser_closed`, successful verification and subsequent session without HAR |
 | `mobile recording reuses exported session state with HAR disabled` (`recovery`) | Mobile preset, minimal toolbar, HAR off, storage-state export/reuse | Touch-enabled runtime; no HAR; exported state verifies; next browser actually restores a localStorage choice from capture |
 | `force-finish preserves captured steps and releases a stuck recording for the next session` (`recovery`) | Deterministic test-tag stop gate, Force Finish | Stopped status with steps retained, successful verification, subsequent capture/stop succeeds |
-| `unavailable and disconnected agent can be verified and paired again` (`browser`) | Unreachable verification, killed agent, failed launch, Disconnect, replacement agent | Visible verification/launch failures; new real agent pairs, captures and verifies successfully |
+| `unavailable and disconnected agent can be connected again` (`browser`) | Unreachable verification, killed agent, failed launch, Disconnect, replacement agent | Visible verification/launch failures; new real agent pairs, captures and verifies successfully |
 
 Every `debug()` journey exports its session and checks the report outcome. Multi-output conversions explicitly check output count. Executable replay cases
 verify each output; the iPad emulation identity cases deliberately save unverified
