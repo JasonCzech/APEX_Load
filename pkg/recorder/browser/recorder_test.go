@@ -1599,3 +1599,30 @@ func TestRecorderLaunchArgsDisableQUIC(t *testing.T) {
 		t.Fatalf("args = %v", args)
 	}
 }
+
+type fakeConsoleMessage struct {
+	playwright.ConsoleMessage
+	location *playwright.ConsoleMessageLocation
+}
+
+func (m fakeConsoleMessage) Location() *playwright.ConsoleMessageLocation { return m.location }
+
+// An error a third-party frame logs (a recorded Tableau page embeds video
+// and ad iframes) is listed under that frame's host; one with no web source
+// stays with the recorded page.
+func TestConsoleMessageSource(t *testing.T) {
+	page := "https://shop.example/checkout"
+	for _, test := range []struct {
+		location *playwright.ConsoleMessageLocation
+		want     string
+	}{
+		{&playwright.ConsoleMessageLocation{URL: "https://players.video.example/player.js"}, "https://players.video.example/player.js"},
+		{&playwright.ConsoleMessageLocation{URL: "about:blank"}, page},
+		{&playwright.ConsoleMessageLocation{URL: ""}, page},
+		{nil, page},
+	} {
+		if got := consoleMessageSource(fakeConsoleMessage{location: test.location}, page); got != test.want {
+			t.Errorf("consoleMessageSource(%+v) = %q, want %q", test.location, got, test.want)
+		}
+	}
+}

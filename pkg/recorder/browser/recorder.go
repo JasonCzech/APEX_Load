@@ -760,7 +760,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		if msg.Type() != "error" {
 			return
 		}
-		r.recordAnnotation(Annotation{Kind: "console_error", Text: strings.TrimSpace(msg.Text()), URL: page.URL()})
+		r.recordAnnotation(Annotation{Kind: "console_error", Text: strings.TrimSpace(msg.Text()), URL: consoleMessageSource(msg, page.URL())})
 	})
 	page.OnRequestFailed(func(req playwright.Request) {
 		failure := req.Failure()
@@ -783,6 +783,20 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	page.OnClose(func(closed playwright.Page) {
 		r.handlePageClose(closed)
 	})
+}
+
+// consoleMessageSource is the document or script that logged a console
+// message, so an error a third-party frame raised (an ad or video player
+// iframe) is listed under that frame's host, not the recorded page's. A
+// message with no web source (about:blank, the browser itself) stays with
+// the page.
+func consoleMessageSource(msg playwright.ConsoleMessage, pageURL string) string {
+	if location := msg.Location(); location != nil {
+		if parsed, err := url.Parse(location.URL); err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+			return location.URL
+		}
+	}
+	return pageURL
 }
 
 func (r *Recorder) handlePageClose(closed playwright.Page) {

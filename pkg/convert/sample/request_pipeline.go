@@ -22,10 +22,19 @@ func finalizeSampleRequestAction(
 	registry *credentialpolicy.NameRegistry,
 	provenVars map[string]struct{},
 ) (dsl.Action, requestimport.Report, error) {
+	pointer := fmt.Sprintf("line:%d", location.StartLine)
+	if format == "har" && ex.SourceEntryID > 0 {
+		// A recorded HAR is often one line, so its entry names the request;
+		// the line still focuses the source view of a formatted HAR file.
+		pointer = fmt.Sprintf("HAR entry %d", ex.SourceEntryID)
+		if location.StartLine > 1 {
+			pointer += fmt.Sprintf(", line:%d", location.StartLine)
+		}
+	}
 	source := requestimport.SourceRef{
 		Format:  format,
 		Path:    location.SourceFile,
-		Pointer: fmt.Sprintf("line:%d", location.StartLine),
+		Pointer: pointer,
 		ItemID:  action.Name,
 	}
 	headers := make(requestimport.HeaderList, 0, len(action.HeaderList))

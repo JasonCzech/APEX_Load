@@ -1136,3 +1136,39 @@ func TestConvertSession_WarnsWhenCaptureWasTruncated(t *testing.T) {
 		t.Fatalf("warnings = %q, want retained drop counts", warnings)
 	}
 }
+
+// Credential findings name the recorded request they belong to: a recorded
+// Tableau Public session listed "Imported credential (line:1)" seven times,
+// because a proxy capture is a one-line HAR.
+func TestConvertSession_NamesCredentialFindingsByRequestOnce(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Credential Flow",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:        7,
+				Method:     "POST",
+				URL:        "http://example.com/login",
+				Path:       "/login",
+				Host:       "example.com",
+				StatusCode: 200,
+				Headers:    map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+				Body:       "password=synthetic-pass-4471&api_key=synthetic-key-9902",
+			},
+		},
+	}
+	result := ConvertSession(s, "")
+	var credential []string
+	for _, warning := range result.Warnings {
+		if strings.HasPrefix(strings.ToLower(warning), "imported credential") {
+			credential = append(credential, warning)
+		}
+		if strings.Contains(warning, "line:") {
+			t.Errorf("warning names a source line: %q", warning)
+		}
+	}
+	if len(credential) != 1 || !strings.Contains(credential[0], "(recorded request 7)") {
+		t.Fatalf("credential warnings = %q, want one naming recorded request 7", credential)
+	}
+}

@@ -68,3 +68,31 @@ func TestHAREntryListShortensLongLists(t *testing.T) {
 		t.Fatalf("single = %q", got)
 	}
 }
+
+// A finding on a HAR request names its entry, and the line too when the HAR
+// spans lines, so the source view can still focus it. A one-line recorded
+// HAR said "line:1" for every request.
+func TestConvertHARNamesRequestFindingsByEntry(t *testing.T) {
+	entry := `{"startedDateTime":"2026-01-01T00:00:00Z","time":5,"request":{"method":"POST","url":"https://viz.example.test/login","headers":[{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"password=synthetic-pass-5521"}},"response":{"status":200,"headers":[],"content":{"text":""}}}`
+	for _, test := range []struct {
+		content string
+		want    string
+	}{
+		{`{"log":{"entries":[` + entry + `]}}`, "HAR entry 1"},
+		{"{\n  \"log\": {\n    \"entries\": [\n" + entry + "\n    ]\n  }\n}", "HAR entry 1, line:4"},
+	} {
+		result, err := Convert(ImportRequest{Name: "viz", Format: "har", Content: test.content})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var locations []string
+		for _, item := range result.Unsupported {
+			if item.Element == "imported credential" {
+				locations = append(locations, item.Location)
+			}
+		}
+		if len(locations) == 0 || locations[0] != test.want {
+			t.Fatalf("credential finding locations = %q, want %q", locations, test.want)
+		}
+	}
+}

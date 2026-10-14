@@ -26,7 +26,7 @@ import (
 // recording, whose asset classification travels with it.
 const harNoteForRecordings = "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved"
 
-var harEntryLocation = regexp.MustCompile(`^HAR entry (\d+)$`)
+var harEntryLocation = regexp.MustCompile(`^HAR entry (\d+)(?:, line:\d+)?$`)
 
 // convertThroughSharedPipeline converts the HTTP traffic of a recording.
 func convertThroughSharedPipeline(session *Session, name string, opts ConvertOptions, policy headerPolicy, result *ConvertResult) {

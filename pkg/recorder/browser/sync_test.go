@@ -95,6 +95,28 @@ func TestExplicitNavigationsKeepsOnlyFinalPreFirstNavigation(t *testing.T) {
 	}
 }
 
+// A single-page app restates the URL it was just navigated to (a typed
+// navigation in a recorded Tableau Public walk became two navigate actions);
+// the repeat is not a navigation of its own, unless a step came between. A
+// changed fragment is a new route in a hash-routed app.
+func TestExplicitNavigationsSkipsRepeatedURLs(t *testing.T) {
+	steps := []Step{
+		{Seq: 1, Kind: StepClick, Timestamp: ts(1000), URL: "https://x/"},
+		{Seq: 2, Kind: StepClick, Timestamp: ts(80000), URL: "https://x/day"},
+	}
+	navs := []NavEvent{
+		{Timestamp: ts(100), URL: "https://x/"},
+		{Timestamp: ts(60000), URL: "https://x/day"},       // typed URL, explicit
+		{Timestamp: ts(60400), URL: "https://x/day"},       // restated, skipped
+		{Timestamp: ts(61000), URL: "https://x/day#/week"}, // new hash route, explicit
+		{Timestamp: ts(90000), URL: "https://x/day#/week"}, // after a step, explicit
+	}
+	got := explicitNavigations(steps, navs)
+	if len(got) != 3 || got[0] != 1 || got[1] != 3 || got[2] != 4 {
+		t.Errorf("explicitNavigations() = %v, want [1 3 4]", got)
+	}
+}
+
 func TestSameDocumentURL(t *testing.T) {
 	if !sameDocumentURL("https://x/app?q=1#before", "https://x/app?q=1#after") {
 		t.Fatal("sameDocumentURL should ignore fragments")

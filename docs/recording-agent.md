@@ -42,7 +42,9 @@ longer match, so `t.co` does not catch `microsoft.com`. When the recording
 stops, its warnings say how many HAR entries each entry left out and which
 entries matched nothing. The recording panel groups console and network
 issues by host and error, the recorded site's own first, and folds requests
-cancelled as pages moved on into one line.
+cancelled as pages moved on into one line. A console error is listed under the
+host of the script or frame that logged it, so errors from embedded players
+and ad frames do not count against the recorded site.
 
 Verify replays a recording headless by default. Some sites refuse a headless
 browser they let a person's browser through; with the agent connected,

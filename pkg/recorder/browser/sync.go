@@ -86,6 +86,13 @@ func explicitNavigations(steps []Step, navs []NavEvent) []int {
 		if i == 0 {
 			continue // initial goto, emitted from StartURL
 		}
+		if strings.TrimSpace(navs[i-1].URL) == strings.TrimSpace(nav.URL) && !convertibleStepBetween(steps, navs[i-1].Timestamp, nav.Timestamp) {
+			// The page moved to the URL it was already on (a single-page app
+			// restating its URL after a typed navigation); replaying it twice
+			// only reloads the page. A changed fragment is a new route in a
+			// hash-routed app, so it still counts.
+			continue
+		}
 		if haveFirstStep && nav.Timestamp.Before(firstStepAt) {
 			if i != lastPreFirst || sameDocumentURL(initialURL, nav.URL) {
 				continue
@@ -108,6 +115,17 @@ func explicitNavigations(steps []Step, navs []NavEvent) []int {
 		}
 	}
 	return out
+}
+
+// convertibleStepBetween reports whether a step that becomes an action was
+// recorded after from and no later than to.
+func convertibleStepBetween(steps []Step, from, to time.Time) bool {
+	for _, step := range steps {
+		if !step.skipForConvert() && step.Timestamp.After(from) && !step.Timestamp.After(to) {
+			return true
+		}
+	}
+	return false
 }
 
 func lastPreFirstNavigationIndex(navs []NavEvent, firstStepAt time.Time, haveFirstStep bool) int {
