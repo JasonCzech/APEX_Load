@@ -19,7 +19,6 @@ import { useApi } from "../hooks/useApi";
 import {
   API_ORIGIN,
   apiFetch,
-  DESKTOP_CAPABILITY_SESSION_KEY,
   hasDesktopApiCapability,
   trimTrailingSlash,
 } from "../hooks/apiClient";
@@ -551,83 +550,6 @@ async function writeClipboardText(text: string): Promise<void> {
     );
   }
   throw new Error("Clipboard access is not available in this browser");
-}
-
-// The desktop shell embeds the dashboard in a Wails WebView where window.open
-// escapes to the system browser, so the popup panel is web-only there. Wails
-// production has a custom origin while `wails dev` uses Vite's HTTP origin;
-// isDesktopSurface covers both by also feature-detecting the native bridge.
-function isWailsShell(): boolean {
-  return isDesktopSurface();
-}
-
-function browserRecorderPanelURL(sessionId: string, folderId?: string | null): string {
-  const params = new URLSearchParams({ session: sessionId });
-  if (folderId) params.set("folderId", folderId);
-  const fragment = `/recorder-panel?${params.toString()}`;
-  if (typeof window === "undefined") return `#${fragment}`;
-  const url = new URL(window.location.href);
-  url.hash = fragment;
-  return url.toString();
-}
-
-function openBrowserRecorderPanelPopup(panelURL: string): void {
-  if (typeof window === "undefined") {
-    throw new Error("The browser recorder control panel is unavailable");
-  }
-  const target = new URL(panelURL, window.location.href);
-  if (
-    target.origin !== window.location.origin ||
-    target.username !== "" ||
-    target.password !== "" ||
-    !target.hash.startsWith("#/recorder-panel?session=")
-  ) {
-    throw new Error("The browser recorder returned an unsafe control panel URL");
-  }
-
-  const features = "width=440,height=760";
-  if (!hasDesktopApiCapability()) {
-    const popup = window.open(
-      target.toString(),
-      "apexload-browser-recorder",
-      `${features},noopener,noreferrer`,
-    );
-    if (!popup) {
-      throw new Error("Allow pop-ups to open the browser recorder control panel");
-    }
-    return;
-  }
-
-  // A noopener child does not inherit sessionStorage, which is where a
-  // system-browser desktop tab keeps its controller capability. Create a fresh
-  // same-origin blank child, reduce its copied storage to that one capability,
-  // sever the opener synchronously, and only then navigate to the panel SPA.
-  const capability = window.sessionStorage
-    .getItem(DESKTOP_CAPABILITY_SESSION_KEY)
-    ?.trim();
-  if (!capability) {
-    throw new Error(
-      "Reopen APEX Load from the desktop app before opening the recorder control panel",
-    );
-  }
-  const popup = window.open("", "_blank", features);
-  if (!popup) {
-    throw new Error("Allow pop-ups to open the browser recorder control panel");
-  }
-  try {
-    popup.opener = null;
-    popup.sessionStorage.clear();
-    popup.sessionStorage.setItem(
-      DESKTOP_CAPABILITY_SESSION_KEY,
-      capability,
-    );
-    popup.location.replace(target.toString());
-  } catch {
-    popup.close();
-    throw new Error(
-      "Unable to authorize the browser recorder control panel safely",
-    );
-  }
 }
 
 interface RecordingStudioProps {
@@ -1724,37 +1646,11 @@ export default function RecordingStudio({
       if (refreshScopeRef.current !== sourceRecorderScope) return;
       const sessionId = res.session.id;
       setBrowserPanelSessionId(sessionId);
-      const panelURL = browserRecorderPanelURL(sessionId, folderId);
-      if (!isWailsShell()) {
-        try {
-          await api.openBrowserRecordingControlPanel(sessionId, panelURL);
-          if (refreshScopeRef.current !== sourceRecorderScope) return;
-          showFeedback(
-            "Recording browser launched — control panel opened beside it",
-          );
-        } catch {
-          if (refreshScopeRef.current !== sourceRecorderScope) return;
-          // Older agents/controllers do not expose the same-browser companion
-          // tab endpoint. Keep the separate popup as a fallback.
-          try {
-            openBrowserRecorderPanelPopup(panelURL);
-            showFeedback(
-              "Recording browser launched — interact with the page, then stop from the control panel",
-            );
-          } catch (popupError) {
-            showFeedback(
-              popupError instanceof Error
-                ? `Recording started, but the control panel could not open: ${popupError.message}`
-                : "Recording started, but the control panel could not open",
-              "error",
-            );
-          }
-        }
-      } else {
-        showFeedback(
-          "Recording browser launched — interact with the page, then stop from the control panel",
-        );
-      }
+      // The recorded page carries its own control bar and this studio docks
+      // the full panel below, so no companion window is opened.
+      showFeedback(
+        "Recording browser launched — use the bar in the recorded page or the panel below",
+      );
     } catch (e: any) {
       // Older controllers return the browser engine's call log; keep only the cause.
       if (refreshScopeRef.current === sourceRecorderScope)
@@ -3255,10 +3151,10 @@ export default function RecordingStudio({
                       onChange={(e) => setBrowserSidebar(e.target.checked)}
                     />
                     <span>
-                      Show in-page advanced sidebar{" "}
+                      Allow the in-page advanced sidebar{" "}
                       <span className="rec-hint">
-                        (section, transactions, notes, recent steps — uncheck
-                        for the minimal pause/assert toolbar)
+                        (section, transactions, notes, recent steps behind the
+                        bar's ⋯ button — uncheck for the minimal pause/assert bar)
                       </span>
                     </span>
                   </label>
@@ -3357,11 +3253,14 @@ export default function RecordingStudio({
                 {browserStartInProgress ? "Starting browser…" : "Start browser recording"}
               </button>
               <p className="rec-browser-note">
-                {browserWindowLocation} with an in-page recording sidebar
-                (sections, transactions, notes, recent steps, pause and
-                verification picker) you can drag to any corner. Manage the
-                session from there or from the control panel docked below,
-                which also opens as a compact popup window.
+                {browserWindowLocation} with a small recording bar (pause,
+                assert, stop) that you can drag along any edge or hide to a
+                tab
+                {browserSidebar
+                  ? "; its ⋯ button opens sections, transactions, notes and recent steps"
+                  : ""}
+                . Manage the session from there or from the control panel
+                docked below.
               </p>
             </div>
           )}

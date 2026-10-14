@@ -43,9 +43,18 @@
     recentSteps: []
   };
 
+  // Pause and pick pushes carry the recorder's sequence number; a frame keeps
+  // the newest it has applied, so a push that arrives late is ignored.
+  let pausedStateSeq = 0;
+  let pickStateSeq = 0;
+
   // The Go recorder owns the authoritative pause state (it also gates events
   // server-side); this setter keeps the local gate and toolbar in sync.
-  window.__apexloadRecorderSetPaused = (value) => {
+  window.__apexloadRecorderSetPaused = (value, seq) => {
+    if (typeof seq === 'number') {
+      if (seq < pausedStateSeq) return;
+      pausedStateSeq = seq;
+    }
     if (value) {
       for (const state of editableFillStates.values()) clearTimeout(state.timer);
       editableFillStates.clear();
@@ -57,7 +66,11 @@
 
   // The Go recorder owns the authoritative element-picker (assert) state too,
   // so the control panel and the in-page toolbar never diverge.
-  window.__apexloadRecorderSetAssertMode = (value) => {
+  window.__apexloadRecorderSetAssertMode = (value, seq) => {
+    if (typeof seq === 'number') {
+      if (seq < pickStateSeq) return;
+      pickStateSeq = seq;
+    }
     assertMode = !!value && !paused;
     refreshToolbar();
   };
@@ -96,7 +109,8 @@
   const CONTROL_NONCE_SUFFIX = ',"nonce":' + SAFE_JSON_STRINGIFY(CONTROL_NONCE) + '}';
   const pendingBindings = new Set();
   const controlKinds = new Set(['recording_stop', 'delete_last_step', 'step_exclude', 'step_mark',
-    'section_set', 'transaction_start', 'transaction_end', 'note_add', 'pause_toggle', 'pick_toggle', 'navigate']);
+    'section_set', 'transaction_start', 'transaction_end', 'note_add', 'pause_toggle', 'pick_toggle', 'navigate',
+    'sidebar_layout']);
 
   function send(payload) {
     if (!RECORD_BINDING || !payload || typeof payload !== 'object') return;
@@ -813,6 +827,15 @@
 
   window.addEventListener('keydown', (ev) => {
     if (!ev.isTrusted) return;
+    // Esc cancels an assertion pick. The page never sees it and it is not a step.
+    if (assertMode && ev.key === 'Escape') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      assertMode = false;
+      refreshToolbar();
+      send({ kind: 'pick_toggle', on: false, ts: Date.now() });
+      return;
+    }
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
@@ -836,27 +859,41 @@
   }, true);
 
   // --- Control panel (main frame only), isolated in a closed shadow root ---
-  // Collapsed it is the minimal REC/Pause/Assert bar; expanded it is a
-  // draggable, corner-snapping advanced sidebar (section / transactions / notes
-  // / navigate / recent-steps). Every action round-trips through the
-  // __apexloadRecord binding so the Go recorder stays authoritative, and the
-  // recorder pushes live state back via __apexloadRecorderSetState. Because the
-  // whole UI lives inside the closed shadow host, the capture listeners' existing
-  // isToolbar() guard keeps its own clicks/keystrokes out of the recording.
+  // Collapsed it is the minimal REC/Pause/Assert bar; expanded it is the
+  // advanced sidebar (section / transactions / notes / navigate / recent
+  // steps); hidden it is a small tab at the viewport edge, so nothing of the
+  // recorded page stays covered. The user drags it along any edge. Where it sits
+  // lives in the recorder's live state (never the site's storage), so it
+  // follows the user across documents, origins and tabs. Every action
+  // round-trips through the __apexloadRecord binding so the Go recorder stays
+  // authoritative, and the recorder pushes live state back via
+  // __apexloadRecorderSetState. Because the whole UI lives inside the closed
+  // shadow host, the capture listeners' existing isToolbar() guard keeps its own
+  // clicks/keystrokes out of the recording.
 
   let refreshToolbar = () => {};
 
   const TOOLBAR_STYLE =
     ':host{all:initial}' +
     '.wrap{position:fixed;z-index:2147483647}' +
-    '.wrap.corner-tl{top:16px;left:16px}.wrap.corner-tr{top:16px;right:16px}' +
-    '.wrap.corner-bl{bottom:16px;left:16px}.wrap.corner-br{bottom:16px;right:16px}' +
+    // While picking an assertion target the bar steps aside: see-through and
+    // click-through, so the element beneath it can be picked. The Assert
+    // button alone stays solid and clickable, as the way to cancel.
+    '.wrap.picking{pointer-events:none}' +
+    '.wrap.picking .bar,.wrap.picking .panel,.wrap.picking .tab{background:rgba(28,35,51,.35);box-shadow:none}' +
+    '.wrap.picking .bar>:not(.assert),.wrap.picking .panel>:not(.prow),.wrap.picking .prow>:not(.assert),' +
+    '.wrap.picking .tab>*{opacity:.35}' +
+    '.wrap.picking .assert{pointer-events:auto}' +
     '.bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-radius:8px;' +
     'background:#1c2333;color:#e6e9f0;font:12px/1.4 system-ui,sans-serif;' +
     'box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:grab}' +
     '.panel{display:none;flex-direction:column;gap:8px;width:300px;max-height:calc(100vh - 32px);' +
     'overflow:auto;padding:10px;border-radius:10px;background:#1c2333;color:#e6e9f0;' +
     'font:12px/1.4 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.45)}' +
+    '.tab{display:none;align-items:center;justify-content:center;padding:0;border:1px solid #3a4357;' +
+    'border-radius:7px;background:#1c2333;box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer}' +
+    '.tab:hover{background:#333d54}' +
+    '.tab.h{width:48px;height:14px}.tab.v{width:14px;height:48px}' +
     '.wrap.dragging .bar,.wrap.dragging .phead{cursor:grabbing}' +
     'button{border:1px solid #3a4357;border-radius:6px;background:#2a3245;color:#e6e9f0;' +
     'padding:4px 8px;font:inherit;cursor:pointer}' +
@@ -895,11 +932,13 @@
   const TOOLBAR_HTML =
     '<div class="wrap">' +
     '<div class="bar"><span class="dot"></span><span class="label">REC</span>' +
-    '<button class="pause">Pause</button><button class="assert">Assert</button><button class="stopRec" title="Stop recording">Stop</button>' +
-    '<button class="expand" title="Advanced controls">⋯</button></div>' +
+    '<button class="pause">Pause</button><button class="assert" title="Pick an element to assert">Assert</button><button class="stopRec" title="Stop recording">Stop</button>' +
+    '<button class="expand" title="Advanced controls">⋯</button>' +
+    '<button class="hide" title="Hide the recorder bar to a tab at the edge">Hide</button></div>' +
     '<div class="panel">' +
     '<div class="phead"><span class="dot"></span><span class="title">APEX Recorder</span>' +
     '<span class="label"></span><span class="spacer"></span>' +
+    '<button class="hide" title="Hide the recorder bar to a tab at the edge">Hide</button>' +
     '<button class="collapse" title="Collapse">▾</button></div>' +
     '<div class="prow"><button class="pause">Pause</button><button class="assert">Assert</button><button class="stopRec" title="Stop recording">Stop</button></div>' +
     '<div class="counts"></div>' +
@@ -915,10 +954,38 @@
     '<div class="steps"><div class="stepsHead"><span class="slabel">Recent steps</span>' +
     '<button class="undo">Undo last</button></div><div class="stepsList"></div></div>' +
     '<div class="hint">Convert &amp; save from the APEX Load dashboard.</div>' +
-    '</div></div>';
+    '</div>' +
+    '<button class="tab" title="Show the recorder bar" aria-label="Show the recorder bar"><span class="dot"></span></button>' +
+    '</div>';
 
-  function lsGet(key) { try { return localStorage.getItem('apexload_rec_' + key); } catch (e) { return null; } }
-  function lsSet(key, val) { try { localStorage.setItem('apexload_rec_' + key, val); } catch (e) { /* ignore */ } }
+  const EDGES = ['top', 'bottom', 'left', 'right'];
+  // How long a local move/hide/expand wins over pushed layouts that predate it.
+  const LOCAL_LAYOUT_GRACE_MS = 1500;
+  // Shown at the configured default if the recorder's live state never arrives.
+  const LAYOUT_WAIT_MS = 1000;
+
+  function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+
+  // The visible viewport without scrollbars (window.innerWidth/innerHeight
+  // include them, which would tuck the bar's far end under a classic scrollbar).
+  function viewport() {
+    const el = document.compatMode === 'BackCompat' ? document.body : document.documentElement;
+    return { w: (el && el.clientWidth) || window.innerWidth, h: (el && el.clientHeight) || window.innerHeight };
+  }
+
+  // Margin between the bar and its edge; the hidden tab sits nearly flush.
+  const BAR_MARGIN = 16;
+  const TAB_MARGIN = 2;
+
+  function normalizeLayout(raw, sidebarEnabled) {
+    if (!raw || typeof raw !== 'object' || EDGES.indexOf(raw.edge) < 0) return null;
+    const offset = typeof raw.offset === 'number' && isFinite(raw.offset) ? clamp(raw.offset, 0, 1) : 1;
+    return { edge: raw.edge, offset: offset, expanded: sidebarEnabled && raw.expanded === true, hidden: raw.hidden === true };
+  }
+
+  function sameLayout(a, b) {
+    return a.edge === b.edge && Math.abs(a.offset - b.offset) < 1e-6 && a.expanded === b.expanded && a.hidden === b.hidden;
+  }
 
   function installToolbar() {
     if (window !== window.top || !document.body || toolbarHost) return;
@@ -926,10 +993,13 @@
     const cfg = (window.__apexloadRecorderConfig && typeof window.__apexloadRecorderConfig === 'object')
       ? window.__apexloadRecorderConfig : {};
     const sidebarEnabled = cfg.sidebar !== false;
-    let corner = lsGet('sidebar_corner') || cfg.corner || 'br';
-    if (!/^[tb][lr]$/.test(corner)) corner = 'br';
-    const storedOpen = lsGet('sidebar_open');
-    let expanded = sidebarEnabled && (storedOpen === null ? cfg.open !== false : storedOpen === '1');
+    let layout = normalizeLayout({ edge: cfg.edge, offset: cfg.offset, expanded: cfg.open === true }, sidebarEnabled) ||
+      { edge: 'bottom', offset: 1, expanded: false, hidden: false };
+    // Hidden until the recorder's live layout arrives, so a new document does
+    // not flash the bar at the default spot before moving it where the user
+    // left it.
+    let layoutReceived = false;
+    let localLayoutAt = 0;
 
     toolbarHost = document.createElement('div');
     toolbarHost.setAttribute('data-apexload-recorder', 'toolbar');
@@ -940,11 +1010,13 @@
     const bar = shadow.querySelector('.bar');
     const panel = shadow.querySelector('.panel');
     const phead = shadow.querySelector('.phead');
+    const tab = shadow.querySelector('.tab');
     const dots = shadow.querySelectorAll('.dot');
     const labels = shadow.querySelectorAll('.label');
     const pauseBtns = shadow.querySelectorAll('.pause');
     const assertBtns = shadow.querySelectorAll('.assert');
     const stopBtns = shadow.querySelectorAll('.stopRec');
+    const hideBtns = shadow.querySelectorAll('.hide');
     const expandBtn = shadow.querySelector('.expand');
     const collapseBtn = shadow.querySelector('.collapse');
     const counts = shadow.querySelector('.counts');
@@ -959,11 +1031,45 @@
     const undoBtn = shadow.querySelector('.undo');
     const stepsList = shadow.querySelector('.stepsList');
 
-    if (!sidebarEnabled) { expandBtn.style.display = 'none'; expanded = false; }
+    if (!sidebarEnabled) expandBtn.style.display = 'none';
 
-    function applyCorner() {
-      wrap.classList.remove('corner-tl', 'corner-tr', 'corner-bl', 'corner-br');
-      wrap.classList.add('corner-' + corner);
+    // Adopt the recorder's layout unless the user changed it here moments ago
+    // and the push predates that change.
+    function syncLayoutFromState() {
+      const pushed = normalizeLayout(sidebarState.layout, sidebarEnabled);
+      if (!pushed) return;
+      layoutReceived = true;
+      if (Date.now() - localLayoutAt < LOCAL_LAYOUT_GRACE_MS && !sameLayout(pushed, layout)) return;
+      layout = pushed;
+    }
+
+    function setLayout(patch) {
+      const next = normalizeLayout(Object.assign({}, layout, patch), sidebarEnabled);
+      if (!next) return;
+      layout = next;
+      layoutReceived = true;
+      localLayoutAt = Date.now();
+      render();
+      send({ kind: 'sidebar_layout', edge: layout.edge, offset: layout.offset,
+        expanded: layout.expanded, hidden: layout.hidden, ts: Date.now() });
+    }
+
+    // Pin the visible part to its edge at its offset along that edge. It is
+    // measured at the viewport origin first, so its old position cannot narrow
+    // the shrink-to-fit width it is placed with.
+    function place() {
+      const margin = layout.hidden ? TAB_MARGIN : BAR_MARGIN;
+      wrap.style.right = ''; wrap.style.bottom = '';
+      wrap.style.left = '0px'; wrap.style.top = '0px';
+      const w = wrap.offsetWidth, h = wrap.offsetHeight;
+      const vp = viewport();
+      const horizontal = layout.edge === 'top' || layout.edge === 'bottom';
+      const along = Math.round(margin + layout.offset * Math.max(0, (horizontal ? vp.w - w : vp.h - h) - 2 * margin));
+      const across = layout.edge === 'top' || layout.edge === 'left'
+        ? margin
+        : Math.max(0, (horizontal ? vp.h - h : vp.w - w) - margin);
+      wrap.style.left = (horizontal ? along : across) + 'px';
+      wrap.style.top = (horizontal ? across : along) + 'px';
     }
 
     function badge(text) { const b = document.createElement('span'); b.className = 'bdg'; b.textContent = text; return b; }
@@ -1043,44 +1149,65 @@
     }
 
     function render() {
-      bar.style.display = expanded ? 'none' : 'flex';
-      panel.style.display = expanded ? 'flex' : 'none';
-      if (!dragging) {
-        wrap.style.left = ''; wrap.style.top = ''; wrap.style.right = ''; wrap.style.bottom = '';
-        applyCorner();
-      }
-      const status = paused ? 'PAUSED' : (assertMode ? 'PICK ELEMENT' : 'REC');
+      syncLayoutFromState();
+      const showPanel = !layout.hidden && layout.expanded;
+      bar.style.display = !layout.hidden && !showPanel ? 'flex' : 'none';
+      panel.style.display = showPanel ? 'flex' : 'none';
+      tab.style.display = layout.hidden ? 'flex' : 'none';
+      tab.className = 'tab ' + (layout.edge === 'left' || layout.edge === 'right' ? 'v' : 'h');
+      wrap.classList.toggle('picking', assertMode);
+      wrap.style.visibility = layoutReceived ? '' : 'hidden';
+      const status = paused ? 'PAUSED' : (assertMode ? 'PICK · Esc cancels' : 'REC');
       dots.forEach((d) => { d.className = 'dot' + (paused ? ' paused' : ''); });
       labels.forEach((l) => { l.textContent = status; });
+      tab.title = 'Show the recorder bar (' + status + ')';
       pauseBtns.forEach((b) => { b.textContent = paused ? 'Resume' : 'Pause'; });
-      assertBtns.forEach((b) => { b.className = 'assert' + (assertMode ? ' active' : ''); });
+      assertBtns.forEach((b) => {
+        b.className = 'assert' + (assertMode ? ' active' : '');
+        b.title = assertMode ? 'Cancel picking (Esc)' : 'Pick an element to assert';
+      });
       counts.textContent = (sidebarState.stepCount || 0) + ' steps · ' + (sidebarState.navCount || 0) + ' navigations';
       const active = sidebarState.section || 'actions';
       sectionBtns.forEach((b) => { b.className = b.getAttribute('data-section') === active ? 'on' : ''; });
       renderTxnToggle();
       renderSteps();
+      // Place after the content settles: its size decides where it fits.
+      if (!dragging) place();
     }
 
-    // --- Drag + corner snap (Gemini-style movable dock) ---
-    let dragging = false, dragOffX = 0, dragOffY = 0;
-    function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+    // --- Drag along any edge: drop anywhere, snap to the nearest edge ---
+    let dragging = false;
+    let drag = null;
     function onPointerMove(ev) {
+      if (!drag) return;
+      if (!dragging) {
+        // A press that does not travel is a click, not a move.
+        if (Math.abs(ev.clientX - drag.x) < 4 && Math.abs(ev.clientY - drag.y) < 4) return;
+        dragging = true;
+        wrap.classList.add('dragging');
+      }
       const w = wrap.offsetWidth, h = wrap.offsetHeight;
-      wrap.style.left = clamp(ev.clientX - dragOffX, 4, window.innerWidth - w - 4) + 'px';
-      wrap.style.top = clamp(ev.clientY - dragOffY, 4, window.innerHeight - h - 4) + 'px';
+      const vp = viewport();
+      wrap.style.left = clamp(ev.clientX - drag.offX, 0, Math.max(0, vp.w - w)) + 'px';
+      wrap.style.top = clamp(ev.clientY - drag.offY, 0, Math.max(0, vp.h - h)) + 'px';
     }
     function onPointerUp() {
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
+      drag = null;
       if (!dragging) return;
       dragging = false;
       wrap.classList.remove('dragging');
       const r = wrap.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      corner = (cy < window.innerHeight / 2 ? 't' : 'b') + (cx < window.innerWidth / 2 ? 'l' : 'r');
-      lsSet('sidebar_corner', corner);
-      wrap.style.left = ''; wrap.style.top = ''; wrap.style.right = ''; wrap.style.bottom = '';
-      applyCorner();
+      const vp = viewport();
+      const gaps = { top: r.top, bottom: vp.h - r.bottom, left: r.left, right: vp.w - r.right };
+      let edge = 'bottom';
+      EDGES.forEach((name) => { if (gaps[name] < gaps[edge]) edge = name; });
+      // The inverse of place(), so the bar stays where it was released.
+      const offset = edge === 'top' || edge === 'bottom'
+        ? (r.left - BAR_MARGIN) / Math.max(1, vp.w - r.width - 2 * BAR_MARGIN)
+        : (r.top - BAR_MARGIN) / Math.max(1, vp.h - r.height - 2 * BAR_MARGIN);
+      setLayout({ edge: edge, offset: clamp(offset, 0, 1) });
     }
     function startDrag(ev) {
       if (ev.button !== undefined && ev.button !== 0) return;
@@ -1088,25 +1215,19 @@
       if (t && (t.tagName === 'BUTTON' || t.tagName === 'INPUT')) return;
       ev.preventDefault();
       const r = wrap.getBoundingClientRect();
-      dragOffX = ev.clientX - r.left;
-      dragOffY = ev.clientY - r.top;
-      wrap.style.left = r.left + 'px';
-      wrap.style.top = r.top + 'px';
-      wrap.style.right = 'auto';
-      wrap.style.bottom = 'auto';
-      wrap.classList.remove('corner-tl', 'corner-tr', 'corner-bl', 'corner-br');
-      dragging = true;
-      wrap.classList.add('dragging');
+      drag = { x: ev.clientX, y: ev.clientY, offX: ev.clientX - r.left, offY: ev.clientY - r.top };
       window.addEventListener('pointermove', onPointerMove, true);
       window.addEventListener('pointerup', onPointerUp, true);
     }
     bar.addEventListener('pointerdown', startDrag);
     phead.addEventListener('pointerdown', startDrag);
+    window.addEventListener('resize', () => { if (!dragging) place(); });
 
     // --- Wire actions (all round-trip through the recorder binding) ---
-    function setExpanded(v) { expanded = v; lsSet('sidebar_open', v ? '1' : '0'); render(); }
-    expandBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setExpanded(true); });
-    collapseBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setExpanded(false); });
+    expandBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setLayout({ expanded: true }); });
+    collapseBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setLayout({ expanded: false }); });
+    hideBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); setLayout({ hidden: true }); }));
+    tab.addEventListener('click', (ev) => { ev.stopPropagation(); setLayout({ hidden: false }); });
     pauseBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'pause_toggle', ts: Date.now() }); }));
     assertBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); if (paused) return; send({ kind: 'pick_toggle', ts: Date.now() }); }));
     stopBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'recording_stop', ts: Date.now() }); }));
@@ -1138,8 +1259,10 @@
     undoBtn.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'delete_last_step', ts: Date.now() }); });
 
     refreshToolbar = render;
-    render();
+    // Attach before the first render: placing the bar needs its real size.
     document.body.appendChild(toolbarHost);
+    render();
+    setTimeout(() => { if (!layoutReceived) { layoutReceived = true; render(); } }, LAYOUT_WAIT_MS);
   }
 
   if (document.readyState === 'loading') {

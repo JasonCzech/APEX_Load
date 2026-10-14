@@ -12,11 +12,8 @@ test('reject duplicate capture, survive dashboard reload and recover after windo
     expect(duplicate.status()).toBe(409)
     await rec.target.getByRole('button',{name:'Record event',exact:true}).click()
     await expect.poll(async()=>(await snapshot(h,rec.id)).steps.length).toBeGreaterThan(0)
+    // The Record page is addressable, so a reload returns to it with the live session attached.
     await page.reload()
-    // Studio selection is an internal authoring state; recover via the visible
-    // recording entry when reloading the library route.
-    await page.getByRole('button',{name:'Script builder',exact:true}).click()
-    await page.getByRole('button',{name:'Record',exact:true}).click()
     await expect(page.getByRole('button',{name:'Stop recording',exact:true})).toBeVisible()
     await rec.target.close()
     await expect.poll(async()=>(await snapshot(h,rec.id)).status,{timeout:30_000}).toBe('stopped')

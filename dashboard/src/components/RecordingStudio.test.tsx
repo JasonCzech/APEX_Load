@@ -63,7 +63,6 @@ const apiMock = {
   listBrowserRecordings: vi.fn(),
   deleteBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
-  openBrowserRecordingControlPanel: vi.fn(),
   previewBrowserRecordingConversion: vi.fn(),
   convertBrowserRecording: vi.fn(),
   listBrowserRecorderDevices: vi.fn(),
@@ -372,22 +371,6 @@ describe("RecordingStudio", () => {
     apiMock.deleteBrowserRecording.mockResolvedValue({
       deleted: "brec-1",
       session: { id: "brec-1", name: "Browser Recording", status: "stopped" },
-    });
-    apiMock.openBrowserRecordingControlPanel.mockResolvedValue({
-      session: {
-        id: "brec-1",
-        name: "Browser Recording",
-        status: "recording",
-        start_url: "https://app.example.com/login",
-        capture_har: true,
-        started_at: "2026-05-12T20:00:00Z",
-        step_count: 0,
-        navigation_count: 0,
-        network_request_count: 0,
-        websocket_count: 0,
-        warning_count: 0,
-        har_available: false,
-      },
     });
     apiMock.getBrowserRecording.mockResolvedValue({
       session: {
@@ -3380,14 +3363,12 @@ describe("RecordingStudio", () => {
         quic_mode: undefined,
       }),
     );
-    // The companion panel opens in the recording browser context; the docked
-    // panel stays visible as a fallback/control surface.
-    expect(apiMock.openBrowserRecordingControlPanel).toHaveBeenCalledWith(
-      "brec-1",
-      expect.stringContaining("#/recorder-panel?session=brec-1"),
-    );
-    expect(apiMock.openBrowserRecordingControlPanel.mock.calls[0][1]).toContain("folderId=folder-9");
+    // The recorded page has its own bar and the full panel docks here, so no
+    // second window opens in the recording browser or as a popup.
     expect(window.open).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "Recording browser launched — use the bar in the recorded page or the panel below",
+    );
     expect(
       container.querySelector('[data-testid="browser-recorder-panel"]'),
     ).not.toBeNull();
@@ -3466,112 +3447,9 @@ describe("RecordingStudio", () => {
       await Promise.resolve();
     });
     await flushPromises();
-    expect(apiMock.openBrowserRecordingControlPanel).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not launch a companion browser panel from a Wails dev webview", async () => {
-    // `wails dev` uses the Vite HTTP origin, so native bridge presence is the
-    // signal that opening this URL would escape to an unauthenticated browser.
-    (window as BridgeWindow).go = { main: { App: {} } };
-    await act(async () => {
-      root.render(
-        <RecordingStudio
-          activeProject={{ id: "proj-1", name: "Web" } as any}
-        />,
-      );
-    });
-    await flushPromises();
-
-    const urlInput = container.querySelector(
-      'input[aria-label="Start URL address"]',
-    ) as HTMLInputElement;
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value",
-      )!.set!;
-      setter.call(urlInput, "app.example.com/login");
-      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Start browser recording"),
-    );
-    await act(async () => {
-      recordButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushPromises();
-
-    expect(apiMock.startBrowserRecording).toHaveBeenCalled();
-    expect(apiMock.openBrowserRecordingControlPanel).not.toHaveBeenCalled();
-    expect(window.open).not.toHaveBeenCalled();
-  });
-
-  it("hands the desktop capability to a safe popup when the recording browser cannot open the panel tab", async () => {
-    apiMock.openBrowserRecordingControlPanel.mockRejectedValueOnce(
-      new Error("control panel route unavailable"),
-    );
-    hasDesktopApiCapabilityMock.mockReturnValue(true);
-    window.sessionStorage.setItem(
-      "apexload.desktopCapability",
-      "browser-tab-capability",
-    );
-    const childStorage = {
-      clear: vi.fn(),
-      setItem: vi.fn(),
-    };
-    const replace = vi.fn();
-    const popup = {
-      opener: window,
-      sessionStorage: childStorage,
-      location: { replace },
-      close: vi.fn(),
-    } as unknown as Window;
-    vi.mocked(window.open).mockReturnValueOnce(popup);
-    await act(async () => {
-      root.render(
-        <RecordingStudio
-          activeProject={{ id: "proj-1", name: "Web" } as any}
-        />,
-      );
-    });
-    await flushPromises();
-
-    const urlInput = container.querySelector(
-      'input[aria-label="Start URL address"]',
-    ) as HTMLInputElement;
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value",
-      )!.set!;
-      setter.call(urlInput, "https://app.example.com/login");
-      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Start browser recording"),
-    );
-    await act(async () => {
-      recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushPromises();
-
-    expect(apiMock.openBrowserRecordingControlPanel).toHaveBeenCalledWith(
-      "brec-1",
-      expect.stringContaining("#/recorder-panel?session=brec-1"),
-    );
-    expect(window.open).toHaveBeenCalledWith(
-      "",
-      "_blank",
-      "width=440,height=760",
-    );
-    expect(childStorage.clear).toHaveBeenCalledTimes(1);
-    expect(childStorage.setItem).toHaveBeenCalledWith(
-      "apexload.desktopCapability",
-      "browser-tab-capability",
-    );
-    expect((popup as unknown as { opener: unknown }).opener).toBeNull();
-    expect(replace).toHaveBeenCalledWith(
-      expect.stringContaining("#/recorder-panel?session=brec-1"),
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain(
+      "Recording browser launched — use the bar in the recorded page or the panel below",
     );
   });
 
@@ -4653,8 +4531,41 @@ describe("RecordingStudio", () => {
       "Opens Chromium on the controller's host and records what you do.",
     );
     expect(container.textContent).toContain(
-      "Chromium opens on the controller's host with an in-page recording sidebar",
+      "Chromium opens on the controller's host with a small recording bar",
     );
+  });
+
+  it("describes the bar's advanced panel only while the sidebar is allowed", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      local_client: true,
+      active: null,
+      browser: { availability: { available: true }, active: null },
+    });
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    expect(container.textContent).toContain(
+      "hide to a tab; its ⋯ button opens sections, transactions, notes and recent steps. Manage the session",
+    );
+
+    const advanced = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    await act(async () => {
+      advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const sidebar = Array.from(container.querySelectorAll("label")).find((label) =>
+      label.textContent?.includes("Allow the in-page advanced sidebar"),
+    )!.querySelector("input") as HTMLInputElement;
+    await act(async () => {
+      sidebar.click();
+    });
+
+    expect(sidebar.checked).toBe(false);
+    expect(container.textContent).not.toContain("its ⋯ button");
+    expect(container.textContent).toContain("hide to a tab. Manage the session");
   });
 
   it("returns to browser actions when the proxy becomes unavailable", async () => {

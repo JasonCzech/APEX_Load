@@ -569,6 +569,60 @@ func TestControlTransitionsFlushThePrecedingClick(t *testing.T) {
 	}
 }
 
+// Picking reaches iframes: a pick inside one records an assertion there, and
+// Esc inside one cancels the pick without recording a key press.
+func TestAssertionPickingWorksInsideIframes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration is excluded by -short")
+	}
+	server := fixtureServer()
+	defer server.Close()
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer recorder.ForceStop()
+	page := recorder.context.Pages()[0]
+	frame := page.FrameLocator("#payframe")
+	if err := frame.Locator("#paybtn").WaitFor(); err != nil {
+		t.Fatal(err)
+	}
+	// Subframes are updated off the control path; give them a moment.
+	settle := func() { time.Sleep(300 * time.Millisecond) }
+
+	recorder.SetAssertMode(true)
+	settle()
+	if err := frame.Locator("#paybtn").Click(); err != nil {
+		t.Fatal(err)
+	}
+	waitForSteps(t, recorder, 1, 5*time.Second)
+	steps := recorder.Snapshot().Steps
+	if steps[0].Kind != StepAssert || !strings.Contains(steps[0].FrameSelector, "payframe") {
+		t.Fatalf("pick inside the iframe recorded %+v, want an assertion in the frame", steps[0])
+	}
+	if recorder.AssertMode() {
+		t.Fatal("the pick did not end picking")
+	}
+
+	recorder.SetAssertMode(true)
+	settle()
+	if err := frame.Locator("#paybtn").Press("Escape"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for recorder.AssertMode() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if recorder.AssertMode() {
+		t.Fatal("Esc inside the iframe did not cancel picking")
+	}
+	for _, step := range recorder.Snapshot().Steps {
+		if step.Kind == StepPressKey {
+			t.Fatalf("Esc while picking was recorded as %+v", step)
+		}
+	}
+}
+
 func TestRecorderFlushesPendingInputOnStopAndPreservesModifiedKeys(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser integration")

@@ -42,7 +42,7 @@ export async function startRecording(page: Page, h: Harness, agent = false, opti
     await page.getByRole('button', { name: 'Advanced options', exact: true }).click()
     if (options.excludeHosts) await page.getByLabel('Exclude hosts',{exact:true}).fill(options.excludeHosts)
     if (options.screenshots) await page.getByLabel('Capture per-step screenshot thumbnails').check()
-    if (options.minimal) await page.getByLabel('Show in-page advanced sidebar', { exact: false }).uncheck()
+    if (options.minimal) await page.getByLabel('Allow the in-page advanced sidebar', { exact: false }).uncheck()
     if (options.ws !== undefined) await page.getByLabel('Capture WebSocket frame payloads (scrubbed)', { exact: true }).setChecked(options.ws)
   }
   const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/browser-recorder/sessions' && r.request().method() === 'POST')
@@ -169,6 +169,22 @@ export class Toolbar {
     }, { timeout: 5000, intervals: [50, 100, 250], message: `Toolbar control must be attached and stable: ${selector}` }).toBe(true)
     return point
   }
+  // Whether a bar control is rendered and visible (not display:none, not
+  // hidden while the bar waits for its layout).
+  async shown(selector: string) {
+    try {
+      const { object } = await this.cdp.send('DOM.resolveNode', { nodeId: await this.node(selector) })
+      const result = await this.cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function () { const s = getComputedStyle(this); const r = this.getBoundingClientRect(); return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0 }', returnByValue: true })
+      return result.result.value === true
+    } catch {
+      return false
+    }
+  }
+  async box(selector: string): Promise<{ x: number; y: number; width: number; height: number }> {
+    const { object } = await this.cdp.send('DOM.resolveNode', { nodeId: await this.node(selector) })
+    const result = await this.cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function () { return this.getBoundingClientRect().toJSON() }', returnByValue: true })
+    return result.result.value
+  }
   async count(selector: string) {
     const nodeId = await this.node('.panel')
     return (await this.cdp.send('DOM.querySelectorAll', { nodeId, selector })).nodeIds.length
@@ -180,6 +196,9 @@ export class Toolbar {
   }
   async click(selector: string) {
     await this.page.bringToFront()
+    // A new document keeps the bar invisible until its layout arrives; a click
+    // then would land on the page beneath it.
+    await expect.poll(() => this.shown(selector), { message: `Toolbar control must be visible: ${selector}` }).toBe(true)
     const p = await this.point(selector)
     await this.page.mouse.click(p.x,p.y)
   }

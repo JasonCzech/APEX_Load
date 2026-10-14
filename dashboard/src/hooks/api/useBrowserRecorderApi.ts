@@ -307,18 +307,6 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
-  const openBrowserRecordingControlPanel = useCallback(
-    (id: string, url: string) =>
-      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/control-panel`, {
-        method: 'POST',
-        body: JSON.stringify({
-          url,
-          bridge_connection: browserRecorderBridge || undefined,
-        }),
-      }),
-    [browserRecorderBridge, recorderRequest],
-  )
-
   const startBrowserRecordingTransaction = useCallback(
     (id: string, name: string, atStepSeq?: number) =>
       recorderRequest<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/transactions/start`, {
@@ -495,7 +483,6 @@ export function useBrowserRecorderApi() {
       resumeBrowserRecording,
       navigateBrowserRecording,
       focusBrowserRecording,
-      openBrowserRecordingControlPanel,
       startBrowserRecordingTransaction,
       endBrowserRecordingTransaction,
       addBrowserRecordingNote,
@@ -532,7 +519,6 @@ export function useBrowserRecorderApi() {
       resumeBrowserRecording,
       navigateBrowserRecording,
       focusBrowserRecording,
-      openBrowserRecordingControlPanel,
       startBrowserRecordingTransaction,
       endBrowserRecordingTransaction,
       addBrowserRecordingNote,

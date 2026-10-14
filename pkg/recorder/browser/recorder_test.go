@@ -1001,6 +1001,7 @@ func TestControlEventKindRecognizesSidebarActions(t *testing.T) {
 		`{"kind":"step_exclude","seq":1}`:         "step_exclude",
 		`{"kind":"step_mark","seq":1}`:            "step_mark",
 		`{"kind":"recording_stop"}`:               "recording_stop",
+		`{"kind":"sidebar_layout","edge":"left"}`: "sidebar_layout",
 		// Capture steps must NOT be classified as control events.
 		`{"kind":"click"}`: "",
 		`{"kind":"fill"}`:  "",
@@ -1433,6 +1434,99 @@ func TestSidebarStepDetailMasksFills(t *testing.T) {
 	}
 }
 
+// The in-page bar opens collapsed at the bottom-right, so it covers as little
+// of the recorded page as possible until the user asks for more.
+func TestConfigScriptOpensTheBarCollapsed(t *testing.T) {
+	script := New(Options{StartURL: "https://app.example/", Sidebar: true}).configScript()
+	for _, want := range []string{`"open":false`, `"edge":"bottom"`, `"offset":1`} {
+		if !strings.Contains(script, want) {
+			t.Errorf("config script = %q, want %s", script, want)
+		}
+	}
+}
+
+// Where the bar sits is recording state: it reaches every page with the live
+// snapshot, survives a new document, and never needs the site's storage.
+func TestSidebarLayoutControlEventUpdatesLiveState(t *testing.T) {
+	var warnings []string
+	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) {
+		if e.Type == EventWarning {
+			warnings = append(warnings, e.Warning)
+		}
+	}})
+	if got := r.buildSidebarStateLocked().Layout; got != defaultSidebarLayout() {
+		t.Fatalf("initial layout = %+v, want %+v", got, defaultSidebarLayout())
+	}
+	r.handleRecordBinding(nil, `{"kind":"sidebar_layout","edge":"left","offset":0.25,"expanded":true,"hidden":false,"nonce":"`+r.controlNonce+`","ts":1}`)
+	if got := r.buildSidebarStateLocked().Layout; got != (sidebarLayoutView{Edge: "left", Offset: 0.25, Expanded: true}) {
+		t.Fatalf("layout = %+v, want left at 0.25, expanded", got)
+	}
+	if encoded := r.buildSidebarStateJSON(); !strings.Contains(encoded, `"layout":{"edge":"left","offset":0.25,"expanded":true,"hidden":false}`) {
+		t.Fatalf("sidebar state JSON = %s, want the layout", encoded)
+	}
+
+	// Offsets are clamped to the edge; an unknown edge is refused and keeps the
+	// previous layout.
+	r.handleRecordBinding(nil, `{"kind":"sidebar_layout","edge":"top","offset":7,"hidden":true,"nonce":"`+r.controlNonce+`","ts":2}`)
+	if got := r.buildSidebarStateLocked().Layout; got != (sidebarLayoutView{Edge: "top", Offset: 1, Hidden: true}) {
+		t.Fatalf("clamped layout = %+v", got)
+	}
+	r.handleRecordBinding(nil, `{"kind":"sidebar_layout","edge":"middle","offset":0.5,"nonce":"`+r.controlNonce+`","ts":3}`)
+	if got := r.buildSidebarStateLocked().Layout; got.Edge != "top" {
+		t.Fatalf("unknown edge changed the layout to %+v", got)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "sidebar_layout") {
+		t.Fatalf("warnings = %v, want one for the unknown edge", warnings)
+	}
+
+	// Recorded-page script cannot move or hide the bar without the nonce.
+	r.handleRecordBinding(nil, `{"kind":"sidebar_layout","edge":"right","offset":0,"ts":4}`)
+	if got := r.buildSidebarStateLocked().Layout; got.Edge != "top" {
+		t.Fatalf("forged layout applied: %+v", got)
+	}
+	if steps := r.Snapshot().Steps; len(steps) != 0 {
+		t.Fatalf("layout events recorded %d steps", len(steps))
+	}
+}
+
+// Esc in the page cancels a pick explicitly, so it cannot turn picking back on
+// when the dashboard already ended it.
+func TestPickToggleWithExplicitStateSetsIt(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	r.handleRecordBinding(nil, `{"kind":"pick_toggle","on":false,"nonce":"`+r.controlNonce+`","ts":1}`)
+	if r.AssertMode() {
+		t.Fatal("pick_toggle on:false enabled the picker")
+	}
+	r.handleRecordBinding(nil, `{"kind":"pick_toggle","on":true,"nonce":"`+r.controlNonce+`","ts":2}`)
+	r.handleRecordBinding(nil, `{"kind":"pick_toggle","on":true,"nonce":"`+r.controlNonce+`","ts":3}`)
+	if !r.AssertMode() {
+		t.Fatal("pick_toggle on:true did not leave the picker on")
+	}
+}
+
+// The bar keeps nothing in the recorded site's storage, can hide to an edge
+// tab, and steps aside while picking.
+func TestCaptureToolbarStaysOutOfThePage(t *testing.T) {
+	if strings.Contains(captureScript, "localStorage") {
+		t.Fatal("capture script must not read or write the recorded site's localStorage")
+	}
+	for _, fragment := range []string{
+		`<button class="hide"`,
+		`<button class="tab"`,
+		"setLayout({ hidden: true })",
+		"setLayout({ hidden: false })",
+		".wrap.picking{pointer-events:none}",
+		".wrap.picking .assert{pointer-events:auto}",
+		"document.documentElement",
+		"send({ kind: 'pick_toggle', on: false, ts: Date.now() });",
+		"kind: 'sidebar_layout'",
+	} {
+		if !strings.Contains(captureScript, fragment) {
+			t.Errorf("capture script missing %q", fragment)
+		}
+	}
+}
+
 func TestConfigScriptReflectsSidebarOption(t *testing.T) {
 	on := New(Options{StartURL: "https://app.example/", Sidebar: true}).configScript()
 	if !strings.Contains(on, `"sidebar":true`) || !strings.Contains(on, "__apexloadRecorderConfig") {
@@ -1482,7 +1576,7 @@ func TestControlKindRequiresTrustCoversStateMutatingKinds(t *testing.T) {
 	trusted := []string{
 		"recording_stop", "delete_last_step", "step_exclude", "step_mark",
 		"section_set", "transaction_start", "transaction_end", "note_add",
-		"pause_toggle", "pick_toggle",
+		"pause_toggle", "pick_toggle", "sidebar_layout",
 	}
 	for _, kind := range trusted {
 		if !controlKindRequiresTrust(kind) {

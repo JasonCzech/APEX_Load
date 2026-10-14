@@ -6,16 +6,13 @@ test('dashboard and closed-shadow toolbar control the same live session', async 
   const rec = await startRecording(page,h,false,{ screenshots:true })
   const bar = await Toolbar.for(rec.target)
   try {
-    await expect.poll(()=>rec.browser.contexts().flatMap(context=>context.pages()).some(tab=>tab.url().includes(`#/recorder-panel?session=${rec.id}`))).toBe(true)
-    const companion=rec.browser.contexts().flatMap(context=>context.pages()).find(tab=>tab.url().includes(`#/recorder-panel?session=${rec.id}`))!
-    if(info.project.name==='local-auth') {
-      await companion.getByLabel('Username',{exact:true}).fill('admin')
-      await companion.getByLabel('Password',{exact:true}).fill('admin')
-      await companion.getByRole('button',{name:'Sign in',exact:true}).click()
-      for(const cookie of await companion.context().cookies()) h.target.sensitiveValues.add(cookie.value)
-    }
-    await expect(companion.getByTestId('browser-recorder-panel')).toBeVisible()
-    await companion.getByRole('button',{name:'Pause recording',exact:true}).click()
+    // No second window: the recorded page has its bar and the studio docks the panel.
+    expect(rec.browser.contexts().flatMap(context=>context.pages()).some(tab=>tab.url().includes('#/recorder-panel'))).toBe(false)
+    // The bar opens collapsed so it covers as little of the page as possible.
+    await expect.poll(()=>bar.shown('.bar')).toBe(true)
+    expect(await bar.shown('.panel')).toBe(false)
+    await bar.click('.expand')
+    await page.getByRole('button',{name:'Pause recording',exact:true}).click()
     await page.getByRole('button',{name:'Resume recording',exact:true}).click()
     await page.getByRole('button',{name:'Focus browser',exact:true}).click()
     await page.getByRole('button',{name:'Pause recording',exact:true}).click()
@@ -110,11 +107,26 @@ test('dashboard and closed-shadow toolbar control the same live session', async 
     await rec.target.locator('#result').click()
     await expect(page.getByTestId('pick-mode-toggle')).toHaveText('Pick verification')
     await expect.poll(async()=>(await snapshot(h,rec.id)).steps.some((s:{kind:string})=>s.kind==='assert')).toBe(true)
+    // Esc cancels a pick; the page never records it.
+    const beforeEsc=(await snapshot(h,rec.id)).steps.length
+    await bar.click('.panel .assert')
+    await expect(page.getByTestId('pick-mode-toggle')).toContainText('Picking')
+    await rec.target.keyboard.press('Escape')
+    await expect(page.getByTestId('pick-mode-toggle')).toHaveText('Pick verification')
+    expect((await snapshot(h,rec.id)).steps.length).toBe(beforeEsc)
     await bar.click('.collapse')
+    await expect.poll(()=>bar.shown('.bar')).toBe(true)
     await bar.click('.expand')
     const head = await bar.point('.phead')
     await rec.target.mouse.move(head.x,head.y); await rec.target.mouse.down(); await rec.target.mouse.move(50,100,{steps:8}); await rec.target.mouse.up()
-    await expect.poll(async()=>rec.target.evaluate(()=>localStorage.getItem('apexload_rec_sidebar_corner'))).toBe('tl')
+    // Dropped near the top-left, the panel snaps to the left edge; nothing lands in the site's storage.
+    await expect.poll(async()=>(await bar.box('.panel')).x).toBeLessThan(40)
+    expect(await rec.target.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('apexload_rec_')))).toEqual([])
+    await bar.click('.panel .hide')
+    await expect.poll(()=>bar.shown('.tab')).toBe(true)
+    expect(await bar.shown('.panel')).toBe(false)
+    await bar.click('.tab')
+    await expect.poll(()=>bar.shown('.panel')).toBe(true)
     await page.getByTestId('section-teardown').click()
     await rec.target.getByRole('button',{name:'Record event',exact:true}).click()
     await page.getByTestId('section-actions').click()
@@ -128,10 +140,13 @@ test('dashboard and closed-shadow toolbar control the same live session', async 
     await bar.fill('.navUrl',h.target.url+'/?toolbar=1')
     await bar.click('.navGo')
     await expect(rec.target).toHaveURL(/toolbar=1/)
+    // The new document's bar comes back where the user left it.
+    await expect.poll(async()=>(await bar.shown('.panel'))&&(await bar.box('.panel')).x<40).toBe(true)
+    // The Record page is addressable, so a reload returns to it with the live session attached.
     await page.reload()
-    await page.getByRole('button',{name:'Script builder',exact:true}).click()
-    await page.getByRole('button',{name:'Record',exact:true}).click()
     await expect(page.getByRole('button',{name:'Pause recording',exact:true})).toBeVisible()
+    // Still no second window after a whole session of controls and a reload.
+    expect(rec.browser.contexts().flatMap(context=>context.pages()).some(tab=>tab.url().includes('#/recorder-panel'))).toBe(false)
     await stopRecording(page)
     const captured = await snapshot(h,rec.id)
     expect(captured.steps.map((s:{section:string})=>s.section)).toEqual(expect.arrayContaining(['init','actions','teardown']))

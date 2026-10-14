@@ -89,10 +89,9 @@ type Options struct {
 	// Scrubber redacts WebSocket frame payloads before storage. Injected by the
 	// API layer (which owns pkg/scrub); nil disables payload redaction.
 	Scrubber func(string) string
-	// Sidebar enables the in-page advanced control sidebar (the expandable,
-	// draggable, corner-snapping panel embedded in the recorded browser). When
-	// false the page shows only the minimal REC/Pause/Assert toolbar. The API
-	// manager defaults this on.
+	// Sidebar enables the in-page advanced control sidebar (the panel behind
+	// the in-page bar's expand button). When false the page shows only the
+	// minimal REC/Pause/Assert bar. The API manager defaults this on.
 	Sidebar bool
 }
 
@@ -115,6 +114,14 @@ type Recorder struct {
 	paused         bool
 	assertMode     bool
 	currentSection string
+	// sidebarLayout is where the in-page bar sits and whether it is expanded or
+	// hidden. It lives in the recording, not in the recorded site's storage, so
+	// it follows the user across origins and stays out of exported state.
+	sidebarLayout sidebarLayoutView
+	// frameStateSeq orders pause and pick pushes. It is taken under mu with
+	// the state it carries, so a late evaluation in a slow iframe can never
+	// overwrite newer state there.
+	frameStateSeq  uint64
 	activePage     playwright.Page
 	controlPages   map[playwright.Page]struct{}
 	openingControl bool
@@ -263,7 +270,7 @@ func controlKindRequiresTrust(kind string) bool {
 	// them, so gating rejects only forged events.
 	case "recording_stop", "delete_last_step", "step_exclude", "step_mark",
 		"section_set", "transaction_start", "transaction_end", "note_add",
-		"pause_toggle", "pick_toggle":
+		"pause_toggle", "pick_toggle", "sidebar_layout":
 		return true
 	default:
 		return false
@@ -305,6 +312,7 @@ func New(opts Options) *Recorder {
 	return &Recorder{
 		opts:           opts,
 		currentSection: normalizeSection(opts.Section),
+		sidebarLayout:  defaultSidebarLayout(),
 		controlNonce:   newControlNonce(),
 		session: &Session{
 			ID:            fmt.Sprintf("rec_%d", time.Now().UnixNano()),
@@ -463,8 +471,9 @@ func (r *Recorder) Start() error {
 		return fmt.Errorf("expose recorder binding: %w", err)
 	}
 	// The config script runs before the capture script in every frame so the
-	// in-page panel reads its initial mode (sidebar enabled, open by default,
-	// snapped to the bottom-right corner). User changes persist via localStorage.
+	// in-page bar reads its initial mode (sidebar enabled, collapsed at the
+	// bottom-right). Moves, hides and expands persist in the recording's live
+	// state (sidebarLayout), never in the recorded site's storage.
 	if err := context.AddInitScript(playwright.Script{Content: playwright.String(r.configScript())}); err != nil {
 		r.cleanup()
 		return fmt.Errorf("inject recorder config: %w", err)
@@ -601,6 +610,14 @@ func (r *Recorder) registerPage(page playwright.Page) {
 
 	page.OnFrameNavigated(func(frame playwright.Frame) {
 		if frame != page.MainFrame() {
+			r.mu.Lock()
+			stopped, paused, picking := r.stopped, r.paused, r.assertMode
+			seq := r.nextFrameStateSeqLocked()
+			r.mu.Unlock()
+			if !stopped {
+				// Off the event callback: evaluating waits on the browser.
+				go syncFrameState(frame, paused, picking, seq)
+			}
 			return
 		}
 		rawURL := frame.URL()
@@ -611,6 +628,10 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		retained := false
 		r.mu.Lock()
 		paused := r.paused || r.stopped
+		var pauseSeq uint64
+		if paused {
+			pauseSeq = r.nextFrameStateSeqLocked()
+		}
 		if !paused {
 			if len(r.session.NavEvents) < maxBrowserNetworkEvents {
 				nav.URL = r.retainNativeStringLocked(rawURL, maxBrowserNativeURLBytes)
@@ -630,7 +651,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 			// The fresh document's capture script starts unpaused; re-sync so
 			// the in-page toolbar and client-side gating match the server, and
 			// hydrate the new document's sidebar with current live state.
-			r.pushPauseState(page, true)
+			r.pushPauseState(page, true, pauseSeq)
 			r.markSidebarDirty()
 			return
 		}
@@ -999,10 +1020,11 @@ func (r *Recorder) setPaused(paused bool) {
 		r.session.PauseIntervals[n-1].To = now
 	}
 	pages := r.recordablePagesLocked()
+	seq := r.nextFrameStateSeqLocked()
 	r.mu.Unlock()
 
 	for _, page := range pages {
-		r.pushPauseState(page, paused)
+		r.pushPauseState(page, paused, seq)
 	}
 	r.emit(Event{Type: EventPauseState, Paused: paused})
 }
@@ -1010,11 +1032,45 @@ func (r *Recorder) setPaused(paused bool) {
 // pushPauseState syncs the in-page toolbar and client-side gating with the
 // server's authoritative pause flag. Best effort: the server gate drops
 // events regardless.
-func (r *Recorder) pushPauseState(page playwright.Page, paused bool) {
+func (r *Recorder) pushPauseState(page playwright.Page, paused bool, seq uint64) {
+	pushFrameState(page, `([paused, seq]) => { if (window.__apexloadRecorderSetPaused) window.__apexloadRecorderSetPaused(paused, seq) }`, paused, seq)
+}
+
+func (r *Recorder) nextFrameStateSeqLocked() uint64 {
+	r.frameStateSeq++
+	return r.frameStateSeq
+}
+
+// pushFrameState runs a state setter in every frame of a page. The capture
+// script runs in each frame, so pause and pick state must reach iframes too:
+// otherwise a pick inside an iframe records a click and Esc there is captured
+// as a key press. The main frame is updated before returning; iframes are
+// updated concurrently so a frame stuck mid-navigation cannot stall the
+// control, and the sequence number makes each frame ignore a push older than
+// one it already applied. Best effort: a frame that detaches is skipped.
+func pushFrameState(page playwright.Page, script string, value bool, seq uint64) {
 	if page == nil {
 		return
 	}
-	_, _ = page.Evaluate(`(paused) => { if (window.__apexloadRecorderSetPaused) window.__apexloadRecorderSetPaused(paused) }`, paused)
+	args := []any{value, seq}
+	main := page.MainFrame()
+	_, _ = main.Evaluate(script, args)
+	for _, frame := range page.Frames() {
+		if frame == main {
+			continue
+		}
+		go func(frame playwright.Frame) { _, _ = frame.Evaluate(script, args) }(frame)
+	}
+}
+
+// syncFrameState brings an iframe that just loaded or navigated up to the
+// current pause and pick state; its fresh document starts unpaused and not
+// picking.
+func syncFrameState(frame playwright.Frame, paused, picking bool, seq uint64) {
+	_, _ = frame.Evaluate(`([paused, picking, seq]) => {
+		if (window.__apexloadRecorderSetPaused) window.__apexloadRecorderSetPaused(paused, seq)
+		if (window.__apexloadRecorderSetAssertMode) window.__apexloadRecorderSetAssertMode(picking, seq)
+	}`, []any{paused, picking, seq})
 }
 
 func (r *Recorder) openPagesLocked() []playwright.Page {
@@ -1259,7 +1315,7 @@ func controlEventKind(payload string) string {
 	case "pause_toggle", "pick_toggle",
 		"section_set", "transaction_start", "transaction_end", "note_add",
 		"navigate", "delete_last_step", "step_exclude", "step_mark",
-		"recording_stop":
+		"recording_stop", "sidebar_layout":
 		return probe.Kind
 	}
 	return ""
@@ -1279,6 +1335,13 @@ type controlEvent struct {
 	Param    bool   `json:"param"`
 	Excluded bool   `json:"excluded"`
 	Nonce    string `json:"nonce"`
+	// On sets the picker explicitly (pick_toggle); absent, the picker toggles.
+	On *bool `json:"on"`
+	// Bar layout (sidebar_layout).
+	Edge     string  `json:"edge"`
+	Offset   float64 `json:"offset"`
+	Expanded bool    `json:"expanded"`
+	Hidden   bool    `json:"hidden"`
 }
 
 // handleControlEvent dispatches an advanced-sidebar action to the matching
@@ -1305,6 +1368,10 @@ func (r *Recorder) handleControlEvent(payload string) {
 		r.mu.Unlock()
 		r.setPaused(!paused)
 	case "pick_toggle":
+		if ev.On != nil {
+			r.SetAssertMode(*ev.On)
+			break
+		}
 		r.mu.Lock()
 		assert := r.assertMode
 		r.mu.Unlock()
@@ -1336,6 +1403,8 @@ func (r *Recorder) handleControlEvent(payload string) {
 		_, err = r.SetStepMark(ev.Seq, ev.Secret, ev.Param)
 	case "recording_stop":
 		r.emit(Event{Type: EventStopRequested})
+	case "sidebar_layout":
+		err = r.setSidebarLayout(sidebarLayoutView{Edge: ev.Edge, Offset: ev.Offset, Expanded: ev.Expanded, Hidden: ev.Hidden})
 	}
 	if err != nil {
 		r.emit(Event{Type: EventWarning, Warning: fmt.Sprintf("recorder control %q: %v", ev.Kind, err)})
@@ -1633,27 +1702,29 @@ func (r *Recorder) SetAssertMode(on bool) {
 	}
 	r.assertMode = on
 	pages := r.recordablePagesLocked()
+	seq := r.nextFrameStateSeqLocked()
 	r.mu.Unlock()
 	for _, page := range pages {
-		r.pushAssertModeState(page, on)
+		r.pushAssertModeState(page, on, seq)
 	}
 	r.emit(Event{Type: EventPickState, Picking: on})
 }
 
-func (r *Recorder) pushAssertModeState(page playwright.Page, on bool) {
-	if page == nil {
-		return
-	}
-	_, _ = page.Evaluate(`(on) => { if (window.__apexloadRecorderSetAssertMode) window.__apexloadRecorderSetAssertMode(on) }`, on)
+func (r *Recorder) pushAssertModeState(page playwright.Page, on bool, seq uint64) {
+	pushFrameState(page, `([on, seq]) => { if (window.__apexloadRecorderSetAssertMode) window.__apexloadRecorderSetAssertMode(on, seq) }`, on, seq)
 }
 
 // configScript builds the init script that seeds the in-page panel's initial
 // mode before the capture script runs.
 func (r *Recorder) configScript() string {
+	// The bar opens collapsed at the bottom-right; the recorder's live state
+	// then carries any position the user chose (sidebarLayout).
+	layout := defaultSidebarLayout()
 	config := map[string]any{
 		"sidebar": r.opts.Sidebar,
-		"open":    true,
-		"corner":  "br",
+		"open":    layout.Expanded,
+		"edge":    layout.Edge,
+		"offset":  layout.Offset,
 	}
 	encoded, err := json.Marshal(config)
 	if err != nil {
@@ -1725,6 +1796,41 @@ type sidebarStateView struct {
 	Picking          bool              `json:"picking"`
 	OpenTransactions []string          `json:"openTransactions"`
 	RecentSteps      []sidebarStepView `json:"recentSteps"`
+	Layout           sidebarLayoutView `json:"layout"`
+}
+
+// sidebarLayoutView places the in-page bar: the viewport edge it sits on, its
+// position along that edge (0 = top/left end, 1 = bottom/right end), whether
+// the advanced panel is open, and whether it is hidden to an edge tab.
+type sidebarLayoutView struct {
+	Edge     string  `json:"edge"`
+	Offset   float64 `json:"offset"`
+	Expanded bool    `json:"expanded"`
+	Hidden   bool    `json:"hidden"`
+}
+
+func defaultSidebarLayout() sidebarLayoutView {
+	return sidebarLayoutView{Edge: "bottom", Offset: 1}
+}
+
+// setSidebarLayout stores the bar's layout and pushes it to every page, so a
+// move, hide or expand in one tab or document applies to all of them.
+func (r *Recorder) setSidebarLayout(layout sidebarLayoutView) error {
+	switch layout.Edge {
+	case "top", "bottom", "left", "right":
+	default:
+		return fmt.Errorf("unknown edge %q", layout.Edge)
+	}
+	if math.IsNaN(layout.Offset) || layout.Offset < 0 {
+		layout.Offset = 0
+	} else if layout.Offset > 1 {
+		layout.Offset = 1
+	}
+	r.mu.Lock()
+	r.sidebarLayout = layout
+	r.mu.Unlock()
+	r.markSidebarDirty()
+	return nil
 }
 
 // sidebarStepView is one entry in the sidebar's recent-steps tail.
@@ -1748,6 +1854,7 @@ func (r *Recorder) buildSidebarStateLocked() sidebarStateView {
 		Picking:          r.assertMode,
 		OpenTransactions: append([]string{}, r.session.OpenTransactions...),
 		RecentSteps:      []sidebarStepView{},
+		Layout:           r.sidebarLayout,
 	}
 	for _, step := range r.session.Steps {
 		if step.Deleted {
