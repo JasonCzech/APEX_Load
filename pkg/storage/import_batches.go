@@ -16,6 +16,9 @@ const (
 	// operator's collection-wide values hashed identically and the idempotent
 	// replay path returned the first commit's batch for the second request.
 	ImportBatchDigestBrunoNativeCommitV2 = "bruno-native-commit-v2"
+	// ImportBatchDigestBrunoNativeCommitV3 adds update_targets (re-import as a
+	// new version) and header_repairs to the hashed request.
+	ImportBatchDigestBrunoNativeCommitV3 = "bruno-native-commit-v3"
 )
 
 var (
@@ -76,6 +79,10 @@ type ImportBatchCommit struct {
 	// RefKeyEnv is the environment segment used when the transaction assigns
 	// reference keys to scripts that do not already have one.
 	RefKeyEnv string
+	// ExpectedUpdatedAt is positional with Scripts. A non-nil entry updates
+	// that existing script as a new version, but only while its updated_at
+	// still equals the value; a nil entry, or an empty slice, creates.
+	ExpectedUpdatedAt []*time.Time `json:"expected_updated_at,omitempty"`
 }
 
 type ImportBatchCommitResult struct {

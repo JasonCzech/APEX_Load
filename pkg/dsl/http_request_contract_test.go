@@ -99,7 +99,7 @@ func TestValidateScriptIssues_HTTPHeaderOccurrenceContract(t *testing.T) {
 
 		script.Actions[0].Headers["X-B"] = "also\r\ninvalid"
 		joined := strings.Join(ValidateScriptIssues(script), "\n")
-		if !strings.Contains(joined, `"X-B": header value is not valid`) {
+		if !strings.Contains(joined, `"X-B": header value contains characters HTTP does not allow`) {
 			t.Fatalf("issues = %q, want unshadowed X-B value issue", joined)
 		}
 		if strings.Contains(joined, `"x-a":`) {
@@ -144,6 +144,9 @@ func TestValidateScriptIssues_HTTPHeaderOccurrenceContract(t *testing.T) {
 		}
 		if strings.Contains(joined, "bad\r\n") {
 			t.Fatalf("validation diagnostic disclosed a header value: %q", joined)
+		}
+		if issues := ValidateScriptIssues(invalid); len(issues) != 1 || strings.Contains(joined, "effective_headers") {
+			t.Fatalf("issues = %q, want the invalid header reported once where it is authored", joined)
 		}
 	})
 

@@ -47,6 +47,11 @@ interface Props {
 type OutputMode = 'native_requests';
 type BrunoInspectionTab = 'summary' | 'source_apis' | 'credentials' | 'data' | 'import' | 'runtime' | 'dsl' | 'source';
 type NativeCandidateSortKey = 'sequence' | 'source' | 'script' | 'request' | 'status' | 'details';
+// A row an earlier import already saved updates that script as a new version
+// unless the operator asks for a copy.
+type NativeSaveMode = 'update' | 'copy';
+type HeaderRepairChoice = 'trim' | 'remove';
+const INVALID_HEADER_FINDING_CODE = 'bruno_invalid_header_value';
 type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable';
 const FOLDER_CREATION_DENIED_MESSAGE = 'Your current role can import scripts but cannot create project folders. Select an existing script folder, or ask a Project Administrator to create one for this project.';
 const NATIVE_CANDIDATE_PAGE_SIZE = 100;
@@ -107,7 +112,7 @@ function nativeCandidateIdentityError(candidates: BrunoNativeScriptCandidate[]) 
     }
     return '';
 }
-function validatedNativeCommitScripts(response: CommitBrunoImportResponse, selectedCandidates: BrunoNativeScriptCandidate[]) {
+function validatedNativeCommitScripts(response: CommitBrunoImportResponse, selectedCandidates: BrunoNativeScriptCandidate[], updateTargets: Record<string, string> = {}) {
     const identityError = nativeCandidateIdentityError(selectedCandidates);
     if (identityError)
         throw new Error(identityError);
@@ -139,7 +144,7 @@ function validatedNativeCommitScripts(response: CommitBrunoImportResponse, selec
     if (response.count !== response.scripts.length) {
         throw new Error('Native Bruno commit response count does not match its scripts.');
     }
-    const expectedIds = new Set(selectedCandidates.map(candidate => (candidate.planned_script_id || '').trim()));
+    const expectedIds = new Set(selectedCandidates.map(candidate => (updateTargets[candidate.candidate_id] || candidate.planned_script_id || '').trim()));
     const receivedIds = new Set<string>();
     for (const script of response.scripts) {
         const id = script.id?.trim();
@@ -447,6 +452,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const [selectedNativeFindingId, setSelectedNativeFindingId] = useState('');
     const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({});
     const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([]);
+    const [nativeSaveModes, setNativeSaveModes] = useState<Record<string, NativeSaveMode>>({});
+    const [headerRepairs, setHeaderRepairs] = useState<Record<string, HeaderRepairChoice>>({});
     const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null);
     const [nativeSourceCandidateId, setNativeSourceCandidateId] = useState<string | null>(null);
     const [activeInspectionTab, setActiveInspectionTab] = useState<BrunoInspectionTab>('summary');
@@ -542,6 +549,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         setSelectedCandidateIds([]);
         setNativeNameOverrides({});
         setAcknowledgedFindingIds([]);
+        setNativeSaveModes({});
+        setHeaderRepairs({});
     }, [advanceSourceGeneration, initialFiles, initialOutputMode]);
     useEffect(() => {
         if (resetProjectIdRef.current === projectId)
@@ -560,6 +569,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         setSelectedCandidateIds([]);
         setNativeNameOverrides({});
         setAcknowledgedFindingIds([]);
+        setNativeSaveModes({});
+        setHeaderRepairs({});
         selectDestinationFolder('');
         setFolderCreateError('');
         setCreatingFolder(false);
@@ -707,6 +718,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     code: diagnostic.code || '',
                     sourcePath: candidate.source_path || candidate.script.name,
                     message: diagnostic.message || diagnostic.code || 'Imported behavior requires review.',
+                    headerRepair: diagnostic.header_repair,
                 }] as const];
     }))).values()).sort((left, right) => left.code.localeCompare(right.code) || left.id.localeCompare(right.id)), [selectedNativeCandidates]);
     const nativeReviewFindingIds = useMemo(() => nativeReviewFindings.map(finding => finding.id), [nativeReviewFindings]);
@@ -716,16 +728,50 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         return counts;
     }, [nativeReviewFindings]);
     const acknowledgedFindingIdSet = useMemo(() => new Set(acknowledgedFindingIds), [acknowledgedFindingIds]);
-    const unacknowledgedReviewFindings = useMemo(() => nativeReviewFindings.filter(finding => !acknowledgedFindingIdSet.has(finding.id)), [acknowledgedFindingIdSet, nativeReviewFindings]);
+    // A header fix chosen for a finding resolves it, so it needs no acknowledgement
+    // and no longer blocks replay.
+    const selectedHeaderRepairs = useMemo(() => Object.fromEntries(nativeReviewFindings
+        .filter(finding => finding.headerRepair && headerRepairs[finding.id])
+        .map(finding => [finding.id, headerRepairs[finding.id]])), [headerRepairs, nativeReviewFindings]);
+    const replayBlockingFindingCount = nativeReviewFindings.filter(finding => !selectedHeaderRepairs[finding.id]).length;
+    const unacknowledgedReviewFindings = useMemo(() => nativeReviewFindings.filter(finding => !acknowledgedFindingIdSet.has(finding.id) && !selectedHeaderRepairs[finding.id]), [acknowledgedFindingIdSet, nativeReviewFindings, selectedHeaderRepairs]);
     const unacknowledgedFindingIds = useMemo(() => unacknowledgedReviewFindings.map(finding => finding.id), [unacknowledgedReviewFindings]);
     const nativeFindingPageCount = Math.max(1, Math.ceil(nativeReviewFindings.length / NATIVE_FINDING_PAGE_SIZE));
     const safeNativeFindingPage = Math.min(nativeFindingPage, nativeFindingPageCount - 1);
     const nativeFindingPageStart = safeNativeFindingPage * NATIVE_FINDING_PAGE_SIZE;
     const visibleNativeReviewFindings = useMemo(() => nativeReviewFindings.slice(nativeFindingPageStart, nativeFindingPageStart + NATIVE_FINDING_PAGE_SIZE), [nativeFindingPageStart, nativeReviewFindings]);
     const selectedNativeFinding = visibleNativeReviewFindings.find(finding => finding.id === selectedNativeFindingId) || visibleNativeReviewFindings[0];
-    const nextNativeFinding = visibleNativeReviewFindings.find(finding => !acknowledgedFindingIdSet.has(finding.id) && finding.id !== selectedNativeFinding?.id);
+    const nextNativeFinding = visibleNativeReviewFindings.find(finding => !acknowledgedFindingIdSet.has(finding.id) && !selectedHeaderRepairs[finding.id] && finding.id !== selectedNativeFinding?.id);
     const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections);
-    const selectedNativeNames = selectedNativeCandidates.map(candidate => (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim());
+    // A match from the same collection updates by default. A match on the
+    // request path alone may belong to another collection, so it defaults to a copy.
+    const nativeSaveMode = (candidate: BrunoNativeScriptCandidate): NativeSaveMode => nativeSaveModes[candidate.candidate_id]
+        ?? (candidate.existing_script?.same_collection ? 'update' : 'copy');
+    const nativeUpdatesExisting = (candidate: BrunoNativeScriptCandidate) => Boolean(candidate.existing_script) && nativeSaveMode(candidate) === 'update';
+    // An updated script keeps its current name unless the operator renames it.
+    const nativeDefaultName = (candidate: BrunoNativeScriptCandidate) => nativeUpdatesExisting(candidate) && candidate.existing_script
+        ? candidate.existing_script.name
+        : candidate.script.name;
+    const nativeScriptName = (candidate: BrunoNativeScriptCandidate) => (nativeNameOverrides[candidate.candidate_id] ?? nativeDefaultName(candidate)).trim();
+    const previouslyImportedCount = nativeCandidates.filter(candidate => candidate.existing_script?.same_collection).length;
+    // A request-path match with no collection identity may belong to another collection.
+    const pathOnlyMatchCount = nativeCandidates.filter(candidate => candidate.existing_script && !candidate.existing_script.same_collection).length;
+    const existingMatchSummary = [
+        previouslyImportedCount > 0 ? `${previouslyImportedCount} of ${nativeCandidates.length} already imported.` : '',
+        pathOnlyMatchCount > 0 ? `${pathOnlyMatchCount} ${pathOnlyMatchCount === 1 ? 'matches a script' : 'match scripts'} only by request path and ${pathOnlyMatchCount === 1 ? 'defaults' : 'default'} to Create a copy.` : '',
+    ].filter(Boolean).join(' ');
+    const selectedNativeUpdates = selectedNativeCandidates.filter(nativeUpdatesExisting);
+    const nativeCreatesScripts = selectedNativeUpdates.length < selectedNativeCandidates.length;
+    const editedNativeUpdateCount = selectedNativeUpdates.filter(candidate => candidate.existing_script?.edited_since_import).length;
+    const updatePlacementNote = selectedNativeUpdates.length > 0 ? '; updated scripts stay in their current folders' : '';
+    const setNativeCandidateSelected = (candidateId: string, selected: boolean) => {
+        setCredentialDestinationState({});
+        setNativeFindingPage(0);
+        setSelectedCandidateIds(previous => selected
+            ? (previous.includes(candidateId) ? previous : [...previous, candidateId])
+            : previous.filter(id => id !== candidateId));
+    };
+    const selectedNativeNames = selectedNativeCandidates.map(nativeScriptName);
     const duplicateNativeNames = new Set(selectedNativeNames.map(value => value.toLowerCase())).size !== selectedNativeNames.length;
     const credentialsValid = requirements.length === 0 || preparedSecrets?.valid === true;
     const deferredSecretCount = preparedSecrets?.configureLaterCount ?? 0;
@@ -763,9 +809,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     }
     if (loading)
         saveBlockers.push('Wait for the current import operation to finish.');
-    if (!destinationFolderManagedExternally && folderLoading)
+    // Updated scripts keep their folders, so folder state matters only when the
+    // batch creates scripts.
+    if (nativeCreatesScripts && !destinationFolderManagedExternally && folderLoading)
         saveBlockers.push('Wait for destination folders to finish loading before saving.');
-    if (!destinationFolderManagedExternally && folderLoadError)
+    if (nativeCreatesScripts && !destinationFolderManagedExternally && folderLoadError)
         saveBlockers.push(`Destination folders could not be loaded: ${folderLoadError} Retry loading folders before saving.`);
     if (creatingFolder)
         saveBlockers.push('Wait for destination folder creation to finish. The current destination cannot be used while its replacement is pending.');
@@ -778,7 +826,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     }
 
     {
-        if (!destinationFolderId && !autoCreateFolderName) {
+        // Updated scripts stay where they are, so only created scripts need a destination.
+        if (nativeCreatesScripts && !destinationFolderId && !autoCreateFolderName) {
             if (destinationFolderManagedExternally) {
                 saveBlockers.push('Select an existing script folder in Save destination; native batches cannot be saved to Project root.');
             }
@@ -852,6 +901,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         setSelectedCandidateIds([]);
         setNativeNameOverrides({});
         setAcknowledgedFindingIds([]);
+        setNativeSaveModes({});
+        setHeaderRepairs({});
     };
     const createDestinationFolder = async (): Promise<string | undefined> => {
         const folderName = newFolderName.trim();
@@ -932,6 +983,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             // the imported collection.
             setNativeNameOverrides({});
             setAcknowledgedFindingIds([]);
+            setNativeSaveModes({});
+            setHeaderRepairs({});
             const identityError = nativeCandidateIdentityError(candidates);
             if (identityError) {
                 setError(identityError);
@@ -972,10 +1025,12 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             }
             if (!requestIsCurrent())
                 return;
-            const folderId = destinationFolderId || (autoCreateFolderName ? await createDestinationFolder() : undefined);
+            const folderId = !nativeCreatesScripts
+                ? undefined
+                : destinationFolderId || (autoCreateFolderName ? await createDestinationFolder() : undefined);
             if (!requestIsCurrent())
                 return;
-            if (!folderId) {
+            if (nativeCreatesScripts && !folderId) {
                 setError(`The script folder “${autoCreateFolderName}” could not be created, so nothing was saved. See Native HTTP conversion for details.`);
                 return;
             }
@@ -983,22 +1038,31 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 project_id: projectId,
                 import_session_id: inspection.import_session_id,
                 mode: 'create_native_batch',
-                folder_id: folderId,
+                ...(folderId ? { folder_id: folderId } : {}),
                 candidate_ids: selectedNativeCandidates.map(candidate => candidate.candidate_id),
                 name_overrides: Object.fromEntries(selectedNativeCandidates.map(candidate => [
                     candidate.candidate_id,
-                    (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim(),
+                    nativeScriptName(candidate),
                 ])),
+                ...(selectedNativeUpdates.length > 0
+                    ? {
+                        update_targets: Object.fromEntries(selectedNativeUpdates.map(candidate => [candidate.candidate_id, {
+                                script_id: candidate.existing_script!.script_id,
+                                expected_updated_at: candidate.existing_script!.updated_at,
+                            }])),
+                    }
+                    : {}),
+                ...(Object.keys(selectedHeaderRepairs).length > 0 ? { header_repairs: selectedHeaderRepairs } : {}),
                 migrate_secrets: migrateSecrets,
                 secret_bindings: Object.fromEntries(requirements
                     .filter(requirement => secretBindingsRef.current[requirement.id])
                     .map(requirement => [requirement.id, secretBindingsRef.current[requirement.id]])),
-                acknowledged_finding_ids: nativeReviewFindingIds,
+                acknowledged_finding_ids: nativeReviewFindingIds.filter(id => !selectedHeaderRepairs[id]),
                 ...(Object.keys(sharedValueSelections).length > 0
                     ? { shared_values: sharedValueSelections }
                     : {}),
             });
-            const importedScripts = validatedNativeCommitScripts(response, selectedNativeCandidates);
+            const importedScripts = validatedNativeCommitScripts(response, selectedNativeCandidates, Object.fromEntries(selectedNativeUpdates.map(candidate => [candidate.candidate_id, candidate.existing_script!.script_id])));
             if (!requestIsCurrent()) {
                 // The commit endpoint is the durable boundary. Back/project changes
                 // must prevent navigation, but cannot make the confirmed batch or
@@ -1014,7 +1078,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             secretBindingsRef.current = {};
             setCommitted(response);
             {
-                setNotice(`${importedScripts!.length} native APEX script${importedScripts!.length === 1 ? '' : 's'} saved atomically${destinationFolderId ? '' : ` to the new folder “${autoCreateFolderName}”`}.`);
+                const updatedCount = response.updated_script_ids?.length ?? 0;
+                const createdCount = importedScripts!.length - updatedCount;
+                const savedParts = [
+                    createdCount > 0 ? `${createdCount} native APEX script${createdCount === 1 ? '' : 's'} created${destinationFolderId ? '' : ` in the new folder “${autoCreateFolderName}”`}` : '',
+                    updatedCount > 0 ? `${updatedCount} existing script${updatedCount === 1 ? '' : 's'} updated as a new version` : '',
+                ].filter(Boolean);
+                setNotice(`${savedParts.join(' and ')}. The batch was saved atomically.`);
                 onImported?.({ scripts: importedScripts!, stayInImportReview: true });
             }
         }
@@ -1195,7 +1265,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       {inspection && (<>
           {(<>
               <section className="bruno-card bruno-readiness" aria-label="Import readiness">
-                <div className="bruno-readiness-status" role="status"><strong>{selectedNativeCandidates.length} of {nativeCandidates.length} APIs selected</strong><span>Save: {committed ? 'Saved' : canCommit ? 'Ready for draft save' : `${saveBlockers.length} requirements remain`}</span><span>Replay: {protectedSessionExpired ? 'Session expired — re-inspect source' : selectedNativeCandidates.length === 0 ? 'Select APIs to assess' : nativeReviewFindingIds.length || selectedNativeMissingVariables.length || !credentialsReadyForExecution ? 'Blocked' : 'Ready for controlled validation'}</span></div>
+                <div className="bruno-readiness-status" role="status"><strong>{selectedNativeCandidates.length} of {nativeCandidates.length} APIs selected</strong><span>Save: {committed ? 'Saved' : canCommit ? 'Ready for draft save' : `${saveBlockers.length} requirements remain`}</span><span>Replay: {protectedSessionExpired ? 'Session expired — re-inspect source' : selectedNativeCandidates.length === 0 ? 'Select APIs to assess' : replayBlockingFindingCount || selectedNativeMissingVariables.length || !credentialsReadyForExecution ? 'Blocked' : 'Ready for controlled validation'}</span>{!committed && (previouslyImportedCount > 0 || pathOnlyMatchCount > 0) && <span>{[
+                        previouslyImportedCount > 0 ? `Already imported: ${previouslyImportedCount}` : '',
+                        pathOnlyMatchCount > 0 ? `Path-only matches: ${pathOnlyMatchCount}` : '',
+                        selectedNativeUpdates.length > 0
+                            ? `${selectedNativeUpdates.length} will be updated as a new version`
+                            : selectedNativeCandidates.length > 0 ? 'Selected APIs are saved as new scripts' : '',
+                        editedNativeUpdateCount > 0 ? `${editedNativeUpdateCount} changed since import` : '',
+                    ].filter(Boolean).join(' · ')}</span>}</div>
                 <div className="bruno-readiness-actions" aria-label="Review actions"><button type="button" className="btn btn-secondary" onClick={() => { setSetupOpen(true); requestAnimationFrame(() => document.getElementById('bruno-destination-folder')?.focus()); }}>Choose destination</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('source_apis')}>Select APIs</button>{unacknowledgedFindingIds.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Review {unacknowledgedFindingIds.length} conversions</button>}{(deferredSecretCount > 0 || !credentialsValid) && <button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('credentials')}>Credentials: {deferredSecretCount} missing{!credentialsValid ? ' · review pending' : ''}</button>}{selectedNativeMissingVariables.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('data')}>Inputs: {selectedNativeMissingVariables.length} unresolved</button>}</div>
               </section>
               <button type="button" className="btn btn-secondary" id="bruno-api-selection-toggle" aria-expanded={apiSelectionOpen} aria-controls="bruno-api-selection" onClick={() => setAPISelectionOpen(value => !value)}>APIs ({selectedNativeCandidates.length} selected) — {apiSelectionOpen ? 'hide selection' : 'change selection'}</button>
@@ -1205,6 +1282,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       <div>
                         <h3>{nativeCandidates.length} API request{nativeCandidates.length === 1 ? '' : 's'} found → {nativeCandidates.length} native script{nativeCandidates.length === 1 ? '' : 's'}</h3>
                         <p>Scripts stay in deterministic Bruno sequence/path order and will be committed as one atomic batch.</p>
+                        {!committed && existingMatchSummary && <p role="status">{existingMatchSummary} {selectedNativeUpdates.length > 0
+                        ? `${selectedNativeUpdates.length} will be updated as a new version; choose Create a copy or Skip on any row.`
+                        : 'To update an earlier script instead, choose Update existing on its row.'}{editedNativeUpdateCount > 0 ? ` ${editedNativeUpdateCount} of those changed after import; updating replaces their steps and settings but keeps their names and folders.` : ''}</p>}
                       </div>
                       <label className="bruno-select-all">
                         <input type="checkbox" disabled={loading || nativeCandidates.length === 0} ref={node => {
@@ -1262,13 +1342,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     const inheritedBadges = inheritedSources;
                     return (<tr key={candidate.candidate_id}>
                                 <td>
-                                  <input type="checkbox" checked={selected} disabled={loading} aria-label={`Select ${candidate.script.name}`} onChange={event => {
-                            setCredentialDestinationState({});
-                            setNativeFindingPage(0);
-                            setSelectedCandidateIds(previous => event.target.checked
-                                ? [...previous, candidate.candidate_id]
-                                : previous.filter(id => id !== candidate.candidate_id));
-                        }}/>
+                                  <input type="checkbox" checked={selected} disabled={loading} aria-label={`Select ${candidate.script.name}`} onChange={event => setNativeCandidateSelected(candidate.candidate_id, event.target.checked)}/>
                                 </td>
                                 <td>
                                   <strong>{candidate.source_path}</strong>
@@ -1276,7 +1350,28 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                   {inheritedBadges.length > 0 && (<details><summary>Inherited settings</summary>{inheritedBadges.map(field => <p key={field}>{field}</p>)}</details>)}
                                 </td>
                                 <td>
-                                  <details><summary>Edit script name</summary><input aria-label={`Name for ${candidate.source_path}`} disabled={loading || !selected} value={nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name} onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}/></details>
+                                  {candidate.existing_script && (<div className="bruno-native-existing">
+                                      <label>On save
+                                        <select value={!selected ? 'skip' : nativeSaveMode(candidate)} disabled={loading} aria-label={`On save for ${candidate.source_path}`} onChange={event => {
+                            const choice = event.target.value;
+                            if (choice === 'skip') {
+                                setNativeCandidateSelected(candidate.candidate_id, false);
+                                return;
+                            }
+                            setNativeSaveModes(previous => ({ ...previous, [candidate.candidate_id]: choice as NativeSaveMode }));
+                            if (!selected)
+                                setNativeCandidateSelected(candidate.candidate_id, true);
+                        }}>
+                                          <option value="update">Update existing (new version)</option>
+                                          <option value="copy">Create a copy</option>
+                                          <option value="skip">Skip</option>
+                                        </select>
+                                      </label>
+                                      <small>Imported before as {candidate.existing_script.name}{candidate.existing_script.ref_key ? ` (${candidate.existing_script.ref_key})` : ''}{candidate.existing_script.matches > 1 ? ` · ${candidate.existing_script.matches} earlier scripts match; ${candidate.existing_script.same_collection ? 'the most recent one from this collection' : 'the most recent one'} is offered` : ''}</small>
+                                      {!candidate.existing_script.same_collection && <small>Matched by request path only, so it may belong to another collection.</small>}
+                                      {candidate.existing_script.edited_since_import && <small className="bruno-native-existing-warning">Changed in APEX after it was imported. Updating replaces its steps and settings; its name and folder stay.</small>}
+                                    </div>)}
+                                  <details><summary>Edit script name</summary><input aria-label={`Name for ${candidate.source_path}`} disabled={loading || !selected} value={nativeNameOverrides[candidate.candidate_id] ?? nativeDefaultName(candidate)} onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}/></details>
                                 </td>
                                 <td><strong>{nativeCandidateMethod(candidate)}</strong><code>{nativeCandidateTarget(candidate)}</code>
 
@@ -1354,7 +1449,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                             const buttons = Array.from(event.currentTarget.closest('.bruno-native-finding-queue')?.querySelectorAll<HTMLButtonElement>('.bruno-native-finding-row') || []);
                             const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (pageIndex + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
                             buttons[nextIndex]?.focus();
-                        }}><ImportIssueSeverityTag severity="blocker"/><span><strong>{nativeReviewGuidance(finding.code).title}</strong><small>{finding.sourcePath}{acknowledgedFindingIdSet.has(finding.id) ? ' · acknowledged for draft save' : ''}</small></span></button>
+                        }}><ImportIssueSeverityTag severity="blocker"/><span><strong>{nativeReviewGuidance(finding.code).title}</strong><small>{finding.sourcePath}{selectedHeaderRepairs[finding.id] ? ' · fixed on save' : acknowledgedFindingIdSet.has(finding.id) ? ' · acknowledged for draft save' : ''}</small></span></button>
                           </div>)}
                         </nav>
                       <div className="bruno-native-acknowledgement-list" aria-label="Selected conversion finding">
@@ -1367,10 +1462,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                 <strong>{guidance.title}</strong>
                                 <span>{finding.sourcePath}</span>
                               </div>
-                              <div className="bruno-review-toolbar"><button className="btn btn-secondary" type="button" onClick={() => setNativeSourceCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '')}>Inspect affected source</button><button className="btn btn-secondary" type="button" onClick={() => { if (finding.code.includes('header'))
+                              <div className="bruno-review-toolbar"><button className="btn btn-secondary" type="button" onClick={() => setNativeSourceCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '')}>Inspect affected source</button><button className="btn btn-secondary" type="button" onClick={() => { if (finding.code.includes('header') && finding.code !== INVALID_HEADER_FINDING_CODE)
                             goToReviewTab('credentials');
                         else
-                            setNativeReviewCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || ''); }}>{finding.code.includes('header') ? 'Configure header binding' : 'Open API conversion details'}</button></div>
+                            setNativeReviewCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || ''); }}>{finding.code.includes('header') && finding.code !== INVALID_HEADER_FINDING_CODE ? 'Configure header binding' : 'Open API conversion details'}</button></div>
                               <dl id={detailsId}>
                                 <div>
                                   <dt>What was found</dt>
@@ -1385,12 +1480,33 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                   <dd>{guidance.resolution}</dd>
                                 </div>
                               </dl>
-                              <label>
+                              {finding.headerRepair && (<fieldset className="bruno-header-repair">
+                                  <legend>Fix on save</legend>
+                                  {finding.headerRepair.options.includes('trim') && (<label>
+                                      <input type="radio" name={`bruno-header-repair-${finding.id}`} disabled={loading} checked={headerRepairs[finding.id] === 'trim'} onChange={() => setHeaderRepairs(previous => ({ ...previous, [finding.id]: 'trim' }))}/>
+                                      Keep the first {finding.headerRepair.kept_characters ?? 0} characters and remove the {finding.headerRepair.removed_characters ?? 0} from {finding.headerRepair.invalid_character || 'the first character HTTP does not allow'} onward
+                                    </label>)}
+                                  {finding.headerRepair.options.includes('remove') && (<label>
+                                      <input type="radio" name={`bruno-header-repair-${finding.id}`} disabled={loading} checked={headerRepairs[finding.id] === 'remove'} onChange={() => setHeaderRepairs(previous => ({ ...previous, [finding.id]: 'remove' }))}/>
+                                      Remove the {finding.headerRepair.header_name || 'invalid'} header
+                                    </label>)}
+                                  <label>
+                                    <input type="radio" name={`bruno-header-repair-${finding.id}`} disabled={loading} checked={!headerRepairs[finding.id]} onChange={() => setHeaderRepairs(previous => {
+                                const next = { ...previous };
+                                delete next[finding.id];
+                                return next;
+                            })}/>
+                                    Don’t fix; keep the header as imported
+                                  </label>
+                                </fieldset>)}
+                              {selectedHeaderRepairs[finding.id]
+                            ? <p role="status">This header is fixed when you save, so no acknowledgement is needed.</p>
+                            : (<label>
                                 <input type="checkbox" disabled={loading} checked={acknowledgedFindingIdSet.has(finding.id)} aria-describedby={detailsId} aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`} onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
                                 ? [...previous, finding.id]
                                 : previous.filter(id => id !== finding.id))}/>
                                 I understand this draft remains blocked from replay until this finding is resolved.
-                              </label>
+                              </label>)}
                             </article>);
                     })}
                       </div>
@@ -1420,7 +1536,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     <article className="bruno-card">
                       <h3>Fidelity and capabilities</h3>
                       <dl className="bruno-details">
-                        <div><dt>Selected native conversion</dt><dd>{nativeReviewFindingIds.length ? "Review required" : "No conversion review gates"}</dd></div><div><dt>Source bundle preservation</dt><dd>{inspection.result.fidelity.status}</dd></div>
+                        <div><dt>Selected native conversion</dt><dd>{replayBlockingFindingCount ? "Review required" : "No conversion review gates"}</dd></div><div><dt>Source bundle preservation</dt><dd>{inspection.result.fidelity.status}</dd></div>
                         <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
                         <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
                         <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
@@ -1486,12 +1602,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
                   {!committed && (<section className="bruno-commit-bar">
                       <div>
-                        <p role="status">Before replay: {deferredSecretCount} missing secrets · {selectedNativeMissingVariables.length} unresolved inputs · {nativeReviewFindingIds.length} conversion repairs.</p><p>Saving keeps this review open. Open a saved script in the Visual Editor to resolve remaining conversion requirements, then debug one iteration against a controlled target. Import More Files starts a new review.</p><strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
-                        <span>{destinationFolderId
-                        ? 'All selected scripts will be saved atomically to the selected folder.'
-                        : autoCreateFolderName
-                            ? `Saving creates the script folder “${autoCreateFolderName}” and saves all selected scripts to it atomically.`
-                            : 'Select a destination folder before saving.'}</span>
+                        <p role="status">Before replay: {deferredSecretCount} missing secrets · {selectedNativeMissingVariables.length} unresolved inputs · {replayBlockingFindingCount} conversion repairs.</p><p>Saving keeps this review open. Open a saved script in the Visual Editor to resolve remaining conversion requirements, then debug one iteration against a controlled target. Import More Files starts a new review.</p><strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
+                        <span>{!nativeCreatesScripts && selectedNativeUpdates.length > 0
+                        ? `Saving updates ${selectedNativeUpdates.length} existing script${selectedNativeUpdates.length === 1 ? '' : 's'} in place as a new version, atomically. No folder is used.`
+                        : destinationFolderId
+                            ? `New scripts will be saved atomically to the selected folder${updatePlacementNote}.`
+                            : autoCreateFolderName
+                                ? `Saving creates the script folder “${autoCreateFolderName}” and saves new scripts to it atomically${updatePlacementNote}.`
+                                : 'Select a destination folder before saving.'}</span>
                         {saveBlockers.length > 0 && (<div id="bruno-save-blockers" className="bruno-save-blockers" role="status">
                             <strong>Save is unavailable for these reasons:</strong>
                             <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>

@@ -303,7 +303,9 @@ func applyBrunoCollectionDisplayName(collection *Collection, requested string) {
 		return
 	}
 	if name := strings.TrimSpace(requested); name != "" {
+		// An operator-supplied display name is not the collection's identity.
 		collection.Name = name
+		collection.NameDeclared = false
 	}
 	if collection.Name == "" {
 		collection.Name = "Imported Bruno Collection"
@@ -410,6 +412,7 @@ func inspectCollection(files []sourceFile, root string) (Collection, []Environme
 		if role == "collection" {
 			if name, uid := collectionIdentity(file.Data, path.Ext(lower)); collection.Name == "" {
 				collection.Name, collection.UID = name, uid
+				collection.NameDeclared = strings.TrimSpace(name) != ""
 			}
 			continue
 		}

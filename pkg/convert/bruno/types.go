@@ -121,9 +121,13 @@ type ManifestFile struct {
 }
 
 type Collection struct {
-	Name  string           `json:"name"`
-	UID   string           `json:"uid,omitempty"`
-	Items []CollectionItem `json:"items"`
+	Name string `json:"name"`
+	// NameDeclared is true when Name comes from the collection's own
+	// metadata rather than a folder name, file name or default. Only a
+	// declared name identifies a collection across imports.
+	NameDeclared bool             `json:"name_declared,omitempty"`
+	UID          string           `json:"uid,omitempty"`
+	Items        []CollectionItem `json:"items"`
 }
 
 type CollectionItem struct {
@@ -225,6 +229,31 @@ type NativeScriptCandidate struct {
 	// bind protected values to exact server-authored script occurrences and
 	// must never cross the public inspection boundary.
 	CredentialTargets []NativeCredentialTarget `json:"-"`
+	// ExistingScript is set when an earlier import of this source request
+	// already created a script in the project.
+	ExistingScript *NativeExistingScript `json:"existing_script,omitempty"`
+}
+
+// NativeExistingScript is a script an earlier import created from the same
+// source request. A re-import can update it as a new version instead of
+// creating a duplicate.
+type NativeExistingScript struct {
+	ScriptID  string    `json:"script_id"`
+	Name      string    `json:"name"`
+	RefKey    string    `json:"ref_key,omitempty"`
+	FolderID  string    `json:"folder_id,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+	// Matches counts every active script imported from this request. A script
+	// from the same collection is offered first, then the newest.
+	Matches int `json:"matches"`
+	// SameCollection is true when the collection UIDs match or, with no UIDs,
+	// the collection names do. Request paths alone can coincide across
+	// unrelated collections, so other matches default to a copy.
+	SameCollection bool `json:"same_collection"`
+	// EditedSinceImport is true when the script changed after the import that
+	// last saved it, including a rename or move, or that cannot be confirmed.
+	// Updating replaces its steps and settings and keeps its name and folder.
+	EditedSinceImport bool `json:"edited_since_import"`
 }
 
 // NativeDiagnostic describes a bounded conversion decision without retaining
@@ -237,6 +266,10 @@ type NativeDiagnostic struct {
 	Path                    string `json:"path,omitempty"`
 	Message                 string `json:"message"`
 	AcknowledgementRequired bool   `json:"acknowledgement_required,omitempty"`
+	// HeaderRepair is set on bruno_invalid_header_value findings. Committing
+	// with a header_repairs choice for this finding fixes the header instead
+	// of acknowledging it.
+	HeaderRepair *NativeHeaderRepair `json:"header_repair,omitempty"`
 }
 
 // SourceMapping links a native candidate to the compact source records that

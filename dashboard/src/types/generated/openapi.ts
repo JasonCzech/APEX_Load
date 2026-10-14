@@ -56,6 +56,7 @@ export interface components {
     "BrunoCollection": {
       "items": Array<components["schemas"]["BrunoCollectionItem"]>;
       "name": string;
+      "name_declared"?: boolean;
       "uid"?: string;
     };
     "BrunoCollectionItem": {
@@ -172,7 +173,8 @@ export interface components {
     "BrunoNativeBatchCommitRequest": {
       "acknowledged_finding_ids"?: Array<string>;
       "candidate_ids"?: Array<string>;
-      "folder_id": string;
+      "folder_id"?: string;
+      "header_repairs"?: Record<string, "trim" | "remove">;
       "import_session_id": string;
       "migrate_secrets"?: boolean;
       "mode": "create_native_batch";
@@ -180,6 +182,7 @@ export interface components {
       "project_id": string;
       "secret_bindings"?: Record<string, string>;
       "shared_values"?: Record<string, string>;
+      "update_targets"?: Record<string, components["schemas"]["BrunoNativeUpdateTarget"]>;
     };
     "BrunoNativeBatchCommitResponse": {
       "batch_id": string;
@@ -188,6 +191,8 @@ export interface components {
       "idempotent_replay": boolean;
       "scripts": Array<components["schemas"]["APEXScript"]>;
       "secret_migrations"?: Array<Record<string, unknown>>;
+      "unconfigured_secret_names"?: Array<string>;
+      "updated_script_ids"?: Array<string>;
     };
     "BrunoNativeCandidateExecutionPreflight": {
       "blockers"?: Array<string>;
@@ -198,6 +203,7 @@ export interface components {
       "acknowledgement_required"?: boolean;
       "code": string;
       "finding_id"?: string;
+      "header_repair"?: components["schemas"]["BrunoNativeHeaderRepair"];
       "id": string;
       "message": string;
       "path"?: string;
@@ -207,6 +213,25 @@ export interface components {
       "blockers": number;
       "candidates": Array<components["schemas"]["BrunoNativeCandidateExecutionPreflight"]>;
       "ready": boolean;
+    };
+    "BrunoNativeExistingScript": {
+      "edited_since_import"?: boolean;
+      "folder_id"?: string;
+      "matches": number;
+      "name": string;
+      "ref_key"?: string;
+      "same_collection"?: boolean;
+      "script_id": string;
+      "updated_at": string;
+    };
+    "BrunoNativeHeaderRepair": {
+      "action_index": number;
+      "header_index": number;
+      "header_name": string;
+      "invalid_character"?: string;
+      "kept_characters"?: number;
+      "options": Array<"trim" | "remove">;
+      "removed_characters"?: number;
     };
     "BrunoNativeInspectResult": {
       "capabilities": components["schemas"]["BrunoCapabilities"];
@@ -232,6 +257,7 @@ export interface components {
     "BrunoNativeScriptCandidate": {
       "candidate_id": string;
       "diagnostics"?: Array<components["schemas"]["BrunoNativeDiagnostic"]>;
+      "existing_script"?: components["schemas"]["BrunoNativeExistingScript"];
       "fidelity": string;
       "method": string;
       "missing_variables"?: Array<string>;
@@ -243,6 +269,10 @@ export interface components {
       "source_path": string;
       "source_uid": string;
       "target": string;
+    };
+    "BrunoNativeUpdateTarget": {
+      "expected_updated_at": string;
+      "script_id": string;
     };
     "BrunoSecretRequirement": {
       "affected_paths"?: Array<string>;

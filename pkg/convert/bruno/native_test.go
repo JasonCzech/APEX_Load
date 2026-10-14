@@ -92,7 +92,7 @@ settings: {encodeUrl: true, timeout: 0, followRedirects: true, maxRedirects: 5}
 		if action.Type != "POST" || action.Method != "POST" || action.Body != wantBody {
 			t.Fatalf("action[%d] = %#v, want raw body %q", index, action, wantBody)
 		}
-		if len(action.Assertions) != 6 || action.TimeoutMs != nativeMaxTimeoutMS ||
+		if len(action.Assertions) != 6 || action.TimeoutMs != nativeDefaultTimeoutMS ||
 			action.MaxRedirects == nil || *action.MaxRedirects != 5 {
 			t.Fatalf("action[%d] assertions/settings = %#v", index, action)
 		}
@@ -101,7 +101,7 @@ settings: {encodeUrl: true, timeout: 0, followRedirects: true, maxRedirects: 5}
 				t.Fatalf("action[%d] synthesized SOAPAction header: %#v", index, action.HeaderList)
 			}
 		}
-		if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_clamped") {
+		if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_defaulted") {
 			t.Fatalf("candidate[%d] diagnostics = %#v", index, candidate.Diagnostics)
 		}
 		for _, importedAction := range candidate.Script.Actions {
@@ -146,7 +146,7 @@ func TestInspectNativeAttachedShapeProducesExactHTTPAssertions(t *testing.T) {
 		!strings.Contains(action.Body, "<SOAP-ENV:Envelope") {
 		t.Fatalf("native HTTP action = %#v", action)
 	}
-	if action.TimeoutMs != nativeMaxTimeoutMS || action.MaxRedirects == nil || *action.MaxRedirects != 5 {
+	if action.TimeoutMs != nativeDefaultTimeoutMS || action.MaxRedirects == nil || *action.MaxRedirects != 5 {
 		t.Fatalf("timeout/redirects = %d/%v", action.TimeoutMs, action.MaxRedirects)
 	}
 	if candidate.Script.Config.HTTP.Traceparent == nil || *candidate.Script.Config.HTTP.Traceparent ||
@@ -169,7 +169,7 @@ func TestInspectNativeAttachedShapeProducesExactHTTPAssertions(t *testing.T) {
 	if action.Metadata["review_required"] != nil {
 		t.Fatalf("known static hook was review-gated: %#v", action.Metadata)
 	}
-	if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_clamped") {
+	if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_defaulted") {
 		t.Fatalf("diagnostics = %#v", candidate.Diagnostics)
 	}
 }

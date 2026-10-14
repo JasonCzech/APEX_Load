@@ -910,7 +910,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			Type: "object",
 			Properties: map[string]oasSchema{
 				"name": {Type: "string"},
-				"uid":  {Type: "string"},
+				"name_declared": {
+					Type:        "boolean",
+					Description: "True when name comes from the collection's own metadata rather than a folder name, file name or default.",
+				},
+				"uid": {Type: "string"},
 				"items": {
 					Type:  "array",
 					Items: &oasSchema{Ref: "#/components/schemas/BrunoCollectionItem"},
@@ -995,8 +999,57 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"path":                     {Type: "string"},
 				"message":                  {Type: "string"},
 				"acknowledgement_required": {Type: "boolean"},
+				"header_repair":            {Ref: "#/components/schemas/BrunoNativeHeaderRepair"},
 			},
 			Required: []string{"id", "severity", "code", "message"},
+		},
+		"BrunoNativeHeaderRepair": {
+			Type:        "object",
+			Description: "Locates a request header HTTP cannot carry and lists the fixes available at commit. It carries no header value.",
+			Properties: map[string]oasSchema{
+				"action_index":       {Type: "integer"},
+				"header_index":       {Type: "integer"},
+				"header_name":        {Type: "string", Description: "Empty when the name itself is invalid."},
+				"options":            {Type: "array", Items: &oasSchema{Type: "string", Enum: []string{"trim", "remove"}}},
+				"kept_characters":    {Type: "integer", Description: "Characters trim keeps."},
+				"removed_characters": {Type: "integer", Description: "Characters trim removes."},
+				"invalid_character":  {Type: "string", Description: "Plain description of the first character HTTP does not allow."},
+			},
+			Required: []string{"action_index", "header_index", "header_name", "options"},
+		},
+		"BrunoNativeExistingScript": {
+			Type:        "object",
+			Description: "A script an earlier import created from the same source request.",
+			Properties: map[string]oasSchema{
+				"script_id":  {Type: "string"},
+				"name":       {Type: "string"},
+				"ref_key":    {Type: "string"},
+				"folder_id":  {Type: "string"},
+				"updated_at": {Type: "string", Format: "date-time"},
+				"matches":    {Type: "integer", Description: "Active scripts imported from this request. A script from the same collection is offered first, then the newest."},
+				"same_collection": {
+					Type:        "boolean",
+					Description: "True when the collection UIDs match or, with no UIDs, the collection names do. Other matches should default to creating a copy.",
+				},
+				"edited_since_import": {
+					Type:        "boolean",
+					Description: "True when the script changed after the import that last saved it, including a rename or move, or that cannot be confirmed. Updating replaces its steps and settings and keeps its name and folder.",
+				},
+			},
+			Required: []string{"script_id", "name", "updated_at", "matches"},
+		},
+		"BrunoNativeUpdateTarget": {
+			Type:                 "object",
+			AdditionalProperties: boolPointer(false),
+			Properties: map[string]oasSchema{
+				"script_id": {Type: "string"},
+				"expected_updated_at": {
+					Type:        "string",
+					Format:      "date-time",
+					Description: "The script's updated_at when it was reviewed. The update fails if the script changed since.",
+				},
+			},
+			Required: []string{"script_id", "expected_updated_at"},
 		},
 		"BrunoSourceMapping": {
 			Type: "object",
@@ -1050,6 +1103,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:  "array",
 					Items: &oasSchema{Ref: "#/components/schemas/BrunoNativeDiagnostic"},
 				},
+				"existing_script":   {Ref: "#/components/schemas/BrunoNativeExistingScript"},
 				"missing_variables": {Type: "array", Items: &oasSchema{Type: "string"}},
 				"secret_requirements": {
 					Type:  "array",
@@ -1175,8 +1229,18 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:  "array",
 					Items: &oasSchema{Type: "string"},
 				},
+				"update_targets": {
+					Type:                 "object",
+					Description:          "Native candidate ID to the script an earlier import created from the same request. That script is updated as a new version instead of creating a duplicate. folder_id may be omitted when every selected candidate has an update target.",
+					AdditionalProperties: &oasSchema{Ref: "#/components/schemas/BrunoNativeUpdateTarget"},
+				},
+				"header_repairs": {
+					Type:                 "object",
+					Description:          "bruno_invalid_header_value finding ID to the fix to apply. A repaired finding needs no acknowledgement.",
+					AdditionalProperties: &oasSchema{Type: "string", Enum: []string{"trim", "remove"}},
+				},
 			},
-			Required: []string{"project_id", "import_session_id", "mode", "folder_id"},
+			Required: []string{"project_id", "import_session_id", "mode"},
 		},
 		"BrunoCommitRequest": {Ref: "#/components/schemas/BrunoNativeBatchCommitRequest"},
 		"ImportSourceRevision": {
@@ -1218,6 +1282,16 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"created":           {Type: "boolean"},
 				"idempotent_replay": {Type: "boolean"},
 				"secret_migrations": {Type: "array", Items: &oasSchema{Type: "object", AdditionalProperties: boolPointer(true)}},
+				"updated_script_ids": {
+					Type:        "array",
+					Description: "Scripts this batch updated as a new version rather than created.",
+					Items:       &oasSchema{Type: "string"},
+				},
+				"unconfigured_secret_names": {
+					Type:        "array",
+					Description: "Project secrets the saved scripts reference that have no value yet. Configure them before a run. Omitted on an idempotent replay.",
+					Items:       &oasSchema{Type: "string"},
+				},
 			},
 			Required: []string{"batch_id", "scripts", "count", "created", "idempotent_replay"},
 		},

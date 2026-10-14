@@ -817,7 +817,7 @@ describe('BrunoImport', () => {
     })
     expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
     expect(apiMock.commitBrunoImport).toHaveBeenCalledTimes(2)
-    expect(container.textContent).toContain('1 native APEX script saved atomically')
+    expect(container.textContent).toContain('1 native APEX script created. The batch was saved atomically.')
   })
 
   it('keeps shared credential state out of an unselected candidate preview', async () => {
@@ -2086,5 +2086,195 @@ describe('BrunoImport', () => {
     expect(selectAll?.checked).toBe(false)
     expect(selectAll?.indeterminate).toBe(true)
     expect(selectAll?.getAttribute('aria-checked')).toBe('mixed')
+  })
+
+  async function renderAndInspect(inspection: ReturnType<typeof nativeInspectionFixture>, folderId?: string) {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" folderId={folderId} />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect & review'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+  }
+
+  function saveDraftButton() {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+  }
+
+  function previouslyImportedFixture() {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts[1].diagnostics = []
+    inspection.result.scripts.forEach((candidate, index) => {
+      ;(candidate as typeof candidate & { existing_script: unknown }).existing_script = {
+        script_id: `existing-${index + 1}`,
+        name: `Existing ${index + 1}`,
+        ref_key: `LOC-SCR-000${index + 1}-v1`,
+        folder_id: 'folder-1',
+        updated_at: `2026-10-14T09:0${index}:00.123456789Z`,
+        matches: index === 1 ? 2 : 1,
+        same_collection: true,
+        edited_since_import: index === 1,
+      }
+    })
+    return inspection
+  }
+
+  it('updates previously imported scripts as a new version by default', async () => {
+    const inspection = previouslyImportedFixture()
+    apiMock.commitBrunoImport.mockResolvedValueOnce({
+      batch_id: 'native-batch', created: true, idempotent_replay: false, count: 2, _http_status: 201,
+      updated_script_ids: ['existing-1', 'existing-2'],
+      scripts: inspection.result.scripts.map((candidate, index) => ({ ...candidate.script, id: `existing-${index + 1}` })),
+    })
+    await renderAndInspect(inspection, 'folder-1')
+
+    expect(container.textContent).toContain('2 of 2 already imported. 2 will be updated as a new version; choose Create a copy or Skip on any row. 1 of those changed after import; updating replaces their steps and settings but keeps their names and folders.')
+    expect(container.textContent).toContain('Already imported: 2 · 2 will be updated as a new version · 1 changed since import')
+    expect(container.textContent).toContain('Imported before as Existing 1 (LOC-SCR-0001-v1)')
+    expect(container.textContent).toContain('2 earlier scripts match; the most recent one from this collection is offered')
+    expect(container.querySelectorAll('.bruno-native-existing-warning')).toHaveLength(1)
+    expect(container.textContent).toContain('Saving updates 2 existing scripts in place as a new version, atomically. No folder is used.')
+    const choice = container.querySelector<HTMLSelectElement>('select[aria-label="On save for CTA/first.yml"]')
+    expect(choice?.value).toBe('update')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Name for CTA/first.yml"]')?.value).toBe('Existing 1')
+
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const payload = apiMock.commitBrunoImport.mock.calls[0][0]
+    expect(payload).not.toHaveProperty('folder_id')
+    expect(payload.update_targets).toEqual({
+      'candidate-1': { script_id: 'existing-1', expected_updated_at: '2026-10-14T09:00:00.123456789Z' },
+      'candidate-2': { script_id: 'existing-2', expected_updated_at: '2026-10-14T09:01:00.123456789Z' },
+    })
+    expect(payload.name_overrides).toEqual({ 'candidate-1': 'Existing 1', 'candidate-2': 'Existing 2' })
+    expect(container.textContent).toContain('2 existing scripts updated as a new version. The batch was saved atomically.')
+    expect(container.textContent).not.toContain('will be updated as a new version')
+  })
+
+  it('saves an update-only re-import even when folders cannot be loaded', async () => {
+    apiMock.listFolders.mockRejectedValue(new Error('folders unavailable'))
+    const inspection = previouslyImportedFixture()
+    apiMock.commitBrunoImport.mockResolvedValueOnce({
+      batch_id: 'native-batch', created: true, idempotent_replay: false, count: 2, _http_status: 201,
+      updated_script_ids: ['existing-1', 'existing-2'],
+      scripts: inspection.result.scripts.map((candidate, index) => ({ ...candidate.script, id: `existing-${index + 1}` })),
+    })
+    await renderAndInspect(inspection)
+
+    expect(container.textContent).not.toContain('Destination folders could not be loaded')
+    expect(saveDraftButton()?.disabled).toBe(false)
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(apiMock.commitBrunoImport.mock.calls[0][0]).not.toHaveProperty('folder_id')
+  })
+
+  it('creates a copy or skips a previously imported row on request', async () => {
+    const inspection = previouslyImportedFixture()
+    apiMock.commitBrunoImport.mockResolvedValueOnce({
+      batch_id: 'native-batch', created: true, idempotent_replay: false, count: 1, _http_status: 201,
+      updated_script_ids: [],
+      scripts: [{ ...inspection.result.scripts[0].script, id: 'planned-1' }],
+    })
+    await renderAndInspect(inspection, 'folder-1')
+
+    const first = container.querySelector<HTMLSelectElement>('select[aria-label="On save for CTA/first.yml"]')!
+    const second = container.querySelector<HTMLSelectElement>('select[aria-label="On save for CTA/second.yml"]')!
+    await act(async () => {
+      first.value = 'copy'
+      first.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      second.value = 'skip'
+      second.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select Second API"]')?.checked).toBe(false)
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Name for CTA/first.yml"]')?.value).toBe('First API')
+
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const payload = apiMock.commitBrunoImport.mock.calls[0][0]
+    expect(payload.folder_id).toBe('folder-1')
+    expect(payload.candidate_ids).toEqual(['candidate-1'])
+    expect(payload).not.toHaveProperty('update_targets')
+    expect(container.textContent).toContain('1 native APEX script created. The batch was saved atomically.')
+  })
+
+  it('defaults a match on the request path alone to a copy', async () => {
+    const inspection = previouslyImportedFixture()
+    inspection.result.scripts.forEach(candidate => {
+      ;(candidate as typeof candidate & { existing_script: { same_collection: boolean } }).existing_script.same_collection = false
+    })
+    await renderAndInspect(inspection, 'folder-1')
+
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="On save for CTA/first.yml"]')?.value).toBe('copy')
+    expect(container.textContent).toContain('Matched by request path only, so it may belong to another collection.')
+    expect(container.textContent).toContain('2 match scripts only by request path and default to Create a copy. To update an earlier script instead, choose Update existing on its row.')
+    expect(container.textContent).toContain('Path-only matches: 2 · Selected APIs are saved as new scripts')
+    expect(container.textContent).not.toContain('already imported.')
+    expect(container.textContent).toContain('New scripts will be saved atomically to the selected folder.')
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const payload = apiMock.commitBrunoImport.mock.calls[0][0]
+    expect(payload).not.toHaveProperty('update_targets')
+    expect(payload.folder_id).toBe('folder-1')
+  })
+
+  it('fixes an invalid header on save instead of asking for acknowledgement', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts[1].diagnostics = [{
+      id: 'finding-cookie',
+      code: 'bruno_invalid_header_value',
+      severity: 'warning',
+      message: 'The Cookie header contains characters HTTP does not allow, starting at a double quote ("), so the request cannot be sent as imported.',
+      acknowledgement_required: true,
+      header_repair: {
+        action_index: 0,
+        header_index: 1,
+        header_name: 'Cookie',
+        options: ['trim', 'remove'],
+        kept_characters: 11,
+        removed_characters: 40,
+        invalid_character: 'a double quote (")',
+      },
+    } as never]
+    await renderAndInspect(inspection, 'folder-1')
+
+    expect(container.textContent).toContain('Header contains characters HTTP does not allow')
+    expect(saveDraftButton()?.disabled).toBe(true)
+    const trim = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="radio"]'))
+      .find(input => input.parentElement?.textContent?.includes('Keep the first 11 characters and remove the 40 from a double quote (") onward'))
+    expect(trim).toBeDefined()
+    await act(async () => trim?.click())
+    expect(container.textContent).toContain('This header is fixed when you save, so no acknowledgement is needed.')
+    expect(saveDraftButton()?.disabled).toBe(false)
+
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const payload = apiMock.commitBrunoImport.mock.calls[0][0]
+    expect(payload.header_repairs).toEqual({ 'finding-cookie': 'trim' })
+    expect(payload.acknowledged_finding_ids).toEqual([])
   })
 })

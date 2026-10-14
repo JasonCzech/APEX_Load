@@ -652,7 +652,7 @@ If you already have tests in another tool, import them instead of rewriting. Ope
 | --- | --- | --- |
 | OpenAPI / Swagger | Contracts & collections | Executable API draft |
 | Postman collection | Contracts & collections | Executable API draft |
-| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay |
+| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review |
 | WSDL / SOAP | Contracts & collections | Executable SOAP draft |
 | AsyncAPI / Kafka | Contracts & collections | Messaging draft |
 | RAML / Anypoint | Contracts & collections | API draft |

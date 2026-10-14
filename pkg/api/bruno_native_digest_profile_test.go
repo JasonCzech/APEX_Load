@@ -2,6 +2,7 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -119,9 +120,9 @@ func TestBrunoNativeCommitV2DigestCoversSharedValues(t *testing.T) {
 }
 
 // New receipts must be written under the profile whose hash produced them.
-func TestBrunoNativeCommitDefaultDigestProfileIsV2(t *testing.T) {
-	if brunoNativeCommitCurrentDigestProfile != storage.ImportBatchDigestBrunoNativeCommitV2 {
-		t.Fatalf("current digest profile = %q, want v2", brunoNativeCommitCurrentDigestProfile)
+func TestBrunoNativeCommitDefaultDigestProfileIsV3(t *testing.T) {
+	if brunoNativeCommitCurrentDigestProfile != storage.ImportBatchDigestBrunoNativeCommitV3 {
+		t.Fatalf("current digest profile = %q, want v3", brunoNativeCommitCurrentDigestProfile)
 	}
 	request := brunoCommitRequest{ProjectID: "project-a", ImportSessionID: "session-1", Mode: "create_native_batch"}
 	if err := normalizeBrunoNativeCommitRequest(&request); err != nil {
@@ -131,11 +132,131 @@ func TestBrunoNativeCommitDefaultDigestProfileIsV2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV2, request)
+	want, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV3, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != want {
 		t.Fatal("brunoNativeCommitRequestSHA no longer matches the current profile")
+	}
+}
+
+func brunoNativeDigestGoldenRequest(t *testing.T) brunoCommitRequest {
+	t.Helper()
+	folderID := " native-folder "
+	migrate := true
+	request := brunoCommitRequest{
+		ProjectID:              " project-a ",
+		ImportSessionID:        " session-1 ",
+		Mode:                   " CREATE_NATIVE_BATCH ",
+		FolderID:               &folderID,
+		CandidateIDs:           []string{" candidate-b ", "candidate-a"},
+		NameOverrides:          map[string]string{" candidate-b ": " Beta ", "candidate-a": "Alpha"},
+		SecretBindings:         map[string]string{" requirement-b ": " TOKEN_B ", "requirement-a": "TOKEN_A"},
+		SharedValues:           map[string]string{"sv_base": "https://stage.example.com"},
+		MigrateSecrets:         &migrate,
+		AcknowledgedFindingIDs: []string{" finding-b ", "finding-a"},
+		UpdateTargets: map[string]brunoNativeUpdateTarget{
+			" candidate-a ": {ScriptID: " script-a ", ExpectedUpdatedAt: time.Date(2026, 10, 14, 9, 30, 0, 123456789, time.FixedZone("CDT", -5*3600))},
+		},
+		HeaderRepairs: map[string]string{" finding-a ": " TRIM "},
+	}
+	if err := normalizeBrunoNativeCommitRequest(&request); err != nil {
+		t.Fatalf("normalize request: %v", err)
+	}
+	return request
+}
+
+// V2 receipts exist, so its hash is frozen like V1's.
+func TestBrunoNativeCommitV2DigestGolden(t *testing.T) {
+	got, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV2, brunoNativeDigestGoldenRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "60a7adf24c6ec7e4179c575c2cfdb674a9fd8170588df13d3420aaa65e81386b"
+	if got != want {
+		t.Fatalf("digest = %q, want frozen %q", got, want)
+	}
+}
+
+func TestBrunoNativeCommitV3DigestGolden(t *testing.T) {
+	got, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV3, brunoNativeDigestGoldenRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "e0fe3df1cbc59d9ef0bd20335520d5a7125e3a9faca22ffd561483db83c3d1a1"
+	if got != want {
+		t.Fatalf("digest = %q, want frozen %q", got, want)
+	}
+}
+
+func TestBrunoNativeCommitV3DigestCoversUpdateTargetsAndHeaderRepairs(t *testing.T) {
+	base := brunoNativeDigestGoldenRequest(t)
+	digest := func(request brunoCommitRequest) string {
+		t.Helper()
+		got, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV3, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	baseDigest := digest(base)
+
+	copyRow := base
+	copyRow.UpdateTargets = map[string]brunoNativeUpdateTarget{}
+	laterReview := base
+	laterReview.UpdateTargets = map[string]brunoNativeUpdateTarget{
+		"candidate-a": {ScriptID: "script-a", ExpectedUpdatedAt: base.UpdateTargets["candidate-a"].ExpectedUpdatedAt.Add(time.Nanosecond)},
+	}
+	removeHeader := base
+	removeHeader.HeaderRepairs = map[string]string{"finding-a": "remove"}
+	for name, request := range map[string]brunoCommitRequest{
+		"create instead of update": copyRow,
+		"different reviewed time":  laterReview,
+		"different header repair":  removeHeader,
+	} {
+		if digest(request) == baseDigest {
+			t.Fatalf("v3 digest ignores %s", name)
+		}
+	}
+	v2Base, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV2, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Copy, err := brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV2, copyRow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2Base != v2Copy {
+		t.Fatal("v2 unexpectedly distinguishes update targets; this test documents why v3 exists")
+	}
+}
+
+func TestBrunoNativeCommitRequestRejectsInvalidUpdateTargetsAndRepairs(t *testing.T) {
+	for name, mutate := range map[string]func(*brunoCommitRequest){
+		"empty script id": func(request *brunoCommitRequest) {
+			request.UpdateTargets = map[string]brunoNativeUpdateTarget{"candidate-a": {ExpectedUpdatedAt: time.Now()}}
+		},
+		"missing reviewed time": func(request *brunoCommitRequest) {
+			request.UpdateTargets = map[string]brunoNativeUpdateTarget{"candidate-a": {ScriptID: "script-a"}}
+		},
+		"same script twice": func(request *brunoCommitRequest) {
+			now := time.Now()
+			request.UpdateTargets = map[string]brunoNativeUpdateTarget{
+				"candidate-a": {ScriptID: "script-a", ExpectedUpdatedAt: now},
+				"candidate-b": {ScriptID: "script-a", ExpectedUpdatedAt: now},
+			}
+		},
+		"unknown repair": func(request *brunoCommitRequest) {
+			request.HeaderRepairs = map[string]string{"finding-a": "rewrite"}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := brunoCommitRequest{ProjectID: "project-a", ImportSessionID: "session-1", Mode: "create_native_batch"}
+			mutate(&request)
+			if err := normalizeBrunoNativeCommitRequest(&request); err == nil {
+				t.Fatal("normalize accepted an invalid request")
+			}
+		})
 	}
 }

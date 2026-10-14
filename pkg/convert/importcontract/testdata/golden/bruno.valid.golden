@@ -141,6 +141,7 @@
             "preserved": {
               "ancestor_folders": [],
               "collection_name": "Health",
+              "collection_name_declared": false,
               "collection_sha256": "",
               "collection_uid": "",
               "converted_hook_count": 0,

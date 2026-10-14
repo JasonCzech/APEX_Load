@@ -199,6 +199,9 @@ components:
             $ref: '#/components/schemas/BrunoCollectionItem'
         name:
           type: string
+        name_declared:
+          type: boolean
+          description: True when name comes from the collection's own metadata rather than a folder name, file name or default.
         uid:
           type: string
       required:
@@ -527,6 +530,14 @@ components:
             type: string
         folder_id:
           type: string
+        header_repairs:
+          type: object
+          description: bruno_invalid_header_value finding ID to the fix to apply. A repaired finding needs no acknowledgement.
+          additionalProperties:
+            type: string
+            enum:
+              - trim
+              - remove
         import_session_id:
           type: string
         migrate_secrets:
@@ -552,12 +563,16 @@ components:
           description: Shared-value candidate ID to the operator-entered value applied across every selected script.
           additionalProperties:
             type: string
+        update_targets:
+          type: object
+          description: Native candidate ID to the script an earlier import created from the same request. That script is updated as a new version instead of creating a duplicate. folder_id may be omitted when every selected candidate has an update target.
+          additionalProperties:
+            $ref: '#/components/schemas/BrunoNativeUpdateTarget'
       additionalProperties: false
       required:
         - project_id
         - import_session_id
         - mode
-        - folder_id
     BrunoNativeBatchCommitResponse:
       type: object
       description: Atomic receipt for a create-only native Bruno batch.
@@ -579,6 +594,16 @@ components:
           items:
             type: object
             additionalProperties: true
+        unconfigured_secret_names:
+          type: array
+          description: Project secrets the saved scripts reference that have no value yet. Configure them before a run. Omitted on an idempotent replay.
+          items:
+            type: string
+        updated_script_ids:
+          type: array
+          description: Scripts this batch updated as a new version rather than created.
+          items:
+            type: string
       required:
         - batch_id
         - scripts
@@ -609,6 +634,8 @@ components:
           type: string
         finding_id:
           type: string
+        header_repair:
+          $ref: '#/components/schemas/BrunoNativeHeaderRepair'
         id:
           type: string
         message:
@@ -638,6 +665,67 @@ components:
         - ready
         - blockers
         - candidates
+    BrunoNativeExistingScript:
+      type: object
+      description: A script an earlier import created from the same source request.
+      properties:
+        edited_since_import:
+          type: boolean
+          description: True when the script changed after the import that last saved it, including a rename or move, or that cannot be confirmed. Updating replaces its steps and settings and keeps its name and folder.
+        folder_id:
+          type: string
+        matches:
+          type: integer
+          description: Active scripts imported from this request. A script from the same collection is offered first, then the newest.
+        name:
+          type: string
+        ref_key:
+          type: string
+        same_collection:
+          type: boolean
+          description: True when the collection UIDs match or, with no UIDs, the collection names do. Other matches should default to creating a copy.
+        script_id:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - script_id
+        - name
+        - updated_at
+        - matches
+    BrunoNativeHeaderRepair:
+      type: object
+      description: Locates a request header HTTP cannot carry and lists the fixes available at commit. It carries no header value.
+      properties:
+        action_index:
+          type: integer
+        header_index:
+          type: integer
+        header_name:
+          type: string
+          description: Empty when the name itself is invalid.
+        invalid_character:
+          type: string
+          description: Plain description of the first character HTTP does not allow.
+        kept_characters:
+          type: integer
+          description: Characters trim keeps.
+        options:
+          type: array
+          items:
+            type: string
+            enum:
+              - trim
+              - remove
+        removed_characters:
+          type: integer
+          description: Characters trim removes.
+      required:
+        - action_index
+        - header_index
+        - header_name
+        - options
     BrunoNativeInspectResult:
       type: object
       properties:
@@ -718,6 +806,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BrunoNativeDiagnostic'
+        existing_script:
+          $ref: '#/components/schemas/BrunoNativeExistingScript'
         fidelity:
           type: string
         method:
@@ -757,6 +847,19 @@ components:
         - target
         - script
         - fidelity
+    BrunoNativeUpdateTarget:
+      type: object
+      properties:
+        expected_updated_at:
+          type: string
+          format: date-time
+          description: The script's updated_at when it was reviewed. The update fails if the script changed since.
+        script_id:
+          type: string
+      additionalProperties: false
+      required:
+        - script_id
+        - expected_updated_at
     BrunoSecretRequirement:
       type: object
       properties:

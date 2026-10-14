@@ -314,6 +314,48 @@ http:
 	}
 }
 
+func TestBrunoNativeBatchCommitsUnresolvedCredentialsWithoutBindings(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{
+			Path:    "demo/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: Unbound credential, uid: unbound-credential}\n",
+		},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Unbound credential, uid: unbound-credential-request, type: http}
+http:
+  method: GET
+  url: https://example.test
+  auth: {type: basic, username: '{{username}}', password: '{{password}}'}
+`,
+		},
+	})
+	if len(inspection.Result.SecretRequirements) != 2 {
+		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
+	}
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-unbound")
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create_native_batch",
+		FolderID:        &folderID,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("unbound credential commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	created := decodeBrunoNativeBatchTestResponse(t, response)
+	encoded, err := json.Marshal(created.Scripts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requirement := range inspection.Result.SecretRequirements {
+		if !strings.Contains(string(encoded), requirement.Replacement) {
+			t.Fatalf("saved script lost unresolved reference %q: %s", requirement.Replacement, encoded)
+		}
+	}
+}
+
 func TestBrunoNativeInspectTreatsPolicyHeaderRedactionSentinelAsUnavailable(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1299,7 +1341,8 @@ http:
 		MigrateSecrets:  &migrate,
 	})
 	if unauthorized.Code != http.StatusForbidden ||
-		!strings.Contains(unauthorized.Body.String(), "source secret migration is not allowed") {
+		!strings.Contains(unauthorized.Body.String(), "source secret migration is not allowed") ||
+		!strings.Contains(unauthorized.Body.String(), `"reason":"policy_disabled"`) {
 		t.Fatalf("unauthorized native migration status = %d body=%s", unauthorized.Code, unauthorized.Body.String())
 	}
 	if strings.Contains(unauthorized.Body.String(), "source-password-value") {

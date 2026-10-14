@@ -2073,12 +2073,15 @@ func buildNativeCandidate(
 	} else {
 		switch timeout := *effective.Settings.TimeoutMS; {
 		case timeout == 0:
-			action.TimeoutMs = nativeMaxTimeoutMS
+			// Bruno writes 0 ("no timeout") by default. A load test needs a
+			// bounded wait, so use the same default as an omitted timeout
+			// rather than the one-hour maximum.
+			action.TimeoutMs = nativeDefaultTimeoutMS
 			diagnostics = append(diagnostics, nativeDiagnostic(
 				file.Path,
-				"warning",
-				"bruno_unbounded_timeout_clamped",
-				fmt.Sprintf("Bruno timeout 0 is unbounded; APEX applies its maximum request timeout of %d ms.", nativeMaxTimeoutMS),
+				"info",
+				"bruno_unbounded_timeout_defaulted",
+				fmt.Sprintf("Bruno timeout 0 means no timeout; APEX uses its default request timeout of %d ms. Raise it in the request settings if this request needs longer.", nativeDefaultTimeoutMS),
 				false,
 			))
 		case timeout < 0:
@@ -2369,28 +2372,29 @@ func buildNativeCandidate(
 		Source:           "bruno",
 		SourceScriptName: item.Name,
 		Preserved: map[string]any{
-			"schema_version":         ImporterVersion,
-			"native_importer":        nativeImporterVersion,
-			"collection_name":        collection.Name,
-			"collection_uid":         collection.UID,
-			"collection_sha256":      collectionSHA256,
-			"manifest_sha256":        manifest.SHA256,
-			"source_path":            item.Path,
-			"source_uid":             item.UID,
-			"source_sequence":        item.Sequence,
-			"source_sha256":          manifestHashes[file.Path],
-			"ancestor_folders":       ancestorSummary,
-			"effective_headers":      nativeHeaderNames(headers),
-			"effective_auth":         effective.Auth.Mode,
-			"soap_version_hint":      soapVersion,
-			"soap_operation_hint":    soapOperation,
-			"hook_hashes":            hookHashes,
-			"converted_hook_count":   convertedHookCount,
-			"review_hook_count":      reviewHookCount,
-			"diagnostic_ids":         diagnosticIDs,
-			"finding_ids":            findingIDs,
-			"effective_fields":       effectiveFields,
-			"missing_variable_count": len(missing),
+			"schema_version":           ImporterVersion,
+			"native_importer":          nativeImporterVersion,
+			"collection_name":          collection.Name,
+			"collection_name_declared": collection.NameDeclared,
+			"collection_uid":           collection.UID,
+			"collection_sha256":        collectionSHA256,
+			"manifest_sha256":          manifest.SHA256,
+			"source_path":              item.Path,
+			"source_uid":               item.UID,
+			"source_sequence":          item.Sequence,
+			"source_sha256":            manifestHashes[file.Path],
+			"ancestor_folders":         ancestorSummary,
+			"effective_headers":        nativeHeaderNames(headers),
+			"effective_auth":           effective.Auth.Mode,
+			"soap_version_hint":        soapVersion,
+			"soap_operation_hint":      soapOperation,
+			"hook_hashes":              hookHashes,
+			"converted_hook_count":     convertedHookCount,
+			"review_hook_count":        reviewHookCount,
+			"diagnostic_ids":           diagnosticIDs,
+			"finding_ids":              findingIDs,
+			"effective_fields":         effectiveFields,
+			"missing_variable_count":   len(missing),
 		},
 	}}
 
@@ -2429,7 +2433,7 @@ func buildNativeCandidate(
 			fidelity = "review_required"
 			break
 		}
-		if strings.Contains(diagnostic.Code, "clamped") {
+		if strings.Contains(diagnostic.Code, "clamped") || diagnostic.Code == "bruno_unbounded_timeout_defaulted" {
 			fidelity = "exact_with_runtime_bound"
 		}
 	}

@@ -19,6 +19,8 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -140,8 +142,22 @@ type brunoCommitRequest struct {
 	CandidateIDs           []string          `json:"candidate_ids,omitempty"`
 	NameOverrides          map[string]string `json:"name_overrides,omitempty"`
 	AcknowledgedFindingIDs []string          `json:"acknowledged_finding_ids,omitempty"`
-	candidateIDsOmitted    bool
-	nameOverridesOmitted   bool
+	// UpdateTargets maps a native candidate ID to the script an earlier import
+	// created from the same request. That script is updated as a new version
+	// instead of creating a duplicate.
+	UpdateTargets map[string]brunoNativeUpdateTarget `json:"update_targets,omitempty"`
+	// HeaderRepairs maps a bruno_invalid_header_value finding ID to
+	// brunoconvert.HeaderRepairTrim or HeaderRepairRemove.
+	HeaderRepairs        map[string]string `json:"header_repairs,omitempty"`
+	candidateIDsOmitted  bool
+	nameOverridesOmitted bool
+}
+
+// brunoNativeUpdateTarget names an existing script and the updated_at the
+// operator reviewed. The update fails if the script changed since.
+type brunoNativeUpdateTarget struct {
+	ScriptID          string    `json:"script_id"`
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
 }
 
 type brunoSecretMigrationPartialError struct {
@@ -441,6 +457,14 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 			)
 		}
 	}
+	if nativeMode {
+		s.attachBrunoNativeExistingScripts(input.ProjectID, result)
+		if err := attachBrunoNativeHeaderRepairs(result); err != nil {
+			clearBrunoImportSecretValues(result)
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+	}
 	boundedValues, err := boundedBrunoImportSecretValues(result.SecretRequirements)
 	clearStringMap(boundedValues)
 	if err != nil {
@@ -643,6 +667,186 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// brunoImportedScriptLister is the storage needed to match a re-import with
+// the scripts an earlier import created.
+type brunoImportedScriptLister interface {
+	ListImportedScriptIdentities(projectID, source string) ([]storage.ImportedScriptIdentity, error)
+	ImportBatchSavedAt(projectID string, scriptIDs []string) (map[string]time.Time, error)
+}
+
+// attachBrunoNativeExistingScripts marks each candidate whose source request
+// an earlier import already saved in this project, so a re-import can update
+// that script as a new version instead of duplicating it. Matching is a
+// convenience: when it cannot run, inspection continues without it.
+//
+// A candidate ID hashes the request's UID and path. Collection UIDs that
+// differ never match. A match is the same collection only when the UIDs are
+// equal or, with no UIDs, the collection names are equal; other matches are
+// offered but default to a copy.
+func (s *Server) attachBrunoNativeExistingScripts(projectID string, result *brunoconvert.Result) {
+	if s == nil || result == nil || len(result.Scripts) == 0 {
+		return
+	}
+	lister, ok := s.store.(brunoImportedScriptLister)
+	if !ok {
+		return
+	}
+	identities, err := lister.ListImportedScriptIdentities(projectID, "bruno")
+	if err != nil {
+		slog.Warn("match previously imported Bruno scripts", "project_id", projectID, "error", err)
+		return
+	}
+	byCandidate := make(map[string][]storage.ImportedScriptIdentity)
+	for _, identity := range identities {
+		if identity.ArchivedAt != nil {
+			continue
+		}
+		if candidateID, _, _, ok := brunoNativeImportIdentity(identity.Import); ok && candidateID != "" {
+			byCandidate[candidateID] = append(byCandidate[candidateID], identity)
+		}
+	}
+	type match struct {
+		identity       storage.ImportedScriptIdentity
+		matches        int
+		sameCollection bool
+	}
+	chosen := make(map[int]match)
+	var chosenIDs []string
+	for index := range result.Scripts {
+		candidate := &result.Scripts[index]
+		if candidate.Script == nil {
+			continue
+		}
+		var candidateImport *dsl.ImportMetadata
+		if candidate.Script.Metadata != nil {
+			candidateImport = candidate.Script.Metadata.Import
+		}
+		_, collectionUID, collectionName, _ := brunoNativeImportIdentity(candidateImport)
+		// A name taken from a folder, a file or the default can coincide
+		// across unrelated uploads, so only a declared name can match.
+		declared := false
+		if candidateImport != nil {
+			declared, _ = candidateImport.Preserved["collection_name_declared"].(bool)
+		}
+		if !declared {
+			collectionName = ""
+		}
+		best := match{}
+		found := false
+		count := 0
+		for _, existing := range byCandidate[candidate.CandidateID] {
+			_, existingUID, existingName, _ := brunoNativeImportIdentity(existing.Import)
+			// Scripts saved before the flag existed have no record of where
+			// their name came from; an explicit false is never an identity.
+			if existingDeclared, recorded := existing.Import.Preserved["collection_name_declared"].(bool); recorded && !existingDeclared {
+				existingName = ""
+			}
+			if collectionUID != "" && existingUID != "" && collectionUID != existingUID {
+				continue
+			}
+			count++
+			sameCollection := (collectionUID != "" && collectionUID == existingUID) ||
+				(collectionUID == "" && existingUID == "" && collectionName != "" &&
+					strings.EqualFold(collectionName, existingName))
+			// Prefer a script from the same collection, then the newest.
+			if !found || (sameCollection && !best.sameCollection) ||
+				(sameCollection == best.sameCollection && existing.UpdatedAt.After(best.identity.UpdatedAt)) {
+				best = match{identity: existing, sameCollection: sameCollection}
+				found = true
+			}
+		}
+		if !found {
+			continue
+		}
+		best.matches = count
+		chosen[index] = best
+		chosenIDs = append(chosenIDs, best.identity.ID)
+	}
+	if len(chosen) == 0 {
+		return
+	}
+	savedAt, err := lister.ImportBatchSavedAt(projectID, chosenIDs)
+	if err != nil {
+		slog.Warn("read Bruno import receipts for edit detection", "project_id", projectID, "error", err)
+		savedAt = nil
+	}
+	for index, best := range chosen {
+		folderID := ""
+		if best.identity.FolderID != nil {
+			folderID = strings.TrimSpace(*best.identity.FolderID)
+		}
+		saved, known := savedAt[best.identity.ID]
+		// Postgres keeps microseconds while the receipt keeps nanoseconds. A
+		// script with no receipt is treated as edited, which only adds a
+		// warning.
+		edited := !known || !saved.Truncate(time.Microsecond).Equal(best.identity.UpdatedAt.Truncate(time.Microsecond))
+		result.Scripts[index].ExistingScript = &brunoconvert.NativeExistingScript{
+			ScriptID:          best.identity.ID,
+			Name:              best.identity.Name,
+			RefKey:            best.identity.RefKey,
+			FolderID:          folderID,
+			UpdatedAt:         best.identity.UpdatedAt.UTC(),
+			Matches:           best.matches,
+			SameCollection:    best.sameCollection,
+			EditedSinceImport: edited,
+		}
+	}
+}
+
+// brunoNativeImportIdentity returns the source identity a native Bruno import
+// records in a script's import metadata: the candidate ID (request UID and
+// path), which commit stamps and an inspection candidate lacks, the
+// collection UID, which may be empty, and the collection name.
+func brunoNativeImportIdentity(metadata *dsl.ImportMetadata) (string, string, string, bool) {
+	if metadata == nil || !strings.EqualFold(strings.TrimSpace(metadata.Source), "bruno") {
+		return "", "", "", false
+	}
+	preserved := metadata.Preserved
+	if preserved == nil || preserved["native_importer"] == nil {
+		return "", "", "", false
+	}
+	candidateID, _ := preserved["candidate_id"].(string)
+	collectionUID, _ := preserved["collection_uid"].(string)
+	collectionName, _ := preserved["collection_name"].(string)
+	return strings.TrimSpace(candidateID), strings.TrimSpace(collectionUID), strings.TrimSpace(collectionName), true
+}
+
+// attachBrunoNativeHeaderRepairs adds a review finding, with a fix, for each
+// request header HTTP cannot carry. Headers are checked as a default commit
+// would save them, with imported credential values restored.
+func attachBrunoNativeHeaderRepairs(result *brunoconvert.Result) error {
+	if result == nil {
+		return nil
+	}
+	_, replacements, err := planBrunoNativeSecretBindings(result.SecretRequirements, nil, false)
+	if err != nil {
+		return err
+	}
+	defer clearStringMap(replacements)
+	for index := range result.Scripts {
+		candidate := &result.Scripts[index]
+		if candidate.Script == nil {
+			continue
+		}
+		bound, bindErr := applyBrunoNativeCredentialTargets(
+			cloneScriptDefinition(candidate.Script),
+			candidate.CredentialTargets,
+			candidate.SecretRequirements,
+			replacements,
+		)
+		if bindErr != nil {
+			return fmt.Errorf("check native Bruno request headers for %q: %w", candidate.SourcePath, bindErr)
+		}
+		diagnostics := brunoconvert.NativeHeaderRepairDiagnostics(candidate.CandidateID, candidate.SourcePath, bound)
+		if len(diagnostics) == 0 {
+			continue
+		}
+		candidate.Diagnostics = append(candidate.Diagnostics, diagnostics...)
+		candidate.Fidelity = "review_required"
+	}
+	return nil
+}
+
 // brunoNativeCandidateScripts collects the generated scripts of a native
 // inspection so cross-script passes can see the whole collection at once.
 func brunoNativeCandidateScripts(result *brunoconvert.Result) []*dsl.Script {
@@ -728,6 +932,12 @@ func brunoNativeExecutionPreflight(
 		}
 		if scriptHasPromotionBlocker(candidate.Script) {
 			blockers = append(blockers, "review_required")
+		}
+		for _, diagnostic := range candidate.Diagnostics {
+			if diagnostic.HeaderRepair != nil {
+				blockers = append(blockers, "invalid_header")
+				break
+			}
 		}
 		totalBlockers += len(blockers)
 		statuses = append(statuses, candidateStatus{
@@ -816,6 +1026,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		"project_id": {}, "import_session_id": {}, "mode": {}, "folder_id": {},
 		"candidate_ids": {}, "name_overrides": {}, "secret_bindings": {},
 		"migrate_secrets": {}, "acknowledged_finding_ids": {}, "shared_values": {},
+		"update_targets": {}, "header_repairs": {},
 	}
 	var incompatible []string
 	for field := range fields {
@@ -839,7 +1050,10 @@ func (s *Server) handleCommitBrunoNativeImport(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if request.FolderID == nil || strings.TrimSpace(*request.FolderID) == "" {
+	if request.FolderID != nil && *request.FolderID == "" {
+		request.FolderID = nil
+	}
+	if request.FolderID == nil && len(request.UpdateTargets) == 0 {
 		writeError(w, http.StatusBadRequest, "folder_id is required for native Bruno batch imports")
 		return
 	}
@@ -908,11 +1122,12 @@ func (s *Server) handleCommitBrunoNativeImport(
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"batch_id":          receipt.Batch.ID,
-			"scripts":           maskBrunoNativeCommitScripts(receipt.Scripts),
-			"count":             len(receipt.Scripts),
-			"created":           false,
-			"idempotent_replay": true,
+			"batch_id":           receipt.Batch.ID,
+			"scripts":            maskBrunoNativeCommitScripts(receipt.Scripts),
+			"count":              len(receipt.Scripts),
+			"created":            false,
+			"idempotent_replay":  true,
+			"updated_script_ids": brunoNativeReceiptUpdatedScriptIDs(receipt, replayRequest),
 		})
 		return
 	} else if !errors.Is(receiptErr, sql.ErrNoRows) {
@@ -951,26 +1166,28 @@ func (s *Server) handleCommitBrunoNativeImport(
 		return
 	}
 
-	folder, folderErr := s.store.GetFolder(*request.FolderID)
-	if folderErr != nil {
-		if errors.Is(folderErr, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "native Bruno destination folder not found")
-		} else {
-			writeError(w, http.StatusInternalServerError, folderErr.Error())
+	if request.FolderID != nil {
+		folder, folderErr := s.store.GetFolder(*request.FolderID)
+		if folderErr != nil {
+			if errors.Is(folderErr, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "native Bruno destination folder not found")
+			} else {
+				writeError(w, http.StatusInternalServerError, folderErr.Error())
+			}
+			return
 		}
-		return
-	}
-	if folder == nil {
-		writeError(w, http.StatusNotFound, "native Bruno destination folder not found")
-		return
-	}
-	if normalizeProjectID(folder.ProjectID) != request.ProjectID {
-		writeError(w, http.StatusForbidden, "native Bruno destination folder belongs to another project")
-		return
-	}
-	if !strings.EqualFold(strings.TrimSpace(folder.Category), "scripts") {
-		writeError(w, http.StatusConflict, "native Bruno destination must be a script folder")
-		return
+		if folder == nil {
+			writeError(w, http.StatusNotFound, "native Bruno destination folder not found")
+			return
+		}
+		if normalizeProjectID(folder.ProjectID) != request.ProjectID {
+			writeError(w, http.StatusForbidden, "native Bruno destination folder belongs to another project")
+			return
+		}
+		if !strings.EqualFold(strings.TrimSpace(folder.Category), "scripts") {
+			writeError(w, http.StatusConflict, "native Bruno destination must be a script folder")
+			return
+		}
 	}
 
 	if session.Result == nil || len(session.Result.Scripts) == 0 {
@@ -983,7 +1200,33 @@ func (s *Server) handleCommitBrunoNativeImport(
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if err := validateBrunoNativeNamesAndAcknowledgements(selected, request.NameOverrides, request.AcknowledgedFindingIDs); err != nil {
+	headerRepairs, err := selectedBrunoNativeHeaderRepairs(selected, request.HeaderRepairs)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	selectedIDs := make(map[string]struct{}, len(selected))
+	for _, candidate := range selected {
+		selectedIDs[candidate.CandidateID] = struct{}{}
+	}
+	for candidateID := range request.UpdateTargets {
+		if _, ok := selectedIDs[candidateID]; !ok {
+			writeError(w, http.StatusConflict, fmt.Sprintf("update target candidate %q is not selected", candidateID))
+			return
+		}
+	}
+	if request.FolderID == nil && len(request.UpdateTargets) < len(selected) {
+		writeError(w, http.StatusBadRequest, "folder_id is required when a native Bruno batch creates scripts")
+		return
+	}
+	// Repairing a finding resolves it, so it needs no acknowledgement.
+	resolvedFindingIDs := append([]string(nil), request.AcknowledgedFindingIDs...)
+	for findingID := range request.HeaderRepairs {
+		if !slices.Contains(resolvedFindingIDs, findingID) {
+			resolvedFindingIDs = append(resolvedFindingIDs, findingID)
+		}
+	}
+	if err := validateBrunoNativeNamesAndAcknowledgements(selected, request.NameOverrides, resolvedFindingIDs); err != nil {
 		var reviewErr *brunoNativeReviewRequiredError
 		if errors.As(err, &reviewErr) {
 			writeJSON(w, http.StatusConflict, map[string]any{
@@ -1008,6 +1251,8 @@ func (s *Server) handleCommitBrunoNativeImport(
 
 	scripts := make([]*dsl.Script, 0, len(selected))
 	candidateIDs := make([]string, 0, len(selected))
+	expectedUpdatedAt := make([]*time.Time, 0, len(selected))
+	updatedScriptIDs := make([]string, 0, len(request.UpdateTargets))
 	plannedIDs := make(map[string]struct{}, len(selected))
 	for _, candidate := range selected {
 		script := cloneScriptDefinition(candidate.Script)
@@ -1015,29 +1260,60 @@ func (s *Server) handleCommitBrunoNativeImport(
 			writeError(w, http.StatusConflict, "native Bruno candidate has no server-owned script")
 			return
 		}
-		script.ID = strings.TrimSpace(candidate.PlannedScriptID)
-		if _, parseErr := uuid.Parse(script.ID); parseErr != nil {
-			writeError(w, http.StatusConflict, fmt.Sprintf("native Bruno candidate %q has an invalid planned script id", candidate.CandidateID))
+		if strings.TrimSpace(script.Protocol) != "http" {
+			writeError(w, http.StatusConflict, fmt.Sprintf("native Bruno candidate %q protocol must be exactly http", candidate.CandidateID))
 			return
+		}
+		var expected *time.Time
+		if target, updating := request.UpdateTargets[candidate.CandidateID]; updating {
+			existing, targetErr := s.brunoNativeUpdateTargetScript(request.ProjectID, candidate.CandidateID, target)
+			if targetErr != nil {
+				if !errors.Is(targetErr, errBrunoNativeUpdateTargetStale) {
+					ref := logServerError(w, http.StatusInternalServerError, targetErr, "code", "bruno_native_update_target_unavailable")
+					writeJSON(w, http.StatusInternalServerError, map[string]any{
+						"error":        "the script to update could not be read",
+						"ref":          ref,
+						"code":         "bruno_native_update_target_unavailable",
+						"candidate_id": candidate.CandidateID,
+					})
+					return
+				}
+				writeJSON(w, http.StatusConflict, map[string]any{
+					"error":        targetErr.Error(),
+					"code":         "bruno_native_update_target_stale",
+					"candidate_id": candidate.CandidateID,
+				})
+				return
+			}
+			script.ID = existing.ID
+			script.FolderID = cloneStringPtr(existing.FolderID)
+			script.Name = existing.Name
+			script.Version = existing.Version
+			script.CreatedAt = existing.CreatedAt
+			expectedTime := target.ExpectedUpdatedAt
+			expected = &expectedTime
+			updatedScriptIDs = append(updatedScriptIDs, existing.ID)
+		} else {
+			script.ID = strings.TrimSpace(candidate.PlannedScriptID)
+			if _, parseErr := uuid.Parse(script.ID); parseErr != nil {
+				writeError(w, http.StatusConflict, fmt.Sprintf("native Bruno candidate %q has an invalid planned script id", candidate.CandidateID))
+				return
+			}
+			if _, existingErr := s.store.GetScript(script.ID); existingErr == nil {
+				writeError(w, http.StatusConflict, fmt.Sprintf("planned native Bruno script id %q already exists", script.ID))
+				return
+			} else if !errors.Is(existingErr, sql.ErrNoRows) {
+				writeError(w, http.StatusInternalServerError, existingErr.Error())
+				return
+			}
+			script.FolderID = cloneStringPtr(request.FolderID)
 		}
 		if _, duplicate := plannedIDs[script.ID]; duplicate {
 			writeError(w, http.StatusConflict, fmt.Sprintf("native Bruno candidates contain duplicate planned script id %q", script.ID))
 			return
 		}
 		plannedIDs[script.ID] = struct{}{}
-		if strings.TrimSpace(script.Protocol) != "http" {
-			writeError(w, http.StatusConflict, fmt.Sprintf("native Bruno candidate %q protocol must be exactly http", candidate.CandidateID))
-			return
-		}
-		if _, existingErr := s.store.GetScript(script.ID); existingErr == nil {
-			writeError(w, http.StatusConflict, fmt.Sprintf("planned native Bruno script id %q already exists", script.ID))
-			return
-		} else if !errors.Is(existingErr, sql.ErrNoRows) {
-			writeError(w, http.StatusInternalServerError, existingErr.Error())
-			return
-		}
 		script.ProjectID = request.ProjectID
-		script.FolderID = cloneStringPtr(request.FolderID)
 		if override, exists := request.NameOverrides[candidate.CandidateID]; exists {
 			script.Name = strings.TrimSpace(override)
 		}
@@ -1081,6 +1357,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		}
 		scripts = append(scripts, script)
 		candidateIDs = append(candidateIDs, candidate.CandidateID)
+		expectedUpdatedAt = append(expectedUpdatedAt, expected)
 	}
 
 	// Collection-wide values are applied across the whole selected batch before
@@ -1169,6 +1446,30 @@ func (s *Server) handleCommitBrunoNativeImport(
 				"candidate_id": candidateIDs[index],
 			})
 			return
+		}
+		for _, planned := range headerRepairs[candidateIDs[index]] {
+			applied, repairErr := brunoconvert.ApplyNativeHeaderRepair(bound, planned.repair, planned.choice)
+			if repairErr == nil && !applied && migrateSecrets {
+				// The header now holds a project-secret reference, so the fix
+				// cannot reach the value. When that secret does not exist yet,
+				// migration creates it from the invalid source value.
+				migrated, statusErr := s.brunoHeaderSecretsAwaitValue(r, request.ProjectID,
+					brunoconvert.NativeHeaderRepairTargetValue(bound, planned.repair))
+				switch {
+				case statusErr != nil:
+					repairErr = errors.New("the header's project secrets could not be checked; retry the save")
+				case migrated:
+					repairErr = errors.New("the header's credential is being moved into project secrets, so its value cannot be fixed here; save without migrating it, or correct the value in Project secrets")
+				}
+			}
+			if repairErr != nil {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":        "native Bruno header repair failed: " + repairErr.Error(),
+					"code":         "bruno_native_header_repair_failed",
+					"candidate_id": candidateIDs[index],
+				})
+				return
+			}
 		}
 		safeScript, persistErr := preparePersistentBrunoNativeScript(bound)
 		if persistErr != nil {
@@ -1426,6 +1727,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		RawArtifact:       session.RawArtifact,
 		SanitizedArtifact: session.SanitizedArtifact,
 		RefKeyEnv:         s.runner.envCode,
+		ExpectedUpdatedAt: expectedUpdatedAt,
 	})
 	releaseReferenceMutation()
 	if err != nil {
@@ -1496,21 +1798,219 @@ func (s *Server) handleCommitBrunoNativeImport(
 	}
 	s.recordAuditEvent(r, "script.import.bruno.native.create", "success", "bruno_import_batch", commitResult.Batch.ID, request.ProjectID, map[string]any{
 		"source_format":    session.Result.SourceFormat,
-		"scripts_created":  len(commitResult.Scripts),
+		"scripts_created":  len(commitResult.Scripts) - len(updatedScriptIDs),
+		"scripts_updated":  len(updatedScriptIDs),
 		"secrets_migrated": len(migrations),
 	})
+	// Each overwritten script gets its own entry, so its history shows the
+	// re-import that replaced its content.
+	for _, scriptID := range updatedScriptIDs {
+		s.recordAuditEvent(r, "script.import.bruno.native.update", "success", "script", scriptID, request.ProjectID, map[string]any{
+			"batch_id":      commitResult.Batch.ID,
+			"source_format": session.Result.SourceFormat,
+		})
+	}
 	status := http.StatusCreated
 	if !commitResult.Created {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, map[string]any{
-		"batch_id":          commitResult.Batch.ID,
-		"scripts":           maskBrunoNativeCommitScripts(commitResult.Scripts),
-		"count":             len(commitResult.Scripts),
-		"created":           commitResult.Created,
-		"idempotent_replay": !commitResult.Created,
-		"secret_migrations": migrations,
-	})
+	response := map[string]any{
+		"batch_id":           commitResult.Batch.ID,
+		"scripts":            maskBrunoNativeCommitScripts(commitResult.Scripts),
+		"count":              len(commitResult.Scripts),
+		"created":            commitResult.Created,
+		"idempotent_replay":  !commitResult.Created,
+		"secret_migrations":  migrations,
+		"updated_script_ids": updatedScriptIDs,
+	}
+	// Saving does not require secret values. These are the referenced project
+	// secrets that still need one before a run; a failed status check leaves
+	// the field out rather than failing a committed import.
+	if unconfigured, statusErr := s.unconfiguredBrunoNativeSecretNames(r, request.ProjectID, secretBindings); statusErr == nil {
+		response["unconfigured_secret_names"] = unconfigured
+	} else {
+		slog.Warn("check native Bruno secret configuration", "project_id", request.ProjectID, "error", statusErr)
+	}
+	writeJSON(w, status, response)
+}
+
+// unconfiguredBrunoNativeSecretNames lists the project secrets a saved batch
+// references that have no usable value, using the same status check as the
+// project secrets API.
+func (s *Server) unconfiguredBrunoNativeSecretNames(r *http.Request, projectID string, bindings map[string]string) ([]string, error) {
+	names := make([]string, 0, len(bindings))
+	seen := make(map[string]struct{}, len(bindings))
+	for _, reference := range bindings {
+		name, ok := brunoSecretReferenceName(reference)
+		if !ok {
+			continue
+		}
+		if _, duplicate := seen[name]; !duplicate {
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	statuses, err := s.projectSecretStatuses(r, projectID, names)
+	if err != nil {
+		return nil, err
+	}
+	unconfigured := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		if !status.Configured {
+			unconfigured = append(unconfigured, status.Name)
+		}
+	}
+	return unconfigured, nil
+}
+
+var brunoSecretReferencePattern = regexp.MustCompile(`\{\{\s*secret\.([^{}\s]+)\s*\}\}`)
+
+// brunoHeaderSecretsAwaitValue reports whether value references a project
+// secret that has no usable value yet. During migration that is a secret the
+// commit will create from the source credential.
+func (s *Server) brunoHeaderSecretsAwaitValue(r *http.Request, projectID, value string) (bool, error) {
+	var names []string
+	for _, match := range brunoSecretReferencePattern.FindAllStringSubmatch(value, -1) {
+		if name, err := engine.NormalizeLogicalSecretName(match[1]); err == nil {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return false, nil
+	}
+	statuses, err := s.projectSecretStatuses(r, projectID, names)
+	if err != nil {
+		return false, err
+	}
+	for _, status := range statuses {
+		if !status.Configured {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// brunoSecretReferenceName returns NAME for a whole "{{secret.NAME}}"
+// reference.
+func brunoSecretReferenceName(reference string) (string, bool) {
+	reference = strings.TrimSpace(reference)
+	if !strings.HasPrefix(reference, "{{secret.") || !strings.HasSuffix(reference, "}}") {
+		return "", false
+	}
+	name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(reference, "{{secret."), "}}"))
+	return name, name != ""
+}
+
+var errBrunoNativeUpdateTargetStale = errors.New("native Bruno update target is stale")
+
+// brunoNativeReceiptUpdatedScriptIDs returns, in receipt order, the scripts a
+// replayed batch updated rather than created. A V3 receipt's digest covers
+// update_targets, so a matching replay names exactly the batch's updates.
+// Earlier profiles could not update scripts.
+func brunoNativeReceiptUpdatedScriptIDs(receipt *storage.BrunoNativeImportCommitResult, replay brunoCommitRequest) []string {
+	updated := []string{}
+	if receipt == nil || receipt.Batch == nil ||
+		strings.TrimSpace(receipt.Batch.RequestDigestProfile) != storage.ImportBatchDigestBrunoNativeCommitV3 {
+		return updated
+	}
+	targets := make(map[string]struct{}, len(replay.UpdateTargets))
+	for _, target := range replay.UpdateTargets {
+		targets[strings.TrimSpace(target.ScriptID)] = struct{}{}
+	}
+	for _, scriptID := range receipt.Batch.ScriptIDs {
+		if _, ok := targets[strings.TrimSpace(scriptID)]; ok {
+			updated = append(updated, scriptID)
+		}
+	}
+	return updated
+}
+
+// brunoNativeUpdateTargetScript loads the script a re-import updates and
+// checks it is still the active script an earlier import of this request
+// created, unchanged since review.
+func (s *Server) brunoNativeUpdateTargetScript(
+	projectID string,
+	candidateID string,
+	target brunoNativeUpdateTarget,
+) (*dsl.Script, error) {
+	stale := func(reason string) error {
+		return fmt.Errorf("%w: %s; inspect the source again", errBrunoNativeUpdateTargetStale, reason)
+	}
+	existing, err := s.store.GetScript(target.ScriptID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && existing == nil) {
+		return nil, stale("the script to update no longer exists")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if normalizeProjectID(existing.ProjectID) != projectID {
+		return nil, stale("the script to update no longer exists")
+	}
+	if existing.ArchivedAt != nil {
+		return nil, stale("the script to update is archived")
+	}
+	var existingImport *dsl.ImportMetadata
+	if existing.Metadata != nil {
+		existingImport = existing.Metadata.Import
+	}
+	if existingCandidateID, _, _, ok := brunoNativeImportIdentity(existingImport); !ok || existingCandidateID != candidateID {
+		return nil, stale("the script to update was not imported from this request")
+	}
+	if !existing.UpdatedAt.Equal(target.ExpectedUpdatedAt) {
+		return nil, stale("the script to update changed after review")
+	}
+	return existing, nil
+}
+
+type brunoNativePlannedHeaderRepair struct {
+	repair brunoconvert.NativeHeaderRepair
+	choice string
+}
+
+// selectedBrunoNativeHeaderRepairs resolves each requested header repair to
+// its finding on a selected candidate. Repairs are ordered last header first
+// so removing one header does not shift the next repair's position.
+func selectedBrunoNativeHeaderRepairs(
+	selected []brunoconvert.NativeScriptCandidate,
+	requested map[string]string,
+) (map[string][]brunoNativePlannedHeaderRepair, error) {
+	if len(requested) == 0 {
+		return nil, nil
+	}
+	planned := make(map[string][]brunoNativePlannedHeaderRepair)
+	found := make(map[string]struct{}, len(requested))
+	for _, candidate := range selected {
+		for _, diagnostic := range candidate.Diagnostics {
+			choice, wanted := requested[strings.TrimSpace(diagnostic.ID)]
+			if !wanted || diagnostic.HeaderRepair == nil {
+				continue
+			}
+			if !slices.Contains(diagnostic.HeaderRepair.Options, choice) {
+				return nil, fmt.Errorf("header repair %q is not available for finding %q", choice, diagnostic.ID)
+			}
+			found[strings.TrimSpace(diagnostic.ID)] = struct{}{}
+			planned[candidate.CandidateID] = append(planned[candidate.CandidateID], brunoNativePlannedHeaderRepair{
+				repair: *diagnostic.HeaderRepair,
+				choice: choice,
+			})
+		}
+	}
+	for findingID := range requested {
+		if _, ok := found[findingID]; !ok {
+			return nil, fmt.Errorf("header repair finding %q is stale or not selected; inspect the source again", findingID)
+		}
+	}
+	for candidateID := range planned {
+		repairs := planned[candidateID]
+		sort.Slice(repairs, func(i, j int) bool {
+			if repairs[i].repair.ActionIndex != repairs[j].repair.ActionIndex {
+				return repairs[i].repair.ActionIndex > repairs[j].repair.ActionIndex
+			}
+			return repairs[i].repair.HeaderIndex > repairs[j].repair.HeaderIndex
+		})
+	}
+	return planned, nil
 }
 
 func maskBrunoNativeCommitScripts(scripts []*dsl.Script) []*dsl.Script {
@@ -1963,6 +2463,39 @@ func normalizeBrunoNativeCommitRequest(request *brunoCommitRequest) error {
 		}
 		request.SecretBindings[requirementID] = name
 	}
+	request.HeaderRepairs, err = normalizeBrunoNativeStringMap("header_repairs", request.HeaderRepairs)
+	if err != nil {
+		return err
+	}
+	for findingID, rawChoice := range request.HeaderRepairs {
+		choice := strings.ToLower(rawChoice)
+		if choice != brunoconvert.HeaderRepairTrim && choice != brunoconvert.HeaderRepairRemove {
+			return fmt.Errorf("header repair for %q must be %q or %q", findingID, brunoconvert.HeaderRepairTrim, brunoconvert.HeaderRepairRemove)
+		}
+		request.HeaderRepairs[findingID] = choice
+	}
+	targets := make(map[string]brunoNativeUpdateTarget, len(request.UpdateTargets))
+	scriptTargets := make(map[string]string, len(request.UpdateTargets))
+	for rawCandidateID, target := range request.UpdateTargets {
+		candidateID := strings.TrimSpace(rawCandidateID)
+		if candidateID == "" {
+			return errors.New("update_targets cannot contain an empty candidate id")
+		}
+		if _, duplicate := targets[candidateID]; duplicate {
+			return fmt.Errorf("update_targets contains keys that normalize to the same value %q", candidateID)
+		}
+		target.ScriptID = strings.TrimSpace(target.ScriptID)
+		if target.ScriptID == "" || target.ExpectedUpdatedAt.IsZero() {
+			return fmt.Errorf("update target for %q requires script_id and expected_updated_at", candidateID)
+		}
+		if previous, reused := scriptTargets[target.ScriptID]; reused {
+			return fmt.Errorf("update targets for %q and %q name the same script", previous, candidateID)
+		}
+		scriptTargets[target.ScriptID] = candidateID
+		target.ExpectedUpdatedAt = target.ExpectedUpdatedAt.UTC()
+		targets[candidateID] = target
+	}
+	request.UpdateTargets = targets
 	return nil
 }
 
@@ -2104,12 +2637,15 @@ func planBrunoNativeSecretBindings(
 		if name == "" && requirement.ExistingReference {
 			name = suggested
 		}
+		if name == "" && !brunoImportCredentialValueUsable(requirement.Value) {
+			// An unresolved source expression keeps its generated reference.
+			// bindOrMigrateBrunoImportSecrets binds it to the suggested name,
+			// so preflight must plan the same binding.
+			name = suggested
+		}
 		if name == "" {
-			if brunoImportCredentialValueUsable(requirement.Value) {
-				replacements[requirementID] = requirement.Value
-			}
-			// Existing governed references and unresolved source expressions
-			// already remain in the candidate. They require no rewrite here.
+			// The source value is preserved in the destination by default.
+			replacements[requirementID] = requirement.Value
 			continue
 		}
 		name, err = engine.NormalizeLogicalSecretName(name)
@@ -2187,7 +2723,7 @@ func brunoNativeOverridesMatchReceipt(
 
 // brunoNativeCommitCurrentDigestProfile is the profile new receipts are written
 // under. Replays must use the profile recorded on the receipt instead.
-const brunoNativeCommitCurrentDigestProfile = storage.ImportBatchDigestBrunoNativeCommitV2
+const brunoNativeCommitCurrentDigestProfile = storage.ImportBatchDigestBrunoNativeCommitV3
 
 func brunoNativeCommitRequestSHA(request brunoCommitRequest) (string, error) {
 	return brunoNativeCommitRequestSHAForProfile(brunoNativeCommitCurrentDigestProfile, request)
@@ -2199,6 +2735,8 @@ func brunoNativeCommitRequestSHAForProfile(profile string, request brunoCommitRe
 		return brunoNativeCommitRequestSHAV1(request)
 	case storage.ImportBatchDigestBrunoNativeCommitV2:
 		return brunoNativeCommitRequestSHAV2(request)
+	case storage.ImportBatchDigestBrunoNativeCommitV3:
+		return brunoNativeCommitRequestSHAV3(request)
 	default:
 		return "", fmt.Errorf("unsupported Bruno native commit request digest profile %q", profile)
 	}
@@ -2318,6 +2856,83 @@ func brunoNativeCommitRequestSHAV2(request brunoCommitRequest) (string, error) {
 	return fmt.Sprintf("%x", sum[:]), nil
 }
 
+// brunoNativeCommitRequestSHAV3 extends V2 with update_targets and
+// header_repairs. Both change what is saved, so a retry that changes either
+// must not replay an earlier batch.
+//
+// Like V1 and V2, this implementation is frozen once receipts exist under it.
+func brunoNativeCommitRequestSHAV3(request brunoCommitRequest) (string, error) {
+	if strings.TrimSpace(request.ImportSessionID) == "" {
+		return "", errors.New("import_session_id is required")
+	}
+	candidateIDs := append([]string(nil), request.CandidateIDs...)
+	for index := range candidateIDs {
+		candidateIDs[index] = strings.TrimSpace(candidateIDs[index])
+	}
+	sort.Strings(candidateIDs)
+	acknowledged := append([]string(nil), request.AcknowledgedFindingIDs...)
+	for index := range acknowledged {
+		acknowledged[index] = strings.TrimSpace(acknowledged[index])
+	}
+	sort.Strings(acknowledged)
+	folderID := ""
+	if request.FolderID != nil {
+		folderID = strings.TrimSpace(*request.FolderID)
+	}
+	migrate := request.MigrateSecrets != nil && *request.MigrateSecrets
+	type updateTarget struct {
+		ScriptID          string `json:"script_id"`
+		ExpectedUpdatedAt string `json:"expected_updated_at"`
+	}
+	updateTargets := make(map[string]updateTarget, len(request.UpdateTargets))
+	for candidateID, target := range request.UpdateTargets {
+		updateTargets[strings.TrimSpace(candidateID)] = updateTarget{
+			ScriptID:          strings.TrimSpace(target.ScriptID),
+			ExpectedUpdatedAt: target.ExpectedUpdatedAt.UTC().Format(time.RFC3339Nano),
+		}
+	}
+	headerRepairs := request.HeaderRepairs
+	if headerRepairs == nil {
+		headerRepairs = map[string]string{}
+	}
+	payload, err := json.Marshal(struct {
+		ProjectID              string                  `json:"project_id"`
+		ImportSessionID        string                  `json:"import_session_id"`
+		Mode                   string                  `json:"mode"`
+		FolderID               string                  `json:"folder_id"`
+		CandidateIDs           []string                `json:"candidate_ids"`
+		NameOverrides          map[string]string       `json:"name_overrides"`
+		SecretBindings         map[string]string       `json:"secret_bindings"`
+		SharedValues           map[string]string       `json:"shared_values"`
+		UpdateTargets          map[string]updateTarget `json:"update_targets"`
+		HeaderRepairs          map[string]string       `json:"header_repairs"`
+		MigrateSecrets         bool                    `json:"migrate_secrets"`
+		AcknowledgedFindingIDs []string                `json:"acknowledged_finding_ids"`
+		CandidateIDsOmitted    bool                    `json:"candidate_ids_omitted"`
+		NameOverridesOmitted   bool                    `json:"name_overrides_omitted"`
+	}{
+		ProjectID:              normalizeProjectID(request.ProjectID),
+		ImportSessionID:        strings.TrimSpace(request.ImportSessionID),
+		Mode:                   "create_native_batch",
+		FolderID:               folderID,
+		CandidateIDs:           candidateIDs,
+		NameOverrides:          request.NameOverrides,
+		SecretBindings:         request.SecretBindings,
+		SharedValues:           request.SharedValues,
+		UpdateTargets:          updateTargets,
+		HeaderRepairs:          headerRepairs,
+		MigrateSecrets:         migrate,
+		AcknowledgedFindingIDs: acknowledged,
+		CandidateIDsOmitted:    request.candidateIDsOmitted,
+		NameOverridesOmitted:   request.nameOverridesOmitted,
+	})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", sum[:]), nil
+}
+
 func writeBrunoSecretPartialFailure(
 	w http.ResponseWriter,
 	status int,
@@ -2379,6 +2994,8 @@ func brunoCommitErrorStatus(err error) int {
 	switch {
 	case errors.Is(err, storage.ErrBrunoImportConcurrentChange), errors.Is(err, storage.ErrBrunoNativeBatchConflict):
 		return http.StatusConflict
+	case errors.Is(err, storage.ErrObjectArchived):
+		return http.StatusConflict
 	case errors.Is(err, storage.ErrBrunoRevisionNotFound):
 		return http.StatusNotFound
 	default:
@@ -2390,6 +3007,8 @@ func brunoCommitErrorReason(err error) string {
 	switch {
 	case errors.Is(err, storage.ErrBrunoImportConcurrentChange), errors.Is(err, storage.ErrBrunoNativeBatchConflict):
 		return "concurrent_change"
+	case errors.Is(err, storage.ErrObjectArchived):
+		return "script_archived"
 	case errors.Is(err, storage.ErrBrunoRevisionNotFound):
 		return "revision_not_found"
 	default:
@@ -3885,8 +4504,9 @@ func (s *Server) authorizeBrunoSourceSecretMigration(
 	// This response intentionally contains no requirement names, source paths,
 	// candidate details, or values. Callers reach it only after proving
 	// ownership of the actor/project-bound import session (or committed native
-	// receipt), preserving the import flow's anti-enumeration ordering.
-	writeError(w, http.StatusForbidden, "source secret migration is not allowed")
+	// receipt), preserving the import flow's anti-enumeration ordering. It
+	// names only the deployment policy or caller role that blocked migration.
+	s.writeSourceSecretMigrationDenied(w, r, projectID)
 	return false
 }
 

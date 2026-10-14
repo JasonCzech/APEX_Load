@@ -52,6 +52,9 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 	if len(batch.CandidateIDs) != len(commit.Scripts) {
 		return nil, errors.New("import batch candidate and script counts must match")
 	}
+	if len(commit.ExpectedUpdatedAt) != 0 && len(commit.ExpectedUpdatedAt) != len(commit.Scripts) {
+		return nil, errors.New("import batch expected update times and script counts must match")
+	}
 	if batch.CreatedAt.IsZero() {
 		batch.CreatedAt = time.Now().UTC()
 	}
@@ -88,7 +91,10 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 		if strings.TrimSpace(script.Protocol) == "" {
 			return nil, fmt.Errorf("import batch script %d requires a protocol", index+1)
 		}
-		if script.FolderID == nil || strings.TrimSpace(*script.FolderID) == "" {
+		// An updated script keeps its current placement, which may be the
+		// project root. A created script needs a destination folder.
+		if !importBatchRowUpdates(commit, index) &&
+			(script.FolderID == nil || strings.TrimSpace(*script.FolderID) == "") {
 			return nil, fmt.Errorf("import batch script %d requires a destination folder", index+1)
 		}
 		if _, duplicate := seenScripts[script.ID]; duplicate {
@@ -201,7 +207,13 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 
 	encodedScripts := make([]storedScriptJSON, len(commit.Scripts))
 	for i, script := range commit.Scripts {
-		if strings.TrimSpace(script.RefKey) == "" {
+		if importBatchRowUpdates(commit, i) {
+			refKey, refErr := nextImportBatchScriptVersionRefKeyTx(tx, script, commit.RefKeyEnv)
+			if refErr != nil {
+				return nil, fmt.Errorf("allocate import batch script %d version reference key: %w", i+1, refErr)
+			}
+			script.RefKey = refKey
+		} else if strings.TrimSpace(script.RefKey) == "" {
 			sequence, sequenceErr := nextImportBatchScriptSequenceTx(tx, commit.RefKeyEnv)
 			if sequenceErr != nil {
 				return nil, fmt.Errorf("allocate import batch script %d reference key: %w", i+1, sequenceErr)
@@ -219,21 +231,32 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 		if err := validateScriptFolderProjectTx(tx, batch.ProjectID, script.FolderID); err != nil {
 			return nil, err
 		}
-		var folderCategory string
-		if err := tx.QueryRow(`SELECT category FROM folders WHERE id = ?`, strings.TrimSpace(*script.FolderID)).Scan(&folderCategory); err != nil {
-			return nil, err
-		}
-		if !strings.EqualFold(strings.TrimSpace(folderCategory), "scripts") {
-			return nil, fmt.Errorf("import batch script %d destination must be a script folder", i+1)
+		// A created script must land in a script folder. An updated script
+		// keeps whatever placement it already has.
+		if !importBatchRowUpdates(commit, i) && script.FolderID != nil && strings.TrimSpace(*script.FolderID) != "" {
+			var folderCategory string
+			if err := tx.QueryRow(`SELECT category FROM folders WHERE id = ?`, strings.TrimSpace(*script.FolderID)).Scan(&folderCategory); err != nil {
+				return nil, err
+			}
+			if !strings.EqualFold(strings.TrimSpace(folderCategory), "scripts") {
+				return nil, fmt.Errorf("import batch script %d destination must be a script folder", i+1)
+			}
 		}
 		if err := validateScriptObjectRepositoryProjectsTx(tx, batch.ProjectID, script); err != nil {
 			return nil, err
 		}
-		created, err := upsertBrunoImportScriptTx(tx, script, encodedScripts[i], nil)
+		var expectedUpdatedAt *time.Time
+		if importBatchRowUpdates(commit, i) {
+			expectedUpdatedAt = commit.ExpectedUpdatedAt[i]
+		}
+		created, err := upsertBrunoImportScriptTx(tx, script, encodedScripts[i], expectedUpdatedAt)
+		if errors.Is(err, ErrBrunoImportConcurrentChange) {
+			return nil, ErrImportBatchConcurrentChange
+		}
 		if err != nil {
 			return nil, err
 		}
-		if !created {
+		if created == (expectedUpdatedAt != nil) {
 			return nil, ErrImportBatchConcurrentChange
 		}
 	}
@@ -267,6 +290,48 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 	}
 	publishImportBatchCommitSuccess(callerCommit, commit, commitResult)
 	return commitResult, nil
+}
+
+// importBatchRowUpdates reports whether the script at index updates an
+// existing script rather than creating one.
+func importBatchRowUpdates(commit *ImportBatchCommit, index int) bool {
+	return index < len(commit.ExpectedUpdatedAt) &&
+		commit.ExpectedUpdatedAt[index] != nil &&
+		!commit.ExpectedUpdatedAt[index].IsZero()
+}
+
+// nextImportBatchScriptVersionRefKeyTx returns the reference key for the next
+// version of an existing script, matching an ordinary script update. An
+// import update keeps the script's placement, so a different folder is
+// refused rather than applied as a move.
+func nextImportBatchScriptVersionRefKeyTx(tx *storeTx, script *dsl.Script, environment string) (string, error) {
+	var current string
+	var currentFolder sql.NullString
+	err := tx.QueryRow(`SELECT COALESCE(ref_key, ''), folder_id FROM scripts WHERE id = ? AND project_id = ?`,
+		script.ID, script.ProjectID).Scan(&current, &currentFolder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrImportBatchConcurrentChange
+	}
+	if err != nil {
+		return "", err
+	}
+	requestedFolder := ""
+	if script.FolderID != nil {
+		requestedFolder = strings.TrimSpace(*script.FolderID)
+	}
+	if requestedFolder != strings.TrimSpace(currentFolder.String) {
+		// The API sends the folder it read, so a difference means the script
+		// was moved after review.
+		return "", fmt.Errorf("%w: an import update cannot move a script to another folder", ErrImportBatchConcurrentChange)
+	}
+	if parts, ok := refkey.Parse(strings.ToUpper(strings.TrimSpace(current))); ok && parts.Type == refkey.TypeScript {
+		return refkey.Script(parts.Env, parts.Seq, parts.Version+1), nil
+	}
+	sequence, err := nextImportBatchScriptSequenceTx(tx, environment)
+	if err != nil {
+		return "", err
+	}
+	return refkey.Script(environment, sequence, 1), nil
 }
 
 func cloneImportBatchCommit(commit *ImportBatchCommit) (*ImportBatchCommit, error) {
@@ -515,6 +580,7 @@ func (s *SQLiteStore) CommitBrunoNativeImport(commit *BrunoNativeImportCommit) (
 		// marker before it will retain executable credential literals.
 		TrustPreservedExecutableCredentials: true,
 		RefKeyEnv:                           commit.RefKeyEnv,
+		ExpectedUpdatedAt:                   commit.ExpectedUpdatedAt,
 	}
 	result, err := s.CommitImportBatch(generic)
 	if err != nil {
