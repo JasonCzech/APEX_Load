@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 )
 
@@ -225,6 +226,9 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 		fmt.Fprintln(stdout, "Press Ctrl-C to stop the agent.")
 	}
 
+	// Replay browsers (verify) close before their Playwright driver exits
+	// with the agent.
+	defer browserprotocol.ShutdownPool(10 * time.Second)
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

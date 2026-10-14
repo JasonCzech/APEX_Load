@@ -5,8 +5,11 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	playwright "github.com/mxschmitt/playwright-go"
+
+	"github.com/jasonczech/apexload/pkg/internal/pwshutdown"
 )
 
 var (
@@ -103,6 +106,27 @@ func getBrowserInstance(engine string, headless bool, quic ...string) (playwrigh
 	}
 	globalBrowsers[key] = b
 	return b, nil
+}
+
+// ShutdownPool closes every pooled browser and then stops the Playwright
+// driver. A process calls it on exit: left to die with the process, the
+// driver takes each browser's DevTools pipe with it and the browsers crash
+// (see pwshutdown). It reports false when a browser did not close within
+// wait; the driver is stopped regardless, and a later replay starts afresh.
+func ShutdownPool(wait time.Duration) bool {
+	globalMutex.Lock()
+	pw := globalPlaywright
+	globalPlaywright = nil
+	closers := make([]func() error, 0, len(globalBrowsers))
+	for key, browser := range globalBrowsers {
+		closers = append(closers, func() error { return browser.Close() })
+		delete(globalBrowsers, key)
+	}
+	globalMutex.Unlock()
+	if pw == nil {
+		return pwshutdown.CloseThenStop(wait, nil, closers...)
+	}
+	return pwshutdown.CloseThenStop(wait, pw.Stop, closers...)
 }
 
 func browserPoolKey(engine string, headless bool, quic string) string {

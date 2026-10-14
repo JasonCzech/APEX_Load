@@ -218,6 +218,9 @@ func (m *BrowserRecordingManager) StartJanitor(ctx context.Context) {
 	}()
 }
 
+// Close stops the janitor and closes the browser of every live recording, so a
+// controller or agent that shuts down does not leave a recording browser to
+// crash when Playwright's driver exits with the process.
 func (m *BrowserRecordingManager) Close() {
 	if m == nil {
 		return
@@ -225,10 +228,30 @@ func (m *BrowserRecordingManager) Close() {
 	m.mu.Lock()
 	cancel := m.janitorCancel
 	m.janitorCancel = nil
+	var backends []browserRecorderBackend
+	for _, session := range m.sessions {
+		if !session.isLive() {
+			continue
+		}
+		session.mu.RLock()
+		if session.backend != nil {
+			backends = append(backends, session.backend)
+		}
+		session.mu.RUnlock()
+	}
 	m.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
+	var group sync.WaitGroup
+	for _, backend := range backends {
+		group.Add(1)
+		go func(backend browserRecorderBackend) {
+			defer group.Done()
+			backend.ForceStop()
+		}(backend)
+	}
+	group.Wait()
 }
 
 // Start launches a headed recording browser. It blocks until the browser is up

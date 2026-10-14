@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/internal/pwshutdown"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/mxschmitt/playwright-go"
 )
@@ -192,7 +193,10 @@ const (
 	maxBrowserDeviceScale       = 4
 	maxBrowserStopDuration      = 10 * time.Second
 	maxBrowserOperationDuration = 2 * time.Second
-	maxBrowserHARFlushDuration  = 3 * time.Second
+	// minBrowserCloseGrace is the least time a browser gets to close before
+	// its Playwright driver is stopped, whatever is left of a deadline.
+	minBrowserCloseGrace       = time.Second
+	maxBrowserHARFlushDuration = 3 * time.Second
 	// Playwright stores one attachment per distinct body, so a long
 	// recording holds tens of thousands; the central directory bound keeps
 	// opening the archive cheap.
@@ -2737,32 +2741,19 @@ func (r *Recorder) closeBrowserAsync() {
 
 func (r *Recorder) cleanupUntil(deadline time.Time) bool {
 	browser, pw := r.detachRuntime()
-	var group sync.WaitGroup
+	// The browser closes before Playwright stops: stopping the driver first
+	// crashes Chromium (see pwshutdown).
+	var closeBrowser, stopDriver func() error
 	if browser != nil {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			_ = browser.Close()
-		}()
+		closeBrowser = func() error { return browser.Close() }
 	}
 	if pw != nil {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			_ = pw.Stop()
-		}()
+		stopDriver = pw.Stop
 	}
-	done := make(chan struct{})
-	go func() {
-		group.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return true
-	case <-time.After(durationUntil(deadline, maxBrowserOperationDuration)):
-		return false
-	}
+	// A stop that spent its deadline on the HAR flush still lets the browser
+	// close before the driver goes.
+	wait := max(durationUntil(deadline, maxBrowserOperationDuration), minBrowserCloseGrace)
+	return pwshutdown.CloseThenStop(wait, stopDriver, closeBrowser)
 }
 
 func waitGroupUntil(group *sync.WaitGroup, deadline time.Time) bool {

@@ -300,6 +300,8 @@ func shutdownGeneratorRuntime(service generatorShutdownService, health healthSta
 		slog.Warn("generator service shutdown incomplete", "err", err)
 	}
 	drainCancel()
+	// Browser VUsers' browsers close before their Playwright driver exits.
+	browser.ShutdownPool(10 * time.Second)
 	if controlServer != nil && !gracefulStopWithTimeout(controlServer, grpcShutdownTimeout) {
 		slog.Warn("generator control gRPC graceful shutdown timed out; forced stop")
 	}

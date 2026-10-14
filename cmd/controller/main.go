@@ -21,6 +21,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/kubeops"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
@@ -347,6 +348,8 @@ func serveController(ctx context.Context, server controllerLifecycle, shutdownTi
 	if shutdownErr != nil {
 		shutdownErr = fmt.Errorf("server shutdown: %w", shutdownErr)
 	}
+	// Replay browsers close before their Playwright driver exits with us.
+	browserprotocol.ShutdownPool(10 * time.Second)
 	// When signal cancellation won, wait for Start to observe Shutdown. The
 	// buffered channel also lets a late Serve return exit without leaking a
 	// sender when the shutdown deadline expires.

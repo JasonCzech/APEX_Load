@@ -1309,3 +1309,25 @@ func TestBrowserRecordingManagerPassesQUICMode(t *testing.T) {
 		}
 	}
 }
+
+// Shutting down closes a live recording's browser before the process exits:
+// left open, Chromium crashed when Playwright's driver exited with the
+// controller or agent.
+func TestBrowserRecordingManagerCloseStopsLiveRecordingBrowser(t *testing.T) {
+	hub := NewHub()
+	m := NewBrowserRecordingManager(hub)
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.install(m)
+	if _, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/"}); err != nil {
+		t.Fatal(err)
+	}
+	drainHubBroadcasts(t, hub)
+
+	m.Close()
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.forceCalls != 1 {
+		t.Fatalf("ForceStop calls = %d, want the live recording's browser closed once", fake.forceCalls)
+	}
+}
