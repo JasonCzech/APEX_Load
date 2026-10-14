@@ -168,17 +168,15 @@ func TestValidateBrowserRecordingHARBaselinePreparation(t *testing.T) {
 		durable    bool
 		hasHTTP    bool
 		baseline   []correlate.Observation
-		deriveErr  error
 		wantErrSub string
 	}{
 		{name: "durable baseline", durable: true, hasHTTP: true, baseline: observation},
-		{name: "storage-free embedding", durable: false, hasHTTP: true, deriveErr: errors.New("unavailable")},
-		{name: "no HTTP companion", durable: true, hasHTTP: false, deriveErr: errors.New("unavailable")},
-		{name: "durable derivation failure", durable: true, hasHTTP: true, deriveErr: errors.New("bad HAR"), wantErrSub: "bad HAR"},
+		{name: "storage-free embedding", durable: false, hasHTTP: true},
+		{name: "no HTTP companion", durable: true, hasHTTP: false},
 		{name: "durable empty baseline", durable: true, hasHTTP: true, wantErrSub: "no persistable HTTP exchanges"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateBrowserRecordingHARBaselinePreparation(test.durable, test.hasHTTP, test.baseline, test.deriveErr)
+			err := validateBrowserRecordingHARBaselinePreparation(test.durable, test.hasHTTP, test.baseline)
 			if test.wantErrSub == "" && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -727,6 +725,8 @@ func TestHandlePreviewBrowserRecordingConversionTagsHTTPTransactions(t *testing.
 		Scripts []struct {
 			Protocol string `json:"protocol"`
 			Actions  []struct {
+				Name     string         `json:"name"`
+				Type     string         `json:"type"`
 				Target   string         `json:"target"`
 				Metadata map[string]any `json:"metadata"`
 			} `json:"actions"`
@@ -736,16 +736,25 @@ func TestHandlePreviewBrowserRecordingConversionTagsHTTPTransactions(t *testing.
 		t.Fatal(err)
 	}
 	tagged := map[string]any{}
+	var layout []string
 	for _, script := range payload.Scripts {
 		if script.Protocol != "http" {
 			continue
 		}
 		for _, action := range script.Actions {
+			if action.Type == "source_transaction" {
+				layout = append(layout, action.Name)
+				continue
+			}
+			layout = append(layout, action.Target)
 			tagged[action.Target] = action.Metadata["source_transaction"]
 		}
 	}
 	if len(tagged) != 2 || tagged["/api/home"] != nil || tagged["/api/cart"] != "Cart" {
 		t.Fatalf("HTTP transactions = %v, want only /api/cart in Cart", tagged)
+	}
+	if got := strings.Join(layout, "|"); got != "/api/home|Start Cart transaction|/api/cart|End Cart transaction" {
+		t.Fatalf("HTTP output = %s, want Cart timed around /api/cart", got)
 	}
 }
 
@@ -1857,11 +1866,11 @@ func TestHandleConvertBrowserRecordingRestartAdoptsStagedLocatorBeforeClaimCommi
 		}
 		stored = append(stored, item)
 	}
-	baseline, err := har.CorrelationBaseline(artifact.HAR, false)
+	converted, err := har.Convert(artifact.HAR, har.ConvertOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := first.finalizeBrowserRecordingHARBaseline(stored, baseline); err != nil {
+	if err := first.finalizeBrowserRecordingHARBaseline(stored, converted.Baseline); err != nil {
 		t.Fatal(err)
 	}
 	if err := first.persistBrowserRecordingSaveLocator(id, "proj-1", stored, attempt); err != nil {

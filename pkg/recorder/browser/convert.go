@@ -186,7 +186,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 			marker := entry.marker
 			switch marker.Kind {
 			case MarkerTransactionStart:
-				action := transactionMarkerAction(marker.Name, true)
+				action := dsl.TransactionMarker(marker.Name, true)
 				decorate(&action, false)
 				out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
 				txnStack = append(txnStack, marker.Name)
@@ -204,7 +204,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 					continue
 				}
 				txnStack = append(txnStack[:index], txnStack[index+1:]...)
-				action := transactionMarkerAction(marker.Name, false)
+				action := dsl.TransactionMarker(marker.Name, false)
 				decorate(&action, false)
 				out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
 			case MarkerNote:
@@ -251,29 +251,6 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 		}
 	}
 	return out
-}
-
-// transactionMarkerAction builds a recorded transaction boundary the way an
-// imported LoadRunner script carries one: the call's first argument names the
-// transaction, so renaming the step (import de-duplication renames a repeated
-// step name) never unpairs it, and the end takes LR_AUTO, so a failed step
-// inside fails the transaction instead of the end forcing a pass.
-func transactionMarkerAction(name string, start bool) dsl.Action {
-	if start {
-		return dsl.Action{Name: "Start " + name + " transaction", Type: "source_transaction", Params: map[string]any{"function": "lr_start_transaction", "args": []any{name}}}
-	}
-	return dsl.Action{Name: "End " + name + " transaction", Type: "source_transaction", Params: map[string]any{"function": "lr_end_transaction", "args": []any{name, "LR_AUTO"}}}
-}
-
-// transactionMarkerName is the transaction a marker built by
-// transactionMarkerAction opens or closes.
-func transactionMarkerName(action dsl.Action) string {
-	if args, ok := action.Params["args"].([]any); ok && len(args) > 0 {
-		if name, ok := args[0].(string); ok {
-			return name
-		}
-	}
-	return action.Name
 }
 
 // isDialogTrigger reports whether an action is the kind of interaction that can
@@ -408,7 +385,7 @@ func splitByTransaction(assembled []sectionedAction, baseName string, session *S
 		switch {
 		case isTxn && fn == "lr_start_transaction":
 			if depth == 0 {
-				current = newBrowserScript(fmt.Sprintf("%s — %s", baseName, transactionMarkerName(sa.action)), session, baseURL)
+				current = newBrowserScript(fmt.Sprintf("%s — %s", baseName, dsl.TransactionMarkerName(sa.action)), session, baseURL)
 				currentActions = nil
 				currentStartNav = lastNav
 			} else {

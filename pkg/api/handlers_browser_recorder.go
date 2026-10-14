@@ -2117,6 +2117,9 @@ type browserHTTPScript struct {
 	Warnings     []string
 	Sections     []scriptImportReviewSection
 	Correlations any
+	// Baseline is the recorded observation of each request, keyed by its
+	// action index in Script.
+	Baseline []correlate.Observation
 }
 
 func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, info *BrowserRecordingSession, name, level string, scriptOptions browserHTTPScriptOptions) (browserHTTPScript, error) {
@@ -2136,9 +2139,9 @@ func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, in
 	}
 	httpName += " (HTTP)"
 	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile, HTTPVersionMode: scriptOptions.HTTPVersionMode}
-	// Each request of the HTTP script carries the transaction marked while
-	// recording that was open when it started (a grouping, not a timer: only
-	// the browser script has the start and end markers).
+	// The HTTP script times the transactions marked while recording with the
+	// browser script's start and end markers, and each request carries the
+	// transaction that was open when it started.
 	for _, window := range artifact.TransactionWindows() {
 		options.Transactions = append(options.Transactions, sample.TransactionWindow(window))
 	}
@@ -2187,7 +2190,7 @@ func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, in
 	}
 	augmented := draft.augmentWithAgentforceTransform(false)
 	recbrowser.AttachRecordingEnvironment(result.Script, artifact.RecordingEnvironment)
-	return browserHTTPScript{Script: result.Script, Warnings: augmented.Warnings, Sections: augmented.Sections, Correlations: salesforceDraft.Correlations}, nil
+	return browserHTTPScript{Script: result.Script, Warnings: augmented.Warnings, Sections: augmented.Sections, Correlations: salesforceDraft.Correlations, Baseline: result.Baseline}, nil
 }
 
 func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, r *http.Request) {
@@ -2338,7 +2341,6 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	var httpScript *dsl.Script
 	var preparedHTTPScript *dsl.Script
 	var httpCorrelationBaseline []correlate.Observation
-	var httpCorrelationBaselineErr error
 	var httpWarnings []string
 	if req.AlsoCreateHTTPScript {
 		var err error
@@ -2386,11 +2388,10 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 					importedHTTPScript.Version = "1"
 				}
 				preparedHTTPScript = importedHTTPScript
-				httpCorrelationBaseline, httpCorrelationBaselineErr = har.CorrelationBaseline(artifact.HAR, false)
-				if httpCorrelationBaselineErr != nil {
-					warnings = append(warnings, "HTTP correlation baseline capture skipped: "+httpCorrelationBaselineErr.Error())
-					httpCorrelationBaseline = nil
-				}
+				// The conversion's own baseline is keyed by each request's action
+				// index, which transaction markers and background conversations
+				// move away from its position among the recorded requests.
+				httpCorrelationBaseline = generated.Baseline
 			}
 		}
 	}
@@ -2398,7 +2399,6 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		s.store != nil,
 		preparedHTTPScript != nil,
 		httpCorrelationBaseline,
-		httpCorrelationBaselineErr,
 	); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -2945,13 +2945,9 @@ func validateBrowserRecordingHARBaselinePreparation(
 	durable bool,
 	hasHTTPCompanion bool,
 	observations []correlate.Observation,
-	derivationErr error,
 ) error {
 	if !durable || !hasHTTPCompanion {
 		return nil
-	}
-	if derivationErr != nil {
-		return fmt.Errorf("HTTP correlation baseline could not be prepared: %w", derivationErr)
 	}
 	if len(observations) == 0 {
 		return errors.New("HTTP correlation baseline could not be prepared because the recorded HAR contains no persistable HTTP exchanges")

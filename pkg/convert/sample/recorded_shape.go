@@ -22,19 +22,20 @@ import (
 // in favour of the original.
 //
 // It also returns where each original action went (nil when the script was
-// not reshaped; -1 for an action folded into a conversation).
-func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []string) {
+// not reshaped; -1 for an action folded into a conversation) and when each
+// action of the reshaped script started in the recording.
+func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []time.Time, []string) {
 	if script == nil || len(script.Actions) != len(exchanges) {
-		return mappings, nil, nil
+		return mappings, nil, nil, nil
 	}
 	sockets := harWebSockets(content)
 	if !asyncScan && len(sockets) == 0 {
-		return mappings, nil, nil
+		return mappings, nil, nil, nil
 	}
 	steps := make([]recordedshape.Step, len(exchanges))
 	for i, ex := range exchanges {
 		if !ex.HasStartedAt {
-			return mappings, nil, nil
+			return mappings, nil, nil, nil
 		}
 		contentType := ""
 		if ex.Response != nil {
@@ -50,11 +51,11 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 	original := cloneScriptActions(script.Actions)
 	shaped := recordedshape.Shape(script, steps, sockets, recordedshape.Options{AsyncScan: asyncScan})
 	if !shaped.Changed() {
-		return mappings, nil, append(warnings, shaped.Warnings...)
+		return mappings, nil, nil, append(warnings, shaped.Warnings...)
 	}
 	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 		script.Actions = original
-		return mappings, nil, append(warnings, "the recording's background requests and WebSocket traffic were left as recorded because the reshaped script did not validate: "+strings.Join(issues, "; "))
+		return mappings, nil, nil, append(warnings, "the recording's background requests and WebSocket traffic were left as recorded because the reshaped script did not validate: "+strings.Join(issues, "; "))
 	}
 	remapped := make([]sourceview.Mapping, 0, len(mappings))
 	for _, mapping := range mappings {
@@ -63,7 +64,7 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 			remapped = append(remapped, mapping)
 		}
 	}
-	return remapped, shaped.NewIndex, append(warnings, shaped.Warnings...)
+	return remapped, shaped.NewIndex, shaped.StartedAt, append(warnings, shaped.Warnings...)
 }
 
 // applyRecordedClientTimestamps gives the epoch timestamps a recorded client

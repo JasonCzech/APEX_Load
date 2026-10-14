@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -583,8 +584,26 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		var shapeWarnings []string
 		var newIndex []int
-		sourceMappings, newIndex, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
+		var startedAt []time.Time
+		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
+		if len(req.Options.Transactions) > 0 {
+			if newIndex == nil {
+				startedAt = exchangeStartTimes(exchanges, len(result.Script.Actions))
+			}
+			positions, note := insertTransactionMarkers(result.Script, startedAt, req.Options.Transactions)
+			if note != "" {
+				result.Warnings = append(result.Warnings, note)
+			}
+			if positions != nil {
+				// The baseline and source mappings name actions by index.
+				newIndex = composeActionIndex(newIndex, positions)
+				moved := recordedshape.Result{NewIndex: positions}
+				for index := range sourceMappings {
+					sourceMappings[index].TargetPath, _ = moved.RemapPath(sourceMappings[index].TargetPath)
+				}
+			}
+		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
 	}
 	for index := range result.Correlations {
@@ -609,6 +628,38 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 // ClientTimestampsDiagnosticCode marks the note that recorded client
 // timestamps get a fresh value at replay.
 const ClientTimestampsDiagnosticCode = "client_generated_timestamps"
+
+// exchangeStartTimes is when each action started in the recording, for a
+// script that holds one action per exchange (zero when unknown); nil when it
+// does not.
+func exchangeStartTimes(exchanges []exchange, actions int) []time.Time {
+	if len(exchanges) != actions {
+		return nil
+	}
+	times := make([]time.Time, len(exchanges))
+	for index, ex := range exchanges {
+		if ex.HasStartedAt {
+			times[index] = ex.StartedAt
+		}
+	}
+	return times
+}
+
+// composeActionIndex follows each original action through a reshape
+// (newIndex, nil when there was none) and then positions.
+func composeActionIndex(newIndex, positions []int) []int {
+	if newIndex == nil {
+		return positions
+	}
+	composed := make([]int, len(newIndex))
+	for index, shaped := range newIndex {
+		composed[index] = -1
+		if shaped >= 0 && shaped < len(positions) {
+			composed[index] = positions[shaped]
+		}
+	}
+	return composed
+}
 
 // exchangeEntry is the source entry of a 1-based step.
 func exchangeEntry(exchanges []exchange, step int) int {

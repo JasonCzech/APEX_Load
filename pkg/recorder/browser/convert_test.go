@@ -462,7 +462,7 @@ func TestConvertTransactionStartAnchoredAtStepIncludesThatStep(t *testing.T) {
 		}
 	}
 	start := result.Script.Actions[2]
-	if transactionMarkerName(start) != "Checkout" || start.Params["function"] != "lr_start_transaction" {
+	if dsl.TransactionMarkerName(start) != "Checkout" || start.Params["function"] != "lr_start_transaction" {
 		t.Fatalf("action[2] = %+v, want Checkout start", start)
 	}
 	// The anchor step (action[3]) must be tagged inside the transaction.

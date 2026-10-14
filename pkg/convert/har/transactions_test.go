@@ -11,7 +11,7 @@ import (
 
 // Requests carry the recorded transaction open when they started; nested
 // transactions tag the innermost, and a request outside every window stays
-// untagged.
+// untagged. Start and end markers time each window around its requests.
 func TestConvertHARTagsRecordedTransactions(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	entry := func(seconds int, path string) string {
@@ -36,12 +36,19 @@ func TestConvertHARTagsRecordedTransactions(t *testing.T) {
 		t.Fatalf("Convert: %v", err)
 	}
 	want := map[string]any{"/home": nil, "/cart": "Checkout", "/pay": "Pay", "/receipt": "Checkout", "/after": nil}
-	if len(result.Script.Actions) != len(want) {
-		t.Fatalf("actions = %d, want %d", len(result.Script.Actions), len(want))
-	}
+	var layout []string
 	for _, action := range result.Script.Actions {
+		if action.Type == "source_transaction" {
+			layout = append(layout, action.Name)
+			continue
+		}
+		layout = append(layout, action.Target)
 		if got := action.Metadata["source_transaction"]; got != want[action.Target] {
 			t.Errorf("%s transaction = %v, want %v", action.Target, got, want[action.Target])
 		}
+	}
+	wantLayout := "/home|Start Checkout transaction|/cart|Start Pay transaction|/pay|End Pay transaction|/receipt|End Checkout transaction|/after|Start Open transaction|End Open transaction"
+	if got := strings.Join(layout, "|"); got != wantLayout {
+		t.Fatalf("actions = %s\nwant %s", got, wantLayout)
 	}
 }
