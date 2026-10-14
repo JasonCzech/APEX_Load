@@ -66,12 +66,12 @@ describe('ImportRuntimeOptions', () => {
     expect(inputByLabel('Maximum recorded think time (%)').value).toBe('150')
     act(() => setNativeValue(inputByLabel('Minimum recorded think time (%)'), '25'))
     expect(onChange.mock.calls[0][0].config.think_time).toEqual({ type: 'random_percentage', min_percent: 25, max_percent: 150 })
-    expect(container.textContent).not.toContain('Mean Think Time (ms)')
+    expect(container.textContent).not.toContain('Mean think time (ms)')
   })
 
   it('shows current config values', () => {
     render(buildScript())
-    expect(inputByLabel('Think Time (ms)').value).toBe('1000')
+    expect(inputByLabel('Think time (ms)').value).toBe('1000')
     expect((inputByLabel('Pacing') as unknown as HTMLSelectElement).value).toBe('none')
     expect((inputByLabel('Authentication') as unknown as HTMLSelectElement).value).toBe('none')
   })
@@ -80,7 +80,7 @@ describe('ImportRuntimeOptions', () => {
     const script = buildScript()
     const onChange = render(script)
     act(() => {
-      setNativeValue(inputByLabel('Think Time (ms)'), '2500')
+      setNativeValue(inputByLabel('Think time (ms)'), '2500')
     })
     expect(onChange).toHaveBeenCalledTimes(1)
     const updated = onChange.mock.calls[0][0] as ScriptDefinition
@@ -92,7 +92,7 @@ describe('ImportRuntimeOptions', () => {
     const script = buildScript()
     script.config.think_time = { type: 'recorded', multiplier: 0 }
     const onChange = render(script)
-    const multiplier = inputByLabel('Think Time Multiplier')
+    const multiplier = inputByLabel('Think time multiplier')
     expect(multiplier.value).toBe('1')
     expect(multiplier.min).toBe('0')
     expect(multiplier.max).toBe('100')
@@ -118,9 +118,9 @@ describe('ImportRuntimeOptions', () => {
     script.config.think_time = { type: 'recorded', mean_ms: 0, multiplier: 1 }
     script.config.pacing = { type: 'fixed_interval', interval_ms: 5000 }
     render(script)
-    expect(inputByLabel('Think Time Mode').value).toBe('recorded')
+    expect(inputByLabel('Think time mode').value).toBe('recorded')
     expect(container.textContent).toContain('Replay think time as recorded')
-    expect(container.textContent).not.toContain('Think Time (ms)')
+    expect(container.textContent).not.toContain('Think time (ms)')
     expect(inputByLabel('Pacing').value).toBe('fixed_interval')
     expect(container.textContent).toContain('Pacing Interval (seconds)')
     expect(inputByLabel('Pacing Interval').value).toBe('5')
@@ -139,7 +139,7 @@ describe('ImportRuntimeOptions', () => {
     const onChange = render(script)
 
     act(() => {
-      setNativeValue(inputByLabel('Think Time Mode'), 'recorded')
+      setNativeValue(inputByLabel('Think time mode'), 'recorded')
     })
 
     expect(onChange.mock.calls[0][0].config.think_time).toEqual({
@@ -161,7 +161,7 @@ describe('ImportRuntimeOptions', () => {
     const onChange = render(script)
 
     act(() => {
-      setNativeValue(inputByLabel('Think Time Mode'), 'none')
+      setNativeValue(inputByLabel('Think time mode'), 'none')
     })
 
     const updated = onChange.mock.calls[0][0] as ScriptDefinition
@@ -170,14 +170,14 @@ describe('ImportRuntimeOptions', () => {
       multiplier: 2,
     })
     render(updated)
-    expect(container.textContent).not.toContain('Think Time (ms)')
+    expect(container.textContent).not.toContain('Think time (ms)')
   })
 
   it('initializes uniform bounds from fixed think time instead of producing a zero-delay config', () => {
     const onChange = render(buildScript())
 
     act(() => {
-      setNativeValue(inputByLabel('Think Time Mode'), 'uniform')
+      setNativeValue(inputByLabel('Think time mode'), 'uniform')
     })
 
     expect(onChange.mock.calls[0][0].config.think_time).toEqual({
@@ -192,11 +192,11 @@ describe('ImportRuntimeOptions', () => {
     uniformScript.config.think_time = { type: 'uniform', min_ms: 250, max_ms: 1750, multiplier: 2 }
     const uniformChange = render(uniformScript)
 
-    expect(container.textContent).not.toContain('Mean Think Time (ms)')
-    expect(inputByLabel('Minimum Think Time').value).toBe('250')
-    expect(inputByLabel('Maximum Think Time').value).toBe('1750')
+    expect(container.textContent).not.toContain('Mean think time (ms)')
+    expect(inputByLabel('Minimum think time').value).toBe('250')
+    expect(inputByLabel('Maximum think time').value).toBe('1750')
     act(() => {
-      setNativeValue(inputByLabel('Maximum Think Time'), '2250')
+      setNativeValue(inputByLabel('Maximum think time'), '2250')
     })
     expect(uniformChange.mock.calls[0][0].config.think_time).toEqual({
       type: 'uniform',
@@ -215,10 +215,10 @@ describe('ImportRuntimeOptions', () => {
     }
     const gaussianChange = vi.fn()
     render(gaussianScript, gaussianChange)
-    expect(inputByLabel('Mean Think Time').value).toBe('1000')
-    expect(inputByLabel('Think Time Std Dev').value).toBe('200')
+    expect(inputByLabel('Mean think time').value).toBe('1000')
+    expect(inputByLabel('Think time std dev').value).toBe('200')
     act(() => {
-      setNativeValue(inputByLabel('Think Time Std Dev'), '300')
+      setNativeValue(inputByLabel('Think time std dev'), '300')
     })
     expect(gaussianChange.mock.calls[0][0].config.think_time).toEqual({
       type: 'gaussian',

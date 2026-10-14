@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { type Folder } from '../types'
 import BrunoImport from './BrunoImport'
+import { ImportDestinationContext } from './importDestinationContext'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
 import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
 import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements'
@@ -326,6 +327,21 @@ describe('BrunoImport', () => {
     await act(async () => root.unmount())
     container.remove()
     vi.resetAllMocks()
+  })
+
+  it('shows the surface destination where its own would be when the surface manages it', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(nativeInspectionFixture())
+    await act(async () => {
+      root.render(
+        <ImportDestinationContext.Provider value={<div data-testid="surface-destination">Save destination</div>}>
+          <BrunoImport initialFiles={[file]} projectId="project-1" destinationFolderManagedExternally />
+        </ImportDestinationContext.Provider>,
+      )
+      await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="surface-destination"]')).not.toBeNull())
+    expect(Array.from(container.querySelectorAll('select')).some(select => select.parentElement?.textContent?.includes('Destination folder'))).toBe(false)
   })
 
   it('saves a native request with its imported credential when migration and binding stay unselected', async () => {

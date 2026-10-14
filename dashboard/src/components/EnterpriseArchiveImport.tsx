@@ -8,7 +8,7 @@ import { type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import DialogLayer from './ux/DialogLayer'
-import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -551,7 +551,6 @@ function buildReviewArtifactDraft(
 }
 
 interface Props {
-  destinationControl?: ReactNode
   initialFiles?: File[] | null
   projectId?: string
   // folderId is the destination folder for scripts saved from this import,
@@ -918,7 +917,7 @@ type ValidationReviewTab = typeof validationReviewTabs[number]['id']
 const ENTERPRISE_QUEUE_PAGE_SIZE = 50
 const ENTERPRISE_RESULT_PAGE_SIZE = 50
 
-export default function EnterpriseArchiveImport({ destinationControl, initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
+export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
   const apiRef = useRef(api)
   apiRef.current = api
@@ -4501,8 +4500,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       />
 
       <details ref={archiveSetupRef} className="lr-completed-setup" open={!result}>
-        <summary>{result ? 'Archive setup & save destination — edit or revalidate' : 'Archive setup & save destination'}</summary>
-      {destinationControl}
+        <summary>{result ? 'Archive setup — edit or revalidate' : 'Archive setup'}</summary>
 
       {/* Options */}
       <div className="lr-conversion-row">

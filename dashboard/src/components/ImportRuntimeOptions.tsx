@@ -61,7 +61,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
       </summary>
       <div className="import-runtime-grid">
         <label>
-          <span>Think Time Mode</span>
+          <span>Think time mode</span>
           <select
             value={thinkTimeType}
             disabled={disabled}
@@ -81,7 +81,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
         {thinkTimeType === 'random_percentage' && <ThinkTimePercentageInputs value={config.think_time} disabled={disabled || config.think_time?.ignore} onChange={change => updateConfig(next => ({ ...next, think_time: { ...thinkTimeConfigForType(next.think_time, 'random_percentage'), ...change } }))} />}
         {thinkTimeUsesMean(thinkTimeType) && (
         <label>
-          <span>{thinkTimeType === 'gaussian' ? 'Mean Think Time (ms)' : 'Think Time (ms)'}</span>
+          <span>{thinkTimeType === 'gaussian' ? 'Mean think time (ms)' : 'Think time (ms)'}</span>
           <input
             type="number"
             min={0}
@@ -102,7 +102,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
         )}
         {thinkTimeUsesStdDeviation(thinkTimeType) && (
           <label>
-            <span>Think Time Std Dev (ms)</span>
+            <span>Think time std dev (ms)</span>
             <input type="number" min={0} value={config.think_time?.std_ms ?? 0} disabled={disabled}
               onChange={event => updateConfig(next => ({
                 ...next,
@@ -116,7 +116,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
         {thinkTimeUsesBounds(thinkTimeType) && (
           <>
             <label>
-              <span>Minimum Think Time (ms)</span>
+              <span>Minimum think time (ms)</span>
               <input type="number" min={0} value={config.think_time?.min_ms ?? 0} disabled={disabled}
                 onChange={event => updateConfig(next => ({
                   ...next,
@@ -127,7 +127,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
                 }))} />
             </label>
             <label>
-              <span>Maximum Think Time (ms)</span>
+              <span>Maximum think time (ms)</span>
               <input type="number" min={0} value={config.think_time?.max_ms ?? 0} disabled={disabled}
                 onChange={event => updateConfig(next => ({
                   ...next,
@@ -141,7 +141,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
         )}
         <ThinkTimeMultiplierInput
           draftScope={draftScope}
-          label="Think Time Multiplier"
+          label="Think time multiplier"
           value={config.think_time?.multiplier}
           disabled={disabled}
           onValueChange={multiplier => updateConfig(next => ({
@@ -153,7 +153,7 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
           }))}
         />
         <label>
-          <span>Think Time Cap (ms)</span>
+          <span>Think time cap (ms)</span>
           <input type="number" min={0} value={config.think_time?.limit_ms ?? 0} disabled={disabled}
             onChange={event => updateConfig(next => ({
               ...next,

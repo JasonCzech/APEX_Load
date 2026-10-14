@@ -2196,6 +2196,18 @@
   text-transform: var(--label-case, uppercase);
 }
 
+.script-create-group-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* A neutral mark on the editors most tests start from; not a health state. */
+.script-create-recommended {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
 .script-create-existing-toolbar {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(140px, 180px) minmax(140px, 180px) auto;
@@ -8536,9 +8548,6 @@ col.results-actions-col {
  .dash-activity-table td:first-child { white-space: normal; overflow-wrap: anywhere; }
 }
 
-.import-destination-disclosure { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
-.import-destination-disclosure > summary { cursor: pointer; color: var(--text-secondary); }
-.import-destination-disclosure[open] > summary { margin-bottom: 12px; }
 .transaction-sla-settings {
 	display: grid;
 	gap: 1rem;

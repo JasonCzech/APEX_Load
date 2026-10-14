@@ -5985,7 +5985,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                       >
                         <span aria-hidden="true" className="outline-section-chevron">{reusableBlocksCollapsed ? '▸' : '▾'}</span>
                         <span>
-                          <strong>Reusable Blocks</strong>
+                          <strong>Reusable blocks</strong>
                           <small>
                             {authoringComponents.length} block{authoringComponents.length === 1 ? '' : 's'}
                             {isEditingExisting ? ' · inserts after selected action' : ''}

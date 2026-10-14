@@ -801,6 +801,7 @@ export default function RecordingStudio({
   } | null>(null);
   const [bridgeOrigin, setBridgeOrigin] = useState(DEFAULT_BRIDGE_ORIGIN);
   const [bridgeToken, setBridgeToken] = useState(initialBridgePairingToken);
+  const [bridgeTokenRevealed, setBridgeTokenRevealed] = useState(false);
   const [bridgePairing, setBridgePairing] = useState(false);
   const [bridgeVerifying, setBridgeVerifying] = useState(false);
   const [bridgeStatus, setBridgeStatus] = useState("");
@@ -2819,10 +2820,16 @@ export default function RecordingStudio({
       )}
 
       {proxyCanRecord ? (
-        <div className="rec-mode-picker" role="group" aria-label="Recording method">
-          <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
-          <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
-        </div>
+        <PageViewToggle
+          value={recordingMode}
+          ariaLabel="Recording method"
+          className="rec-mode-picker script-page-toggle"
+          onChange={(value) => setRecordingMode(value)}
+          options={[
+            { value: "browser", label: "Browser actions" },
+            { value: "proxy", label: "HTTP proxy (advanced)" },
+          ]}
+        />
       ) : proxyUnavailableNote ? (
         <div className="rec-method-note" data-testid="recording-proxy-unavailable">
           <p>{proxyUnavailableNote.summary}</p>
@@ -2842,7 +2849,7 @@ export default function RecordingStudio({
       <div className="rec-recorder-options-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
         <div className="rec-controls-card rec-browser-launcher" hidden={recordingMode !== 'browser'}>
           <div className="rec-option-heading">
-            <h3 className="rec-section-title">Record Browser Session</h3>
+            <h3 className="rec-section-title">Record a browser session</h3>
             <p>{browserLaunchDescription}</p>
           </div>
           {!browserAvailability ? (
@@ -2881,7 +2888,7 @@ export default function RecordingStudio({
                     >
                       {installState.status === "installing"
                         ? "Installing…"
-                        : "Install Recording Browser"}
+                        : "Install recording browser"}
                     </button>
                   )}
                 </div>
@@ -3019,14 +3026,14 @@ export default function RecordingStudio({
                             className="btn btn-secondary btn-sm"
                             onClick={handleCopyBridgeCommand}
                           >
-                            Copy Terminal Command
+                            Copy terminal command
                           </button>
                           <button
                             type="button"
                             className="rec-inline-action"
                             onClick={handleRegenerateBridgeToken}
                           >
-                            Regenerate Token
+                            Regenerate token
                           </button>
                         </div>
                       </div>
@@ -3036,11 +3043,21 @@ export default function RecordingStudio({
                       </div>
                       <div className="rec-bridge-command-row">
                         <span className="rec-terminal-prompt">#</span>
+                        {/* Masked so screen shares and recordings do not capture it. */}
                         <code
                           className="rec-command"
                           data-testid="browser-recorder-bridge-token"
                         >
-                          {bridgeToken}
+                          {bridgeTokenRevealed ? (
+                            bridgeToken
+                          ) : (
+                            <>
+                              <span aria-hidden="true">
+                                {"•".repeat(Math.min(Math.max(bridgeToken.length, 8), 32))}
+                              </span>
+                              <span className="sr-only">Pairing token hidden</span>
+                            </>
+                          )}
                         </code>
                       </div>
                       <div className="rec-bridge-command-actions">
@@ -3049,7 +3066,15 @@ export default function RecordingStudio({
                           className="btn btn-secondary btn-sm"
                           onClick={handleCopyBridgeToken}
                         >
-                          Copy Pairing Token
+                          Copy pairing token
+                        </button>
+                        <button
+                          type="button"
+                          className="rec-inline-action"
+                          aria-pressed={bridgeTokenRevealed}
+                          onClick={() => setBridgeTokenRevealed((revealed) => !revealed)}
+                        >
+                          {bridgeTokenRevealed ? "Hide token" : "Show token"}
                         </button>
                       </div>
                     </div>
@@ -3169,8 +3194,9 @@ export default function RecordingStudio({
               </div>
               {browserURLError && <p id="browser-url-error" role="alert">{browserURLError}</p>}
               <div className="rec-form-row">
-                <div className="rec-label">Session Name</div>
+                <label className="rec-label" htmlFor="rec-browser-session-name">Session name</label>
                 <input
+                  id="rec-browser-session-name"
                   className="rec-input"
                   value={browserName}
                   onChange={(e) => setBrowserName(e.target.value)}
@@ -3213,15 +3239,15 @@ export default function RecordingStudio({
 
               <button
                 type="button"
-                className="rec-inline-action"
+                className="rec-disclosure"
+                aria-expanded={browserOptionsOpen}
+                aria-controls="rec-browser-options"
                 onClick={() => setBrowserOptionsOpen((v) => !v)}
               >
-                {browserOptionsOpen
-                  ? "Hide advanced options"
-                  : "Advanced options"}
+                Advanced options
               </button>
               {browserOptionsOpen && (
-                <div className="rec-browser-options">
+                <div className="rec-browser-options" id="rec-browser-options">
                   <label className="rec-checkbox-row">
                     <input
                       type="checkbox"
@@ -3328,7 +3354,7 @@ export default function RecordingStudio({
                 >
                   <circle cx="12" cy="12" r="10" />
                 </svg>
-                {browserStartInProgress ? "Starting Browser…" : "Start browser recording"}
+                {browserStartInProgress ? "Starting browser…" : "Start browser recording"}
               </button>
               <p className="rec-browser-note">
                 {browserWindowLocation} with an in-page recording sidebar
@@ -3366,7 +3392,7 @@ export default function RecordingStudio({
           hidden={recordingMode !== 'proxy'}
         >
           <div className="rec-option-heading">
-            <h3 className="rec-section-title">Advanced Proxy Recorder</h3>
+            <h3 className="rec-section-title">HTTP proxy recorder</h3>
             <p>
               Capture HTTP(S) traffic through the controller recording proxy
               when headed browser recording is unavailable.
@@ -3375,7 +3401,7 @@ export default function RecordingStudio({
 
           {proxyCanRecord ? (
           <>
-          {/* Proxy Setup */}
+          {/* Proxy setup */}
           <div className="rec-setup-section">
             <button
               aria-label="Toggle proxy recorder setup"
@@ -3400,7 +3426,7 @@ export default function RecordingStudio({
                   <line x1="12" y1="16" x2="12" y2="12" />
                   <line x1="12" y1="8" x2="12.01" y2="8" />
                 </svg>
-                <span>Proxy Setup</span>
+                <span>Proxy setup</span>
               </div>
               <svg
                 className={`rec-chevron ${showSetup ? "open" : ""}`}
@@ -3423,7 +3449,7 @@ export default function RecordingStudio({
                   <div className="rec-step-number">1</div>
                   <div className="rec-step-content">
                     <div className="rec-step-title">
-                      Download &amp; Install CA Certificate
+                      Download and install the CA certificate
                     </div>
                     <div className="rec-step-desc">
                       Install and trust the APEX Load CA certificate for SSL/TLS
@@ -3485,8 +3511,8 @@ export default function RecordingStudio({
                           <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
                         {certificateFormatView === "crt"
-                          ? "Download CA Certificate (.crt)"
-                          : "Download CA Certificate (.pem)"}
+                          ? "Download CA certificate (.crt)"
+                          : "Download CA certificate (.pem)"}
                       </button>
                     </div>
                     <div className="rec-os-instructions">
@@ -3553,7 +3579,7 @@ export default function RecordingStudio({
                   <div className="rec-step-number">2</div>
                   <div className="rec-step-content">
                     <div className="rec-step-title">
-                      Configure Browser Proxy
+                      Configure browser proxy
                     </div>
                     <div className="rec-step-desc">
                       Route browser traffic through{" "}
@@ -3658,7 +3684,7 @@ export default function RecordingStudio({
                                 handleCopyMacOSProxyCommand("start")
                               }
                             >
-                              Copy Start Proxy Command
+                              Copy start proxy command
                             </button>
                             <button
                               className="rec-download-alt"
@@ -3667,14 +3693,14 @@ export default function RecordingStudio({
                                 handleCopyMacOSProxyCommand("restore")
                               }
                             >
-                              Copy Restore Proxy Command
+                              Copy restore proxy command
                             </button>
                             <button
                               className="rec-download-alt"
                               type="button"
                               onClick={handleOpenMacOSNetworkSettings}
                             >
-                              Open Network Settings
+                              Open network settings
                             </button>
                           </div>
                         </div>
@@ -3691,7 +3717,7 @@ export default function RecordingStudio({
                                 handleCopyWindowsProxyCommand("start")
                               }
                             >
-                              Copy Windows Start Command
+                              Copy Windows start command
                             </button>
                             <button
                               className="rec-download-alt"
@@ -3700,14 +3726,14 @@ export default function RecordingStudio({
                                 handleCopyWindowsProxyCommand("restore")
                               }
                             >
-                              Copy Windows Restore Command
+                              Copy Windows restore command
                             </button>
                             <button
                               className="rec-download-alt"
                               type="button"
                               onClick={handleOpenWindowsProxySettings}
                             >
-                              Open Windows Proxy Settings
+                              Open Windows proxy settings
                             </button>
                           </div>
                         </div>
@@ -3719,9 +3745,9 @@ export default function RecordingStudio({
                 <div className="rec-step">
                   <div className="rec-step-number">3</div>
                   <div className="rec-step-content">
-                    <div className="rec-step-title">Start Recording</div>
+                    <div className="rec-step-title">Start recording</div>
                     <div className="rec-step-desc">
-                      Click &ldquo;Start Recording&rdquo; below, then browse the
+                      Click &ldquo;Start recording&rdquo; below, then browse the
                       target website. All HTTP and HTTPS traffic will be
                       captured.
                     </div>
@@ -3731,7 +3757,7 @@ export default function RecordingStudio({
                 <div className="rec-step">
                   <div className="rec-step-number">4</div>
                   <div className="rec-step-content">
-                    <div className="rec-step-title">Stop &amp; Convert</div>
+                    <div className="rec-step-title">Stop and convert</div>
                     <div className="rec-step-desc">
                       When done, stop the recording and convert to a test
                       script. Remember to disable the proxy.
@@ -3752,15 +3778,16 @@ export default function RecordingStudio({
                     : "Recording"}: {activeSession.name}
                 </>
               ) : (
-                "New Recording"
+                "New recording"
               )}
             </h3>
 
             {!activeSession ? (
               <div className="rec-start-form">
                 <div className="rec-form-row">
-                  <div className="rec-label">Session Name</div>
+                  <label className="rec-label" htmlFor="rec-proxy-session-name">Session name</label>
                   <input
+                    id="rec-proxy-session-name"
                     className="rec-input"
                     value={sessionName}
                     onChange={(e) => setSessionName(e.target.value)}
@@ -3768,13 +3795,14 @@ export default function RecordingStudio({
                   />
                 </div>
                 <div className="rec-form-row">
-                  <div className="rec-label">
-                    Include Hosts{" "}
+                  <label className="rec-label" htmlFor="rec-proxy-include-hosts">
+                    Include hosts{" "}
                     <span className="rec-hint">
                       (comma-separated, optional)
                     </span>
-                  </div>
+                  </label>
                   <input
+                    id="rec-proxy-include-hosts"
                     className="rec-input"
                     aria-describedby={profileIncludeHosts.length > 0 ? "rec-profile-include-hosts" : undefined}
                     value={includeHosts}
@@ -3790,13 +3818,14 @@ export default function RecordingStudio({
                   )}
                 </div>
                 <div className="rec-form-row">
-                  <div className="rec-label">
-                    Exclude Hosts{" "}
+                  <label className="rec-label" htmlFor="rec-proxy-exclude-hosts">
+                    Exclude hosts{" "}
                     <span className="rec-hint">
                       (comma-separated, optional)
                     </span>
-                  </div>
+                  </label>
                   <input
+                    id="rec-proxy-exclude-hosts"
                     className="rec-input"
                     aria-describedby={profileExcludeHosts.length > 0 ? "rec-profile-exclude-hosts" : undefined}
                     value={excludeHosts}
@@ -3830,7 +3859,7 @@ export default function RecordingStudio({
                   >
                     <circle cx="12" cy="12" r="10" />
                   </svg>
-                  Start Recording
+                  Start recording
                 </button>
               </div>
             ) : (
@@ -3882,7 +3911,7 @@ export default function RecordingStudio({
                   activeSession.requests.length > 0 && (
                     <div className="rec-live-feed">
                       <div className="rec-feed-header">
-                        <span>Live Requests</span>
+                        <span>Live requests</span>
                         <span className="rec-feed-count">
                           {activeSession.request_count ??
                             activeSession.requests.length}
@@ -3917,7 +3946,7 @@ export default function RecordingStudio({
                   )}
 
                 <button
-                  className="btn btn-danger rec-stop-btn"
+                  className="btn btn-secondary rec-stop-btn"
                   onClick={handleStop}
                 >
                   <svg
@@ -3928,29 +3957,29 @@ export default function RecordingStudio({
                   >
                     <rect x="4" y="4" width="16" height="16" rx="2" />
                   </svg>
-                  Stop Recording
+                  Stop recording
                 </button>
                 <button
                   className="btn btn-secondary rec-stop-btn"
                   onClick={handlePauseResume}
                 >
                   {activeSession.status === "paused"
-                    ? "Resume Recording"
-                    : "Pause Recording"}
+                    ? "Resume recording"
+                    : "Pause recording"}
                 </button>
                 <button
                   className="btn btn-secondary rec-stop-btn"
                   type="button"
                   onClick={() => handleCopyMacOSProxyCommand("restore")}
                 >
-                  Copy Restore Proxy Command
+                  Copy restore proxy command
                 </button>
                 <button
                   className="btn btn-secondary rec-stop-btn"
                   type="button"
                   onClick={() => handleCopyWindowsProxyCommand("restore")}
                 >
-                  Copy Windows Restore Command
+                  Copy Windows restore command
                 </button>
               </div>
             )}
@@ -4173,7 +4202,7 @@ export default function RecordingStudio({
       {selectedSession && (
         <div className="rec-detail-section">
           <h3 className="rec-section-title">
-            Request Detail: {selectedSession.name}
+            Request detail: {selectedSession.name}
             <span className="rec-detail-count">
               {selectedSession.request_count ??
                 selectedSession.requests?.length ??
@@ -4291,7 +4320,7 @@ export default function RecordingStudio({
               </div>
               <div className="rec-editor-grid">
                 <label className="rec-form-row">
-                  <span className="rec-label">Step Name</span>
+                  <span className="rec-label">Step name</span>
                   <input
                     className="rec-input"
                     value={requestDraft.step_name}
@@ -4319,7 +4348,7 @@ export default function RecordingStudio({
                   />
                 </label>
                 <label className="rec-form-row">
-                  <span className="rec-label">Think Time (ms)</span>
+                  <span className="rec-label">Think time (ms)</span>
                   <input
                     className="rec-input"
                     type="number"
@@ -4366,7 +4395,7 @@ export default function RecordingStudio({
                   className="btn btn-primary btn-sm"
                   onClick={handleSaveRequestDetails}
                 >
-                  Save Request
+                  Save request
                 </button>
                 <button
                   className="btn btn-secondary btn-sm"
@@ -4561,7 +4590,7 @@ export default function RecordingStudio({
             convertResult.correlations.length > 0 && (
               <div className="rec-correlations">
                 <h4 className="rec-subsection-title">
-                  Auto-Detected Correlations (
+                  Auto-detected correlations (
                   {convertResult.correlations.length})
                 </h4>
                 <div className="rec-corr-list">
@@ -4629,7 +4658,7 @@ export default function RecordingStudio({
 
       {salesforceResult && salesforceScript && (
         <div className="rec-convert-result">
-          <h3 className="rec-section-title">Salesforce HTTP Draft</h3>
+          <h3 className="rec-section-title">Salesforce HTTP draft</h3>
           {salesforceSecretRequirements.length > 0 && (
             <SecretBindingReview
               ref={salesforceCredentialReviewRef}
@@ -4686,7 +4715,7 @@ export default function RecordingStudio({
               </span>
             </div>
             <div className="rec-result-item">
-              <span className="rec-result-label">HAR Coverage</span>
+              <span className="rec-result-label">HAR coverage</span>
               <span className="rec-result-value">
                 {Math.round(
                   salesforceResult.summary?.salesforce_review

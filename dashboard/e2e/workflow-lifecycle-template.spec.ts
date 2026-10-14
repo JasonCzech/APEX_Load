@@ -20,7 +20,7 @@ test('a starter template opens an independent draft that saves, reopens and leav
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('tab', { name: 'Create', exact: true }).click()
-  await page.getByRole('tab', { name: 'Starter Templates' }).click()
+  await page.getByRole('tab', { name: 'Starter templates' }).click()
   await page.getByRole('button', { name: 'Use HTTP API Smoke' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Create Script' })).toBeVisible()
 
@@ -65,7 +65,7 @@ test('a starter template opens an independent draft that saves, reopens and leav
   expect(await templateOf()).toEqual(before)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   await page.getByRole('tab', { name: 'Create', exact: true }).click()
-  await page.getByRole('tab', { name: 'Starter Templates' }).click()
+  await page.getByRole('tab', { name: 'Starter templates' }).click()
   await page.getByRole('button', { name: 'Use HTTP API Smoke' }).click()
   await expect(scriptName).toHaveValue('HTTP API Smoke')
   await expect(outline).toContainText('Business Transaction')

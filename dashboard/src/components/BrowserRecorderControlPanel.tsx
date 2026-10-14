@@ -1591,7 +1591,7 @@ export default function BrowserRecorderControlPanel({
         .map(requirement => requirement.suggested_name)).size
   const salesforceSaveLabel = salesforceDeferredSecretCount > 0
     ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-    : 'Save Salesforce HTTP Script'
+    : 'Save Salesforce HTTP script'
 
   return (
     <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`} data-testid="browser-recorder-panel">
@@ -1654,7 +1654,7 @@ export default function BrowserRecorderControlPanel({
         {controllable && (
           <button className="btn btn-danger" onClick={handleStop} disabled={busy}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
-            Stop Recording
+            Stop recording
           </button>
         )}
         {session.status === 'stopping' && (
@@ -1664,16 +1664,16 @@ export default function BrowserRecorderControlPanel({
             disabled={busy}
             title="Force-finish a stuck stop. Captured browser steps are preserved, but HAR and storage-state cleanup may be incomplete."
           >
-            Force Finish
+            Force finish
           </button>
         )}
         {controllable && (
           <button className="btn btn-secondary" onClick={handlePauseResume} disabled={busy}>
-            {session.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
+            {session.status === 'paused' ? 'Resume recording' : 'Pause recording'}
           </button>
         )}
         {controllable && (
-          <button className="btn btn-secondary" onClick={handleFocus} disabled={busy}>Focus Browser</button>
+          <button className="btn btn-secondary" onClick={handleFocus} disabled={busy}>Focus browser</button>
         )}
         {controllable && (
           <button
@@ -1682,7 +1682,7 @@ export default function BrowserRecorderControlPanel({
             disabled={busy}
             data-testid="pick-mode-toggle"
           >
-            {session.picking ? 'Picking… (click an element)' : 'Pick Verification'}
+            {session.picking ? 'Picking… (click an element)' : 'Pick verification'}
           </button>
         )}
         {session.har_available && (
@@ -1754,7 +1754,7 @@ export default function BrowserRecorderControlPanel({
               onChange={e => setTransactionName(e.target.value)}
               placeholder="Transaction name, e.g. Checkout"
             />
-            <button className="btn btn-secondary btn-sm" onClick={handleStartTransaction}>Start Transaction</button>
+            <button className="btn btn-secondary btn-sm" onClick={handleStartTransaction}>Start transaction</button>
           </div>
           {openTransactions.length > 0 && (
             <div className="brp-open-transactions" aria-label="Open transactions">
@@ -1768,7 +1768,7 @@ export default function BrowserRecorderControlPanel({
                     onClick={() => handleEndTransaction(name)}
                     aria-label={`End transaction ${name}`}
                   >
-                    End Transaction
+                    End transaction
                   </button>
                 </div>
               ))}
@@ -1782,7 +1782,7 @@ export default function BrowserRecorderControlPanel({
               onChange={e => setNoteText(e.target.value)}
               placeholder="Add a note for the next action…"
             />
-            <button className="btn btn-secondary btn-sm" onClick={handleAddNote}>Add Note</button>
+            <button className="btn btn-secondary btn-sm" onClick={handleAddNote}>Add note</button>
           </div>
         </div>
       )}
@@ -1798,7 +1798,7 @@ export default function BrowserRecorderControlPanel({
       {steps.length > 0 && (
         <div className="rec-live-feed brp-feed">
           <div className="rec-feed-header">
-            <span>{live ? 'Live Steps' : 'Recorded Steps · chronological journey'}</span>
+            <span>{live ? 'Live steps' : 'Recorded steps · chronological journey'}</span>
             <span>
               <button
                 type="button"
@@ -1918,7 +1918,7 @@ export default function BrowserRecorderControlPanel({
 
       {stopped && (
         <div className="brp-convert">
-          <div className="brp-convert-title">Save as Script</div>
+          <div className="brp-convert-title">Save as script</div>
           {previewSecretRequirements.length > 0 && (
             <SecretBindingReview
               ref={previewCredentialReviewRef}
@@ -1953,7 +1953,7 @@ export default function BrowserRecorderControlPanel({
             />
           ))}
           <div className="rec-form-row">
-            <label className="rec-label" htmlFor="browser-recording-script-name">Script Name</label>
+            <label className="rec-label" htmlFor="browser-recording-script-name">Script name</label>
             <input
               id="browser-recording-script-name"
               className="rec-input"
@@ -1992,7 +1992,7 @@ export default function BrowserRecorderControlPanel({
           </label>
           {preview && (
             <div className="brp-preview-summary">
-              {previewRequestKeyRef.current !== JSON.stringify(convertRequest()) && <p role="status">Conversion changed. Preview Conversion again to review the current outputs.</p>}
+              {previewRequestKeyRef.current !== JSON.stringify(convertRequest()) && <p role="status">Conversion changed. Preview conversion again to review the current outputs.</p>}
               <div>
                 Conversion review · {importResultScripts(preview).length} outputs
                 {(preview.parameterization?.summary?.total ?? 0) > 0 &&
@@ -2039,9 +2039,9 @@ export default function BrowserRecorderControlPanel({
             {!replaySessionId && (
               <button className="btn btn-secondary" onClick={handleVerify} disabled={busy} data-testid="verify-recording">Verify primary output</button>
             )}
-            <button className="btn btn-secondary" onClick={handlePreview} disabled={busy}>Preview Conversion</button>
+            <button className="btn btn-secondary" onClick={handlePreview} disabled={busy}>Preview conversion</button>
             {showSalesforceHandoff && (
-              <button className="btn btn-secondary" onClick={handleReviewSalesforceHTTP} disabled={busy}>Review Salesforce HTTP Draft</button>
+              <button className="btn btn-secondary" onClick={handleReviewSalesforceHTTP} disabled={busy}>Review Salesforce HTTP draft</button>
             )}
             <button className="btn btn-primary" onClick={handleSave} disabled={previewImportDraftExpiry?.expired || busy || previewParameterizationApplying || previewPreparedSecrets?.valid === false}>{previewSaveLabel}</button>
             {onEdit && (
@@ -2105,7 +2105,7 @@ export default function BrowserRecorderControlPanel({
                 <button className="btn btn-primary" onClick={() => { void handleSaveSalesforceDraft() }} disabled={salesforceImportDraftExpiry?.expired || busy || salesforceParameterizationApplying || salesforcePreparedSecrets?.valid === false}>{salesforceSaveLabel}</button>
                 {onEdit && (
                   <button className="btn btn-secondary" onClick={() => { void handleOpenSalesforceDraft() }} disabled={salesforceImportDraftExpiry?.expired || busy || salesforceParameterizationApplying || salesforcePreparedSecrets?.valid === false}>
-                    {salesforceRequiresCredentialPreservingSave ? 'Save And Open Salesforce Draft' : 'Open Salesforce Draft'}
+                    {salesforceRequiresCredentialPreservingSave ? 'Save and open Salesforce draft' : 'Open Salesforce draft'}
                   </button>
                 )}
               </div>

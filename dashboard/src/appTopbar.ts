@@ -40,7 +40,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       return 'New run'
     case 'scripts':
       if (view.mode === 'create' || view.mode === 'draft') return 'Create script'
-      if (view.mode === 'record') return 'Record browser'
+      if (view.mode === 'record') return 'Record'
       if (view.mode === 'edit') return 'Edit script'
       if (view.mode === 'import') return 'Import script'
       return 'Scripts'
@@ -58,7 +58,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'swagger':
       return 'Help & documentation'
     case 'recorder-panel':
-      return 'Browser Recorder'
+      return 'Browser recorder'
     case 'access':
       return 'Access'
     case 'settings':
@@ -115,7 +115,7 @@ export function pageTitleForScriptSubView(subView?: string, importLauncher?: str
     case 'edit':
       return 'Edit script'
     case 'recorder':
-      return 'Record browser'
+      return 'Record'
     case 'protocol-import':
       return importLauncher ? importSurfaceTitle(importLauncher) : 'Import from source'
   }

@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RecordingProfilesCard from './RecordingProfilesCard'
+import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -115,6 +116,39 @@ describe('RecordingProfilesCard', () => {
     await flush()
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('name must be')
     expect(container.querySelector('[data-testid="recording-profile-editor"]')).not.toBeNull()
+  })
+
+  it('asks before leaving unsaved profile edits, and can save them from the prompt', async () => {
+    const profile = { id: 'default', name: 'Default' }
+    apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [profile, { id: 'api', name: 'API' }], rules, updated_at: '2026-10-09T01:00:00Z' })
+    apiMock.saveRecordingProfiles.mockImplementation(async (_project: string, profiles: unknown[]) => ({ profiles, rules, updated_at: '2026-10-09T02:00:00Z' }))
+    const registrations: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const register = (guard: NavigationGuard, dirty: boolean) => {
+      registrations.push({ guard, dirty })
+      return () => undefined
+    }
+    await act(async () => root.render(
+      <NavigationGuardRegisterContext.Provider value={register}>
+        <RecordingProfilesCard projectId="proj-1" selectedId="" onSelect={vi.fn()} />
+      </NavigationGuardRegisterContext.Provider>,
+    ))
+    await flush()
+    await act(async () => button(container, 'Manage profiles').click())
+    // Opening the editor changes nothing yet.
+    expect(registrations[registrations.length - 1]?.dirty).toBe(false)
+    // The profiles are a segmented control; the selected one is pressed.
+    const tabs = container.querySelector('[role="group"][aria-label="Recording profiles"]')!
+    expect(Array.from(tabs.querySelectorAll('button')).map(tab => [tab.textContent, tab.getAttribute('aria-pressed')])).toEqual([['Default', 'true'], ['API', 'false']])
+
+    await act(async () => setValue(container.querySelector('input[aria-label="Profile name"]')!, 'Checkout'))
+    const latest = registrations[registrations.length - 1]!
+    expect(latest.dirty).toBe(true)
+    expect(latest.guard.isDirty()).toBe(true)
+    let saved = false
+    await act(async () => { saved = await latest.guard.save() })
+    expect(saved).toBe(true)
+    expect(apiMock.saveRecordingProfiles).toHaveBeenCalledWith('proj-1', [{ id: 'default', name: 'Checkout' }, { id: 'api', name: 'API' }], '2026-10-09T01:00:00Z')
+    expect(registrations[registrations.length - 1]?.dirty).toBe(false)
   })
 
   it('clears a selection the project no longer has', async () => {

@@ -339,7 +339,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.previewBrowserRecordingConversion.mockResolvedValue({ scripts: [{ name: 'Browser', protocol: 'browser', config: { browser: { engine: 'webkit' } }, actions: [], metadata }, { name: 'HTTP', protocol: 'http', config: {}, actions: [], metadata }], warnings: [], stats: {} })
     await renderPanel()
     expect(container.querySelector('[aria-label="Recording environment"]')!.textContent).toContain('Recording agent reported')
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     const browser = container.querySelector('[aria-label="Output 1: Browser"]')!
     const http = container.querySelector('[aria-label="Output 2: HTTP"]')!
     expect(browser.querySelector('[aria-label="Recording environment"]')!.textContent).toContain('differs')
@@ -357,8 +357,8 @@ describe('BrowserRecorderControlPanel', () => {
       await renderPanel()
       await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
       expect(finishRefresh).toBeDefined()
-      await clickButton('Stop Recording')
-      await clickButton('Preview Conversion')
+      await clickButton('Stop recording')
+      await clickButton('Preview conversion')
       await clickButton('Verify output 1')
       await clickButton('Complete Replay')
       expect(container.textContent).toContain('Verification passed for this conversion')
@@ -375,7 +375,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('Checkout Flow')
     expect(container.textContent).toContain('Recording')
     expect(container.textContent).toContain('https://shop.example/cart')
-    expect(container.textContent).toContain('Live Steps')
+    expect(container.textContent).toContain('Live steps')
     // Masked fill never shows a value, only the masked badge.
     expect(container.textContent).toContain('masked')
     expect(container.textContent).not.toContain('hunter2')
@@ -519,7 +519,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.stopBrowserRecording.mockImplementationOnce(() => stopRequest)
 
     await renderPanel()
-    await clickButton('Stop Recording')
+    await clickButton('Stop recording')
     await act(async () => {
       root.render(<BrowserRecorderControlPanel sessionId="brec-2" />)
     })
@@ -533,7 +533,7 @@ describe('BrowserRecorderControlPanel', () => {
 
     expect(container.textContent).toContain('Second Recording')
     expect(container.textContent).not.toContain('Old Cart')
-    expect(container.textContent).not.toContain('Save as Script')
+    expect(container.textContent).not.toContain('Save as script')
   })
 
   it('caps the unfiltered live step feed at 25 rows', async () => {
@@ -622,12 +622,12 @@ describe('BrowserRecorderControlPanel', () => {
 
   it('stops the recording and reveals conversion controls', async () => {
     await renderPanel()
-    await clickButton('Stop Recording')
+    await clickButton('Stop recording')
     await flushPromises()
 
     expect(apiMock.stopBrowserRecording).toHaveBeenCalledWith('brec-1')
     expect(container.textContent).toContain('Stopped')
-    expect(container.textContent).toContain('Save as Script')
+    expect(container.textContent).toContain('Save as script')
     expect(container.textContent).toContain('Save unverified draft')
     // The capture-time masking warning surfaces to the user.
     expect(container.textContent).toContain('{{env.PASSWORD}}')
@@ -636,20 +636,20 @@ describe('BrowserRecorderControlPanel', () => {
   it('shows force finish when graceful stop is still finalizing', async () => {
     apiMock.stopBrowserRecording.mockResolvedValueOnce({ session: stoppingSession })
     await renderPanel()
-    await clickButton('Stop Recording')
+    await clickButton('Stop recording')
     await flushPromises()
 
     expect(apiMock.stopBrowserRecording).toHaveBeenCalledWith('brec-1')
     expect(container.textContent).toContain('Stopping')
     expect(container.textContent).toContain('Stop requested')
-    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Stop Recording'))).toBe(false)
-    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Force Finish'))).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Stop recording'))).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Force finish'))).toBe(true)
   })
 
   it('force finishes a stuck browser recording while preserving captured steps', async () => {
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppingSession })
     await renderPanel()
-    await clickButton('Force Finish')
+    await clickButton('Force finish')
     await flushPromises()
 
     expect(apiMock.forceStopBrowserRecording).toHaveBeenCalledWith('brec-1')
@@ -662,7 +662,7 @@ describe('BrowserRecorderControlPanel', () => {
   it('previews the conversion with parameterization summary', async () => {
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
 
     expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
@@ -689,9 +689,9 @@ describe('BrowserRecorderControlPanel', () => {
       .mockResolvedValueOnce(second)
 
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
 
     expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
@@ -750,7 +750,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ folderId: 'browser-script-folder' })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     expect(container.textContent).toContain('Parameterization review — Checkout Flow (1)')
     await act(async () => {
@@ -790,7 +790,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.convertBrowserRecording.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
 
     await renderPanel({ onOperationBusyChange: busyChanges })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     busyChanges.mockClear()
 
@@ -891,7 +891,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
 
     const reviews = Array.from(container.querySelectorAll<HTMLElement>('.paramize-review'))
@@ -1053,7 +1053,7 @@ describe('BrowserRecorderControlPanel', () => {
       })
 
       await renderPanel({ onEdit: vi.fn() })
-      await clickButton('Preview Conversion')
+      await clickButton('Preview conversion')
       await flushPromises()
 
       const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -1082,7 +1082,7 @@ describe('BrowserRecorderControlPanel', () => {
         '.secret-binding-review input, .secret-binding-review button',
       )).every(control => control.disabled)).toBe(true)
       const refreshPreview = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Preview Conversion'))!
+        .find(button => button.textContent?.includes('Preview conversion'))!
       expect(refreshPreview.disabled).toBe(false)
 
       await act(async () => {
@@ -1171,7 +1171,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
 
     const value = container.querySelector<HTMLInputElement>('input[aria-label="Secret value for LOGIN_PASSWORD"]')
@@ -1218,7 +1218,7 @@ describe('BrowserRecorderControlPanel', () => {
       })
 
     await renderPanel({ onImported })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
 
     const valueInput = container.querySelector<HTMLInputElement>(
@@ -1278,7 +1278,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     expect(container.textContent).toContain('Credential groups (2)')
     expect(container.textContent).toContain('Save with 2 secrets to configure')
@@ -1367,7 +1367,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ onEdit })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     await clickButton('Open in Visual Editor')
     await flushPromises()
@@ -1397,7 +1397,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.applySecretBindings.mockImplementationOnce(() => bindingRequest)
 
     await renderPanel({ onEdit })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     await clickButton('Open in Visual Editor')
     await flushPromises()
@@ -1449,7 +1449,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.convertBrowserRecording.mockImplementationOnce(() => saveRequest)
 
     await renderPanel({ onDismiss, onImported })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     await clickButton('Save unverified draft')
     await flushPromises()
@@ -1501,7 +1501,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.convertBrowserRecording.mockImplementationOnce(() => saveRequest)
 
     await renderPanel({ onImported })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     await clickButton('Save unverified draft')
     await flushPromises()
@@ -1576,7 +1576,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.updateScript.mockRejectedValueOnce(new Error('update denied'))
 
     await renderPanel({ onImported })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     await act(async () => {
       container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')?.click()
@@ -1603,7 +1603,7 @@ describe('BrowserRecorderControlPanel', () => {
     const onEdit = vi.fn()
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel({ onEdit })
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await flushPromises()
     await clickButton('Open in Visual Editor')
 
@@ -1708,9 +1708,9 @@ describe('BrowserRecorderControlPanel', () => {
 
     await renderPanel({ folderId: 'folder-9' })
 
-    await clickButton('Review Salesforce HTTP Draft')
+    await clickButton('Review Salesforce HTTP draft')
     await flushPromises()
-    await clickButton('Save Salesforce HTTP Script')
+    await clickButton('Save Salesforce HTTP script')
     await flushPromises()
 
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
@@ -1735,9 +1735,9 @@ describe('BrowserRecorderControlPanel', () => {
 
     await renderPanel({ onEdit, onImported })
 
-    expect(container.textContent).toContain('Review Salesforce HTTP Draft')
+    expect(container.textContent).toContain('Review Salesforce HTTP draft')
 
-    await clickButton('Review Salesforce HTTP Draft')
+    await clickButton('Review Salesforce HTTP draft')
     await flushPromises()
 
     expect(apiMock.exportBrowserRecording).toHaveBeenCalledWith('brec-1', 'har')
@@ -1748,10 +1748,10 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('100% HAR coverage')
     expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
 
-    await clickButton('Open Salesforce Draft')
+    await clickButton('Open Salesforce draft')
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP', protocol: 'http' }))
 
-    await clickButton('Save Salesforce HTTP Script')
+    await clickButton('Save Salesforce HTTP script')
     await flushPromises()
 
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
@@ -1799,19 +1799,19 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ onEdit, onImported })
-    await clickButton('Review Salesforce HTTP Draft')
+    await clickButton('Review Salesforce HTTP draft')
     await flushPromises()
 
     expect(container.querySelector('input[aria-label="Secret value for SALESFORCE_TOKEN"]')).not.toBeNull()
     expect(container.textContent).toContain('Save with 1 secret to configure')
 
-    await clickButton('Open Salesforce Draft')
+    await clickButton('Open Salesforce draft')
     await flushPromises()
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       config: { http: { auth: { token: '{{secret.SALESFORCE_TOKEN}}' } } },
     }))
 
-    await clickButton('Save Salesforce HTTP Script')
+    await clickButton('Save Salesforce HTTP script')
     await flushPromises()
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
       source_profile: 'salesforce',
@@ -1859,9 +1859,9 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.applySecretBindings.mockImplementationOnce(() => bindingRequest)
 
     await renderPanel({ onEdit })
-    await clickButton('Review Salesforce HTTP Draft')
+    await clickButton('Review Salesforce HTTP draft')
     await flushPromises()
-    await clickButton('Open Salesforce Draft')
+    await clickButton('Open Salesforce draft')
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledOnce()
 
@@ -1896,17 +1896,17 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.resumeBrowserRecording.mockResolvedValue({ session: recordingSession })
     await renderPanel()
 
-    await clickButton('Pause Recording')
+    await clickButton('Pause recording')
     await flushPromises()
     expect(apiMock.pauseBrowserRecording).toHaveBeenCalledWith('brec-1')
     expect(container.textContent).toContain('Paused')
-    expect(container.textContent).toContain('Resume Recording')
+    expect(container.textContent).toContain('Resume recording')
     expect(container.textContent).toContain('think time are not recorded')
 
-    await clickButton('Resume Recording')
+    await clickButton('Resume recording')
     await flushPromises()
     expect(apiMock.resumeBrowserRecording).toHaveBeenCalledWith('brec-1')
-    expect(container.textContent).toContain('Pause Recording')
+    expect(container.textContent).toContain('Pause recording')
   })
 
   it('navigates the recording browser with scheme validation', async () => {
@@ -1957,7 +1957,7 @@ describe('BrowserRecorderControlPanel', () => {
   it('focuses the recording browser', async () => {
     apiMock.focusBrowserRecording.mockResolvedValue({ session: recordingSession })
     await renderPanel()
-    await clickButton('Focus Browser')
+    await clickButton('Focus browser')
     await flushPromises()
 
     expect(apiMock.focusBrowserRecording).toHaveBeenCalledWith('brec-1')
@@ -1982,16 +1982,16 @@ describe('BrowserRecorderControlPanel', () => {
       setter.call(nameInput, 'Checkout')
       nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await clickButton('Start Transaction')
+    await clickButton('Start transaction')
     await flushPromises()
 
     expect(apiMock.startBrowserRecordingTransaction).toHaveBeenCalledWith('brec-1', 'Checkout')
     const chip = container.querySelector('[data-testid="open-transaction"]')
     expect(chip).not.toBeNull()
     expect(chip!.textContent).toContain('Checkout')
-    expect(chip!.textContent).toContain('End Transaction')
+    expect(chip!.textContent).toContain('End transaction')
 
-    await clickButton('End Transaction')
+    await clickButton('End transaction')
     await flushPromises()
     expect(apiMock.endBrowserRecordingTransaction).toHaveBeenCalledWith('brec-1', 'Checkout')
     expect(container.querySelector('[data-testid="open-transaction"]')).toBeNull()
@@ -2004,7 +2004,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
     await renderPanel()
 
-    await clickButton('Add Note')
+    await clickButton('Add note')
     expect(apiMock.addBrowserRecordingNote).not.toHaveBeenCalled() // empty note rejected client-side
 
     const noteInput = container.querySelector('input[aria-label="Note"]') as HTMLInputElement
@@ -2013,7 +2013,7 @@ describe('BrowserRecorderControlPanel', () => {
       setter.call(noteInput, 'watch the cart badge')
       noteInput.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await clickButton('Add Note')
+    await clickButton('Add note')
     await flushPromises()
 
     expect(apiMock.addBrowserRecordingNote).toHaveBeenCalledWith('brec-1', 'watch the cart badge')
@@ -2024,8 +2024,8 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel()
 
-    expect(container.textContent).not.toContain('Pause Recording')
-    expect(container.textContent).not.toContain('Focus Browser')
+    expect(container.textContent).not.toContain('Pause recording')
+    expect(container.textContent).not.toContain('Focus browser')
     expect(container.querySelector('input[aria-label="Transaction name"]')).toBeNull()
     expect(container.querySelector('input[aria-label="Navigate the recording browser"]')).toBeNull()
   })
@@ -2133,7 +2133,7 @@ describe('BrowserRecorderControlPanel', () => {
       ], warnings: [], stats: {},
     })
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     await clickButton('Verify output 2')
     expect(apiMock.verifyBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.any(String), expect.objectContaining({ expected_script_count: 2 }), 1)
     await clickButton('Complete Replay')
@@ -2160,7 +2160,7 @@ describe('BrowserRecorderControlPanel', () => {
     let finish!: (value: unknown) => void
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel()
-    await clickButton('Preview Conversion')
+    await clickButton('Preview conversion')
     apiMock.verifyBrowserRecording.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
     await clickButton('Verify output 1')
     const checkbox = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Parameterize inputs'))!.querySelector('input')!

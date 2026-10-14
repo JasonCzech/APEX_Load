@@ -30,6 +30,7 @@ import { brunoSecretPresentation } from './brunoSecretPresentation';
 import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements';
 import { importFileLogicalPath } from '../importLogicalPath';
 import SharedAssetsDialog from './SharedAssetsDialog';
+import { useImportDestination } from './importDestinationContext';
 import './BrunoImport.css';
 interface Props {
     initialFiles?: File[] | null;
@@ -404,6 +405,8 @@ function CollectionTree({ items }: {
 }
 export default function BrunoImport({ initialFiles, initialOutputMode, projectId, folderId, onFolderChange, destinationFolderManagedExternally = false, onImported, onClose, onOperationBusyChange }: Props) {
     const api = useApi();
+    // The surface's destination, shown here when the surface manages it.
+    const externalDestination = useImportDestination();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const directoryInputRef = useRef<HTMLInputElement>(null);
     const folderCreateRequestRef = useRef(0);
@@ -1127,6 +1130,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             <p>{'Create one native HTTP script per API and save the selected batch to one destination.'}</p>
           </div>
         </div>
+        {destinationFolderManagedExternally && externalDestination}
         {!destinationFolderManagedExternally && (<>
             <div className="bruno-options-grid">
               <label>

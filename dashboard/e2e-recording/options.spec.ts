@@ -35,7 +35,7 @@ test('transaction splitting accounts for every output',async({page,harness:h},in
   try{
     for(const name of ['First','Second']){
       await page.getByLabel('Transaction name',{exact:true}).fill(name)
-      await page.getByRole('button',{name:'Start Transaction',exact:true}).click()
+      await page.getByRole('button',{name:'Start transaction',exact:true}).click()
       await rec.target.getByLabel('Customer',{exact:true}).fill(`${name}-customer`)
       await rec.target.getByRole('button',{name:'Record event',exact:true}).click()
       await expect.poll(()=>h.target.events.filter(e=>e.query.value===`${name}-customer`).length).toBe(1)

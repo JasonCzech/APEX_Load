@@ -9,6 +9,7 @@ import { ApiError } from '../hooks/apiClient'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import ScriptsPage from './ScriptsPage'
+import ScriptCreateOptions from './ScriptCreateOptions'
 import {
   beginScriptSecretStatusRequest,
   isLatestScriptSecretStatusRequest,
@@ -249,28 +250,28 @@ function TopbarContributionHarness() {
 }
 
 const importSurfaces = [
-  surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & Collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
-  surface('bruno', 'Bruno Collection', 'Bruno', 'Contracts & Collections', 15, 'bruno', 'Preserve and execute Bruno collections without translating source behavior.'),
-  surface('postman', 'Postman Collection', 'Postman', 'Contracts & Collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
-  surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & Collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
-  surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & Collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
-  surface('raml', 'RAML / Anypoint', 'RAML', 'Contracts & Collections', 50, 'raml', 'Import RAML contracts from Anypoint-style API specs.'),
-  surface('traffic_har', 'HAR Traffic', 'HAR', 'Traffic & Samples', 10, 'traffic_har', 'Convert captured browser/API traffic; auto-detects Salesforce and Agentforce.', [
+  surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
+  surface('bruno', 'Bruno Collection', 'Bruno', 'Contracts & collections', 15, 'bruno', 'Preserve and execute Bruno collections without translating source behavior.'),
+  surface('postman', 'Postman Collection', 'Postman', 'Contracts & collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
+  surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
+  surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
+  surface('raml', 'RAML / Anypoint', 'RAML', 'Contracts & collections', 50, 'raml', 'Import RAML contracts from Anypoint-style API specs.'),
+  surface('traffic_har', 'HAR Traffic', 'HAR', 'Traffic & samples', 10, 'traffic_har', 'Convert captured browser/API traffic; auto-detects Salesforce and Agentforce.', [
     { id: 'auto_detect', label: 'Auto-detect', description: 'Detect Salesforce and generate native drafts when present.', default: true },
     { id: 'force_generic', label: 'Force Generic HAR', description: 'Return the raw deterministic HAR script.', default: false },
   ]),
-  surface('recorder_export', 'Recorder Export / Playwright Codegen', 'Recorder', 'Traffic & Samples', 20, 'recorder_export', 'Import browser recorder exports and Playwright codegen captures.'),
-  surface('sample', 'Request / Response Sample', 'Sample', 'Traffic & Samples', 30, 'sample', 'Build from raw HTTP, curl, HAR, REST JSON, SOAP-shaped samples, or Java over HTTP payloads.', [
+  surface('recorder_export', 'Recorder Export / Playwright Codegen', 'Recorder', 'Traffic & samples', 20, 'recorder_export', 'Import browser recorder exports and Playwright codegen captures.'),
+  surface('sample', 'Request / Response Sample', 'Sample', 'Traffic & samples', 30, 'sample', 'Build from raw HTTP, curl, HAR, REST JSON, SOAP-shaped samples, or Java over HTTP payloads.', [
     { id: 'standard_api', label: 'Standard API', description: 'Use the normal sample converter.', default: true },
     { id: 'java_http', label: 'Java over HTTP', description: 'Promote samples into java_http drafts.', default: false },
   ]),
-  surface('enterprise_archive', 'Import Loadrunner Script Archive', 'Archive', 'Legacy & Tool Exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
-  surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & Tool Exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
-  surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & Tool Exports', 30, 'devweb', 'Convert DevWeb source projects.'),
-  surface('k6', 'k6 Script', 'k6', 'Legacy & Tool Exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
-  surface('eventhubs_capture', 'Event Hubs Capture', 'Event Hubs', 'Messaging & Cloud Artifacts', 10, 'eventhubs_capture', 'Import Event Hubs capture metadata and payload examples.'),
-  surface('broker_config', 'Broker Config', 'Broker', 'Messaging & Cloud Artifacts', 20, 'broker_config', 'Import messaging broker configuration for JMS/Kafka style drafts.'),
-  surface('oracle_ebusiness_review', 'Oracle E-Business / Siebel Review', 'Review', 'Enterprise App Reviews', 10, 'oracle_ebusiness_review', 'Review Oracle E-Business and Siebel assets before script authoring.'),
+  surface('enterprise_archive', 'Import Loadrunner Script Archive', 'Archive', 'Legacy & tool exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
+  surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & tool exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
+  surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & tool exports', 30, 'devweb', 'Convert DevWeb source projects.'),
+  surface('k6', 'k6 Script', 'k6', 'Legacy & tool exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
+  surface('eventhubs_capture', 'Event Hubs Capture', 'Event Hubs', 'Messaging & cloud artifacts', 10, 'eventhubs_capture', 'Import Event Hubs capture metadata and payload examples.'),
+  surface('broker_config', 'Broker Config', 'Broker', 'Messaging & cloud artifacts', 20, 'broker_config', 'Import messaging broker configuration for JMS/Kafka style drafts.'),
+  surface('oracle_ebusiness_review', 'Oracle E-Business / Siebel Review', 'Review', 'Reviews', 10, 'oracle_ebusiness_review', 'Review Oracle E-Business and Siebel assets before script authoring.'),
 ]
 
 function surface(
@@ -799,12 +800,12 @@ describe('ScriptsPage', () => {
     await clickButton('Script builder')
 
     expect(container.textContent).toContain('Create script')
-    expect(container.textContent).toContain('Start New Script')
+    expect(container.textContent).toContain('Create a script')
 
-    await clickButton('Create')
-    await clickButton('Blank & Assisted Editors')
+    // A sample is an import source, not an editor.
+    await clickButton('Import')
 
-    const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
+    const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Request / Response Sample'))
     expect(sampleButton).toBeTruthy()
     if (!sampleButton) {
       return
@@ -866,7 +867,7 @@ describe('ScriptsPage', () => {
     expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('false')
     expect(container.textContent).toContain('Script library')
     expect(container.textContent).not.toContain('Script library (')
-    expect(container.textContent).not.toContain('Start New Script')
+    expect(container.textContent).not.toContain('Create a script')
     expect(container.textContent).toContain('Script assets')
     expect(container.textContent).toContain('Run release')
     expect(container.textContent).toContain('Search scripts')
@@ -881,9 +882,9 @@ describe('ScriptsPage', () => {
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
     expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('false')
     expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.textContent).toContain('Start New Script')
+    expect(container.textContent).toContain('Create a script')
     expect(container.textContent).not.toContain('Script library (')
-    await clickButton('Use existing')
+    await clickButton('Copy')
     const builderHeaders = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
     expect(builderHeaders.some(header => header.includes('Source'))).toBe(false)
     expect(builderHeaders.some(header => header.includes('Script'))).toBe(true)
@@ -901,7 +902,7 @@ describe('ScriptsPage', () => {
     expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('false')
     expect(container.textContent).toContain('Script library')
     expect(container.textContent).not.toContain('Script library (')
-    expect(container.textContent).not.toContain('Start New Script')
+    expect(container.textContent).not.toContain('Create a script')
   })
 
   it('renders only one script page toggle when the title bar provider is present', async () => {
@@ -932,7 +933,7 @@ describe('ScriptsPage', () => {
     expect(toggleButtons).toHaveLength(2)
     expect(toggleButtons.find(button => button.textContent?.includes('Script library'))?.getAttribute('aria-pressed')).toBe('false')
     expect(toggleButtons.find(button => button.textContent?.includes('Script builder'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.textContent).toContain('Start New Script')
+    expect(container.textContent).toContain('Create a script')
     expect(container.querySelectorAll('[data-testid="topbar-contribution"] .script-page-toggle')).toHaveLength(1)
   })
 
@@ -979,17 +980,17 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
     await flushPromises()
 
-    expect(container.textContent).toContain('Contracts & Collections')
-    expect(container.textContent).toContain('Traffic & Samples')
-    expect(container.textContent).toContain('Legacy & Tool Exports')
-    expect(container.textContent).toContain('Messaging & Cloud Artifacts')
-    expect(container.textContent).toContain('Enterprise App Reviews')
+    expect(container.textContent).toContain('Contracts & collections')
+    expect(container.textContent).toContain('Traffic & samples')
+    expect(container.textContent).toContain('Legacy & tool exports')
+    expect(container.textContent).toContain('Messaging & cloud artifacts')
+    expect(container.textContent).toContain('Reviews')
     expect(container.textContent).not.toContain('Import OpenAPI')
     expect(container.textContent).not.toContain('Import Postman')
     expect(container.textContent).not.toContain('Import WSDL')
     expect(container.textContent).not.toContain('Import HAR')
     expect(container.textContent).not.toContain('Import DevWeb')
-    expect(container.textContent).not.toContain('Salesforce Family')
+    expect(container.textContent).not.toContain('Salesforce family')
     expect(container.textContent).not.toContain('Salesforce HAR')
 
     const countImportOption = (label: string) =>
@@ -1029,9 +1030,9 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
     await flushPromises()
 
-    expect(container.textContent).toContain('Contracts & Collections')
-    expect(container.textContent).toContain('Traffic & Samples')
-    expect(container.textContent).toContain('Messaging & Cloud Artifacts')
+    expect(container.textContent).toContain('Contracts & collections')
+    expect(container.textContent).toContain('Traffic & samples')
+    expect(container.textContent).toContain('Messaging & cloud artifacts')
     expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(17)
     expect(container.textContent).toContain('HAR Traffic')
     expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
@@ -1074,7 +1075,7 @@ describe('ScriptsPage', () => {
     // Back to an entry naming another tab moves it, in place.
     await render({ step: 'create', workflow: 'start-new', category: 'templates' })
     expect(selectedWorkflow()).toContain('Create')
-    expect(container.querySelector('[aria-label="Start new script categories"] [role="tab"][aria-selected="true"]')?.textContent).toContain('Starter Templates')
+    expect(container.querySelector('[aria-label="Start new script categories"] [role="tab"][aria-selected="true"]')?.textContent).toContain('Starter templates')
 
     // The page's own tab change reaches the address.
     await clickButton('Import')
@@ -1121,7 +1122,82 @@ describe('ScriptsPage', () => {
     expect(onAuthoringStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ subView: 'recorder', recordMethod: 'proxy' }))
   })
 
-  it('consolidates template and manual choices under Start New Script', async () => {
+  it('says when templates and blocks are loading or failed, and retries, instead of an empty catalog', async () => {
+    let failFirst!: (error: Error) => void
+    apiMock.listAuthoringTemplates
+      .mockReturnValueOnce(new Promise((_, reject) => { failFirst = reject }))
+      .mockResolvedValueOnce({ templates: [], count: 0 })
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Create')
+    await clickButton('Starter templates')
+    const tabCount = (label: string) => Array.from(container.querySelectorAll('.script-create-category-tabs [role="tab"]'))
+      .find(tab => tab.textContent?.startsWith(label))?.querySelector('strong')?.textContent ?? null
+    // Loading: no count yet, and no claim that the controller has none.
+    expect(tabCount('Starter templates')).toBeNull()
+    expect(tabCount('Blank & assisted editors')).not.toBeNull()
+    expect(container.textContent).toContain('Loading starter templates and reusable blocks…')
+    expect(container.textContent).not.toContain('No starter templates are available')
+
+    await act(async () => failFirst(new Error('catalog unavailable')))
+    await flushPromises()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Starter templates and reusable blocks could not be loaded. catalog unavailable')
+    expect(tabCount('Starter templates')).toBeNull()
+
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry')!
+    await act(async () => retry.click())
+    await flushPromises()
+    expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(2)
+    expect(tabCount('Starter templates')).toBe('0')
+    expect(container.textContent).toContain('No starter templates are available from this controller.')
+  })
+
+  it('keeps the current project catalog when a Retry for the previous project answers late', async () => {
+    const template = (name: string) => ({ id: name, name, description: '', protocol: 'http', use_case: 'smoke', tags: [], script: { name, version: '1', protocol: 'http', config: {}, actions: [] } })
+    let answerRetry!: (value: unknown) => void
+    apiMock.listAuthoringTemplates
+      .mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockReturnValueOnce(new Promise(resolve => { answerRetry = resolve }))
+      .mockResolvedValueOnce({ templates: [template('Template B')], count: 1 })
+    const props = {
+      onBack: vi.fn(), onStartApiScript: vi.fn(), onStartSoapScript: vi.fn(), onStartJavaHttpScript: vi.fn(),
+      onStartWebSocketScript: vi.fn(), onStartGrpcScript: vi.fn(), onStartDatabaseScript: vi.fn(), onStartNetworkScript: vi.fn(),
+      onStartWebScript: vi.fn(), onOpenRecorder: vi.fn(), onStartJmsScript: vi.fn(), onStartKafkaScript: vi.fn(),
+      onStartTemplateScript: vi.fn(), onComposeComponent: vi.fn(), onOpenImportSurface: vi.fn(),
+      workflow: 'start-new' as const, category: 'templates' as const,
+    }
+    await act(async () => {
+      root.render(<ScriptCreateOptions {...props} projectId="project-a" />)
+    })
+    await flushPromises()
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry')!
+    await act(async () => retry.click())
+    // The page moves to another project before project A's retry answers.
+    await act(async () => {
+      root.render(<ScriptCreateOptions {...props} projectId="project-b" />)
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Template B')
+    await act(async () => answerRetry({ templates: [template('Template A')], count: 1 }))
+    await flushPromises()
+    expect(container.textContent).toContain('Template B')
+    expect(container.textContent).not.toContain('Template A')
+  })
+
+  it('lists reviews under their own heading, saying they create no script', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    const reviews = Array.from(container.querySelectorAll('.script-create-import-group')).find(group => group.querySelector('h4')?.textContent === 'Reviews')
+    expect(reviews?.textContent).toContain('Oracle E-Business / Siebel Review')
+    expect(reviews?.querySelector('.script-create-group-note')?.textContent).toContain('they do not create a script')
+  })
+
+  it('consolidates template and manual choices under Create a script', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
@@ -1132,16 +1208,20 @@ describe('ScriptsPage', () => {
 
     const lanes = Array.from(container.querySelectorAll('.script-create-lane.full'))
     expect(lanes).toHaveLength(1)
-    expect(container.textContent).toContain('Starter Templates')
-    expect(container.textContent).toContain('Blank & Assisted Editors')
-    expect(container.textContent).toContain('Reusable Blocks')
+    expect(container.textContent).toContain('Starter templates')
+    expect(container.textContent).toContain('Blank & assisted editors')
+    expect(container.textContent).toContain('Reusable blocks')
     expect(container.querySelectorAll('.script-create-category-tabs [role="tab"]')).toHaveLength(3)
     expect(container.querySelector('.script-create-choice-groups .script-create-option')).toBeNull()
 
-    await clickButton('Blank & Assisted Editors')
+    await clickButton('Blank & assisted editors')
 
     expect(container.textContent).toContain('API Visual Editor')
-    expect(container.textContent).toContain('Build From Sample')
+    // The sample importer is listed under Import, and the editors most tests
+    // start from come first, marked in a neutral style.
+    expect(container.textContent).not.toContain('Build From Sample')
+    expect(Array.from(container.querySelectorAll('.script-create-table-list tbody tr')).slice(0, 4).map(row => row.querySelector('.script-create-recommended')?.textContent)).toEqual(['Recommended', 'Recommended', 'Recommended', 'Recommended'])
+    expect(container.querySelector('.script-create-table-list .script-health-token')).toBeNull()
     expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
     expect(container.textContent).not.toContain('Use Template')
     expect(container.textContent).not.toContain('Build Manually')
@@ -1166,9 +1246,9 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Use existing')
+    await clickButton('Copy')
 
-    expect(container.textContent).toContain('Copy an Existing Script')
+    expect(container.textContent).toContain('Copy a script')
     await clickButton('Existing Script')
     await flushPromises()
 
@@ -1199,12 +1279,12 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
-    await clickButton('Use existing')
+    await clickButton('Copy')
 
     await clickButton('Existing Script')
     expect(apiMock.cloneScriptDraft).toHaveBeenCalledTimes(1)
     await clickButton('Script library')
-    expect(container.textContent).not.toContain('Copy an Existing Script')
+    expect(container.textContent).not.toContain('Copy a script')
 
     await act(async () => {
       resolveClone?.({
@@ -1295,7 +1375,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
-    await clickButton('Use existing')
+    await clickButton('Copy')
 
     const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
     expect(migrateToggle).not.toBeNull()
@@ -1363,7 +1443,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
-    await clickButton('Use existing')
+    await clickButton('Copy')
     const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
     await act(async () => migrateToggle?.click())
     await clickButton('Existing Script')
@@ -1434,7 +1514,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
-    await clickButton('Use existing')
+    await clickButton('Copy')
 
     const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
     await act(async () => migrateToggle?.click())
@@ -1457,9 +1537,9 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Use existing')
+    await clickButton('Copy')
 
-    expect(container.textContent).toContain('Copy an Existing Script')
+    expect(container.textContent).toContain('Copy a script')
     await clickButton('Existing Script')
     await flushPromises()
 
@@ -1498,7 +1578,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('New draft authoring')
-    expect(container.textContent).not.toContain('Copy an Existing Script')
+    expect(container.textContent).not.toContain('Copy a script')
   })
 
   it('surfaces authoring-session load failures', async () => {
@@ -2132,12 +2212,12 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Converted Enterprise Script Archive Draft')
-    expect(container.textContent).toContain('Back to Converted Script')
+    expect(container.textContent).toContain('Back to converted script')
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     // The review stays open behind the editor, so leaving keeps its guard.
     expect(container.querySelector('[data-testid="script-editor"]')?.getAttribute('data-retained-guards')).toBe('enterprise-archive-import')
 
-    await clickButton('Back to Converted Script')
+    await clickButton('Back to converted script')
 
     expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
@@ -2192,7 +2272,7 @@ describe('ScriptsPage', () => {
     expect(plainSave).toBeTruthy()
     await act(async () => { plainSave!.click() })
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
-    await clickButton('Back to Converted Script')
+    await clickButton('Back to converted script')
     expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     // The dropped load does not reopen the saved script when it lands.
@@ -2325,7 +2405,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
     expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Source-driven authoring')
-    expect(container.textContent).not.toContain('Start New Script')
+    expect(container.textContent).not.toContain('Create a script')
     expect(container.textContent).toContain('Import Loadrunner Script Archive')
   })
 
@@ -2337,14 +2417,14 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     await clickButton('Create')
-    await clickButton('Blank & Assisted Editors')
+    await clickButton('Blank & assisted editors')
 
-    expect(container.textContent).toContain('Blank & Assisted Editors')
-    expect(container.textContent).toContain('Web Services (SOAP)')
+    expect(container.textContent).toContain('Blank & assisted editors')
+    expect(container.textContent).toContain('Web services (SOAP)')
     expect(container.textContent).toContain('Java over HTTP')
     expect(container.textContent).toContain('embedded or sidecar helper execution')
 
-    const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web Services (SOAP)'))
+    const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web services (SOAP)'))
     expect(soapButton).toBeTruthy()
     if (!soapButton) {
       return
@@ -2378,7 +2458,7 @@ describe('ScriptsPage', () => {
     })
 
     await clickButton('Create')
-    await clickButton('Blank & Assisted Editors')
+    await clickButton('Blank & assisted editors')
 
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
     expect(javaButton).toBeTruthy()
@@ -2438,15 +2518,15 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('Starter Templates')
-    expect(container.textContent).toContain('Reusable Blocks')
-    await clickButton('Starter Templates')
+    expect(container.textContent).toContain('Starter templates')
+    expect(container.textContent).toContain('Reusable blocks')
+    await clickButton('Starter templates')
     expect(container.textContent).toContain('Browser Checkout Canary')
 
-    await clickButton('Reusable Blocks')
+    await clickButton('Reusable blocks')
     expect(container.textContent).toContain('Browser Login Transaction')
 
-    await clickButton('Starter Templates')
+    await clickButton('Starter templates')
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
     expect(templateButton).toBeTruthy()
@@ -2485,9 +2565,9 @@ describe('ScriptsPage', () => {
     await flushPromises()
     await flushPromises()
     await clickButton('Create')
-    await clickButton('Reusable Blocks')
+    await clickButton('Reusable blocks')
 
-    expect(container.textContent).toContain('Reusable Blocks')
+    expect(container.textContent).toContain('Reusable blocks')
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
 
     const componentButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('OAuth Bearer Token Flow'))
@@ -2984,7 +3064,7 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
 }
 
 async function clickButton(label: string) {
-  const button = Array.from(document.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
+  const button = Array.from(document.querySelectorAll('button')).find(element => (['Create','Import','Record','Copy'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
   expect(button).toBeTruthy()
   if (!button) {
     return

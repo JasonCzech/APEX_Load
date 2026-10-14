@@ -98,7 +98,7 @@ test('nested script editor owns title and help and returns the scenario context'
   await page.getByPlaceholder('Scenario name').fill('Retained scenario')
   await page.getByRole('button', { name: 'Add script to Group 1' }).click()
   await page.getByRole('dialog', { name: 'Choose script' }).getByRole('button', { name: 'Create script', exact: true }).click()
-  await page.getByRole('tab', { name: /Blank & Assisted Editors/ }).click()
+  await page.getByRole('tab', { name: /Blank & assisted editors/ }).click()
   await page.getByRole('button', { name: /API Visual Editor/ }).click()
   await expect(page.locator('.main-topbar h1')).not.toHaveText('Scenarios')
   await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=authoring/)

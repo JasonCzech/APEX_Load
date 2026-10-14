@@ -182,8 +182,9 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
+  // The destination is chosen at the save step, once there is something to save.
   const destination = page.getByRole('combobox', { name: 'Destination folder for saved scripts' })
-  await destination.selectOption(folderId)
+  await expect(destination).toHaveCount(0)
   const policy = page.locator('.lr-advanced-policy .lr-checkbox').filter({ hasText: /runtime settings as blockers/ }).locator('input[type=checkbox]')
   await expect(policy).toHaveCount(3)
   for (let index = 0; index < 3; index += 1) await expect(policy.nth(index)).not.toBeChecked()
@@ -197,6 +198,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   ])
   await page.getByRole('button', { name: 'Validate 3 Scripts', exact: true }).click()
   await expect(page.locator('.lr-file-row.failed')).toHaveCount(1)
+  await destination.selectOption(folderId)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
   await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
   const receipt = await json(await saved)
@@ -205,7 +207,6 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   expect(new Set(scripts.map(script => script.id)).size).toBe(2)
   await expect(page.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toHaveCount(0)
-  await expect(destination).toHaveValue(folderId)
   const library = await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))
   expect((library.scripts as { id: string; folder_id: string }[]).filter(script => script.folder_id === folderId).map(script => script.id).sort()).toEqual(scripts.map(script => script.id).sort())
 

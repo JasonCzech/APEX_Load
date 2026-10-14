@@ -13,9 +13,9 @@ for (const launch of ['controller', 'agent'] as const) {
         await rec.target.getByLabel('Customer', { exact: true }).fill('recorded-order')
         await rec.target.getByRole('button', { name: 'Checkout', exact: true }).click()
         await expect(rec.target.locator('#result')).toHaveText('Order accepted')
-        await page.getByRole('button', { name: 'Pick Verification', exact: true }).click()
+        await page.getByRole('button', { name: 'Pick verification', exact: true }).click()
         await rec.target.locator('#result').click()
-        await expect(page.getByRole('button', { name: 'Pick Verification', exact: true })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Pick verification', exact: true })).toBeVisible()
         await stopRecording(page)
         if (launch === 'controller') {
           const captured = await snapshot(h,rec.id)

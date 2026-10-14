@@ -38,6 +38,7 @@ import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import { formatDateTime } from '../utils/dateTime'
+import { useImportDestination } from './importDestinationContext'
 
 const severityRank: Record<string, number> = {
   blocker: 0,
@@ -593,6 +594,8 @@ export default function ScriptImportReview({
 }: Props) {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const settingsBusyRef = useRef(false)
+  // Where the importer saves, offered here at the Save step.
+  const importDestination = useImportDestination()
   const [activeReviewTab, setActiveReviewTab] = useState<ImportReviewTab>('review')
   const [sourceIssueFocus, setSourceIssueFocus] = useState<ImportSourceIssueFocus | null>(null)
   const sourceIssueFocusRevision = useRef(0)
@@ -1072,6 +1075,10 @@ export default function ScriptImportReview({
           )}
         </div>
       </div>
+
+      {importDestination && onSave && !savedAction && (
+        <div className="script-import-review-destination">{importDestination}</div>
+      )}
 
       {visibleSaveDisabledReason && (
         <div id={saveDisabledReasonId} className="script-import-review-save-disabled-reason" role="status">

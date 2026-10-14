@@ -71,12 +71,12 @@ export async function snapshot(h: Harness, id: string, raw = false) {
   return session
 }
 export async function stopRecording(page: Page) {
-  await page.getByTestId('browser-recorder-panel').getByRole('button', { name: 'Stop Recording', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Preview Conversion', exact: true })).toBeVisible({ timeout: 30_000 })
+  await page.getByTestId('browser-recorder-panel').getByRole('button', { name: 'Stop recording', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Preview conversion', exact: true })).toBeVisible({ timeout: 30_000 })
 }
 export async function preview(page: Page, info: TestInfo) {
   const response = page.waitForResponse(r => r.url().endsWith('/convert/preview') && r.request().method() === 'POST')
-  await page.getByRole('button', { name: 'Preview Conversion', exact: true }).click()
+  await page.getByRole('button', { name: 'Preview conversion', exact: true }).click()
   const result = await response; expect(result.ok(), await result.text()).toBeTruthy()
   const payload = await result.json()
   await info.attach('converted-dsl', { body: JSON.stringify(payload, null, 2), contentType: 'application/json' })

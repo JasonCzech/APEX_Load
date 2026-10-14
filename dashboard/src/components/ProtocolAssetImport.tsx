@@ -2203,7 +2203,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 />
               </div>
               <label className="sample-import-field">
-                <span>Default Think Time (ms)</span>
+                <span>Default think time (ms)</span>
                 <input type="number" min={0} value={postmanThinkTimeMs} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setPostmanThinkTimeMs(Math.max(0, Number(event.target.value) || 0)) }} />
               </label>
               <label className="sample-toggle">
@@ -2263,7 +2263,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 <input value={asyncAPISubject} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setAsyncAPISubject(event.target.value) }} placeholder="orders-value" />
               </label>
               <label className="sample-import-field">
-                <span>Think Time (ms)</span>
+                <span>Think time (ms)</span>
                 <input type="number" min={0} value={asyncAPIThinkTimeMs} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setAsyncAPIThinkTimeMs(Math.max(0, Number(event.target.value) || 0)) }} />
               </label>
               <label className="sample-toggle">

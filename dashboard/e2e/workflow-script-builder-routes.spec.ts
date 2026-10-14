@@ -15,7 +15,7 @@ test('Back and reload move between the Script builder, Recording Studio and draf
   await page.getByRole('button', { name: 'Script builder', exact: true }).first().click()
   const workflows = page.getByRole('tablist', { name: 'Script creation workflows' })
   await expect(workflows.getByRole('tab', { name: 'Create', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('tab', { name: /Starter Templates/ }).click()
+  await page.getByRole('tab', { name: /Starter templates/ }).click()
   await expect.poll(route).toContain('category=templates')
 
   // Recording Studio is a step: Back returns to the builder's tab.
@@ -23,7 +23,7 @@ test('Back and reload move between the Script builder, Recording Studio and draf
   await expect.poll(route).toContain('mode=record')
   await page.goBack()
   await expect.poll(route).toContain('mode=create')
-  await expect(page.getByRole('tab', { name: /Starter Templates/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Starter templates/ })).toHaveAttribute('aria-selected', 'true')
 
   // An importer is a step too: Back returns to the builder's tab.
   await page.getByRole('tab', { name: 'Import', exact: true }).click()
@@ -67,5 +67,5 @@ test('Back and reload move between the Script builder, Recording Studio and draf
   // A reload reopens Recording Studio with its method.
   await page.goto(`/#/scripts?mode=record&method=browser&${scopeQuery(workspace)}`)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Record Browser Session' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Record a browser session' })).toBeVisible()
 })

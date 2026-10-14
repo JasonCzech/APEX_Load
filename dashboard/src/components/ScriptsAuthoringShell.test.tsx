@@ -153,28 +153,28 @@ function createState(subView: AuthoringState['subView'], overrides: Partial<Auth
 }
 
 const importSurfaces = [
-  surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & Collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
-  surface('bruno', 'Bruno Collection', 'Bruno', 'Contracts & Collections', 15, 'bruno', 'Preserve and execute Bruno collections without translating source behavior.'),
-  surface('postman', 'Postman Collection', 'Postman', 'Contracts & Collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
-  surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & Collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
-  surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & Collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
-  surface('raml', 'RAML / Anypoint', 'RAML', 'Contracts & Collections', 50, 'raml', 'Import RAML contracts from Anypoint-style API specs.'),
-  surface('traffic_har', 'HAR Traffic', 'HAR', 'Traffic & Samples', 10, 'traffic_har', 'Convert captured browser/API traffic; auto-detects Salesforce and Agentforce.', [
+  surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
+  surface('bruno', 'Bruno Collection', 'Bruno', 'Contracts & collections', 15, 'bruno', 'Preserve and execute Bruno collections without translating source behavior.'),
+  surface('postman', 'Postman Collection', 'Postman', 'Contracts & collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
+  surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
+  surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
+  surface('raml', 'RAML / Anypoint', 'RAML', 'Contracts & collections', 50, 'raml', 'Import RAML contracts from Anypoint-style API specs.'),
+  surface('traffic_har', 'HAR Traffic', 'HAR', 'Traffic & samples', 10, 'traffic_har', 'Convert captured browser/API traffic; auto-detects Salesforce and Agentforce.', [
     { id: 'auto_detect', label: 'Auto-detect', description: 'Detect Salesforce and generate native drafts when present.', default: true },
     { id: 'force_generic', label: 'Force Generic HAR', description: 'Return the raw deterministic HAR script.', default: false },
   ]),
-  surface('recorder_export', 'Recorder Export / Playwright Codegen', 'Recorder', 'Traffic & Samples', 20, 'recorder_export', 'Import browser recorder exports and Playwright codegen captures.'),
-  surface('sample', 'Request / Response Sample', 'Sample', 'Traffic & Samples', 30, 'sample', 'Build from raw HTTP, curl, HAR, REST JSON, SOAP-shaped samples, or Java over HTTP payloads.', [
+  surface('recorder_export', 'Recorder Export / Playwright Codegen', 'Recorder', 'Traffic & samples', 20, 'recorder_export', 'Import browser recorder exports and Playwright codegen captures.'),
+  surface('sample', 'Request / Response Sample', 'Sample', 'Traffic & samples', 30, 'sample', 'Build from raw HTTP, curl, HAR, REST JSON, SOAP-shaped samples, or Java over HTTP payloads.', [
     { id: 'standard_api', label: 'Standard API', description: 'Use the normal sample converter.', default: true },
     { id: 'java_http', label: 'Java over HTTP', description: 'Promote samples into java_http drafts.', default: false },
   ]),
-  surface('enterprise_archive', 'Import Loadrunner Script Archive', 'Archive', 'Legacy & Tool Exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
-  surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & Tool Exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
-  surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & Tool Exports', 30, 'devweb', 'Convert DevWeb source projects.'),
-  surface('k6', 'k6 Script', 'k6', 'Legacy & Tool Exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
-  surface('eventhubs_capture', 'Event Hubs Capture', 'Event Hubs', 'Messaging & Cloud Artifacts', 10, 'eventhubs_capture', 'Import Event Hubs capture metadata and payload examples.'),
-  surface('broker_config', 'Broker Config', 'Broker', 'Messaging & Cloud Artifacts', 20, 'broker_config', 'Import messaging broker configuration for JMS/Kafka style drafts.'),
-  surface('oracle_ebusiness_review', 'Oracle E-Business / Siebel Review', 'Review', 'Enterprise App Reviews', 10, 'oracle_ebusiness_review', 'Review Oracle E-Business and Siebel assets before script authoring.'),
+  surface('enterprise_archive', 'Import Loadrunner Script Archive', 'Archive', 'Legacy & tool exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
+  surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & tool exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
+  surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & tool exports', 30, 'devweb', 'Convert DevWeb source projects.'),
+  surface('k6', 'k6 Script', 'k6', 'Legacy & tool exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
+  surface('eventhubs_capture', 'Event Hubs Capture', 'Event Hubs', 'Messaging & cloud artifacts', 10, 'eventhubs_capture', 'Import Event Hubs capture metadata and payload examples.'),
+  surface('broker_config', 'Broker Config', 'Broker', 'Messaging & cloud artifacts', 20, 'broker_config', 'Import messaging broker configuration for JMS/Kafka style drafts.'),
+  surface('oracle_ebusiness_review', 'Oracle E-Business / Siebel Review', 'Review', 'Reviews', 10, 'oracle_ebusiness_review', 'Review Oracle E-Business and Siebel assets before script authoring.'),
 ]
 
 function surface(
@@ -247,7 +247,7 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('New draft authoring')
-    expect(container.textContent).not.toContain('Copy an Existing Script')
+    expect(container.textContent).not.toContain('Copy a script')
     expect(Array.from(container.querySelectorAll('.script-workflow-card')).find(button => button.textContent?.includes('Create'))?.classList.contains('active')).toBe(true)
   })
 
@@ -275,9 +275,9 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Create script')
-    expect(container.textContent).toContain('Start New Script')
-    await clickButton('Use existing')
-    expect(container.textContent).toContain('Copy an Existing Script')
+    expect(container.textContent).toContain('Create a script')
+    await clickButton('Copy')
+    expect(container.textContent).toContain('Copy a script')
     expect(container.textContent).toContain('Checkout Model')
     expect(container.textContent).toContain('Create')
     expect(container.textContent).not.toContain('Use Template')
@@ -286,28 +286,28 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).not.toContain('Start From Source')
     expect(container.textContent).not.toContain('Import Existing')
     expect(container.textContent).toContain('Record')
-    expect(container.textContent).not.toContain('Browser Recorder')
+    expect(container.textContent).not.toContain('Browser recorder')
 
     await clickButton('Checkout Model')
     expect(onStartExistingScript).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-1' }))
 
     await clickButton('Record')
     expect(actions.openRecorder).toHaveBeenCalled()
-    expect(container.textContent).not.toContain('Browser Recorder')
+    expect(container.textContent).not.toContain('Browser recorder')
 
     await clickButton('Import')
     await flushPromises()
-    expect(container.textContent).toContain('Contracts & Collections')
-    expect(container.textContent).toContain('Traffic & Samples')
-    expect(container.textContent).toContain('Legacy & Tool Exports')
-    expect(container.textContent).toContain('Messaging & Cloud Artifacts')
-    expect(container.textContent).toContain('Enterprise App Reviews')
+    expect(container.textContent).toContain('Contracts & collections')
+    expect(container.textContent).toContain('Traffic & samples')
+    expect(container.textContent).toContain('Legacy & tool exports')
+    expect(container.textContent).toContain('Messaging & cloud artifacts')
+    expect(container.textContent).toContain('Reviews')
     expect(container.textContent).toContain('OpenAPI / Swagger')
     expect(container.textContent).toContain('Postman Collection')
     expect(container.textContent).toContain('WSDL / SOAP')
     expect(container.textContent).toContain('AsyncAPI')
     expect(container.textContent).toContain('RAML / Anypoint')
-    expect(container.textContent).not.toContain('Salesforce Family')
+    expect(container.textContent).not.toContain('Salesforce family')
     expect(container.textContent).not.toContain('Salesforce HAR')
     expect(container.textContent).not.toContain('Agentforce Template')
     expect(container.textContent).toContain('HAR Traffic')
@@ -396,7 +396,7 @@ describe('ScriptsAuthoringShell', () => {
       }))
     })
 
-    await clickButton('Use existing')
+    await clickButton('Copy')
     expect(container.querySelector('.script-create-existing-table')).not.toBeNull()
     expect(container.textContent).toContain('3 of 3 scripts')
     expect(container.textContent).toContain('PI30')
@@ -476,8 +476,8 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     await clickButton('Import')
-    expect(container.textContent).toContain('Contracts & Collections')
-    expect(container.textContent).not.toContain('Copy an Existing Script')
+    expect(container.textContent).toContain('Contracts & collections')
+    expect(container.textContent).not.toContain('Copy a script')
 
     await clickButton('OpenAPI / Swagger')
     expect(container.textContent).toContain('subview:protocol-import')
@@ -485,9 +485,9 @@ describe('ScriptsAuthoringShell', () => {
 
     await clickButton('surface-create-options')
 
-    expect(container.textContent).toContain('Contracts & Collections')
+    expect(container.textContent).toContain('Contracts & collections')
     expect(container.textContent).toContain('OpenAPI / Swagger')
-    expect(container.textContent).not.toContain('Copy an Existing Script')
+    expect(container.textContent).not.toContain('Copy a script')
   })
 
   it('returns from a draft to the Start new tab it was opened from', async () => {
@@ -509,7 +509,7 @@ describe('ScriptsAuthoringShell', () => {
       root.render(<Harness />)
     })
     await flushPromises()
-    const blocksTab = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(tab => tab.textContent?.startsWith('Reusable Blocks'))!
+    const blocksTab = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(tab => tab.textContent?.startsWith('Reusable blocks'))!
     await act(async () => blocksTab().click())
     expect(blocksTab().getAttribute('aria-selected')).toBe('true')
 
@@ -643,25 +643,25 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('Starter Templates')
-    expect(container.textContent).toContain('Blank & Assisted Editors')
-    expect(container.textContent).toContain('Reusable Blocks')
+    expect(container.textContent).toContain('Starter templates')
+    expect(container.textContent).toContain('Blank & assisted editors')
+    expect(container.textContent).toContain('Reusable blocks')
     expect(container.querySelectorAll('.script-create-category-tabs [role="tab"]')).toHaveLength(3)
     expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
     expect(container.querySelector('.script-create-choice-groups .script-create-option')).toBeNull()
-    await clickButton('Starter Templates')
+    await clickButton('Starter templates')
     expect(container.textContent).toContain('HTTP Smoke')
     expect(container.textContent).toMatch(/ci smoke\s*api\s*ci\s*smoke/i)
     expect(container.textContent).toMatch(/3 VUsers\s*\/\s*2m/i)
     expect(container.textContent).toContain('Agentforce SSE')
-    expect(container.textContent).toContain('Salesforce Family')
+    expect(container.textContent).toContain('Salesforce family')
     expect(container.textContent).toContain('Required values: env.AGENT_ID, env.AGENT_PROMPT, env.SF_API_HOST, secret.SALESFORCE_CLIENT_SECRET')
 
-    await clickButton('Reusable Blocks')
+    await clickButton('Reusable blocks')
     expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
 
-    await clickButton('Starter Templates')
+    await clickButton('Starter templates')
 
     await clickButton('HTTP Smoke')
     expect(actions.startTemplateScript).toHaveBeenCalledWith(expect.objectContaining({
@@ -771,7 +771,7 @@ describe('ScriptsAuthoringShell', () => {
   }
 
   async function clickButton(label: string) {
-    const button = Array.from(container.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
+    const button = Array.from(container.querySelectorAll('button')).find(element => (['Create','Import','Record','Copy'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
     expect(button).toBeTruthy()
     if (!button) {
       return

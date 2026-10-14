@@ -8,14 +8,19 @@ import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// The destination's folder-create busy callback, driven by the tests: the
+// control renders inside the import gate it locks.
+const destinationBusy = vi.hoisted(() => ({ change: null as ((busy: boolean) => void) | null }))
+
 vi.mock('./ImportDestinationFolder', () => ({
-  default: ({ disabled, onOperationBusyChange }: { disabled?: boolean; onOperationBusyChange?: (busy: boolean) => void }) => (
-    <div data-testid="outer-destination-folder">
-      <select aria-label="Mock destination folder" disabled={disabled}><option>Outer destination</option></select>
-      <button onClick={() => onOperationBusyChange?.(true)}>Start deferred folder create</button>
-      <button onClick={() => onOperationBusyChange?.(false)}>Finish deferred folder create</button>
-    </div>
-  ),
+  default: ({ disabled, onOperationBusyChange }: { disabled?: boolean; onOperationBusyChange?: (busy: boolean) => void }) => {
+    destinationBusy.change = onOperationBusyChange || null
+    return (
+      <div data-testid="outer-destination-folder">
+        <select aria-label="Mock destination folder" disabled={disabled}><option>Outer destination</option></select>
+      </div>
+    )
+  },
 }))
 
 vi.mock('./BrunoImport', () => ({
@@ -27,14 +32,23 @@ vi.mock('./BrunoImport', () => ({
   ),
 }))
 
-vi.mock('./JMeterImport', () => ({
-  default: (props: { onOperationBusyChange?: (busy: boolean) => void }) => (
-    <div data-testid="jmeter-import">
-      <button onClick={() => props.onOperationBusyChange?.(true)}>Start deferred save</button>
-      <button onClick={() => props.onOperationBusyChange?.(false)}>Finish deferred save</button>
-    </div>
-  ),
-}))
+// Like the real importer, the mock offers the surface's destination at its
+// save step.
+vi.mock('./JMeterImport', async () => {
+  const { useImportDestination } = await import('./importDestinationContext')
+  return {
+    default: function MockJMeterImport(props: { onOperationBusyChange?: (busy: boolean) => void }) {
+      const destination = useImportDestination()
+      return (
+        <div data-testid="jmeter-import">
+          {destination}
+          <button onClick={() => props.onOperationBusyChange?.(true)}>Start deferred save</button>
+          <button onClick={() => props.onOperationBusyChange?.(false)}>Finish deferred save</button>
+        </div>
+      )
+    },
+  }
+})
 
 vi.mock('./RecordingStudio', () => ({
   default: (props: { onEdit?: (script: { name: string }) => void; onImported?: (result: { scripts: { id: string }[] }) => void }) => (
@@ -170,18 +184,15 @@ describe('ScriptsAuthoringSurface Bruno destination integration', () => {
       await Promise.resolve()
     })
 
-    const startFolderCreate = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Start deferred folder create')!
-    const finishFolderCreate = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Finish deferred folder create')!
     const startSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Start deferred save')!
+    expect(destinationBusy.change).toBeTruthy()
 
-    await act(async () => startFolderCreate.click())
+    await act(async () => destinationBusy.change?.(true))
     expect(startSave.closest('fieldset')?.disabled).toBe(true)
     expect(startSave.matches(':disabled')).toBe(true)
 
-    await act(async () => finishFolderCreate.click())
+    await act(async () => destinationBusy.change?.(false))
     expect(startSave.closest('fieldset')?.disabled).toBe(false)
     expect(startSave.matches(':disabled')).toBe(false)
   })

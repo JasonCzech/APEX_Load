@@ -1215,7 +1215,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
           </label>
 
           <label className="sample-import-field">
-            <span>Think Time (ms)</span>
+            <span>Think time (ms)</span>
             <input value={options.think_time_ms} onChange={e => updateOption('think_time_ms', e.target.value)} inputMode="numeric" />
           </label>
           <label className="sample-import-field">

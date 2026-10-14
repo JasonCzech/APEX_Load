@@ -641,7 +641,7 @@ If you already have tests in another tool, import them instead of rewriting. Ope
 | DevWeb source | Legacy & tool exports | Executable |
 | Event Hubs capture | Messaging & cloud artifacts | Messaging draft |
 | Broker config | Messaging & cloud artifacts | Messaging draft |
-| Oracle E-Business / Siebel | Enterprise app reviews | Review draft |
+| Oracle E-Business / Siebel | Reviews (assesses the source; creates no script) | Review draft |
 
 Every import runs through a guided **review** flow rather than dumping a script on you.
 It shows warnings, statistics, the detected protocol, and any sections that need a

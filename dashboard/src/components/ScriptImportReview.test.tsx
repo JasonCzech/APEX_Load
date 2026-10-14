@@ -9,6 +9,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import ScriptImportReview from './ScriptImportReview'
 import { CategoryActions } from './ImportSettingsContext'
 import { ImportSourceIssueFocusContext } from './ImportSourceIssueFocus'
+import { ImportDestinationContext } from './importDestinationContext'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -70,6 +71,30 @@ describe('ScriptImportReview', () => {
       root.unmount()
     })
     container.remove()
+  })
+
+  it('offers the surface save destination at the Save step, and not once saved', () => {
+    const destination = <div data-testid="surface-destination">Save destination</div>
+    act(() => root.render(
+      <ImportDestinationContext.Provider value={destination}>
+        <ScriptImportReview title="Review" script={script} onSave={vi.fn()} />
+      </ImportDestinationContext.Provider>,
+    ))
+    const shown = container.querySelector('.script-import-review-destination [data-testid="surface-destination"]')
+    expect(shown).not.toBeNull()
+    // Beside the save action: right after the review header.
+    expect(container.querySelector('.script-import-review-header')?.nextElementSibling?.classList.contains('script-import-review-destination')).toBe(true)
+
+    act(() => root.render(
+      <ImportDestinationContext.Provider value={destination}>
+        <ScriptImportReview title="Review" script={script} onSave={vi.fn()} savedAction={{ label: 'Open saved script', onClick: vi.fn() }} />
+      </ImportDestinationContext.Provider>,
+    ))
+    expect(container.querySelector('[data-testid="surface-destination"]')).toBeNull()
+
+    // A review outside an import surface (the editor) offers none.
+    act(() => root.render(<ScriptImportReview title="Review" script={script} onSave={vi.fn()} />))
+    expect(container.querySelector('.script-import-review-destination')).toBeNull()
   })
 
   it('keeps Aura inspection coverage available in data review even without suggestions or an apply handler', () => {

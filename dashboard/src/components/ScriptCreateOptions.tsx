@@ -1,6 +1,6 @@
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type AuthoringImportSurface } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
@@ -92,7 +92,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'OpenAPI / Swagger',
     description: 'Generate grouped REST request flows with detected auth schemes, examples, variables, and candidate data pools.',
     badge: 'OAS',
-    category: 'Contracts & Collections',
+    category: 'Contracts & collections',
     order: 10,
     launcher: 'openapi',
     visible: true,
@@ -102,7 +102,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Bruno Collection',
     description: 'Convert Bruno HTTP requests into native APEX scripts, with source retention and review of unsupported behavior.',
     badge: 'BRU',
-    category: 'Contracts & Collections',
+    category: 'Contracts & collections',
     order: 15,
     launcher: 'bruno',
     visible: true,
@@ -112,7 +112,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Postman Collection',
     description: 'Convert collection folders, requests, variables, and auth placeholders into a reviewable HTTP script.',
     badge: 'PM',
-    category: 'Contracts & Collections',
+    category: 'Contracts & collections',
     order: 20,
     launcher: 'postman',
     visible: true,
@@ -122,7 +122,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'WSDL / SOAP',
     description: 'Generate SOAP operation actions with SOAPAction, namespaces, sample envelopes, and fault-review guidance.',
     badge: 'WSDL',
-    category: 'Contracts & Collections',
+    category: 'Contracts & collections',
     order: 30,
     launcher: 'wsdl',
     visible: true,
@@ -132,7 +132,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'AsyncAPI',
     description: 'Convert AsyncAPI 2.x/3.x channels into Kafka produce, consume, and request-reply actions with brokers, topics, and sample payloads.',
     badge: 'ASYNC',
-    category: 'Contracts & Collections',
+    category: 'Contracts & collections',
     order: 40,
     launcher: 'asyncapi',
     visible: true,
@@ -142,7 +142,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'RAML / Anypoint',
     description: 'Convert RAML resources, methods, examples, and OAuth2 security schemes into reviewable HTTP actions.',
     badge: 'RAML',
-    category: 'Contracts & Collections',
+    category: 'Contracts & collections',
     order: 50,
     launcher: 'raml',
     visible: true,
@@ -152,7 +152,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'HAR Traffic',
     description: 'Convert captured browser/API traffic into HTTP actions; auto-detects Salesforce, Lightning, and Agentforce and generates a native, correlation-rich draft.',
     badge: 'HAR',
-    category: 'Traffic & Samples',
+    category: 'Traffic & samples',
     order: 100,
     launcher: 'traffic_har',
     visible: true,
@@ -166,7 +166,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Recorder Export / Playwright Codegen',
     description: 'Convert a Chrome DevTools Recorder export or Playwright codegen script into a browser script with ranked selector candidates.',
     badge: 'REC',
-    category: 'Traffic & Samples',
+    category: 'Traffic & samples',
     order: 110,
     launcher: 'recorder_export',
     visible: true,
@@ -176,7 +176,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Request / Response Sample',
     description: 'Build an API draft from raw HTTP, cURL, HAR, or payload examples when formal contracts are unavailable.',
     badge: 'API',
-    category: 'Traffic & Samples',
+    category: 'Traffic & samples',
     order: 120,
     launcher: 'sample',
     visible: true,
@@ -190,7 +190,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'LoadRunner Script Archive',
     description: 'Import VuGen ZIP or USZ projects, including a package of several projects, and review each script, its settings, and migration requirements.',
     badge: 'ESA',
-    category: 'Legacy & Tool Exports',
+    category: 'Legacy & tool exports',
     order: 200,
     launcher: 'enterprise_archive',
     visible: true,
@@ -200,7 +200,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'JMeter Test Plan',
     description: 'Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.',
     badge: 'JMX',
-    category: 'Legacy & Tool Exports',
+    category: 'Legacy & tool exports',
     order: 210,
     launcher: 'jmeter',
     visible: true,
@@ -210,7 +210,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'DevWeb Source',
     description: 'Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.',
     badge: 'DEV',
-    category: 'Legacy & Tool Exports',
+    category: 'Legacy & tool exports',
     order: 220,
     launcher: 'devweb',
     visible: true,
@@ -220,7 +220,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'k6 Script',
     description: 'Convert supported k6 HTTP flows into APEX Load actions and preserve unsupported JavaScript for review.',
     badge: 'k6',
-    category: 'Legacy & Tool Exports',
+    category: 'Legacy & tool exports',
     order: 230,
     launcher: 'k6',
     visible: true,
@@ -230,7 +230,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Akamai CloudTest Export',
     description: 'Inspect CloudTest XML/ZIP exports into fixture-gated Clip scripts, Composition scenarios, and preserved review artifacts.',
     badge: 'CT',
-    category: 'Legacy & Tool Exports',
+    category: 'Legacy & tool exports',
     order: 240,
     launcher: 'cloudtest',
     visible: true,
@@ -240,7 +240,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Event Hubs Capture',
     description: 'Seed native Event Hubs producer actions from Azure Event Hubs Capture files or any Avro data file.',
     badge: 'EH',
-    category: 'Messaging & Cloud Artifacts',
+    category: 'Messaging & cloud artifacts',
     order: 300,
     launcher: 'eventhubs_capture',
     visible: true,
@@ -250,7 +250,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Broker Config',
     description: 'Import IBM MQ MQSC or JMS JNDI broker configuration into a JMS topology draft.',
     badge: 'JMS',
-    category: 'Messaging & Cloud Artifacts',
+    category: 'Messaging & cloud artifacts',
     order: 310,
     launcher: 'broker_config',
     visible: true,
@@ -260,7 +260,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     title: 'Oracle E-Business / Siebel Review',
     description: 'Review Oracle E-Business, Oracle NCA, and Siebel assets for package signals, correlation packs, and execution posture.',
     badge: 'EBS',
-    category: 'Enterprise App Reviews',
+    category: 'Reviews',
     order: 400,
     launcher: 'oracle_ebusiness_review',
     visible: true,
@@ -289,6 +289,9 @@ function policyFilteredImportSurfaces(
   if (!projectId || !response.feature_policy) return surfaces
   return surfaces.filter(surface => policyAllowsFeature(response.feature_policy, `script_import.${surface.id}`))
 }
+
+// Sources in this category are reviewed, not imported into a script.
+const REVIEW_SOURCE_CATEGORY = 'Reviews'
 
 function groupImportSurfaces(surfaces: AuthoringImportSurface[]): Array<{ category: string; surfaces: AuthoringImportSurface[] }> {
   const groups = new Map<string, AuthoringImportSurface[]>()
@@ -392,6 +395,9 @@ export default function ScriptCreateOptions({
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
+  // Templates and blocks load together; until they do (or if they fail) the
+  // tabs show no count and the panels say so, rather than an empty catalog.
+  const [authoringCatalog, setAuthoringCatalog] = useState<{ status: 'loading' | 'ready' | 'error'; error?: string }>({ status: 'loading' })
   const [importSurfaces, setImportSurfaces] = useState<AuthoringImportSurface[]>([])
   const [importSurfacesLoading, setImportSurfacesLoading] = useState(Boolean(projectId))
   const [importSurfacesError, setImportSurfacesError] = useState('')
@@ -478,6 +484,15 @@ export default function ScriptCreateOptions({
     onSelect: () => void
   }> = [
     {
+      id: 'web',
+      type: 'WEB',
+      typeClass: 'web',
+      name: 'Web/HTML Visual Editor',
+      description: 'Build a browser-level script that interacts with the page like a user.',
+      primary: true,
+      onSelect: onStartWebScript,
+    },
+    {
       id: 'api',
       type: 'API',
       name: 'API Visual Editor',
@@ -488,7 +503,7 @@ export default function ScriptCreateOptions({
     {
       id: 'soap',
       type: 'SOAP',
-      name: 'Web Services (SOAP)',
+      name: 'Web services (SOAP)',
       description: 'Create a SOAP draft with WS-Security, namespaces, fault handling, and SOAPAction support.',
       onSelect: onStartSoapScript,
     },
@@ -502,52 +517,36 @@ export default function ScriptCreateOptions({
     {
       id: 'websocket',
       type: 'WS',
-      name: 'WebSocket Script',
+      name: 'WebSocket script',
       description: 'Model connect, send, receive, ping, close, handshake headers, message assertions, and transcript evidence.',
       onSelect: onStartWebSocketScript,
     },
     {
       id: 'grpc',
       type: 'gRPC',
-      name: 'gRPC Script',
+      name: 'gRPC script',
       description: 'Start unary or streaming calls with reflection/proto setup, metadata, status checks, and message-count assertions.',
       onSelect: onStartGrpcScript,
     },
     {
       id: 'database',
       type: 'DB',
-      name: 'Database Script',
+      name: 'Database script',
       description: 'Author query, exec, transaction, bind, row/scalar assertion, extractor, and read-only fixture flows.',
       onSelect: onStartDatabaseScript,
     },
     {
       id: 'network',
       type: 'NET',
-      name: 'Network Protocol Script',
+      name: 'Network protocol script',
       description: 'Build DNS, TCP, UDP, FTP, SMTP, POP3, IMAP, LDAP, and Winsock-style probes with transcript evidence.',
       onSelect: onStartNetworkScript,
-    },
-    {
-      id: 'sample',
-      type: 'API',
-      name: 'Build From Sample',
-      description: 'Generate an API script from sample traffic or payload examples.',
-      onSelect: () => onOpenImportSurface('sample', 'standard_api'),
-    },
-    {
-      id: 'web',
-      type: 'WEB',
-      typeClass: 'web',
-      name: 'Web/HTML Visual Editor',
-      description: 'Build a browser-level script that interacts with the page like a user.',
-      primary: true,
-      onSelect: onStartWebScript,
     },
     {
       id: 'jms',
       type: 'JMS',
       typeClass: 'jms',
-      name: 'JMS Solace Script',
+      name: 'JMS Solace script',
       description: 'Create a reusable JMS script draft for Solace publish/consume flows.',
       primary: true,
       onSelect: onStartJmsScript,
@@ -556,7 +555,7 @@ export default function ScriptCreateOptions({
       id: 'kafka',
       type: 'KFK',
       typeClass: 'jms',
-      name: 'Kafka Script',
+      name: 'Kafka script',
       description: 'Author Kafka produce, consume, and request-reply flows with brokers, topics, partition keys, and offset/lag assertions.',
       primary: true,
       onSelect: onStartKafkaScript,
@@ -565,14 +564,15 @@ export default function ScriptCreateOptions({
     ? 'script_editor.java_http'
     : row.id === 'web'
       ? 'script_editor.browser'
-      : row.id === 'sample'
-        ? 'script_import.sample'
-        : `script_editor.${row.id}`))
-  const startNewCategoryTabs: Array<{ id: StartNewCategory, label: string, count: number }> = useMemo(() => [
-    ...(featureEnabled('script_builder.starter_templates') ? [{ id: 'templates' as const, label: 'Starter Templates', count: templates.length }] : []),
-    ...(featureEnabled('script_builder.blank_editors') ? [{ id: 'editors' as const, label: 'Blank & Assisted Editors', count: blankEditorRows.length }] : []),
-    ...(featureEnabled('script_builder.reusable_blocks') ? [{ id: 'blocks' as const, label: 'Reusable Blocks', count: components.length }] : []),
-  ], [blankEditorRows.length, components.length, featureEnabled, templates.length])
+      : `script_editor.${row.id}`))
+    // The recommended editors first (the order they are listed in), then the rest.
+    .sort((a, b) => Number(Boolean(b.primary)) - Number(Boolean(a.primary)))
+  const catalogReady = authoringCatalog.status === 'ready'
+  const startNewCategoryTabs: Array<{ id: StartNewCategory, label: string, count: number | null }> = useMemo(() => [
+    ...(featureEnabled('script_builder.starter_templates') ? [{ id: 'templates' as const, label: 'Starter templates', count: catalogReady ? templates.length : null }] : []),
+    ...(featureEnabled('script_builder.blank_editors') ? [{ id: 'editors' as const, label: 'Blank & assisted editors', count: blankEditorRows.length }] : []),
+    ...(featureEnabled('script_builder.reusable_blocks') ? [{ id: 'blocks' as const, label: 'Reusable blocks', count: catalogReady ? components.length : null }] : []),
+  ], [blankEditorRows.length, catalogReady, components.length, featureEnabled, templates.length])
 
   useEffect(() => {
     if (!projectId || !featurePolicy) return
@@ -589,28 +589,38 @@ export default function ScriptCreateOptions({
     }
   }, [activeWorkflow, featureEnabled, featurePolicy, projectId, setActiveWorkflow, setStartNewCategory, startNewCategory, startNewCategoryTabs])
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([
+  // Only the latest load applies: a Retry for an earlier project that answers
+  // late must not replace the current project's catalog.
+  const authoringCatalogRequestRef = useRef(0)
+  const loadAuthoringCatalog = useCallback((isCancelled: () => boolean = () => false) => {
+    const request = ++authoringCatalogRequestRef.current
+    const superseded = () => isCancelled() || authoringCatalogRequestRef.current !== request
+    setAuthoringCatalog({ status: 'loading' })
+    return Promise.all([
       api.listAuthoringTemplates(projectId ? { projectId } : undefined),
       api.listAuthoringComponents(projectId ? { projectId } : undefined),
     ])
       .then(([templateResponse, componentResponse]) => {
-        if (!cancelled) {
-          setTemplates(templateResponse.templates || [])
-          setComponents(componentResponse.components || [])
-        }
+        if (superseded()) return
+        setTemplates(templateResponse.templates || [])
+        setComponents(componentResponse.components || [])
+        setAuthoringCatalog({ status: 'ready' })
       })
-      .catch(() => {
-        if (!cancelled) {
-          setTemplates([])
-          setComponents([])
-        }
+      .catch(error => {
+        if (superseded()) return
+        setTemplates([])
+        setComponents([])
+        setAuthoringCatalog({ status: 'error', error: error instanceof Error ? error.message : 'Unable to load starter templates and reusable blocks.' })
       })
+  }, [api, projectId])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadAuthoringCatalog(() => cancelled)
     return () => {
       cancelled = true
     }
-  }, [api, projectId])
+  }, [loadAuthoringCatalog])
 
   useEffect(() => {
     if (!canMigrateSecrets || typeof api.getSystemSettings !== 'function') {
@@ -682,7 +692,7 @@ export default function ScriptCreateOptions({
 
   const idPrefix = useId()
   const workflowTabs: Array<{ id: CreateWorkflow; label: string; detail: string }> = [
-    ...(featureEnabled('script_builder.existing_scripts') ? [{ id: 'existing' as const, label: 'Use existing', detail: 'Clone a saved script into a new editable draft.' }] : []),
+    ...(featureEnabled('script_builder.existing_scripts') ? [{ id: 'existing' as const, label: 'Copy', detail: 'Copy a saved script into a new editable draft.' }] : []),
     ...(startNewCategoryTabs.length > 0 ? [{ id: 'start-new' as const, label: 'Create', detail: 'Use templates, reusable blocks, or blank protocol editors.' }] : []),
     ...(featureEnabled('script_builder.imports') ? [{ id: 'source' as const, label: 'Import', detail: 'Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.' }] : []),
   ]
@@ -693,13 +703,21 @@ export default function ScriptCreateOptions({
     return sourceQuery.toLowerCase().trim().split(/\s+/).every(term => text.includes(term))
   })
   const importSurfaceGroups = groupImportSurfaces(filteredImportSurfaces)
+  const authoringCatalogState = authoringCatalog.status === 'loading'
+    ? <div className="script-create-empty" role="status">Loading starter templates and reusable blocks…</div>
+    : (
+      <div className="script-create-empty" role="alert">
+        <p>Starter templates and reusable blocks could not be loaded. {authoringCatalog.error}</p>
+        <button type="button" className="btn btn-sm btn-secondary" onClick={() => void loadAuthoringCatalog()}>Retry</button>
+      </div>
+    )
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
           <h2>Create script</h2>
-          <p className="page-subtitle">Model from saved work, start a new script, record a browser flow, or import from a source asset.</p>
+          <p className="page-subtitle">Copy a saved script, create a new one, record a browser flow, or import from a source asset.</p>
         </div>
         {!hasTopbarContributionProvider && (
           <PageViewToggle
@@ -760,7 +778,7 @@ export default function ScriptCreateOptions({
           <section className="script-create-lane api full" role="tabpanel" id={`${idPrefix}-panel-existing`} aria-labelledby={`${idPrefix}-tab-existing-label`}>
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Script library</span>
-              <h3>Copy an Existing Script</h3>
+              <h3>Copy a script</h3>
               <p>Choose a saved script to open a new editable copy. Saving creates a separate script; the original remains unchanged.</p>
             </div>
             <div className="script-create-existing-toolbar">
@@ -860,7 +878,7 @@ export default function ScriptCreateOptions({
                           <td className="cell-muted">{formatShortDate(script.created_at)}</td>
                           <td className="cell-muted">{formatShortDate(script.last_run_at)}</td>
                           <td style={{ textAlign: 'right' }}>
-                            <button type="button" className="script-create-existing-action" onClick={() => startExistingScript(script)}>Model</button>
+                            <button type="button" className="script-create-existing-action" onClick={() => startExistingScript(script)}>Copy</button>
                           </td>
                         </tr>
                       )
@@ -872,7 +890,7 @@ export default function ScriptCreateOptions({
                 )}
               </div>
             ) : (
-              <div className="script-create-empty">No saved scripts are available to model from yet.</div>
+              <div className="script-create-empty">No saved scripts are available to copy yet.</div>
             )}
           </section>
         )}
@@ -881,7 +899,7 @@ export default function ScriptCreateOptions({
           <section className="script-create-lane api full" role="tabpanel" id={`${idPrefix}-panel-start-new`} aria-labelledby={`${idPrefix}-tab-start-new-label`}>
             <div className="script-create-lane-header">
               <span className="script-create-kicker">New draft authoring</span>
-              <h3>Start New Script</h3>
+              <h3>Create a script</h3>
               <p>Choose a starter template, compose a reusable block, or open a blank protocol editor for a new draft.</p>
             </div>
             <TabList className="script-create-category-tabs" role="tablist" aria-label="Start new script categories" onKeyDown={handleTabKey}>
@@ -895,24 +913,24 @@ export default function ScriptCreateOptions({
                   onClick={() => setStartNewCategory(tab.id)} tabIndex={(startNewCategory === tab.id) ? 0 : -1}
                 >
                   <span>{tab.label}</span>
-                  <strong>{tab.count}</strong>
+                  {tab.count !== null && <strong>{tab.count}</strong>}
                 </button>
               ))}
             </TabList>
             <div className="script-create-choice-groups">
               {startNewCategory === 'templates' && (
-              <div className="script-create-choice-group" role="tabpanel" aria-label="Starter Templates">
-                <h4>Starter Templates</h4>
-                {templates.length > 0 ? (
+              <div className="script-create-choice-group" role="tabpanel" aria-label="Starter templates">
+                <h4>Starter templates</h4>
+                {authoringCatalog.status !== 'ready' ? authoringCatalogState : templates.length > 0 ? (
                   <div className="script-create-table-list">
                     <table>
                       <thead>
                         <tr>
                           <th>Protocol</th>
                           <th>Template</th>
-                          <th>Use Case</th>
+                          <th>Use case</th>
                           <th>Tags</th>
-                          <th>Suggested Scenario</th>
+                          <th>Suggested scenario</th>
                           <th style={{ textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
@@ -935,7 +953,7 @@ export default function ScriptCreateOptions({
                               <td><span className="tag-chip use-case">{template.use_case.replace(/_/g, ' ')}</span></td>
                               <td>
                                 <div className="script-create-template-tags compact">
-                                  {familyTemplate && <span className="tag-chip use-case">Salesforce Family</span>}
+                                  {familyTemplate && <span className="tag-chip use-case">Salesforce family</span>}
                                   {template.tags?.slice(0, familyTemplate ? 2 : 3).map(tag => (
                                     <span key={tag} className={`tag-chip ${['agentforce', 'salesforce', 'sse', 'oauth2'].includes(tag.toLowerCase()) ? 'use-case' : ''}`}>{tag}</span>
                                   ))}
@@ -963,8 +981,8 @@ export default function ScriptCreateOptions({
               )}
 
               {startNewCategory === 'editors' && (
-              <div className="script-create-choice-group" role="tabpanel" aria-label="Blank & Assisted Editors">
-                <h4>Blank & Assisted Editors</h4>
+              <div className="script-create-choice-group" role="tabpanel" aria-label="Blank & assisted editors">
+                <h4>Blank & assisted editors</h4>
                 <div className="script-create-table-list">
                   <table>
                     <thead>
@@ -972,7 +990,6 @@ export default function ScriptCreateOptions({
                         <th>Type</th>
                         <th>Editor</th>
                         <th>Description</th>
-                        <th>Mode</th>
                         <th style={{ textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
@@ -980,9 +997,11 @@ export default function ScriptCreateOptions({
                       {blankEditorRows.map(row => (
                         <tr key={row.id}>
                           <td><span className={`script-create-type-badge inline ${row.typeClass || ''}`}>{row.type}</span></td>
-                          <td className="cell-name">{row.name}</td>
+                          <td className="cell-name">
+                            {row.name}
+                            {row.primary && <span className="tag-chip script-create-recommended">Recommended</span>}
+                          </td>
                           <td><div className="script-create-table-description">{row.description}</div></td>
-                          <td><span className={`script-health-token ${row.primary ? 'healthy' : ''}`}>{row.primary ? 'Primary' : 'Standard'}</span></td>
                           <td style={{ textAlign: 'right' }}>
                             <button type="button" className="btn btn-sm btn-secondary" onClick={row.onSelect}>Open {row.name}</button>
                           </td>
@@ -995,9 +1014,9 @@ export default function ScriptCreateOptions({
               )}
 
               {startNewCategory === 'blocks' && (
-              <div className="script-create-choice-group" role="tabpanel" aria-label="Reusable Blocks">
-                <h4>Reusable Blocks</h4>
-                {components.length > 0 ? (
+              <div className="script-create-choice-group" role="tabpanel" aria-label="Reusable blocks">
+                <h4>Reusable blocks</h4>
+                {authoringCatalog.status !== 'ready' ? authoringCatalogState : components.length > 0 ? (
                   <div className="script-create-table-list">
                     <table>
                       <thead>
@@ -1070,6 +1089,9 @@ export default function ScriptCreateOptions({
               {importSurfaceGroups.map(group => (
                 <div className="script-create-import-group" key={group.category}>
                   <h4>{group.category}</h4>
+                  {group.category === REVIEW_SOURCE_CATEGORY && (
+                    <p className="script-create-group-note">These review source assets for execution readiness and report what they find; they do not create a script.</p>
+                  )}
                   <div className="script-create-grid">
                     {group.surfaces.map(surface => (
                       <button

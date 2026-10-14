@@ -9,6 +9,7 @@ import { RECORDING_STUDIO_RETURN_TARGET, type AuthoringReturnTarget, type DraftE
 import LazyLoadBoundary from './LazyLoadBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID } from './enterpriseArchiveReviewOutcome'
 import ImportDestinationFolder from './ImportDestinationFolder'
+import { ImportDestinationContext } from './importDestinationContext'
 
 const ScriptEditor = lazy(() => import('./ScriptEditor'))
 const EnterpriseArchiveImport = lazy(() => import('./EnterpriseArchiveImport'))
@@ -65,14 +66,16 @@ function createOptionsSurface(
 ) {
   return (
     <div className="page" hidden={hidden}>
-      {destination && <details className="import-destination-disclosure"><summary>Save destination — review folder before saving</summary>{destination}</details>}
       <fieldset
         className="import-operation-gate"
         disabled={destinationOperationBusy}
         aria-label="Script import controls"
         aria-busy={destinationOperationBusy}
       >
-        {content}
+        {/* The importer's review shows the destination at its Save step. */}
+        <ImportDestinationContext.Provider value={destination}>
+          {content}
+        </ImportDestinationContext.Provider>
       </fieldset>
     </div>
   )
@@ -175,7 +178,7 @@ function ScriptsAuthoringContent({
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
     importLauncher: 'enterprise_archive',
-    label: 'Back to Converted Script',
+    label: 'Back to converted script',
     description: 'Return to the converted enterprise script archive review without losing the current import results.',
     retainedGuardIds: [ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID],
   }
@@ -203,9 +206,9 @@ function ScriptsAuthoringContent({
     onSaved(saved, { returnedToSource: true, ...(options?.configureSecrets ? { configureSecrets: true } : {}) })
   }
   const renderEnterpriseArchiveImportSurface = (hidden = false) => createOptionsSurface(
-    <EnterpriseArchiveImport destinationControl={destinationFolderControl} initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+    <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
     hidden,
-    null,
+    destinationFolderControl,
     destinationOperationBusy,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary

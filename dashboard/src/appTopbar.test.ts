@@ -54,7 +54,7 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('protocol-import', 'traffic_har')).toBe('Import HAR Traffic')
     expect(pageTitleForScriptSubView('oracle-review')).toBe('Oracle E-Business / Siebel Review')
     expect(pageTitleForScriptSubView('salesforce-import')).toBe('Scripts')
-    expect(pageTitleForScriptSubView('recorder')).toBe('Record browser')
+    expect(pageTitleForScriptSubView('recorder')).toBe('Record')
   })
 
   it('keeps client downloads in the topbar only for API guide pages', () => {

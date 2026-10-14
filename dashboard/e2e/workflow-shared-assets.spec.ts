@@ -122,7 +122,7 @@ test('the Insert dialog manages saved blocks in Shared assets and lists what is 
   await page.getByRole('button', { name: '+ Add Action', exact: true }).click()
   const insert = page.getByRole('dialog', { name: 'Insert action or block' })
   await insert.getByText('Add action from a block', { exact: true }).click()
-  const reusable = insert.getByRole('button', { name: /^Reusable Blocks/ })
+  const reusable = insert.getByRole('button', { name: /^Reusable blocks/ })
   if (await reusable.getAttribute('aria-expanded') === 'false') await reusable.click()
   const blockCards = insert.locator('.user-block-card')
   await expect(blockCards.filter({ hasText: 'Retire this block' })).toHaveCount(1)

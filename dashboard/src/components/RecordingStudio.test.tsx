@@ -851,9 +851,9 @@ describe("RecordingStudio", () => {
       "Install and trust the APEX Load CA certificate for SSL/TLS",
     );
     expect(container.textContent).toContain("ERR_CERT_AUTHORITY_INVALID");
-    expect(container.textContent).toContain("Download CA Certificate (.crt)");
+    expect(container.textContent).toContain("Download CA certificate (.crt)");
     expect(container.textContent).not.toContain(
-      "Download CA Certificate (.pem)",
+      "Download CA certificate (.pem)",
     );
     expect(container.textContent).toContain("import into your login keychain");
     expect(container.textContent).toContain("Secure Sockets Layer (SSL)");
@@ -916,9 +916,9 @@ describe("RecordingStudio", () => {
 
     expect(crtButton?.getAttribute("aria-pressed")).toBe("false");
     expect(pemButton.getAttribute("aria-pressed")).toBe("true");
-    expect(container.textContent).toContain("Download CA Certificate (.pem)");
+    expect(container.textContent).toContain("Download CA certificate (.pem)");
     expect(container.textContent).not.toContain(
-      "Download CA Certificate (.crt)",
+      "Download CA certificate (.crt)",
     );
     expect(container.textContent).toContain(
       "Trust this CA to identify websites",
@@ -942,7 +942,7 @@ describe("RecordingStudio", () => {
 
     const crtDownload = Array.from(container.querySelectorAll("button")).find(
       (button) =>
-        button.textContent?.trim() === "Download CA Certificate (.crt)",
+        button.textContent?.trim() === "Download CA certificate (.crt)",
     );
     expect(crtDownload).toBeTruthy();
     if (!crtDownload) return;
@@ -976,7 +976,7 @@ describe("RecordingStudio", () => {
 
     const pemDownload = Array.from(container.querySelectorAll("button")).find(
       (button) =>
-        button.textContent?.trim() === "Download CA Certificate (.pem)",
+        button.textContent?.trim() === "Download CA certificate (.pem)",
     );
     expect(pemDownload).toBeTruthy();
     if (!pemDownload) return;
@@ -2253,7 +2253,7 @@ describe("RecordingStudio", () => {
         base_url: "https://acme.my.salesforce.com",
       }),
     );
-    expect(container.textContent).toContain("Salesforce HTTP Draft");
+    expect(container.textContent).toContain("Salesforce HTTP draft");
     expect(container.textContent).toContain("Salesforce Capture HTTP");
     expect(container.textContent).toContain("100%");
     expect(container.textContent).toContain(
@@ -2542,7 +2542,7 @@ describe("RecordingStudio", () => {
     });
 
     const startButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Start Recording",
+      (button) => button.textContent?.trim() === "Start recording",
     );
     expect(startButton).toBeTruthy();
     if (!startButton) return;
@@ -2592,7 +2592,7 @@ describe("RecordingStudio", () => {
     });
     await openProxyAdvanced(container);
     const startButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Start Recording",
+      (button) => button.textContent?.trim() === "Start recording",
     )!;
     await act(async () => {
       startButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2616,6 +2616,12 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
     expect(container.querySelector("#rec-profile-browser-hosts")).toBeNull();
+    // Advanced options is a disclosure: same label, state in aria-expanded.
+    const disclosure = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    )!;
+    expect(disclosure.className).toBe("rec-disclosure");
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
     const picker = container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement;
     await act(async () => {
       picker.value = "checkout";
@@ -2627,6 +2633,8 @@ describe("RecordingStudio", () => {
     await act(async () => {
       advanced!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(disclosure.textContent).toBe("Advanced options");
     expect(container.querySelector("#rec-profile-browser-hosts")?.textContent).toBe(
       "Recording profile “Checkout profile” also filters the HTTP script converted from this recording: keeps only api.example.com; leaves out cdn.example.com.",
     );
@@ -3018,7 +3026,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
     await openProxyAdvanced(container);
 
-    expect(container.textContent).not.toContain("Copy Windows Start Command");
+    expect(container.textContent).not.toContain("Copy Windows start command");
     const serviceInput = container.querySelector(
       'input[aria-label="macOS network service"]',
     ) as HTMLInputElement | null;
@@ -3026,7 +3034,7 @@ describe("RecordingStudio", () => {
     if (!serviceInput) return;
 
     const startShortcut = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Copy Start Proxy Command",
+      (button) => button.textContent?.trim() === "Copy start proxy command",
     );
     expect(startShortcut).toBeTruthy();
     if (!startShortcut) return;
@@ -3050,7 +3058,7 @@ describe("RecordingStudio", () => {
     const restoreShortcut = Array.from(
       container.querySelectorAll("button"),
     ).find(
-      (button) => button.textContent?.trim() === "Copy Restore Proxy Command",
+      (button) => button.textContent?.trim() === "Copy restore proxy command",
     );
     expect(restoreShortcut).toBeTruthy();
     if (!restoreShortcut) return;
@@ -3089,7 +3097,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
 
     const macSettings = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open Network Settings",
+      (button) => button.textContent?.trim() === "Open network settings",
     );
     expect(macSettings).toBeDefined();
     await act(async () => {
@@ -3107,7 +3115,7 @@ describe("RecordingStudio", () => {
     const windowsSettings = Array.from(
       container.querySelectorAll("button"),
     ).find(
-      (button) => button.textContent?.trim() === "Open Windows Proxy Settings",
+      (button) => button.textContent?.trim() === "Open Windows proxy settings",
     );
     await act(async () => {
       windowsSettings?.dispatchEvent(
@@ -3126,7 +3134,7 @@ describe("RecordingStudio", () => {
     await openProxyAdvanced(container);
 
     const macSettings = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open Network Settings",
+      (button) => button.textContent?.trim() === "Open network settings",
     );
     await act(async () => {
       macSettings?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -3159,7 +3167,7 @@ describe("RecordingStudio", () => {
       container.querySelector('input[aria-label="macOS network service"]'),
     ).toBeNull();
     const startShortcut = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Copy Windows Start Command",
+      (button) => button.textContent?.trim() === "Copy Windows start command",
     );
     expect(startShortcut).toBeTruthy();
     if (!startShortcut) return;
@@ -3188,7 +3196,7 @@ describe("RecordingStudio", () => {
     const restoreShortcut = Array.from(
       container.querySelectorAll("button"),
     ).find(
-      (button) => button.textContent?.trim() === "Copy Windows Restore Command",
+      (button) => button.textContent?.trim() === "Copy Windows restore command",
     );
     expect(restoreShortcut).toBeTruthy();
     if (!restoreShortcut) return;
@@ -3218,13 +3226,13 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
 
-    expect(container.textContent).toContain("Record Browser Session");
+    expect(container.textContent).toContain("Record a browser session");
     expect(
       container.querySelector('[data-testid="rec-proxy-recorder-option"]'),
     ).not.toBeNull();
-    expect(container.textContent).toContain("Advanced Proxy Recorder");
-    expect(container.textContent).toContain("Proxy Setup");
-    expect(container.textContent).not.toContain("Download CA Certificate");
+    expect(container.textContent).toContain("HTTP proxy recorder");
+    expect(container.textContent).toContain("Proxy setup");
+    expect(container.textContent).not.toContain("Download CA certificate");
   });
 
   it("rejects non-http(s) start URLs before calling the API", async () => {
@@ -3437,7 +3445,7 @@ describe("RecordingStudio", () => {
     });
 
     expect(apiMock.startBrowserRecording).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Starting Browser…");
+    expect(container.textContent).toContain("Starting browser…");
     await act(async () => {
       resolveStart({
         session: {
@@ -3601,9 +3609,9 @@ describe("RecordingStudio", () => {
     expect(unavailable.textContent).toContain(
       "You can also record HTTP traffic with the HTTP proxy method.",
     );
-    expect(container.textContent).toContain("Advanced Proxy Recorder");
-    expect(container.textContent).toContain("Proxy Setup");
-    expect(container.textContent).not.toContain("Download CA Certificate");
+    expect(container.textContent).toContain("HTTP proxy recorder");
+    expect(container.textContent).toContain("Proxy setup");
+    expect(container.textContent).not.toContain("Download CA certificate");
   });
 
   it("pairs a local recording bridge when the remote controller cannot launch a browser", async () => {
@@ -3655,6 +3663,11 @@ describe("RecordingStudio", () => {
     const command =
       container.querySelector('[data-testid="browser-recorder-bridge-command"]')
         ?.textContent || "";
+    // The token is masked until revealed (screen shares, recordings).
+    const tokenElement = container.querySelector('[data-testid="browser-recorder-bridge-token"]');
+    expect(tokenElement?.querySelector('[aria-hidden="true"]')?.textContent).toMatch(/^•+$/);
+    expect(tokenElement?.querySelector(".sr-only")?.textContent).toBe("Pairing token hidden");
+    await revealBridgeToken(container);
     const generatedToken =
       container.querySelector('[data-testid="browser-recorder-bridge-token"]')
         ?.textContent || "";
@@ -4118,6 +4131,7 @@ describe("RecordingStudio", () => {
       root.render(<RecordingStudio />);
     });
     await flushPromises();
+    await revealBridgeToken(container);
 
     const commandBefore =
       container.querySelector('[data-testid="browser-recorder-bridge-command"]')
@@ -4130,7 +4144,7 @@ describe("RecordingStudio", () => {
     expect(commandBefore).toContain("--allow-origin 'http://localhost:3000'");
     expect(commandBefore).toContain("--allow-origin 'http://127.0.0.1:3000'");
     const copyButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Copy Terminal Command"),
+      (button) => button.textContent?.includes("Copy terminal command"),
     );
     expect(copyButton).toBeDefined();
 
@@ -4143,7 +4157,7 @@ describe("RecordingStudio", () => {
 
     const copyTokenButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Copy Pairing Token"));
+    ).find((button) => button.textContent?.includes("Copy pairing token"));
     expect(copyTokenButton).toBeDefined();
     await act(async () => {
       copyTokenButton!.dispatchEvent(
@@ -4156,7 +4170,7 @@ describe("RecordingStudio", () => {
 
     const regenerateButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Regenerate Token"));
+    ).find((button) => button.textContent?.includes("Regenerate token"));
     expect(regenerateButton).toBeDefined();
     await act(async () => {
       regenerateButton!.dispatchEvent(
@@ -4210,7 +4224,7 @@ describe("RecordingStudio", () => {
           '[data-testid="browser-recorder-bridge-command"]',
         )?.textContent || "";
       const copyButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent?.includes("Copy Terminal Command"),
+        (button) => button.textContent?.includes("Copy terminal command"),
       );
       expect(copyButton).toBeDefined();
 
@@ -4260,7 +4274,7 @@ describe("RecordingStudio", () => {
       await flushPromises();
 
       const copyButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent?.includes("Copy Terminal Command"),
+        (button) => button.textContent?.includes("Copy terminal command"),
       );
       expect(copyButton).toBeDefined();
 
@@ -4336,8 +4350,8 @@ describe("RecordingStudio", () => {
         button.textContent?.includes("Start browser recording"),
       ),
     ).toBe(false);
-    expect(container.textContent).toContain("Proxy Setup");
-    expect(container.textContent).not.toContain("Download CA Certificate");
+    expect(container.textContent).toContain("Proxy setup");
+    expect(container.textContent).not.toContain("Download CA certificate");
   });
 
   it("adopts a live browser recording reported by the controller status", async () => {
@@ -4437,7 +4451,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
 
     const installBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Install Recording Browser"),
+      (b) => b.textContent?.includes("Install recording browser"),
     );
     expect(installBtn).toBeDefined();
     await act(async () => {
@@ -4475,7 +4489,7 @@ describe("RecordingStudio", () => {
     expect(unavailable?.textContent).toContain("download failed");
     expect(
       Array.from(unavailable?.querySelectorAll("button") || []).some((b) =>
-        b.textContent?.includes("Install Recording Browser"),
+        b.textContent?.includes("Install recording browser"),
       ),
     ).toBe(true);
   });
@@ -4738,10 +4752,10 @@ describe("RecordingStudio", () => {
         (button) => button.textContent === "Convert to script",
       ),
     ).toBe(true);
-    expect(container.textContent).not.toContain("Proxy Setup");
+    expect(container.textContent).not.toContain("Proxy setup");
     expect(
       Array.from(container.querySelectorAll("button")).some(
-        (button) => button.textContent?.includes("Start Recording"),
+        (button) => button.textContent?.includes("Start recording"),
       ),
     ).toBe(false);
   });
@@ -4776,7 +4790,7 @@ describe("RecordingStudio", () => {
     expect(card.textContent).toContain("Run the command again on your computer");
     expect(
       Array.from(card.querySelectorAll("button")).some((button) =>
-        button.textContent?.includes("Install Recording Browser"),
+        button.textContent?.includes("Install recording browser"),
       ),
     ).toBe(false);
   });
@@ -4867,6 +4881,29 @@ describe("RecordingStudio", () => {
       Array.from(quiet!.querySelectorAll("button")).find((button) => button.textContent === "Show proxy setup")!.click();
     });
     expect(container.querySelector("#recording-proxy-setup-steps")).not.toBeNull();
+    // Stopping is the normal end of a recording, not a destructive action.
+    const stop = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Stop recording",
+    );
+    expect(stop?.className).toBe("btn btn-secondary rec-stop-btn");
+  });
+
+  it("labels the proxy recording fields for assistive technology", async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    await openProxyAdvanced(container);
+    for (const [id, name] of [
+      ["rec-proxy-session-name", "Session name"],
+      ["rec-proxy-include-hosts", "Include hosts"],
+      ["rec-proxy-exclude-hosts", "Exclude hosts"],
+      ["rec-browser-session-name", "Session name"],
+    ]) {
+      const input = container.querySelector(`#${id}`) as HTMLInputElement | null;
+      expect(input, id).not.toBeNull();
+      expect(input!.labels?.[0]?.textContent).toContain(name);
+    }
   });
 
   it("fetches the complete request list before opening a summary session", async () => {
@@ -4922,7 +4959,7 @@ describe("RecordingStudio", () => {
     expect(apiMock.getRecording).toHaveBeenCalledWith("rec-summary", {
       includeRequests: true,
     });
-    expect(container.textContent).toContain("Request Detail: Large Capture");
+    expect(container.textContent).toContain("Request detail: Large Capture");
     expect(container.textContent).toContain("125 requests");
   });
 
@@ -5226,7 +5263,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
     await openProxyAdvanced(container);
     const startButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Start Recording",
+      (button) => button.textContent?.trim() === "Start recording",
     );
     expect(startButton).toBeDefined();
     await act(async () => {
@@ -5258,7 +5295,7 @@ describe("RecordingStudio", () => {
     });
 
     expect(container.textContent).not.toContain("Old Project Recording");
-    expect(container.textContent).toContain("New Recording");
+    expect(container.textContent).toContain("New recording");
   });
 
   it("does not offer install as a fix for no-display Docker controllers", async () => {
@@ -5300,7 +5337,7 @@ describe("RecordingStudio", () => {
     expect(unavailable?.textContent).toContain("/usr/bin/node");
     expect(
       Array.from(unavailable?.querySelectorAll("button") || []).some((b) =>
-        b.textContent?.includes("Install Recording Browser"),
+        b.textContent?.includes("Install recording browser"),
       ),
     ).toBe(false);
   });
@@ -5324,6 +5361,17 @@ async function flushPromises() {
 
 // The proxy recorder is a first-class option next to browser recording; keep
 // this helper so older proxy tests still assert they are operating in that area.
+async function revealBridgeToken(container: HTMLElement) {
+  const show = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Show token",
+  );
+  expect(show).toBeDefined();
+  await act(async () => {
+    show!.click();
+  });
+  expect(show!.getAttribute("aria-pressed")).toBe("true");
+}
+
 async function openProxyAdvanced(container: HTMLElement) {
   expect(
     container.querySelector('[data-testid="rec-proxy-recorder-option"]'),

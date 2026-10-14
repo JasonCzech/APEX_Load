@@ -27,7 +27,7 @@ test('recording review scopes verification to outputs and invalidates changed co
   })
   await page.goto('/#/recorder-panel?session=review-recording')
   await expect(page.getByText('Finish journey', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Preview Conversion', exact: true }).click()
+  await page.getByRole('button', { name: 'Preview conversion', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Output 2: Checkout http' })).toBeVisible()
   await page.getByRole('button', { name: 'Verify output 2', exact: true }).click()
   await expect(page.getByText('Verification passed for this conversion', { exact: true })).toBeVisible()

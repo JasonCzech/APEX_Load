@@ -27,7 +27,7 @@ export const SCRIPT_PROTOCOL_OPTIONS = [
   { value: 'http', label: 'HTTP API' },
   { value: 'https', label: 'HTTPS API' },
   { value: 'java_http', label: 'Java over HTTP' },
-  { value: 'soap', label: 'Web Services (SOAP)' },
+  { value: 'soap', label: 'Web services (SOAP)' },
   { value: 'websocket', label: 'WebSocket' },
   { value: 'grpc', label: 'gRPC' },
   { value: 'database', label: 'Database' },

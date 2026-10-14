@@ -1676,7 +1676,34 @@
 
 /* Keep the active journey ahead of launch setup; native hidden must win over card display rules. */
 .recording-studio [hidden] { display: none !important; }
-.rec-mode-picker { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.rec-mode-picker { margin-bottom: 16px; }
+/* A left-aligned disclosure, like the importers' details summaries. */
+.rec-disclosure {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rec-disclosure::before {
+  content: "▸";
+  /* Decorative: kept out of the button's accessible name. */
+  content: "▸" / "";
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.rec-disclosure[aria-expanded="true"]::before { transform: rotate(90deg); }
+.rec-disclosure:hover { color: var(--accent-text); }
+@media (prefers-reduced-motion: reduce) {
+  .rec-disclosure::before { transition: none; }
+}
 /* Where the method picker would be when the proxy cannot serve this browser. */
 .rec-method-note { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .rec-method-note p { margin: 0; }
@@ -1738,6 +1765,12 @@
   flex-wrap: wrap;
   gap: 8px 14px;
   align-items: center;
+}
+
+/* Many profiles wrap rather than widen the card. */
+.rec-profile-toggle {
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .rec-profile-editor {

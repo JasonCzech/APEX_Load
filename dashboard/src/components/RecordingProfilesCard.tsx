@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useApi } from '../hooks/useApi'
+import PageViewToggle from './PageViewToggle'
 import type {
   CorrelationRuleInfo,
   RecordingProfile,
@@ -312,8 +314,8 @@ export default function RecordingProfilesCard({ projectId, selectedId, onSelect,
     setEditingId(id)
   }
 
-  const save = useCallback(async () => {
-    if (!projectId || !draft) return
+  const save = useCallback(async (): Promise<boolean> => {
+    if (!projectId || !draft) return true
     setSaving(true)
     setError('')
     try {
@@ -322,12 +324,32 @@ export default function RecordingProfilesCard({ projectId, selectedId, onSelect,
       setRules(response.rules || rules)
       setUpdatedAt(response.updated_at || '')
       setDraft(null)
+      return true
     } catch (failure) {
       setError((failure as Error).message)
+      return false
     } finally {
       setSaving(false)
     }
   }, [api, draft, projectId, rules, updatedAt])
+
+  // Unsaved profile edits ask before the page is left, as other editors do.
+  const draftDirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(profiles)
+  const draftDirtyRef = useRef(draftDirty)
+  draftDirtyRef.current = draftDirty
+  const saveRef = useRef(save)
+  saveRef.current = save
+  const navigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'recording-profiles',
+    label: 'Recording profiles editor',
+    isDirty: () => draftDirtyRef.current,
+    save: () => saveRef.current(),
+    discard: () => {
+      setDraft(null)
+      setError('')
+    },
+  }), [])
+  useNavigationGuard(navigationGuard, draftDirty)
 
   if (!projectId) return null
   return (
@@ -349,12 +371,16 @@ export default function RecordingProfilesCard({ projectId, selectedId, onSelect,
       {error && <div className="rec-feedback error" role="alert">{error}</div>}
       {draft && (
         <div className="rec-profiles-manager">
-          <div className="rec-profile-tabs" role="group" aria-label="Recording profiles">
-            {draft.map(profile => (
-              <button key={profile.id} type="button" className="btn btn-sm btn-secondary" aria-pressed={profile.id === editingId} onClick={() => setEditingId(profile.id)}>
-                {profile.name || profile.id}
-              </button>
-            ))}
+          <div className="rec-profile-tabs">
+            {draft.length > 0 && (
+              <PageViewToggle
+                value={editingId}
+                ariaLabel="Recording profiles"
+                className="rec-profile-toggle script-page-toggle"
+                onChange={setEditingId}
+                options={draft.map(profile => ({ value: profile.id, label: profile.name || profile.id }))}
+              />
+            )}
             <button type="button" className="btn btn-sm btn-secondary" onClick={() => addProfile()}>New profile</button>
             {editing && <button type="button" className="btn btn-sm btn-secondary" onClick={() => addProfile(editing)}>Duplicate</button>}
             {editing && (
@@ -377,7 +403,7 @@ export default function RecordingProfilesCard({ projectId, selectedId, onSelect,
             <p className="rec-hint">This project has no recording profiles. A profile saves recording options once for every recording that selects it.</p>
           )}
           <div className="rec-profile-actions">
-            <button type="button" className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save profiles'}</button>
+            <button type="button" className="btn btn-primary" disabled={saving} onClick={() => { void save() }}>{saving ? 'Saving…' : 'Save profiles'}</button>
             <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => { setDraft(null); setError('') }}>Cancel</button>
           </div>
         </div>

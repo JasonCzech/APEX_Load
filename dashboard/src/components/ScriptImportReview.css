@@ -48,6 +48,10 @@
   white-space: normal;
 }
 
+.script-import-review-destination {
+  margin: 12px 0;
+}
+
 .script-import-review-save-disabled-reason {
   padding: 10px 20px;
   border-bottom: 1px solid var(--warning-border);
