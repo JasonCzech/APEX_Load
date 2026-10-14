@@ -1,5 +1,6 @@
 {
   "capabilities": {
+    "converted_hooks": 0,
     "has_bruno_apps": false,
     "has_certificates": false,
     "has_file_bodies": false,
@@ -9,7 +10,8 @@
     "has_private_key_files": false,
     "request_types": [
       "http"
-    ]
+    ],
+    "unconverted_hooks": 0
   },
   "collection": {
     "items": [

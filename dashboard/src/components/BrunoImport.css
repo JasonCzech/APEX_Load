@@ -79,8 +79,7 @@
 
 .bruno-source-actions,
 .bruno-checks,
-.bruno-source-links,
-.bruno-capability-list {
+.bruno-source-links {
   display: flex;
   flex-wrap: wrap;
   gap: 9px;
@@ -94,8 +93,7 @@
   margin-top: 14px;
 }
 
-.bruno-file-list span,
-.bruno-capability-list span {
+.bruno-file-list span {
   overflow: hidden;
   padding: 7px 9px;
   border: 1px solid var(--border);
@@ -1062,9 +1060,17 @@
 .bruno-data-review details button { margin: 6px; }
 .bruno-optional-values label { margin: 16px 0; }
 .bruno-import [role=tabpanel] { scroll-margin-top: 90px; }
-.bruno-import .import-review-tabs { position: sticky; top: 72px; z-index: 2; background: var(--bg-card); flex-wrap: wrap; }
+.bruno-kept-headers ul, .bruno-skipped-files ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.bruno-kept-headers li, .bruno-skipped-files li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.bruno-kept-headers li span, .bruno-skipped-files li span { color: var(--text-secondary); }
+.bruno-skipped-files { margin-top: 12px; }
+.bruno-source-requests { display: grid; gap: 8px; }
+.bruno-evidence-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.bruno-source-mapping-table { border-collapse: collapse; margin: 12px 0; }
+.bruno-source-mapping-table :is(th, td) { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.bruno-provenance { margin-top: 12px; }
+.bruno-unset-secrets ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
 @container bruno-import (max-width: 700px) {
-  .bruno-import .import-review-tabs { position: static; }
   .bruno-commit-bar { flex-direction: column; }
   .bruno-readiness { grid-template-columns: 1fr; }
 }

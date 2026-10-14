@@ -944,6 +944,14 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"has_bruno_apps":        {Type: "boolean"},
 				"required_sandbox":      {Type: "string"},
 				"runner_profile":        {Type: "string"},
+				"converted_hooks": {
+					Type:        "integer",
+					Description: "JavaScript hooks converted to native checks, counted once per request that runs them.",
+				},
+				"unconverted_hooks": {
+					Type:        "integer",
+					Description: "JavaScript hooks left for review, counted once per request that runs them.",
+				},
 			},
 			Required: []string{
 				"request_types", "has_javascript", "has_npm_dependencies", "has_local_modules",
@@ -1014,6 +1022,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"kept_characters":    {Type: "integer", Description: "Characters trim keeps."},
 				"removed_characters": {Type: "integer", Description: "Characters trim removes."},
 				"invalid_character":  {Type: "string", Description: "Plain description of the first character HTTP does not allow."},
+				"omitted":            {Type: "boolean", Description: "True when the header is not a credential and was left out of the script: trim puts the kept text back, remove confirms it stays out."},
+				"replaces_body_default": {
+					Type:        "boolean",
+					Description: "True when the request body's default Content-Type took the left-out header's place: trim overwrites that default and remove keeps it.",
+				},
 			},
 			Required: []string{"action_index", "header_index", "header_name", "options"},
 		},
@@ -1359,10 +1372,35 @@ func brunoInspectResultSchema(outputMode string) oasSchema {
 			Type:  "array",
 			Items: &oasSchema{Ref: "#/components/schemas/BrunoSecurityFinding"},
 		},
-		"fidelity":          {Ref: "#/components/schemas/BrunoFidelityReport"},
-		"native_projection": {Ref: "#/components/schemas/BrunoNativeProjection"},
-		"missing_variables": {Type: "array", Items: &oasSchema{Type: "string"}},
-		"inspected_at":      {Type: "string", Format: "date-time"},
+		"fidelity":           {Ref: "#/components/schemas/BrunoFidelityReport"},
+		"native_projection":  {Ref: "#/components/schemas/BrunoNativeProjection"},
+		"missing_variables":  {Type: "array", Items: &oasSchema{Type: "string"}},
+		"inspected_at":       {Type: "string", Format: "date-time"},
+		"skipped_file_count": {Type: "integer", Description: "All skipped files; skipped_files lists at most the first 100 in path order."},
+		"skipped_files": {
+			Type:        "array",
+			Description: "Uploaded files that are not collection content: operating-system or version-control files, files Bruno's ignore list excludes, and gitignored files Bruno does not load itself.",
+			Items: &oasSchema{
+				Type: "object",
+				Properties: map[string]oasSchema{
+					"path":   {Type: "string"},
+					"reason": {Type: "string", Enum: []string{"operating_system_file", "version_control_file", "ignore_list"}},
+				},
+				Required: []string{"path", "reason"},
+			},
+		},
+		"kept_headers": {
+			Type:        "array",
+			Description: "Sensitive-looking headers, such as cookies and session ids, kept as imported because they carry recorded state rather than credentials.",
+			Items: &oasSchema{
+				Type: "object",
+				Properties: map[string]oasSchema{
+					"name":     {Type: "string"},
+					"requests": {Type: "integer", Description: "Requests that send this header."},
+				},
+				Required: []string{"name", "requests"},
+			},
+		},
 	}
 	required := []string{
 		"schema_version", "output_mode", "source_format", "root_path", "manifest",

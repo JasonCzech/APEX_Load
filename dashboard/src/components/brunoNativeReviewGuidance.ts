@@ -4,7 +4,18 @@ export type NativeReviewGuidance = {
   resolution: string
 }
 
-export function nativeReviewGuidance(code: string): NativeReviewGuidance {
+// A header that is not a credential is left out of the script when HTTP
+// cannot send it, so replay is not blocked; the operator chooses whether it
+// goes back, trimmed.
+const LEFT_OUT_HEADER_GUIDANCE: NativeReviewGuidance = {
+  title: 'Header left out: characters HTTP does not allow',
+  impact: 'This header is not a credential and HTTP cannot send it as imported, so it was left out of the script. Requests run without it. A common cause is text pasted from a curl command after the header value.',
+  resolution: 'Choose below: put back the text before the first character HTTP does not allow, or leave the header out.',
+}
+
+export function nativeReviewGuidance(code: string, options: { leftOutHeader?: boolean } = {}): NativeReviewGuidance {
+  if (code === 'bruno_invalid_header_value' && options.leftOutHeader)
+    return LEFT_OUT_HEADER_GUIDANCE
   switch (code) {
     case 'bruno_invalid_header_value':
       return {

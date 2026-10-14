@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -161,6 +162,9 @@ func sanitizeNativePolicyHeaders(
 	return out, requirements, sanitizedValues, nil
 }
 
+// nativeSensitiveHeaderName reports whether a header's value is a credential
+// that goes to credential review. Cookies and session, anti-forgery and
+// correlation headers are recorded state and stay as imported.
 func nativeSensitiveHeaderName(name string) bool {
-	return (scrub.Policy{}).SensitiveHeader(name)
+	return credential.ImportCredentialHeader(name)
 }

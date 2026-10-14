@@ -84,6 +84,13 @@ type Result struct {
 	Fidelity           FidelityReport      `json:"fidelity"`
 	NativeProjection   ProjectionReport    `json:"native_projection,omitempty,omitzero"`
 	MissingVariables   []string            `json:"missing_variables,omitempty"`
+	// SkippedFiles lists uploaded files that are not collection content, the
+	// first of them in path order; SkippedFileCount counts all of them.
+	SkippedFiles     []SkippedFile `json:"skipped_files,omitempty"`
+	SkippedFileCount int           `json:"skipped_file_count,omitempty"`
+	// KeptHeaders lists sensitive-looking headers kept as imported because they
+	// carry recorded state rather than credentials.
+	KeptHeaders []KeptHeader `json:"kept_headers,omitempty"`
 	// Script decodes canonical runner sessions retained before retirement.
 	// New inspections produce only native candidates.
 	Script *dsl.Script `json:"script,omitempty"`
@@ -158,8 +165,12 @@ type Capabilities struct {
 	HasCertificates    bool     `json:"has_certificates"`
 	HasPrivateKeyFiles bool     `json:"has_private_key_files"`
 	HasBrunoApps       bool     `json:"has_bruno_apps"`
-	RequiredSandbox    string   `json:"required_sandbox,omitempty"`
-	RunnerProfile      string   `json:"runner_profile,omitempty"`
+	// ConvertedHooks and UnconvertedHooks count JavaScript hooks converted to
+	// native checks and hooks left for review, per request that runs them.
+	ConvertedHooks   int    `json:"converted_hooks"`
+	UnconvertedHooks int    `json:"unconverted_hooks"`
+	RequiredSandbox  string `json:"required_sandbox,omitempty"`
+	RunnerProfile    string `json:"runner_profile,omitempty"`
 }
 
 type SecretRequirement struct {

@@ -246,6 +246,31 @@ http:
 	}
 }
 
+// invalidAPIKeyBrunoNativeFiles has a credential header whose imported value
+// HTTP cannot carry. Unlike a cookie, it stays in the script, routed through
+// credential review.
+func invalidAPIKeyBrunoNativeFiles() []brunoInspectJSONFile {
+	return []brunoInspectJSONFile{
+		{
+			Path:    "demo/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: Key repair}\n",
+		},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Key repair, type: http}
+http:
+  method: GET
+  url: https://example.test/orders
+  headers:
+    - name: Accept
+      value: text/xml
+    - name: X-API-Key
+      value: "key-123\x01 pasted text"
+`,
+		},
+	}
+}
+
 func brunoNativeHeaderRepairFinding(t *testing.T, candidate brunoconvert.NativeScriptCandidate) brunoconvert.NativeDiagnostic {
 	t.Helper()
 	for _, diagnostic := range candidate.Diagnostics {
@@ -313,20 +338,28 @@ func TestBrunoNativeInvalidCookieIsFlaggedAtInspectAndTrimmedAtCommit(t *testing
 	}
 }
 
-func TestBrunoNativeInvalidCookieCanBeRemovedOrKeptWithAcknowledgement(t *testing.T) {
+// A cookie is not a credential, so an invalid one is left out of the
+// candidate instead of reaching the shared pipeline, which would drop it and
+// block replay. Removing it or acknowledging the finding keeps it out.
+func TestBrunoNativeInvalidCookieIsLeftOutWhenRemovedOrAcknowledged(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		repair     string
-		wantCookie bool
+		name   string
+		repair string
 	}{
 		{name: "remove", repair: "remove"},
-		{name: "acknowledge", wantCookie: true},
+		{name: "acknowledge"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server, store, _ := newBrunoImportAPITestServer(t)
 			inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidCookieBrunoNativeFiles())
 			candidate := inspection.Result.Scripts[0]
 			finding := brunoNativeHeaderRepairFinding(t, candidate)
+			if !finding.HeaderRepair.Omitted || finding.HeaderRepair.TrimmedValue != "" {
+				t.Fatalf("cookie finding = %#v, want a left-out header with no value in the response", finding.HeaderRepair)
+			}
+			if scriptHasPromotionBlocker(candidate.Script) {
+				t.Fatalf("left-out cookie blocked replay: %#v", candidate.Script.Metadata)
+			}
 			folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-cookie-"+test.name)
 			request := brunoCommitRequest{
 				ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID,
@@ -345,12 +378,10 @@ func TestBrunoNativeInvalidCookieCanBeRemovedOrKeptWithAcknowledgement(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			hasCookie := false
 			for _, header := range saved.Actions[0].HeaderList {
-				hasCookie = hasCookie || header.Name == "Cookie"
-			}
-			if hasCookie != test.wantCookie {
-				t.Fatalf("saved headers = %#v, want cookie=%t", saved.Actions[0].HeaderList, test.wantCookie)
+				if header.Name == "Cookie" {
+					t.Fatalf("saved headers = %#v, want no cookie", saved.Actions[0].HeaderList)
+				}
 			}
 		})
 	}
@@ -425,10 +456,11 @@ http:
 		},
 	})
 	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-unset")
-	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+	request := brunoCommitRequest{
 		ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID,
 		Mode: "create_native_batch", FolderID: &folderID,
-	})
+	}
+	response := commitBrunoImportWithStatus(t, server, request)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("commit status = %d body=%s", response.Code, response.Body.String())
 	}
@@ -441,14 +473,25 @@ http:
 			t.Fatalf("unconfigured secret names %#v lack %q", decoded.UnconfiguredSecretNames, requirement.SuggestedName)
 		}
 	}
+	// A retried save answered from the receipt reports the same secrets.
+	replay := commitBrunoImportWithStatus(t, server, request)
+	if replay.Code != http.StatusOK {
+		t.Fatalf("replay status = %d body=%s", replay.Code, replay.Body.String())
+	}
+	if replayed := decodeBrunoNativeReimportResponse(t, replay.Body.Bytes()); !slices.Equal(replayed.UnconfiguredSecretNames, decoded.UnconfiguredSecretNames) {
+		t.Fatalf("replayed unconfigured secret names = %#v, want %#v", replayed.UnconfiguredSecretNames, decoded.UnconfiguredSecretNames)
+	}
 }
 
 func TestBrunoNativeHeaderRepairRejectsMigratedCredentialHeader(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
-	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidCookieBrunoNativeFiles())
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
 	finding := brunoNativeHeaderRepairFinding(t, inspection.Result.Scripts[0])
-	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-cookie-migrate")
+	if finding.HeaderRepair.Omitted || finding.HeaderRepair.HeaderName != "X-API-Key" {
+		t.Fatalf("credential header finding = %#v, want an in-place repair", finding.HeaderRepair)
+	}
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-key-migrate")
 	migrate := true
 	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
 		ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID,
@@ -465,26 +508,26 @@ func TestBrunoNativeHeaderRepairRejectsMigratedCredentialHeader(t *testing.T) {
 func TestBrunoNativeHeaderRepairAllowsMigrationWhenHeaderUsesExistingSecret(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
-	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "COOKIE_PROD", "session=prod", "test"); err != nil {
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "API_KEY_PROD", "key-prod", "test"); err != nil {
 		t.Fatal(err)
 	}
-	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidCookieBrunoNativeFiles())
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
 	finding := brunoNativeHeaderRepairFinding(t, inspection.Result.Scripts[0])
-	var cookieRequirement string
+	var keyRequirement string
 	for _, requirement := range inspection.Result.SecretRequirements {
-		if strings.Contains(strings.ToLower(requirement.Context+requirement.Key), "cookie") {
-			cookieRequirement = requirement.ID
+		if strings.Contains(strings.ToLower(requirement.Context+requirement.Key), "x-api-key") {
+			keyRequirement = requirement.ID
 		}
 	}
-	if cookieRequirement == "" {
-		t.Fatalf("no cookie requirement in %#v", inspection.Result.SecretRequirements)
+	if keyRequirement == "" {
+		t.Fatalf("no API key requirement in %#v", inspection.Result.SecretRequirements)
 	}
-	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-cookie-existing")
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-key-existing")
 	migrate := true
 	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
 		ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID,
 		Mode: "create_native_batch", FolderID: &folderID, MigrateSecrets: &migrate,
-		SecretBindings: map[string]string{cookieRequirement: "COOKIE_PROD"},
+		SecretBindings: map[string]string{keyRequirement: "API_KEY_PROD"},
 		HeaderRepairs:  map[string]string{finding.ID: "trim"},
 	})
 	if response.Code != http.StatusCreated {
@@ -524,6 +567,117 @@ func TestBrunoNativeHeaderRepairsApplyLastHeaderFirst(t *testing.T) {
 	}
 	if headers := script.Actions[0].HeaderList; len(headers) != 1 || headers[0].Name != "Accept" {
 		t.Fatalf("headers after removing both = %#v", headers)
+	}
+}
+
+// Left-out headers and a credential header fixed in place can share a
+// position. The fix in place runs first and the left-out headers go back in
+// source order.
+func TestBrunoNativeHeaderRepairsRestoreSourceOrder(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{Path: "demo/opencollection.yml", Content: "opencollection: 1.0.0\ninfo: {name: Header order}\n"},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Header order, type: http}
+http:
+  method: GET
+  url: https://example.test/orders
+  headers:
+    - {name: Accept, value: text/xml}
+    - {name: Cookie, value: 'a=1" -H accept'}
+    - {name: X-Note, value: "note\x01 pasted"}
+    - {name: X-API-Key, value: "key-123\x01 pasted"}
+    - {name: Accept-Language, value: en}
+`,
+		},
+	})
+	candidate := inspection.Result.Scripts[0]
+	repairs := map[string]string{}
+	for _, diagnostic := range candidate.Diagnostics {
+		if diagnostic.HeaderRepair != nil {
+			repairs[diagnostic.ID] = "trim"
+		}
+	}
+	if len(repairs) != 3 {
+		t.Fatalf("diagnostics = %#v, want three header repairs", candidate.Diagnostics)
+	}
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-header-order")
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID,
+		Mode: "create_native_batch", FolderID: &folderID, HeaderRepairs: repairs,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	saved, err := store.GetScript(candidate.PlannedScriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, header := range saved.Actions[0].HeaderList {
+		got = append(got, header.Name+": "+header.Value)
+	}
+	want := []string{"Accept: text/xml", "Cookie: a=1", "X-Note: note", "X-API-Key: key-123", "Accept-Language: en"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("saved headers = %q, want %q", got, want)
+	}
+}
+
+// A left-out Content-Type is replaced by the body's default. Putting it back
+// overwrites that default even when a header left out after it goes back at
+// the same position.
+func TestBrunoNativeHeaderRepairsReplaceTheBodyDefaultContentType(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{Path: "demo/opencollection.yml", Content: "opencollection: 1.0.0\ninfo: {name: Body default}\n"},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Body default, type: http}
+http:
+  method: POST
+  url: https://example.test/orders
+  headers:
+    - {name: Accept, value: text/xml}
+    - {name: X-Before, value: "before\x01 pasted"}
+    - {name: Content-Type, value: "application/vnd.orders+json\x01 pasted"}
+    - {name: X-Note, value: "note\x01 pasted"}
+  body: {type: json, data: '{"id": 1}'}
+`,
+		},
+	})
+	candidate := inspection.Result.Scripts[0]
+	repairs := map[string]string{}
+	replacesDefault := false
+	for _, diagnostic := range candidate.Diagnostics {
+		if diagnostic.HeaderRepair != nil {
+			repairs[diagnostic.ID] = "trim"
+			replacesDefault = replacesDefault ||
+				(diagnostic.HeaderRepair.HeaderName == "Content-Type" && diagnostic.HeaderRepair.ReplacesBodyDefault)
+		}
+	}
+	if len(repairs) != 3 || !replacesDefault {
+		t.Fatalf("diagnostics = %#v, want three header repairs, the Content-Type one replacing the body default", candidate.Diagnostics)
+	}
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-body-default")
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID,
+		Mode: "create_native_batch", FolderID: &folderID, HeaderRepairs: repairs,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	saved, err := store.GetScript(candidate.PlannedScriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, header := range saved.Actions[0].HeaderList {
+		got = append(got, header.Name+": "+header.Value)
+	}
+	want := []string{"Accept: text/xml", "X-Before: before", "Content-Type: application/vnd.orders+json", "X-Note: note"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("saved headers = %q, want %q", got, want)
 	}
 }
 
@@ -594,9 +748,9 @@ func (statusFailingSecretStore) Get(context.Context, string, string) (string, se
 func TestBrunoNativeHeaderRepairFailsClosedWhenSecretStatusIsUnknown(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
-	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidCookieBrunoNativeFiles())
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
 	finding := brunoNativeHeaderRepairFinding(t, inspection.Result.Scripts[0])
-	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-cookie-unknown")
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-key-unknown")
 	server.projectSecretStore = statusFailingSecretStore{Store: server.projectSecretStore}
 	migrate := true
 	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{

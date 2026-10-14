@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { formatFixed, formatPercentValue, formatUpTo } from './numberFormat'
+import { countLabel, formatFixed, formatPercentValue, formatUpTo } from './numberFormat'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -25,4 +25,10 @@ it('drops trailing zeros up to the digit limit', () => {
   expect(formatUpTo(12.5)).toBe('12.5')
   expect(formatUpTo(1234.5678)).toBe('1,234.57')
   expect(formatUpTo(0.123, 1)).toBe('0.1')
+})
+
+it('pairs a count with the singular or plural noun', () => {
+  expect(countLabel(1, 'request')).toBe('1 request')
+  expect(countLabel(0, 'request')).toBe('0 requests')
+  expect(countLabel(2, 'entry', 'entries')).toBe('2 entries')
 })

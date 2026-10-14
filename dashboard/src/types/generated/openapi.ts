@@ -42,6 +42,7 @@ export interface components {
       "size_bytes": number;
     };
     "BrunoCapabilities": {
+      "converted_hooks"?: number;
       "has_bruno_apps": boolean;
       "has_certificates": boolean;
       "has_file_bodies": boolean;
@@ -52,6 +53,7 @@ export interface components {
       "request_types": Array<string>;
       "required_sandbox": string;
       "runner_profile"?: string;
+      "unconverted_hooks"?: number;
     };
     "BrunoCollection": {
       "items": Array<components["schemas"]["BrunoCollectionItem"]>;
@@ -230,8 +232,10 @@ export interface components {
       "header_name": string;
       "invalid_character"?: string;
       "kept_characters"?: number;
+      "omitted"?: boolean;
       "options": Array<"trim" | "remove">;
       "removed_characters"?: number;
+      "replaces_body_default"?: boolean;
     };
     "BrunoNativeInspectResult": {
       "capabilities": components["schemas"]["BrunoCapabilities"];
@@ -239,6 +243,10 @@ export interface components {
       "environments"?: Array<components["schemas"]["BrunoEnvironment"]>;
       "fidelity": components["schemas"]["BrunoFidelityReport"];
       "inspected_at": string;
+      "kept_headers"?: Array<{
+        "name": string;
+        "requests": number;
+      }>;
       "manifest": components["schemas"]["BrunoManifest"];
       "missing_variables"?: Array<string>;
       "native_projection": components["schemas"]["BrunoNativeProjection"];
@@ -248,6 +256,11 @@ export interface components {
       "scripts": Array<components["schemas"]["BrunoNativeScriptCandidate"]>;
       "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
       "security_findings"?: Array<components["schemas"]["BrunoSecurityFinding"]>;
+      "skipped_file_count"?: number;
+      "skipped_files"?: Array<{
+        "path": string;
+        "reason": "operating_system_file" | "version_control_file" | "ignore_list";
+      }>;
       "source_format": string;
     };
     "BrunoNativeProjection": {

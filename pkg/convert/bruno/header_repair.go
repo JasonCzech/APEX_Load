@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -29,7 +30,8 @@ const (
 )
 
 // NativeHeaderRepair locates one invalid request header and describes the
-// fixes available for it. It carries no header value.
+// fixes available for it. Only a left-out header carries a value: the valid
+// text trim puts back.
 type NativeHeaderRepair struct {
 	ActionIndex       int      `json:"action_index"`
 	HeaderIndex       int      `json:"header_index"`
@@ -38,6 +40,15 @@ type NativeHeaderRepair struct {
 	KeptCharacters    int      `json:"kept_characters,omitempty"`
 	RemovedCharacters int      `json:"removed_characters,omitempty"`
 	InvalidCharacter  string   `json:"invalid_character,omitempty"`
+	// Omitted is set for an imported header that is not a credential: it was
+	// left out of the candidate, HeaderIndex is where it would go back, and
+	// TrimmedValue is what trim puts back. Its value is not a secret.
+	Omitted      bool   `json:"omitted,omitempty"`
+	TrimmedValue string `json:"trimmed_value,omitempty"`
+	// ReplacesBodyDefault is set when a left-out Content-Type was replaced by
+	// the request body's default, at HeaderIndex: trim then overwrites that
+	// default and remove keeps it.
+	ReplacesBodyDefault bool `json:"replaces_body_default,omitempty"`
 }
 
 // NativeHeaderRepairDiagnostics reports each top-level request header in
@@ -109,10 +120,74 @@ func NativeHeaderRepairDiagnostics(candidateID, sourcePath string, script *dsl.S
 	return diagnostics
 }
 
+// separateUnsendableHeaders takes the headers HTTP cannot carry out of a
+// candidate's literal header list before the shared request pipeline sees
+// them, which would otherwise drop them silently and block replay. Each
+// becomes a review finding: trim puts the valid leading text back at commit,
+// remove leaves the header out. Credential headers hold secret placeholders
+// here and are checked later, once their values are restored.
+func separateUnsendableHeaders(headers dsl.HeaderList, identity, sourcePath string) (dsl.HeaderList, []NativeDiagnostic) {
+	kept := make(dsl.HeaderList, 0, len(headers))
+	var diagnostics []NativeDiagnostic
+	for index, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			kept = append(kept, header)
+			continue
+		}
+		code, invalid := headerSyntaxIssue(header.Name, header.Value, "")
+		if !invalid {
+			kept = append(kept, header)
+			continue
+		}
+		repair := NativeHeaderRepair{
+			HeaderIndex: len(kept),
+			HeaderName:  header.Name,
+			Options:     []string{HeaderRepairRemove},
+			Omitted:     true,
+		}
+		message := "A request header name contains characters HTTP does not allow, so the header was left out of the script."
+		if code == httpprotocol.HeaderListIssueInvalidValue {
+			detail := httpprotocol.InvalidHeaderValueDetail(header.Name, header.Value)
+			message = fmt.Sprintf("The %s %s, so the header was left out of the script.", header.Name, detail)
+			if trimmed, ok := trimmedHeaderValue(header.Name, header.Value, ""); ok {
+				repair.Options = []string{HeaderRepairTrim, HeaderRepairRemove}
+				repair.TrimmedValue = trimmed
+				repair.KeptCharacters = utf8.RuneCountInString(trimmed)
+				repair.RemovedCharacters = utf8.RuneCountInString(header.Value) - repair.KeptCharacters
+				repair.InvalidCharacter = describeHeaderCharacter(header.Value[len(trimmed):])
+				message = fmt.Sprintf(
+					"The %s %s, starting at %s, so the header was left out of the script.",
+					header.Name, detail, repair.InvalidCharacter,
+				)
+			}
+		} else {
+			repair.HeaderName = ""
+		}
+		seed := strings.Join([]string{"bruno-native-omitted-header", identity, strconv.Itoa(index)}, "\x00")
+		hash := sha256.Sum256([]byte(seed))
+		id := "bruno-native-" + hex.EncodeToString(hash[:12])
+		repairCopy := repair
+		diagnostics = append(diagnostics, NativeDiagnostic{
+			ID:                      id,
+			FindingID:               id,
+			Severity:                "warning",
+			Code:                    NativeHeaderRepairDiagnosticCode,
+			Path:                    sourcePath,
+			Message:                 message,
+			AcknowledgementRequired: true,
+			HeaderRepair:            &repairCopy,
+		})
+	}
+	return kept, diagnostics
+}
+
 // ApplyNativeHeaderRepair applies choice to the header repair locates. It
 // reports false when the header is already valid, for example because the
 // operator bound it to a project secret.
 func ApplyNativeHeaderRepair(script *dsl.Script, repair NativeHeaderRepair, choice string) (bool, error) {
+	if repair.Omitted {
+		return applyOmittedHeaderRepair(script, repair, choice)
+	}
 	if script == nil || repair.ActionIndex < 0 || repair.ActionIndex >= len(script.Actions) {
 		return false, errors.New("header repair no longer matches the inspected script")
 	}
@@ -162,6 +237,70 @@ func NativeHeaderRepairTargetValue(script *dsl.Script, repair NativeHeaderRepair
 		return ""
 	}
 	return headers[repair.HeaderIndex].Value
+}
+
+// markBodyDefaultContentType points a left-out Content-Type's repair at the
+// default the request body added in its place, at index. Left-out headers
+// that followed it in the source move one place later, so they go back after
+// it. diagnostics are in source order.
+func markBodyDefaultContentType(diagnostics []NativeDiagnostic, index int) {
+	marked := false
+	for _, diagnostic := range diagnostics {
+		repair := diagnostic.HeaderRepair
+		if repair == nil || !repair.Omitted {
+			continue
+		}
+		if marked {
+			if repair.HeaderIndex >= index {
+				repair.HeaderIndex++
+			}
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(repair.HeaderName), "Content-Type") {
+			repair.HeaderIndex = index
+			repair.ReplacesBodyDefault = true
+			marked = true
+		}
+	}
+}
+
+// applyOmittedHeaderRepair puts a left-out header back, trimmed, or confirms
+// it stays out. Either choice resolves the finding.
+func applyOmittedHeaderRepair(script *dsl.Script, repair NativeHeaderRepair, choice string) (bool, error) {
+	if script == nil || repair.ActionIndex < 0 || repair.ActionIndex >= len(script.Actions) {
+		return false, errors.New("header repair no longer matches the inspected script")
+	}
+	switch choice {
+	case HeaderRepairRemove:
+		return true, nil
+	case HeaderRepairTrim:
+	default:
+		return false, fmt.Errorf("unknown header repair %q", choice)
+	}
+	if !slices.Contains(repair.Options, HeaderRepairTrim) || repair.TrimmedValue == "" {
+		return false, fmt.Errorf("the %s header has no valid leading text to keep; leave it out instead", repair.HeaderName)
+	}
+	if _, invalid := headerSyntaxIssue(repair.HeaderName, repair.TrimmedValue, ""); invalid {
+		return false, errors.New("header repair no longer matches the inspected script")
+	}
+	action := &script.Actions[repair.ActionIndex]
+	if repair.ReplacesBodyDefault {
+		if repair.HeaderIndex < 0 || repair.HeaderIndex >= len(action.HeaderList) ||
+			!strings.EqualFold(strings.TrimSpace(action.HeaderList[repair.HeaderIndex].Name), "Content-Type") {
+			return false, errors.New("header repair no longer matches the inspected script")
+		}
+		action.HeaderList[repair.HeaderIndex].Value = repair.TrimmedValue
+		syncHeaderMapEntry(action, repair.HeaderName)
+		return true, nil
+	}
+	index := min(max(repair.HeaderIndex, 0), len(action.HeaderList))
+	headers := make(dsl.HeaderList, 0, len(action.HeaderList)+1)
+	headers = append(headers, action.HeaderList[:index]...)
+	headers = append(headers, dsl.HeaderEntry{Name: repair.HeaderName, Value: repair.TrimmedValue})
+	headers = append(headers, action.HeaderList[index:]...)
+	action.HeaderList = headers
+	syncHeaderMapEntry(action, repair.HeaderName)
+	return true, nil
 }
 
 func headerSyntaxIssue(name, value, version string) (httpprotocol.HeaderListIssueCode, bool) {

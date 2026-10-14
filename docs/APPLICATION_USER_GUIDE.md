@@ -652,7 +652,7 @@ If you already have tests in another tool, import them instead of rewriting. Ope
 | --- | --- | --- |
 | OpenAPI / Swagger | Contracts & collections | Executable API draft |
 | Postman collection | Contracts & collections | Executable API draft |
-| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review |
+| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review. Only operator-supplied credentials (authorization, API keys, auth tokens, passwords) go through credential review; cookies and session, anti-forgery and trace headers stay as imported and are listed under Kept as imported. Operating-system and version-control files, files Bruno's own ignore list excludes, and gitignored files Bruno does not load itself (such as logs) are skipped; a gitignored `.env`, environment or request is still imported, as Bruno would open it. The new script folder defaults to the collection's declared name |
 | WSDL / SOAP | Contracts & collections | Executable SOAP draft |
 | AsyncAPI / Kafka | Contracts & collections | Messaging draft |
 | RAML / Anypoint | Contracts & collections | API draft |

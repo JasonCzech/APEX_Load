@@ -895,6 +895,7 @@ func publicBrunoNativeInspectResult(result *brunoconvert.Result) (*brunoconvert.
 	projected.Scripts = make([]brunoconvert.NativeScriptCandidate, len(result.Scripts))
 	for index, candidate := range result.Scripts {
 		projectedCandidate := candidate
+		projectedCandidate.Diagnostics = publicBrunoNativeDiagnostics(candidate.Diagnostics)
 		if candidate.Script != nil {
 			projectedCandidate.Script = maskScriptSecrets(candidate.Script)
 			if projectedCandidate.Script == nil {
@@ -909,6 +910,25 @@ func publicBrunoNativeInspectResult(result *brunoconvert.Result) (*brunoconvert.
 		projected.Scripts[index] = projectedCandidate
 	}
 	return &projected, nil
+}
+
+// publicBrunoNativeDiagnostics drops the header text a left-out header's trim
+// would put back. The browser shows only character counts, and the response
+// masks script header values, so the finding should not carry them either.
+func publicBrunoNativeDiagnostics(diagnostics []brunoconvert.NativeDiagnostic) []brunoconvert.NativeDiagnostic {
+	if diagnostics == nil {
+		return nil
+	}
+	public := make([]brunoconvert.NativeDiagnostic, len(diagnostics))
+	for index, diagnostic := range diagnostics {
+		if diagnostic.HeaderRepair != nil && diagnostic.HeaderRepair.TrimmedValue != "" {
+			repair := *diagnostic.HeaderRepair
+			repair.TrimmedValue = ""
+			diagnostic.HeaderRepair = &repair
+		}
+		public[index] = diagnostic
+	}
+	return public
 }
 
 func brunoNativeExecutionPreflight(
@@ -1121,14 +1141,16 @@ func (s *Server) handleCommitBrunoNativeImport(
 				slogWarnBrunoCacheRefresh(refreshErr)
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		response := map[string]any{
 			"batch_id":           receipt.Batch.ID,
 			"scripts":            maskBrunoNativeCommitScripts(receipt.Scripts),
 			"count":              len(receipt.Scripts),
 			"created":            false,
 			"idempotent_replay":  true,
 			"updated_script_ids": brunoNativeReceiptUpdatedScriptIDs(receipt, replayRequest),
-		})
+		}
+		s.attachBrunoNativeUnconfiguredSecretNames(r, request.ProjectID, receipt.Scripts, response)
+		writeJSON(w, http.StatusOK, response)
 		return
 	} else if !errors.Is(receiptErr, sql.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, receiptErr.Error())
@@ -1823,32 +1845,36 @@ func (s *Server) handleCommitBrunoNativeImport(
 		"secret_migrations":  migrations,
 		"updated_script_ids": updatedScriptIDs,
 	}
-	// Saving does not require secret values. These are the referenced project
-	// secrets that still need one before a run; a failed status check leaves
-	// the field out rather than failing a committed import.
-	if unconfigured, statusErr := s.unconfiguredBrunoNativeSecretNames(r, request.ProjectID, secretBindings); statusErr == nil {
-		response["unconfigured_secret_names"] = unconfigured
-	} else {
-		slog.Warn("check native Bruno secret configuration", "project_id", request.ProjectID, "error", statusErr)
-	}
+	s.attachBrunoNativeUnconfiguredSecretNames(r, request.ProjectID, commitResult.Scripts, response)
 	writeJSON(w, status, response)
 }
 
-// unconfiguredBrunoNativeSecretNames lists the project secrets a saved batch
-// references that have no usable value, using the same status check as the
+// attachBrunoNativeUnconfiguredSecretNames adds the project secrets the saved
+// scripts reference that still need a value before a run. Saving does not
+// require them, so a failed status check leaves the field out rather than
+// failing a committed import.
+func (s *Server) attachBrunoNativeUnconfiguredSecretNames(r *http.Request, projectID string, scripts []*dsl.Script, response map[string]any) {
+	unconfigured, err := s.unconfiguredBrunoNativeSecretNames(r, projectID, scripts)
+	if err != nil {
+		slog.Warn("check native Bruno secret configuration", "project_id", projectID, "error", err)
+		return
+	}
+	response["unconfigured_secret_names"] = unconfigured
+}
+
+// unconfiguredBrunoNativeSecretNames lists the project secrets scripts
+// reference that have no usable value, using the same status check as the
 // project secrets API.
-func (s *Server) unconfiguredBrunoNativeSecretNames(r *http.Request, projectID string, bindings map[string]string) ([]string, error) {
-	names := make([]string, 0, len(bindings))
-	seen := make(map[string]struct{}, len(bindings))
-	for _, reference := range bindings {
-		name, ok := brunoSecretReferenceName(reference)
-		if !ok {
-			continue
-		}
-		if _, duplicate := seen[name]; !duplicate {
+func (s *Server) unconfiguredBrunoNativeSecretNames(r *http.Request, projectID string, scripts []*dsl.Script) ([]string, error) {
+	seen := make(map[string]struct{})
+	for _, script := range scripts {
+		for _, name := range scriptSecretReferences(script) {
 			seen[name] = struct{}{}
-			names = append(names, name)
 		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	statuses, err := s.projectSecretStatuses(r, projectID, names)
@@ -1889,17 +1915,6 @@ func (s *Server) brunoHeaderSecretsAwaitValue(r *http.Request, projectID, value 
 		}
 	}
 	return false, nil
-}
-
-// brunoSecretReferenceName returns NAME for a whole "{{secret.NAME}}"
-// reference.
-func brunoSecretReferenceName(reference string) (string, bool) {
-	reference = strings.TrimSpace(reference)
-	if !strings.HasPrefix(reference, "{{secret.") || !strings.HasSuffix(reference, "}}") {
-		return "", false
-	}
-	name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(reference, "{{secret."), "}}"))
-	return name, name != ""
 }
 
 var errBrunoNativeUpdateTargetStale = errors.New("native Bruno update target is stale")
@@ -1970,7 +1985,8 @@ type brunoNativePlannedHeaderRepair struct {
 
 // selectedBrunoNativeHeaderRepairs resolves each requested header repair to
 // its finding on a selected candidate. Repairs are ordered last header first
-// so removing one header does not shift the next repair's position.
+// so removing or putting back one header does not shift the next repair's
+// position.
 func selectedBrunoNativeHeaderRepairs(
 	selected []brunoconvert.NativeScriptCandidate,
 	requested map[string]string,
@@ -2003,11 +2019,24 @@ func selectedBrunoNativeHeaderRepairs(
 	}
 	for candidateID := range planned {
 		repairs := planned[candidateID]
-		sort.Slice(repairs, func(i, j int) bool {
-			if repairs[i].repair.ActionIndex != repairs[j].repair.ActionIndex {
-				return repairs[i].repair.ActionIndex > repairs[j].repair.ActionIndex
+		// Diagnostics list headers in source order. Reversed and then sorted
+		// stably, a fix in place (including a left-out Content-Type replacing
+		// the body default) runs before a left-out header goes back at the
+		// same position, and left-out headers sharing a position go back in
+		// source order.
+		inPlace := func(repair brunoconvert.NativeHeaderRepair) bool {
+			return !repair.Omitted || repair.ReplacesBodyDefault
+		}
+		slices.Reverse(repairs)
+		sort.SliceStable(repairs, func(i, j int) bool {
+			left, right := repairs[i].repair, repairs[j].repair
+			if left.ActionIndex != right.ActionIndex {
+				return left.ActionIndex > right.ActionIndex
 			}
-			return repairs[i].repair.HeaderIndex > repairs[j].repair.HeaderIndex
+			if left.HeaderIndex != right.HeaderIndex {
+				return left.HeaderIndex > right.HeaderIndex
+			}
+			return inPlace(left) && !inPlace(right)
 		})
 	}
 	return planned, nil

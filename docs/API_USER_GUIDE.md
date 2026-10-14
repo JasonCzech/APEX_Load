@@ -275,7 +275,7 @@ Import endpoints (per-importer `support-matrix` GET routes and further importers
 
 - `POST /api/v1/scripts/import/openapi` — OpenAPI / Swagger (also `/commit`)
 - `POST /api/v1/scripts/import/postman` — Postman collection (also `/validate`, `/save`)
-- `POST /api/v1/scripts/import/bruno/inspect` — Inspect a Bruno bundle, then `POST .../bruno/commit`. A candidate an earlier import saved carries `existing_script`; send `update_targets` to update those scripts as a new version, and `header_repairs` to fix invalid headers. The commit response lists `unconfigured_secret_names` still needing values
+- `POST /api/v1/scripts/import/bruno/inspect` — Inspect a Bruno bundle, then `POST .../bruno/commit`. A candidate an earlier import saved carries `existing_script`; send `update_targets` to update those scripts as a new version, and `header_repairs` to fix invalid headers (a repair with `omitted: true` is a non-credential header already left out: `trim` puts it back, `remove` keeps it out). The inspection lists `skipped_files` (the first 100; `skipped_file_count` counts all) and `kept_headers`, and counts `converted_hooks` and `unconverted_hooks` in `capabilities`. The commit response lists `unconfigured_secret_names` still needing values
 - `POST /api/v1/scripts/import/har` — HAR traffic (Salesforce traffic is auto-detected)
 - `POST /api/v1/scripts/import/wsdl` — WSDL / SOAP
 - `POST /api/v1/scripts/import/asyncapi` — AsyncAPI (also `/commit`, `/commit-batch`)

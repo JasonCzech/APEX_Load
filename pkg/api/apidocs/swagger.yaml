@@ -158,6 +158,9 @@ components:
     BrunoCapabilities:
       type: object
       properties:
+        converted_hooks:
+          type: integer
+          description: JavaScript hooks converted to native checks, counted once per request that runs them.
         has_bruno_apps:
           type: boolean
         has_certificates:
@@ -180,6 +183,9 @@ components:
           type: string
         runner_profile:
           type: string
+        unconverted_hooks:
+          type: integer
+          description: JavaScript hooks left for review, counted once per request that runs them.
       required:
         - request_types
         - has_javascript
@@ -711,6 +717,9 @@ components:
         kept_characters:
           type: integer
           description: Characters trim keeps.
+        omitted:
+          type: boolean
+          description: 'True when the header is not a credential and was left out of the script: trim puts the kept text back, remove confirms it stays out.'
         options:
           type: array
           items:
@@ -721,6 +730,9 @@ components:
         removed_characters:
           type: integer
           description: Characters trim removes.
+        replaces_body_default:
+          type: boolean
+          description: 'True when the request body''s default Content-Type took the left-out header''s place: trim overwrites that default and remove keeps it.'
       required:
         - action_index
         - header_index
@@ -742,6 +754,20 @@ components:
         inspected_at:
           type: string
           format: date-time
+        kept_headers:
+          type: array
+          description: Sensitive-looking headers, such as cookies and session ids, kept as imported because they carry recorded state rather than credentials.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              requests:
+                type: integer
+                description: Requests that send this header.
+            required:
+              - name
+              - requests
         manifest:
           $ref: '#/components/schemas/BrunoManifest'
         missing_variables:
@@ -771,6 +797,26 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BrunoSecurityFinding'
+        skipped_file_count:
+          type: integer
+          description: All skipped files; skipped_files lists at most the first 100 in path order.
+        skipped_files:
+          type: array
+          description: 'Uploaded files that are not collection content: operating-system or version-control files, files Bruno''s ignore list excludes, and gitignored files Bruno does not load itself.'
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              reason:
+                type: string
+                enum:
+                  - operating_system_file
+                  - version_control_file
+                  - ignore_list
+            required:
+              - path
+              - reason
         source_format:
           type: string
       required:

@@ -55,6 +55,20 @@ func Inspect(input Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Operating-system files go before the root is chosen, so a __MACOSX copy
+	// cannot move it. The collection's own ignore lists apply relative to that
+	// root and are read before .gitignore itself is dropped as bookkeeping.
+	uploadedFiles := rawFiles
+	rawFiles, skippedFiles := filterIgnoredSourceFiles(rawFiles, "", sourceIgnoreRules{})
+	root := detectRoot(rawFiles, input.RootPath)
+	var ignoredFiles []SkippedFile
+	rawFiles, ignoredFiles = filterIgnoredSourceFiles(rawFiles, root, brunoIgnoreRules(uploadedFiles, root))
+	skippedFiles = append(skippedFiles, ignoredFiles...)
+	sort.Slice(skippedFiles, func(i, j int) bool { return skippedFiles[i].Path < skippedFiles[j].Path })
+	skippedFileCount := len(skippedFiles)
+	if len(skippedFiles) > maxReportedSkippedFiles {
+		skippedFiles = skippedFiles[:maxReportedSkippedFiles]
+	}
 	if outputMode == OutputModeNativeRequests {
 		// Validate the authored scalar types before sanitization replaces
 		// credential values with string templates. Otherwise a structured JSON
@@ -66,7 +80,6 @@ func Inspect(input Input) (*Result, error) {
 			return nil, err
 		}
 	}
-	root := detectRoot(rawFiles, input.RootPath)
 	if outputMode == OutputModeNativeRequests {
 		if err := validateNativeEffectiveCredentialShapes(rawFiles, root); err != nil {
 			return nil, err
@@ -251,6 +264,12 @@ func Inspect(input Input) (*Result, error) {
 		}
 	}
 	requirements = finalizeNativeSecretRequirements(requirements)
+	capabilities.ConvertedHooks, capabilities.UnconvertedHooks = nativeHookCounts(nativeCandidates)
+	// A converted hook runs as a native check, so JavaScript is a conversion
+	// limit only when a hook still needs translation or the bundle carries
+	// script modules.
+	capabilities.HasJavaScript = capabilities.UnconvertedHooks > 0 || capabilities.HasLocalModules ||
+		javaScriptWithoutNativeScript(collection.Items, nativeCandidates)
 	for index := range nativeCandidates {
 		nativeCandidates[index].SecretRequirements = finalizeNativeSecretRequirements(
 			nativeCandidates[index].SecretRequirements,
@@ -280,6 +299,9 @@ func Inspect(input Input) (*Result, error) {
 			},
 		},
 		MissingVariables:    missing,
+		SkippedFiles:        skippedFiles,
+		SkippedFileCount:    skippedFileCount,
+		KeptHeaders:         nativeKeptHeaders(nativeCandidates),
 		Scripts:             nativeCandidates,
 		RawArchive:          rawArchive,
 		SanitizedArchive:    sanitizedArchive,
@@ -288,6 +310,64 @@ func Inspect(input Input) (*Result, error) {
 		nativeRequestPasses: nativeRequestPasses,
 	}
 	return result, nil
+}
+
+// nativeHookCounts totals, across candidates, the JavaScript hooks converted to
+// native checks and those left for review. A hook inherited from a folder or
+// the collection counts once for each request it runs for.
+func nativeHookCounts(candidates []NativeScriptCandidate) (int, int) {
+	converted, unconverted := 0, 0
+	for _, candidate := range candidates {
+		if candidate.Script == nil || candidate.Script.Metadata == nil || candidate.Script.Metadata.Import == nil {
+			continue
+		}
+		preserved := candidate.Script.Metadata.Import.Preserved
+		converted += preservedCount(preserved["converted_hook_count"])
+		unconverted += preservedCount(preserved["review_hook_count"])
+	}
+	return converted, unconverted
+}
+
+// javaScriptWithoutNativeScript reports whether a request item that runs
+// JavaScript produced no native script, such as a request type the native
+// conversion does not cover. Its hooks were neither converted nor counted.
+func javaScriptWithoutNativeScript(items []CollectionItem, candidates []NativeScriptCandidate) bool {
+	converted := make(map[string]struct{}, 2*len(candidates))
+	for _, candidate := range candidates {
+		converted["uid:"+candidate.SourceUID] = struct{}{}
+		converted["path:"+candidate.SourcePath] = struct{}{}
+	}
+	var uncovered func([]CollectionItem) bool
+	uncovered = func(items []CollectionItem) bool {
+		for _, item := range items {
+			if item.Type != "folder" && item.Type != "app" && (item.HasScripts || item.HasTests) {
+				_, byUID := converted["uid:"+item.UID]
+				_, byPath := converted["path:"+item.Path]
+				if !byUID && !byPath {
+					return true
+				}
+			}
+			if uncovered(item.Children) {
+				return true
+			}
+		}
+		return false
+	}
+	return uncovered(items)
+}
+
+func preservedCount(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case float64:
+		return int(typed)
+	case json.Number:
+		count, _ := typed.Int64()
+		return int(count)
+	default:
+		return 0
+	}
 }
 
 func finalizeNativeSecretRequirements(requirements []SecretRequirement) []SecretRequirement {
@@ -1441,14 +1521,15 @@ func isStructuredCredentialName(name string, context []string, role string) bool
 }
 
 func isStructuredSensitiveHeader(name string) bool {
-	if !(scrub.Policy{}).SensitiveHeader(name) {
+	// Cookies and session, anti-forgery and correlation headers are recorded
+	// state, not credentials, so they stay as imported.
+	if !credential.ImportCredentialHeader(name) {
 		return false
 	}
 	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.TrimSpace(name)))
 	for _, suffix := range []string{
 		"authorization", "apikey", "authtoken", "accesstoken", "securitytoken",
-		"sessionid", "csrftoken", "xsrftoken", "clientsecret", "privatekey",
-		"password", "cookie",
+		"clientsecret", "privatekey", "password",
 	} {
 		if strings.HasSuffix(normalized, suffix) {
 			return true

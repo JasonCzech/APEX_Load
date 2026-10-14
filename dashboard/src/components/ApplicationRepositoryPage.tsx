@@ -1,3 +1,4 @@
+import { countLabel as plural } from '../utils/numberFormat'
 import LibraryToolbar from './ux/LibraryToolbar'
 import { DEFAULT_REPOSITORY_FILTERS, readRepositoryViewState, writeRepositoryViewState, type RepositoryViewState } from './repositoryViewState'
 import './RepositoryWorkspace.css'
@@ -175,9 +176,6 @@ function deleteEntityResponseFromError(err: unknown): DeleteEntityResponse | nul
     : null
 }
 
-function plural(count: number, singular: string, pluralLabel = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralLabel}`
-}
 
 async function loadProjectAssets<T>(
   projects: Project[],

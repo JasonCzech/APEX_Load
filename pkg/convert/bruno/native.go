@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -1884,12 +1885,30 @@ func buildNativeCandidate(
 		context := nativeTemplateOrdinary
 		if nativeSensitiveHeaderName(header.Name) {
 			context = nativeTemplateSensitiveHeader
+		} else if credentialpolicy.ClassifySourceCredentialValue(header.Value) ==
+			credentialpolicy.SourceCredentialValueRedactedPlaceholder {
+			// The export redacted a recorded value such as a cookie or session
+			// id. It is not a credential, so it becomes an input supplied at
+			// review instead of a placeholder sent on the wire.
+			value, variable, kept := nativeRedactedHeaderInput(header.Value, header.Name)
+			if kept {
+				// Only text that stays in the script is translated, so a
+				// replaced value cannot ask for inputs nothing uses.
+				value = rewriteNativeTemplates(value, nativeTemplateOrdinary, header.Name, templateState)
+			}
+			templateState.missing[variable] = struct{}{}
+			headerList = append(headerList, dsl.HeaderEntry{Name: header.Name, Value: value})
+			continue
 		}
 		headerList = append(headerList, dsl.HeaderEntry{
 			Name:  header.Name,
 			Value: rewriteNativeTemplates(header.Value, context, header.Name, templateState),
 		})
 	}
+
+	var headerDiagnostics []NativeDiagnostic
+	headerList, headerDiagnostics = separateUnsendableHeaders(headerList, item.UID+"\x00"+item.Path, file.Path)
+	diagnostics = append(diagnostics, headerDiagnostics...)
 
 	if encodeURL &&
 		(nativeURLComponentsContainTemplates(target, templateState.missing) ||
@@ -1976,6 +1995,7 @@ func buildNativeCandidate(
 	}
 	if bodyContentType != "" && !nativeHeaderListContains(headerList, "Content-Type") {
 		headerList = append(headerList, dsl.HeaderEntry{Name: "Content-Type", Value: bodyContentType})
+		markBodyDefaultContentType(headerDiagnostics, len(headerList)-1)
 	}
 	if bodyReview != nil {
 		diagnostics = append(diagnostics, *bodyReview)
@@ -3114,6 +3134,56 @@ func nativeSecretRequirement(rawName, sourcePath, context string) SecretRequirem
 		Context:       context,
 		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
 	}
+}
+
+// nativeRedactedHeaderInput replaces a redacted recorded header value with a
+// review input and names that input. When exactly one plain redaction marker
+// stands in for part of the value, as in "sid=[redacted]; theme=dark", the
+// rest is kept and the input is named for that part (header_cookie_sid), so
+// it never shares a name with an input that stands for a whole header. Any
+// other redaction replaces the whole value with header_<name>. kept reports
+// whether any of the source text stayed.
+func nativeRedactedHeaderInput(value, headerName string) (string, string, bool) {
+	markers := nativeRedactionMarker.FindAllStringIndex(value, -1)
+	if len(markers) == 1 && strings.TrimSpace(value[:markers[0][0]]+value[markers[0][1]:]) != "" {
+		before, after := value[:markers[0][0]], value[markers[0][1]:]
+		part := "part"
+		if match := nativeRedactedPairName.FindStringSubmatch(before); match != nil {
+			part = match[1]
+		}
+		variable := nativeRedactedHeaderVariable(headerName + "_" + part)
+		kept := before + "{{var." + variable + "}}" + after
+		if credentialpolicy.ClassifySourceCredentialValue(kept) != credentialpolicy.SourceCredentialValueRedactedPlaceholder {
+			return kept, variable, true
+		}
+	}
+	variable := nativeRedactedHeaderVariable(headerName)
+	return "{{var." + variable + "}}", variable, false
+}
+
+// nativeRedactedPairName finds the name of the name=value pair a redaction
+// marker ends, as in a cookie or a form of parameters.
+var nativeRedactedPairName = regexp.MustCompile(`([A-Za-z0-9_.\-]+)\s*=\s*$`)
+
+var nativeRedactionMarker = regexp.MustCompile(`(?i)\[redacted\]`)
+
+// nativeRedactedHeaderVariable names the input that replaces a redacted
+// recorded header value. The header_ prefix keeps it apart from the
+// collection's own variables.
+func nativeRedactedHeaderVariable(headerName string) string {
+	var builder strings.Builder
+	builder.WriteString("header_")
+	lastUnderscore := true
+	for _, r := range strings.ToLower(strings.TrimSpace(headerName)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			builder.WriteRune(r)
+			lastUnderscore = false
+		} else if !lastUnderscore {
+			builder.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.TrimRight(builder.String(), "_")
 }
 
 func nativeSourceVariableSecretName(sourceVariable string) string {

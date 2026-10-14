@@ -161,3 +161,128 @@ func TestNativeHeaderRepairTrimsHostWhenAnEarlyCutIsInvalid(t *testing.T) {
 		t.Fatalf("trimmed Host = %q", got)
 	}
 }
+
+func TestSeparateUnsendableHeadersLeavesInvalidHeadersOutWithRepair(t *testing.T) {
+	disabled := false
+	kept, diagnostics := separateUnsendableHeaders(dsl.HeaderList{
+		{Name: "Accept", Value: "text/xml"},
+		{Name: "Cookie", Value: `a=1" -H accept`},
+		{Name: "X Bad", Value: "value"},
+		{Name: "X-Off", Value: "off\x01", Enabled: &disabled},
+		{Name: "X-Note", Value: "ok"},
+	}, "uid\x00request.yml", "requests/one.yml")
+	var names []string
+	for _, header := range kept {
+		names = append(names, header.Name)
+	}
+	if !slices.Equal(names, []string{"Accept", "X-Off", "X-Note"}) {
+		t.Fatalf("kept headers = %#v", kept)
+	}
+	if len(diagnostics) != 2 {
+		t.Fatalf("diagnostics = %#v, want two", diagnostics)
+	}
+	cookie, name := diagnostics[0], diagnostics[1]
+	if cookie.ID == "" || cookie.ID == name.ID || cookie.FindingID != cookie.ID ||
+		cookie.Code != NativeHeaderRepairDiagnosticCode || !cookie.AcknowledgementRequired {
+		t.Fatalf("cookie diagnostic = %#v", cookie)
+	}
+	repair := cookie.HeaderRepair
+	if repair == nil || !repair.Omitted || repair.HeaderIndex != 1 || repair.HeaderName != "Cookie" ||
+		repair.TrimmedValue != "a=1" || repair.KeptCharacters != 3 ||
+		!slices.Equal(repair.Options, []string{HeaderRepairTrim, HeaderRepairRemove}) {
+		t.Fatalf("cookie repair = %#v", repair)
+	}
+	if strings.Contains(cookie.Message, "a=1") || !strings.Contains(cookie.Message, "left out") {
+		t.Fatalf("cookie message = %q", cookie.Message)
+	}
+	if name.HeaderRepair == nil || !name.HeaderRepair.Omitted || name.HeaderRepair.HeaderName != "" ||
+		name.HeaderRepair.TrimmedValue != "" || !slices.Equal(name.HeaderRepair.Options, []string{HeaderRepairRemove}) {
+		t.Fatalf("invalid name repair = %#v", name.HeaderRepair)
+	}
+	if _, again := separateUnsendableHeaders(dsl.HeaderList{
+		{Name: "Accept", Value: "text/xml"},
+		{Name: "Cookie", Value: `a=1" -H accept`},
+	}, "uid\x00request.yml", "requests/one.yml"); again[0].ID != cookie.ID {
+		t.Fatalf("finding id is not stable: %q then %q", cookie.ID, again[0].ID)
+	}
+
+	script := headerRepairTestScript(kept...)
+	if applied, err := ApplyNativeHeaderRepair(script, *repair, HeaderRepairRemove); err != nil || !applied {
+		t.Fatalf("remove applied=%t err=%v", applied, err)
+	}
+	if len(script.Actions[0].HeaderList) != 3 {
+		t.Fatalf("remove changed headers: %#v", script.Actions[0].HeaderList)
+	}
+	if applied, err := ApplyNativeHeaderRepair(script, *repair, HeaderRepairTrim); err != nil || !applied {
+		t.Fatalf("trim applied=%t err=%v", applied, err)
+	}
+	action := script.Actions[0]
+	if action.HeaderList[1].Name != "Cookie" || action.HeaderList[1].Value != "a=1" ||
+		action.HeaderList[2].Name != "X-Off" || action.Headers["Cookie"] != "a=1" {
+		t.Fatalf("trimmed headers = %#v / %#v", action.HeaderList, action.Headers)
+	}
+	if _, err := ApplyNativeHeaderRepair(script, *name.HeaderRepair, HeaderRepairTrim); err == nil {
+		t.Fatal("trim of an invalid name succeeded")
+	}
+}
+
+func TestOmittedContentTypeTrimReplacesOnlyTheBodyDefault(t *testing.T) {
+	_, diagnostics := separateUnsendableHeaders(dsl.HeaderList{
+		{Name: "Content-Type", Value: "application/json\x01 pasted"},
+	}, "uid\x00request.yml", "requests/one.yml")
+	if len(diagnostics) != 1 || diagnostics[0].HeaderRepair.TrimmedValue != "application/json" {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+	markBodyDefaultContentType(diagnostics, 1)
+	repair := *diagnostics[0].HeaderRepair
+	if !repair.ReplacesBodyDefault || repair.HeaderIndex != 1 {
+		t.Fatalf("repair = %#v, want it pointed at the body default", repair)
+	}
+	script := headerRepairTestScript(
+		dsl.HeaderEntry{Name: "Accept", Value: "text/xml"},
+		dsl.HeaderEntry{Name: "Content-Type", Value: "text/plain"},
+	)
+	if applied, err := ApplyNativeHeaderRepair(script, repair, HeaderRepairRemove); err != nil || !applied ||
+		script.Actions[0].HeaderList[1].Value != "text/plain" {
+		t.Fatalf("remove applied=%t err=%v headers=%#v, want the body default kept", applied, err, script.Actions[0].HeaderList)
+	}
+	if _, err := ApplyNativeHeaderRepair(script, repair, HeaderRepairTrim); err != nil {
+		t.Fatal(err)
+	}
+	action := script.Actions[0]
+	if len(action.HeaderList) != 2 || action.HeaderList[1].Value != "application/json" ||
+		action.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("headers = %#v / %#v", action.HeaderList, action.Headers)
+	}
+
+	// Without a body default, an imported Content-Type that is still there
+	// stays, and the trimmed one goes back at its own position.
+	_, second := separateUnsendableHeaders(dsl.HeaderList{
+		{Name: "Content-Type", Value: "text/xml"},
+		{Name: "Content-Type", Value: "application/json\x01 pasted"},
+	}, "uid\x00request.yml", "requests/one.yml")
+	script = headerRepairTestScript(dsl.HeaderEntry{Name: "Content-Type", Value: "text/xml"})
+	if _, err := ApplyNativeHeaderRepair(script, *second[0].HeaderRepair, HeaderRepairTrim); err != nil {
+		t.Fatal(err)
+	}
+	if headers := script.Actions[0].HeaderList; len(headers) != 2 || headers[0].Value != "text/xml" || headers[1].Value != "application/json" {
+		t.Fatalf("headers = %#v", headers)
+	}
+}
+
+func TestMarkBodyDefaultContentTypeMovesLaterLeftOutHeadersAfterIt(t *testing.T) {
+	_, diagnostics := separateUnsendableHeaders(dsl.HeaderList{
+		{Name: "Accept", Value: "text/xml"},
+		{Name: "X-Before", Value: "before\x01"},
+		{Name: "Content-Type", Value: "application/json\x01"},
+		{Name: "X-After", Value: "after\x01"},
+	}, "uid\x00request.yml", "requests/one.yml")
+	markBodyDefaultContentType(diagnostics, 1)
+	var indexes []int
+	for _, diagnostic := range diagnostics {
+		indexes = append(indexes, diagnostic.HeaderRepair.HeaderIndex)
+	}
+	if !slices.Equal(indexes, []int{1, 1, 2}) || !diagnostics[1].HeaderRepair.ReplacesBodyDefault {
+		t.Fatalf("header indexes = %v, repairs = %#v", indexes, diagnostics)
+	}
+}

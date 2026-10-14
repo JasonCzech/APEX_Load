@@ -1,3 +1,4 @@
+import { countLabel as plural } from '../utils/numberFormat'
 import { testOutcomeStatus } from '../utils/testStatusUtils'
 import {
   Application,
@@ -95,9 +96,6 @@ const TIMEFRAME_DAYS: Record<string, number> = {
   '90d': 90,
 }
 
-function plural(count: number, singular: string, pluralLabel = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralLabel}`
-}
 
 function compact(values: Array<string | undefined | null>) {
   return values.map(value => value?.trim()).filter(Boolean) as string[]

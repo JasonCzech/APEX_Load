@@ -1561,7 +1561,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       <div className="secret-binding-review-header">
         <div>
           <h4 id={titleId}>Credential groups ({filteredGroups.length === groups.length ? groups.length : `${filteredGroups.length} of ${groups.length}`})</h4>
-          <div hidden={inlineEditing}><p>{groups.length} unique credential groups across {requirements.length} credential requirements. Expand affected locations within each group to inspect their scope. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
+          <div hidden={inlineEditing}><p>{groups.length} unique credential group{groups.length === 1 ? '' : 's'} across {requirements.length} credential requirement{requirements.length === 1 ? '' : 's'}. Expand affected locations within each group to inspect their scope. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
           <p>
             Choose how each imported credential is stored in the destination. A server-confirmed imported value can remain
             runnable as-is, or you can replace it with a <code>{'{{secret.NAME}}'}</code> project-secret reference and
