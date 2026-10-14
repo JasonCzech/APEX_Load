@@ -6,32 +6,100 @@ import (
 )
 
 // A correlation replaces a recorded literal with a value extracted from an
-// earlier response, and its extractor fails the step when the value is
-// missing. Values that are not server-generated state gain nothing from that
-// and add a failure point, so detection rejects three provable cases:
+// earlier response, and its extractor fails the step, or for a less certain
+// correlation falls back to the recorded value, when the value is missing.
+// Values that are not server-generated state gain nothing from that and add
+// a failure point, so detection rejects four provable cases:
 //
-//   - name-shaped values from the generic "*id*" key heuristics
-//     ("navigation", "Retail_Home_Page") and HTTP authentication scheme names
-//     from token keys ("Bearer" in token_type);
+//   - name- and word-shaped values from the generic rules, whose only
+//     evidence is a key, cookie or header name ("navigation",
+//     "Retail_Home_Page", a cookie "qualified", "Session" in a
+//     "...SessionStorageDurationText" field), and HTTP authentication scheme
+//     names from token keys ("Bearer" in token_type);
+//   - short or repetitive values from the weakest of those rules (a cookie
+//     "en_US"), which are not opaque tokens;
 //   - bare URL origins, which are environment configuration (base_url);
 //   - values the client already sent before the producing response, for the
 //     weak heuristic rules (see clientOriginCheckApplies).
 
 const maxDynamicIDNameBytes = 32
 
+// maxWordSegmentBytes caps a word for the credential, session and cookie
+// rules: a single-case run of random letters ("qwhfjdkslaieurty") is one
+// identifierName segment, but a word rarely runs past 12 letters.
+const maxWordSegmentBytes = 12
+
+// Token-shaped values for the weakest rules are at least this long and use
+// at least this many distinct characters.
+const (
+	minWeakRuleTokenBytes         = 6
+	minWeakRuleTokenDistinctBytes = 4
+)
+
 // candidateValueCanCorrelate applies the value-only precision rules.
 func candidateValueCanCorrelate(candidate Candidate) bool {
 	if bareURLOrigin(candidate.Value) {
 		return false
 	}
+	if (candidate.RuleID == RuleJSONDynamicID || candidate.RuleID == RuleXMLDynamicID) && identifierName(candidate.Value) {
+		return false
+	}
+	if genericRule(candidate.RuleID) && wordValue(candidate.Value) {
+		return false
+	}
 	switch candidate.RuleID {
-	case RuleJSONDynamicID, RuleXMLDynamicID:
-		return !identifierName(candidate.Value)
 	case RuleJSONAuthToken, RuleJSONSessionID:
 		return !httpAuthenticationScheme(candidate.Value)
+	case RuleSetCookieOther, RuleDynamicHeader, RuleLocationParam, RuleJSONDynamicID, RuleXMLDynamicID:
+		return tokenShaped(candidate.Value)
 	default:
 		return true
 	}
+}
+
+// genericRule selects the rules whose evidence is a key, cookie or header
+// name rather than a protocol the value belongs to. A word is never the
+// token such a name promises. Platform rules are exempt: an Aura app
+// descriptor or a Location path is name-shaped by design.
+func genericRule(ruleID string) bool {
+	switch ruleID {
+	case RuleJSONAuthToken, RuleJSONCSRFToken, RuleJSONSessionID, RuleJSONDynamicID,
+		RuleHTMLHiddenToken, RuleXMLSOAPToken, RuleXMLDynamicID,
+		RuleSetCookieSession, RuleSetCookieOther, RuleDynamicHeader, RuleLocationParam:
+		return true
+	default:
+		return false
+	}
+}
+
+// wordValue reports an identifierName value made of word-length segments.
+func wordValue(value string) bool {
+	if !identifierName(value) {
+		return false
+	}
+	for _, token := range correlationKeyTokens(value) {
+		if len(token) > maxWordSegmentBytes {
+			return false
+		}
+	}
+	return true
+}
+
+// tokenShaped reports a value long and varied enough to be an opaque token
+// rather than a short setting ("en_US", "0000").
+func tokenShaped(value string) bool {
+	if len(value) < minWeakRuleTokenBytes {
+		return false
+	}
+	var seen [256]bool
+	distinct := 0
+	for index := 0; index < len(value) && distinct < minWeakRuleTokenDistinctBytes; index++ {
+		if !seen[value[index]] {
+			seen[value[index]] = true
+			distinct++
+		}
+	}
+	return distinct >= minWeakRuleTokenDistinctBytes
 }
 
 // clientOriginCheckApplies selects the rules whose evidence is only a key name

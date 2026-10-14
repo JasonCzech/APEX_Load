@@ -109,11 +109,11 @@ func TestDetectUniquifiesDuplicateCorrelationNames(t *testing.T) {
 	observations := []Observation{
 		{
 			ID:           1,
-			ResponseBody: `{"id":"1111111","user":{"id":"2222222"}}`,
+			ResponseBody: `{"id":"4815162","user":{"id":"2342108"}}`,
 		},
 		{
 			ID:          2,
-			RequestBody: "first=1111111&second=2222222",
+			RequestBody: "first=4815162&second=2342108",
 		},
 	}
 
@@ -132,7 +132,7 @@ func TestDetectUniquifiesDuplicateCorrelationNames(t *testing.T) {
 		t.Fatalf("names = %#v, want corr_id and corr_id_2", names)
 	}
 	vars := BuildVarMap(correlations)
-	if vars["1111111"] == "" || vars["2222222"] == "" || vars["1111111"] == vars["2222222"] {
+	if vars["4815162"] == "" || vars["2342108"] == "" || vars["4815162"] == vars["2342108"] {
 		t.Fatalf("vars = %#v, want distinct replacements for duplicate id values", vars)
 	}
 }

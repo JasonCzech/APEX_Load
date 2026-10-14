@@ -665,6 +665,42 @@ func TestHandlePreviewBrowserRecordingConversionReturnsAllScriptsWithoutStoring(
 	}
 }
 
+// The preview lists the HTTP output's correlations, so they can be reviewed
+// before the scripts are saved.
+func TestHandlePreviewBrowserRecordingConversionReportsHTTPCorrelations(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[` +
+		`{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/session","httpVersion":"HTTP/1.1","headers":[],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":32,"mimeType":"application/json","text":"{\"csrfToken\":\"tk4815162342ab\"}"},"redirectURL":"","headersSize":-1,"bodySize":32},"cache":{},"timings":{"send":1,"wait":10,"receive":1}},` +
+		`{"startedDateTime":"2026-05-12T20:00:01Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart?csrf=tk4815162342ab","httpVersion":"HTTP/1.1","headers":[],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(artifact))
+	id := startBrowserRecordingViaAPI(t, server)
+
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert/preview",
+		bytes.NewBufferString(`{"name":"Checkout Preview","also_create_http_script":true}`)))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Correlations []struct {
+			Name        string `json:"name"`
+			FoundInStep int    `json:"found_in_step"`
+			UsedInSteps []int  `json:"used_in_steps"`
+			PreApplied  bool   `json:"pre_applied"`
+		} `json:"correlations"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Correlations) != 1 {
+		t.Fatalf("correlations = %+v, want the CSRF token", payload.Correlations)
+	}
+	got := payload.Correlations[0]
+	if got.Name == "" || !got.PreApplied || got.FoundInStep != 1 || len(got.UsedInSteps) != 1 || got.UsedInSteps[0] != 2 {
+		t.Fatalf("correlation = %+v, want applied from request 1 into request 2", got)
+	}
+}
+
 func TestHandlePreviewBrowserRecordingConversionRejectsSaveOnlySecretBindings(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)

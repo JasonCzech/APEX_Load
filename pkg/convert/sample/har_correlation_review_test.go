@@ -98,6 +98,8 @@ func TestLiteralEmbedded(t *testing.T) {
 		{"a=abc123,b=abc1234", "abc123", true},
 		{"path/-abc-/x", "-abc-", false},
 		{"Xabc123 abc123", "abc123", true},
+		{"x=%22abc123%22", "abc123", false},
+		{`{\u0022abc123`, "abc123", false},
 	} {
 		if got := literalEmbedded(tc.text, tc.literal); got != tc.want {
 			t.Errorf("literalEmbedded(%q, %q) = %v, want %v", tc.text, tc.literal, got, tc.want)

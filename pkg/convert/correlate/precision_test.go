@@ -107,6 +107,68 @@ func TestDetectRejectsValuesThatAreNotServerState(t *testing.T) {
 	}
 }
 
+// A generic rule's evidence is only a key, cookie or header name, so a word
+// or a short setting is never the token that name promises.
+func TestDetectRejectsWordsAndSettingsFromGenericRules(t *testing.T) {
+	observations := []Observation{
+		{
+			ID:         1,
+			RequestURL: "https://www.example.test/",
+			ResponseHeaders: map[string]string{
+				"Set-Cookie": "agent_cohort=qualified; Path=/\nsite_locale=en_US; Path=/\nvisitor=v7Kq2xLm9Pz4; Path=/",
+			},
+			ResponseBody: `{"StorageSessionDurationText":"Session","containerId":"0000000","pageId":"pg-4815162342"}`,
+		},
+		{
+			ID:         2,
+			RequestURL: "https://www.example.test/next?cohort=qualified&locale=en_US&duration=Session&container=0000000&page=pg-4815162342&v=v7Kq2xLm9Pz4",
+		},
+	}
+	values := correlationValues(Detect(observations))
+	for _, rejected := range []string{"qualified", "en_US", "Session", "0000000"} {
+		if rule, found := values[rejected]; found {
+			t.Errorf("%q was correlated by %s; it is not an opaque token", rejected, rule)
+		}
+	}
+	for _, kept := range []string{"pg-4815162342", "v7Kq2xLm9Pz4"} {
+		if _, found := values[kept]; !found {
+			t.Errorf("%q was not correlated; got %v", kept, values)
+		}
+	}
+}
+
+// A run of random letters is one long segment, not a word: a credential rule
+// keeps it.
+func TestDetectKeepsLetterOnlyTokensFromCredentialRules(t *testing.T) {
+	const csrf = "qwhfjdkslaieurtyzmxn"
+	const session = "QWERTYUIOPASDFGHJK"
+	observations := []Observation{
+		{ID: 1, RequestURL: "https://app.example.test/login", ResponseHeaders: map[string]string{"Set-Cookie": "SESSIONID=" + session + "; Path=/"}, ResponseBody: `{"csrf_token":"` + csrf + `"}`},
+		{ID: 2, RequestURL: "https://app.example.test/save?csrf=" + csrf + "&s=" + session},
+	}
+	values := correlationValues(Detect(observations))
+	for _, kept := range []string{csrf, session} {
+		if _, found := values[kept]; !found {
+			t.Errorf("%q was not correlated; got %v", kept, values)
+		}
+	}
+}
+
+func TestTokenShaped(t *testing.T) {
+	for value, want := range map[string]bool{
+		"v7Kq2xLm9Pz4": true,
+		"481516":       true,
+		"en_US":        false,
+		"0000000":      false,
+		"ababab":       false,
+		"abcd12":       true,
+	} {
+		if got := tokenShaped(value); got != want {
+			t.Errorf("tokenShaped(%q) = %v, want %v", value, got, want)
+		}
+	}
+}
+
 func TestDetectClientOriginCheckScope(t *testing.T) {
 	const cookieValue = "browser-abcdef123456"
 	const token = "token-abcdef1234567890"

@@ -111,6 +111,9 @@ type Correlation struct {
 	// ConvertOptions.HighConfidenceOnly) while it still takes part in
 	// collision checks.
 	reviewOnly bool
+	// missDefault is the recorded value the extractor's variable replaced
+	// (see correlationMissPolicy).
+	missDefault string
 }
 
 type ConvertResult struct {
@@ -467,13 +470,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			if inferExtractors {
 				for _, corr := range correlations {
 					if corr.PreApplied && corr.FoundInStep == idx+1 {
+						onMiss, defaultValue := correlationMissPolicy(corr, corr.missDefault)
 						action.Extractors = append(action.Extractors, dsl.Extractor{
-							Name:       corr.Name,
-							Source:     corr.Source,
-							Type:       extractorTypeForCorrelation(corr),
-							Expression: corr.Expression,
-							Convert:    corr.Convert,
-							OnMiss:     "fail",
+							Name:         corr.Name,
+							Source:       corr.Source,
+							Type:         extractorTypeForCorrelation(corr),
+							Expression:   corr.Expression,
+							Convert:      corr.Convert,
+							OnMiss:       onMiss,
+							DefaultValue: defaultValue,
 						})
 						if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
 							sourceMappings = append(sourceMappings, sourceview.Mapping{

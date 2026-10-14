@@ -347,6 +347,35 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('not-rendered')
   })
 
+  it('lists the HTTP output correlations from either converter in the preview', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    const browserScript = { name: 'Browser', protocol: 'browser', config: {}, actions: [] }
+    const httpScript = { name: 'HTTP', protocol: 'http', config: {}, actions: [] }
+    apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce({
+      scripts: [browserScript, httpScript], http_script: httpScript, warnings: [], stats: {},
+      correlations: [
+        { name: 'corr_csrf_token', found_in_step: 1, used_in_steps: [2, 4], pre_applied: true },
+        { name: 'corr_session', found_in_seq: 3, used_in_seqs: [5], review_action: 'manual_value_replacement_required' },
+      ],
+    })
+    await renderPanel()
+    await clickButton('Preview conversion')
+    const http = container.querySelector('[aria-label="Output 2: HTTP"]')!
+    expect(http.textContent).toContain('Correlations: 1 applied, 1 to review')
+    const items = Array.from(http.querySelectorAll('[aria-label="Correlations"] li')).map(item => item.textContent)
+    expect(items).toEqual([
+      '{{var.corr_csrf_token}} · Applied · from request 1 · used in 2, 4',
+      '{{var.corr_session}} · Not applied · needs review · from request 3 · used in 5',
+    ])
+    expect(container.querySelector('[aria-label="Output 1: Browser"]')!.textContent).not.toContain('Correlations')
+
+    apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce({
+      scripts: [browserScript, httpScript], http_script: httpScript, warnings: [], stats: {}, correlations: [],
+    })
+    await clickButton('Preview conversion')
+    expect(container.querySelector('[aria-label="Output 2: HTTP"]')!.textContent).toContain('Correlations: None detected')
+  })
+
   it('invalidates current conversion verification when an in-flight refresh returns changed receipt observations', async () => {
     vi.useFakeTimers()
     try {

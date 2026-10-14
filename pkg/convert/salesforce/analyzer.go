@@ -2062,7 +2062,9 @@ func actionCorrelationSurfaces(action *dsl.Action) []string {
 
 func applyCorrelationVarsToHeaderList(headers dsl.HeaderList, vars map[string]string) dsl.HeaderList {
 	for index := range headers {
-		headers[index].Value = correlate.ApplyVars(headers[index].Value, vars)
+		if correlate.HeaderCorrelatable(headers[index].Name) {
+			headers[index].Value = correlate.ApplyVars(headers[index].Value, vars)
+		}
 	}
 	return headers
 }

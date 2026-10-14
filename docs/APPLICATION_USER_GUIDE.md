@@ -607,8 +607,13 @@ Once you have a recording:
 - **Replay** the captured flow with self-healing selectors that tolerate small UI
   changes.
 - **Correlation** finds the dynamic values (tokens, session IDs, view state) that must
-  be captured from one response and replayed in the next request. **Correlation
-  Diagnose** lets you review what was detected and see the evidence. To reuse the
+  be captured from one response and replayed in the next request. Plain words and
+  short settings are not correlated. A value is replaced only where it stands on its
+  own, never inside a host name or a longer identifier. Only a high-confidence
+  correlation fails the step when its value is missing; a less certain one falls back
+  to the recorded value. A browser recording's **Preview conversion** lists the HTTP
+  output's correlations. **Correlation Diagnose** lets you review what was detected
+  and see the evidence. To reuse the
   rules, open **Shared assets** › **Correlation rules**, discover a ruleset from the
   recorded script, then preview and apply it to other scripts.
 - **Parameterization review** suggests which recorded literals should become data-pool

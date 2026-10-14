@@ -145,6 +145,45 @@ function importResultScripts(result?: RecorderImportResult | SalesforceImportRes
   return result?.script ? [result.script] : []
 }
 
+interface PreviewCorrelation {
+  name: string
+  applied: boolean
+  needsReview: boolean
+  foundIn?: number
+  usedIn: number[]
+}
+
+// previewCorrelations reads the HTTP output's correlations (browser replay does
+// not correlate). The shared converter numbers requests in found_in_step and
+// used_in_steps, the native Salesforce rewrite in found_in_seq and used_in_seqs.
+function previewCorrelations(preview: RecorderImportResult): PreviewCorrelation[] {
+  const items: unknown = preview.correlations
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item): PreviewCorrelation[] => {
+    if (!item || typeof item !== 'object') return []
+    const correlation = item as Record<string, unknown>
+    if (typeof correlation.name !== 'string' || !correlation.name) return []
+    const foundIn = typeof correlation.found_in_step === 'number' ? correlation.found_in_step
+      : typeof correlation.found_in_seq === 'number' ? correlation.found_in_seq : undefined
+    const usedIn = Array.isArray(correlation.used_in_steps) ? correlation.used_in_steps
+      : Array.isArray(correlation.used_in_seqs) ? correlation.used_in_seqs : []
+    return [{
+      name: correlation.name,
+      applied: correlation.pre_applied === true,
+      needsReview: typeof correlation.review_action === 'string' && correlation.review_action !== '',
+      foundIn,
+      usedIn: usedIn.filter((step): step is number => typeof step === 'number'),
+    }]
+  })
+}
+
+function correlationSummary(correlations: PreviewCorrelation[]): string {
+  if (correlations.length === 0) return 'None detected'
+  const applied = correlations.filter(correlation => correlation.applied).length
+  const toReview = correlations.filter(correlation => correlation.needsReview || !correlation.applied).length
+  return [`${applied} applied`, toReview > 0 ? `${toReview} to review` : ''].filter(Boolean).join(', ')
+}
+
 export interface BrowserRecorderControlPanelProps {
   sessionId: string
   /** Rendered as its own chrome-less page (popup window route). */
@@ -1566,6 +1605,8 @@ export default function BrowserRecorderControlPanel({
       new Set(previewSecretRequirements
         .filter(requirement => requirement.destination_value_preserved !== true)
         .map(requirement => requirement.suggested_name)).size
+  // The HTTP output, when the preview made one, is the last output.
+  const httpOutputCorrelations = preview && 'http_script' in preview ? previewCorrelations(preview) : null
   const allOutputsVerified = !!preview && importResultScripts(preview).length > 0 && importResultScripts(preview).every((_, index) => outputReports[index]?.success && !outputReports[index]?.stopped)
   const previewSaveLabel = previewDeferredSecretCount > 0
     ? `Save with ${previewDeferredSecretCount} ${previewDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
@@ -1999,7 +2040,7 @@ export default function BrowserRecorderControlPanel({
                   ` · ${preview.parameterization!.summary.total} parameterization suggestions`}
               </div>
               <p>Destination: script library · {folderId ? 'selected folder' : 'project root'}. Saves remain drafts; debug and approve each saved script before execution. Recording verification checks the selected conversion with think time skipped.</p>
-              {importResultScripts(preview).map((script, index) => (
+              {importResultScripts(preview).map((script, index, scripts) => (
                 <section key={index} className="brp-output-review" aria-label={`Output ${index + 1}: ${script.name}`}>
                   <strong>{script.name} · {script.protocol}</strong>
                   <RecordingEnvironmentReview script={script} agentReported={!!api.browserRecorderBridge} showUnavailable />
@@ -2010,6 +2051,24 @@ export default function BrowserRecorderControlPanel({
                     <p>Data sources: {(script.data_sources || []).map(source => source.name).join(', ') || 'None'}</p>
                     <p>Parameters: {(script.parameters || []).map(parameter => parameter.name).join(', ') || 'None'}</p>
                     <p>Secrets to review: {secretBindingRequirementsForScript(preview.secret_binding_requirements || [], index, script).length}</p>
+                    {httpOutputCorrelations && index === scripts.length - 1 && (
+                      <>
+                        <p>Correlations: {correlationSummary(httpOutputCorrelations)}</p>
+                        {httpOutputCorrelations.length > 0 && (
+                          <ul aria-label="Correlations">
+                            {httpOutputCorrelations.map((correlation, correlationIndex) => (
+                              <li key={correlationIndex}>
+                                <code>{`{{var.${correlation.name}}}`}</code>
+                                {` · ${correlation.applied ? 'Applied' : 'Not applied'}`}
+                                {correlation.needsReview ? ' · needs review' : ''}
+                                {correlation.foundIn ? ` · from request ${correlation.foundIn}` : ''}
+                                {correlation.usedIn.length > 0 ? ` · used in ${correlation.usedIn.join(', ')}` : ''}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )}
                   </details>
                   <button className="btn btn-secondary" disabled={busy || (!!replaySessionId && !lastVerifyReport) || previewParameterizationApplying || previewRequestKeyRef.current !== JSON.stringify(convertRequest())} onClick={() => void startVerificationReplay(`Verifying ${script.name}`, index)}>Verify output {index + 1}</button>
                 </section>

@@ -648,6 +648,9 @@ func BuildVarMap(correlations []Correlation) map[string]string {
 	return m
 }
 
+// ApplyVars rewrites each literal of vars in value with its replacement,
+// where the occurrence may hold a correlation (see OccurrenceReplaceable):
+// never inside a longer identifier, nor a URL's scheme or host.
 func ApplyVars(value string, vars map[string]string) string {
 	replacements := make(map[string]string, len(vars))
 	for raw, replacement := range vars {
@@ -658,6 +661,8 @@ func ApplyVars(value string, vars map[string]string) string {
 	return applyLiteralReplacements(value, replacements)
 }
 
+// ApplyVarsWithEncodedValues is ApplyVars that also rewrites the exact query
+// spelling of each value marked in encodedValues.
 func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedValues map[string]bool) string {
 	replacements := make(map[string]string, len(vars)*2)
 	for raw, replacement := range vars {
@@ -689,25 +694,12 @@ func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedVal
 	return applyLiteralReplacements(value, replacements)
 }
 
-// applyLiteralReplacements performs one non-recursive replacement pass. A
-// replacement may itself contain another raw correlation value (variable names
-// such as corr_access_token make that quite plausible); strings.NewReplacer
-// never scans inserted output, so generated {{var.*}} templates remain intact.
-func applyLiteralReplacements(value string, replacements map[string]string) string {
-	if value == "" || len(replacements) == 0 {
-		return value
-	}
-	replacer := newLiteralReplacer(replacements)
-	if replacer == nil {
-		return value
-	}
-	return replacer.Replace(value)
-}
-
-// ApplyVarsWithOutputLimit performs the same deterministic, non-recursive
-// replacement as ApplyVars while retaining at most maxOutputBytes. The full
-// input is still scanned so every retained byte has passed through the
-// replacer; discarded suffix bytes can never reappear in a caller's output.
+// ApplyVarsWithOutputLimit replaces every occurrence of each literal in one
+// deterministic, non-recursive pass, longest first, while retaining at most
+// maxOutputBytes. Unlike ApplyVars it applies no occurrence rules: it serves
+// redaction, which must reach a value wherever it occurs. The full input is
+// still scanned so every retained byte has passed through the replacer;
+// discarded suffix bytes can never reappear in a caller's output.
 func ApplyVarsWithOutputLimit(value string, vars map[string]string, maxOutputBytes int) (string, bool) {
 	if maxOutputBytes < 0 {
 		maxOutputBytes = 0
@@ -863,7 +855,9 @@ func ApplyVarsToHeadersWithEncodedValues(headers map[string]string, vars map[str
 		return headers
 	}
 	for key, value := range headers {
-		headers[key] = ApplyVarsWithEncodedValues(value, vars, encodedValues)
+		if HeaderCorrelatable(key) {
+			headers[key] = ApplyVarsWithEncodedValues(value, vars, encodedValues)
+		}
 	}
 	return headers
 }
@@ -873,7 +867,9 @@ func ApplyVarsToHeaders(headers map[string]string, vars map[string]string) map[s
 		return headers
 	}
 	for key, value := range headers {
-		headers[key] = ApplyVars(value, vars)
+		if HeaderCorrelatable(key) {
+			headers[key] = ApplyVars(value, vars)
+		}
 	}
 	return headers
 }

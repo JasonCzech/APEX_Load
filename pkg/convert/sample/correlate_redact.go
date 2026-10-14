@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -143,9 +144,16 @@ func correlationObservationHeaders(summary map[string]string, headers dsl.Header
 	return result
 }
 
+// correlationValueUse is how a correlation's consumers use its value. raw and
+// encoded are occurrences a rewrite may replace (see
+// correlate.OccurrenceReplaceable); the contained flags count every
+// occurrence, including ones inside a longer identifier or a URL's host,
+// which collision analysis must still see.
 type correlationValueUse struct {
 	raw                bool
 	encoded            bool
+	rawContained       bool
+	encodedContained   bool
 	unsupportedEncoded bool
 }
 
@@ -333,19 +341,24 @@ func prepareCorrelationApplicationWithExtractionLimit(exchanges []exchange, corr
 		switch {
 		case plan.encodedMapped && plan.rawMapped:
 			corr.PreApplied = true
+			corr.missDefault = plan.value
+			onMiss, defaultValue := correlationMissPolicy(*corr, plan.queryEncoded)
 			extraExtractors[corr.FoundInStep] = append(extraExtractors[corr.FoundInStep], dsl.Extractor{
-				Name:       plan.encodedName,
-				Source:     corr.Source,
-				Type:       extractorTypeForCorrelation(*corr),
-				Expression: corr.Expression,
-				Convert:    plan.encodedConvert,
-				OnMiss:     "fail",
+				Name:         plan.encodedName,
+				Source:       corr.Source,
+				Type:         extractorTypeForCorrelation(*corr),
+				Expression:   corr.Expression,
+				Convert:      plan.encodedConvert,
+				OnMiss:       onMiss,
+				DefaultValue: defaultValue,
 			})
 		case plan.encodedMapped:
 			corr.Convert = plan.encodedConvert
 			corr.PreApplied = true
+			corr.missDefault = plan.queryEncoded
 		case plan.rawMapped:
 			corr.PreApplied = true
+			corr.missDefault = plan.value
 		}
 	}
 	return vars, sourceSteps, extraExtractors
@@ -374,10 +387,10 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 			seen[literal] = true
 			claims = append(claims, literalClaim{planIndex: index, literal: literal})
 		}
-		if plan.usage.raw {
+		if plan.usage.raw || plan.usage.rawContained {
 			add(plan.value)
 		}
-		if plan.usage.encoded {
+		if plan.usage.encoded || plan.usage.encodedContained {
 			add(plan.queryEncoded)
 		}
 		if plan.usage.unsupportedEncoded {
@@ -532,10 +545,12 @@ func correlationValueUsage(exchanges []exchange, corr Correlation, value string)
 		}
 		for _, surface := range exchangeSurfaces(exchange) {
 			if strings.Contains(surface, value) {
-				use.raw = true
+				use.rawContained = true
+				use.raw = use.raw || correlate.ContainsReplaceableOccurrence(surface, value)
 			}
 			if queryEncoded != "" && strings.Contains(surface, queryEncoded) {
-				use.encoded = true
+				use.encodedContained = true
+				use.encoded = use.encoded || correlate.ContainsReplaceableOccurrence(surface, queryEncoded)
 			}
 			for _, representation := range unsupportedEncoded {
 				if strings.Contains(surface, representation) {
@@ -629,9 +644,8 @@ func literalEmbeddedInConsumers(exchanges []exchange, steps []int, literal strin
 	return false
 }
 
-// literalEmbedded reports whether literal occurs in text continued by a
-// letter or digit on a side where it also ends in one, that is, inside a
-// longer identifier.
+// literalEmbedded reports whether literal occurs in text inside a longer
+// identifier (see correlate.OccurrenceStandalone).
 func literalEmbedded(text, literal string) bool {
 	for offset := 0; offset < len(text); {
 		index := strings.Index(text[offset:], literal)
@@ -639,9 +653,7 @@ func literalEmbedded(text, literal string) bool {
 			return false
 		}
 		start := offset + index
-		end := start + len(literal)
-		if (start > 0 && isASCIIAlphanumeric(text[start-1]) && isASCIIAlphanumeric(literal[0])) ||
-			(end < len(text) && isASCIIAlphanumeric(text[end]) && isASCIIAlphanumeric(literal[len(literal)-1])) {
+		if !correlate.OccurrenceStandalone(text, start, start+len(literal)) {
 			return true
 		}
 		offset = start + 1
@@ -649,20 +661,20 @@ func literalEmbedded(text, literal string) bool {
 	return false
 }
 
-func isASCIIAlphanumeric(c byte) bool {
-	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-}
-
 func exchangeSurfaces(ex exchange) []string {
 	surfaces := []string{ex.URL}
 	if ex.BodyEncoding == "" {
 		surfaces = append(surfaces, ex.Body)
 	}
-	for _, value := range ex.Headers {
-		surfaces = append(surfaces, value)
+	for name, value := range ex.Headers {
+		if correlate.HeaderCorrelatable(name) {
+			surfaces = append(surfaces, value)
+		}
 	}
 	for _, header := range ex.HeaderList {
-		surfaces = append(surfaces, header.Value)
+		if correlate.HeaderCorrelatable(header.Name) {
+			surfaces = append(surfaces, header.Value)
+		}
 	}
 	return surfaces
 }
@@ -927,9 +939,23 @@ func applyCorrelationVarsToHeaderList(headers dsl.HeaderList, vars map[string]st
 		return headers
 	}
 	for index := range headers {
-		headers[index].Value = correlate.ApplyVars(headers[index].Value, vars)
+		if correlate.HeaderCorrelatable(headers[index].Name) {
+			headers[index].Value = correlate.ApplyVars(headers[index].Value, vars)
+		}
 	}
 	return headers
+}
+
+// correlationMissPolicy is how a correlation's extractor treats a miss. A
+// high-confidence dynamic value fails the step, so a broken correlation
+// surfaces at once. A less certain one may be static content that the page
+// no longer carries, so a miss keeps the recorded value its variable
+// replaced: replay then sends what the recording did.
+func correlationMissPolicy(corr Correlation, recorded string) (string, *string) {
+	if correlate.HighConfidence(correlate.Correlation{Confidence: corr.Confidence}) || recorded == "" || len(recorded) > httpprotocol.MaxExtractorExpressionBytes {
+		return "fail", nil
+	}
+	return "default", &recorded
 }
 
 func extractorTypeForCorrelation(corr Correlation) string {
