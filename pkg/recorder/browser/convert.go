@@ -3,6 +3,7 @@ package browser
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"sort"
 	"strings"
@@ -115,15 +116,19 @@ func Convert(session *Session, opts ConvertOptions) *ConvertResult {
 	baseURL, startTarget := splitStartURL(session.StartURL)
 
 	assembled := assembleActions(session, opts, baseURL, result)
+	viewports := recordedViewports(session, opts.StepRange)
 
 	if opts.SplitAtTransactions {
 		scripts := splitByTransaction(assembled, name, session, baseURL, startTarget, result)
 		if len(scripts) > 0 {
+			for _, script := range scripts {
+				applyReplayViewport(script, session, viewports)
+			}
 			result.Scripts = scripts
 			result.Script = scripts[0]
 			result.Stats.Scripts = len(scripts)
 			result.Stats.ConvertedActions = countScriptActions(scripts)
-			finalizeConvertWarnings(session, result)
+			finalizeConvertWarnings(session, viewports, result)
 			return result
 		}
 		result.Warnings = append(result.Warnings,
@@ -131,6 +136,7 @@ func Convert(session *Session, opts ConvertOptions) *ConvertResult {
 	}
 
 	script := newBrowserScript(name, session, baseURL)
+	applyReplayViewport(script, session, viewports)
 	if session.StartURL != "" {
 		nav := sectionedAction{
 			action:  navigateAction(session.StartURL, startTarget),
@@ -144,7 +150,7 @@ func Convert(session *Session, opts ConvertOptions) *ConvertResult {
 	result.Scripts = []*dsl.Script{script}
 	result.Stats.Scripts = 1
 	result.Stats.ConvertedActions = len(assembled)
-	finalizeConvertWarnings(session, result)
+	finalizeConvertWarnings(session, viewports, result)
 	return result
 }
 
@@ -440,7 +446,61 @@ func countScriptActions(scripts []*dsl.Script) int {
 	return total
 }
 
-func finalizeConvertWarnings(session *Session, result *ConvertResult) {
+// recordedViewport is a page size and how many converted steps were
+// recorded at it.
+type recordedViewport struct {
+	Width, Height, Steps int
+}
+
+// recordedViewports counts the converted steps (not excluded, deleted or
+// outside the step range) per page size they were recorded at, in the order
+// the sizes were first seen.
+func recordedViewports(session *Session, stepRange StepRange) []recordedViewport {
+	var viewports []recordedViewport
+	for _, step := range session.Steps {
+		if step.skipForConvert() || !stepRange.contains(step.Seq) || step.ViewportWidth <= 0 || step.ViewportHeight <= 0 {
+			continue
+		}
+		counted := false
+		for index := range viewports {
+			if viewports[index].Width == step.ViewportWidth && viewports[index].Height == step.ViewportHeight {
+				viewports[index].Steps++
+				counted = true
+				break
+			}
+		}
+		if !counted {
+			viewports = append(viewports, recordedViewport{Width: step.ViewportWidth, Height: step.ViewportHeight, Steps: 1})
+		}
+	}
+	return viewports
+}
+
+// replayViewport is the page size most converted steps were recorded at (the
+// first seen on a tie); false when none reported one.
+func replayViewport(viewports []recordedViewport) (recordedViewport, bool) {
+	var best recordedViewport
+	for _, viewport := range viewports {
+		if viewport.Steps > best.Steps {
+			best = viewport
+		}
+	}
+	return best, best.Steps > 0
+}
+
+// applyReplayViewport has a desktop recording replay at the size its page was
+// recorded at: a responsive site lays out, and so offers, different elements
+// at another width. A device recording replays at its preset's viewport.
+func applyReplayViewport(script *dsl.Script, session *Session, viewports []recordedViewport) {
+	if script == nil || session.DeviceProfile != "" {
+		return
+	}
+	if viewport, ok := replayViewport(viewports); ok {
+		script.Config.Browser.Viewport = dsl.BrowserViewport{Width: viewport.Width, Height: viewport.Height}
+	}
+}
+
+func finalizeConvertWarnings(session *Session, viewports []recordedViewport, result *ConvertResult) {
 	if len(session.NetworkEvents) > 0 || len(session.NavEvents) > 0 {
 		result.Warnings = append(result.Warnings, "Recorded element readiness is a hint; add business-result assertions for asynchronous updates and the final action. Background traffic is not used as a network-idle gate.")
 	}
@@ -464,7 +524,39 @@ func finalizeConvertWarnings(session *Session, result *ConvertResult) {
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
 			"%d console error(s)/failed request(s) were observed during recording — review them before relying on the script", n))
 	}
+	if warning := resizedWhileRecordingWarning(session, viewports); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
 	result.Warnings = append(result.Warnings, session.Warnings...)
+}
+
+// resizedWidthTolerance is how far a recorded page width may differ from the
+// replay width before the steps recorded at it may not replay: responsive
+// layouts change at widths, so a small resize rarely matters.
+const resizedWidthTolerance = 0.1
+
+// resizedWhileRecordingWarning names the page widths steps were recorded at
+// that differ materially from the one the script replays at; empty when none
+// do or the script emulates a device.
+func resizedWhileRecordingWarning(session *Session, viewports []recordedViewport) string {
+	replay, ok := replayViewport(viewports)
+	if !ok || session.DeviceProfile != "" {
+		return ""
+	}
+	var others []string
+	steps := 0
+	for _, viewport := range viewports {
+		if math.Abs(float64(viewport.Width-replay.Width)) <= resizedWidthTolerance*float64(replay.Width) {
+			continue
+		}
+		others = append(others, fmt.Sprintf("%dx%d", viewport.Width, viewport.Height))
+		steps += viewport.Steps
+	}
+	if len(others) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("The browser window was resized while recording: %d step(s) were recorded at %s. The script replays at %dx%d, the size most steps were recorded at; a site that lays out differently at other widths may not show those steps' elements there. Re-record them at that size, or change the viewport in the script's Runtime Settings.",
+		steps, strings.Join(others, ", "), replay.Width, replay.Height)
 }
 
 // SuggestTransactionsFromSession proposes a transaction boundary at each page

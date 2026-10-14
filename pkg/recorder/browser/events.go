@@ -73,6 +73,10 @@ type capturedEvent struct {
 	FramePath     []string                  `json:"frame_path,omitempty"`
 	Element       *selector.ElementMetadata `json:"element,omitempty"`
 	TargetElement *selector.ElementMetadata `json:"target_element,omitempty"`
+	// ViewportWidth and ViewportHeight are the top frame's page size when the
+	// event was captured (absent for events from frames).
+	ViewportWidth  int `json:"viewport_width,omitempty"`
+	ViewportHeight int `json:"viewport_height,omitempty"`
 }
 
 const maxCapturedEventBatch = 8
@@ -125,6 +129,11 @@ type Step struct {
 	// runtime secret or data parameter; conversion feeds these to paramize.
 	MarkSecret bool `json:"mark_secret,omitempty"`
 	MarkParam  bool `json:"mark_param,omitempty"`
+	// ViewportWidth and ViewportHeight are the page size the step was
+	// recorded at (absent for a step captured in a frame, or synthesized).
+	// A desktop recording follows its window, so they change with a resize.
+	ViewportWidth  int `json:"viewport_width,omitempty"`
+	ViewportHeight int `json:"viewport_height,omitempty"`
 }
 
 func (s Step) skipForConvert() bool { return s.Excluded || s.Deleted }
@@ -374,6 +383,11 @@ func stepFromCapturedEvent(event capturedEvent) (Step, error) {
 		Element:       event.Element,
 		TargetElement: event.TargetElement,
 	}
+	// A size outside the engine's viewport limits is not one a replay could
+	// use, so the step keeps none.
+	if validRecordedViewport(event.ViewportWidth, event.ViewportHeight) {
+		step.ViewportWidth, step.ViewportHeight = event.ViewportWidth, event.ViewportHeight
+	}
 	if event.TimestampMs <= 0 {
 		step.Timestamp = time.Now()
 	}
@@ -468,6 +482,11 @@ func (s *Session) appendStep(step Step) Step {
 	step.Seq = len(s.Steps) + 1
 	s.Steps = append(s.Steps, step)
 	return step
+}
+
+func validRecordedViewport(width, height int) bool {
+	return width > 0 && height > 0 && width <= maxBrowserViewportDimension &&
+		height <= maxBrowserViewportDimension && int64(width)*int64(height) <= maxBrowserViewportPixels
 }
 
 // updateSwitchWindowStep replaces the provisional about:blank target captured

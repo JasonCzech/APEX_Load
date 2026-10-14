@@ -94,6 +94,11 @@ type Options struct {
 	// the in-page bar's expand button). When false the page shows only the
 	// minimal REC/Pause/Assert bar. The API manager defaults this on.
 	Sidebar bool
+
+	// followWindowHeadless gives a headless recording the window-sized page a
+	// headed desktop recording has, for package tests that cannot open a
+	// window.
+	followWindowHeadless bool
 }
 
 // BrowserRecorderBridgeStoragePrefix is the dashboard localStorage key prefix
@@ -435,19 +440,7 @@ func (r *Recorder) Start() error {
 		contextOptions.RecordHarPath = playwright.String(capturePath)
 		contextOptions.RecordHarContent = playwright.HarContentPolicyAttach
 	}
-	if d := r.opts.Device; d != nil {
-		if d.Width > 0 && d.Height > 0 {
-			contextOptions.Viewport = &playwright.Size{Width: d.Width, Height: d.Height}
-		}
-		if d.UserAgent != "" {
-			contextOptions.UserAgent = playwright.String(d.UserAgent)
-		}
-		if d.DeviceScaleFactor > 0 {
-			contextOptions.DeviceScaleFactor = playwright.Float(d.DeviceScaleFactor)
-		}
-		contextOptions.IsMobile = playwright.Bool(d.Mobile)
-		contextOptions.HasTouch = playwright.Bool(d.HasTouch)
-	}
+	applyRecordingPageSize(&contextOptions, r.opts)
 	if path := strings.TrimSpace(r.opts.StorageStatePath); path != "" {
 		state, stateErr := loadRecorderStorageState(path)
 		if stateErr != nil {
@@ -2690,6 +2683,32 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 			r.emit(Event{Type: EventStepUpdate, Step: updated})
 		}
 	}()
+}
+
+// applyRecordingPageSize sets how big the recorded page is. A desktop
+// recording's page follows its window, so resizing the window reflows the
+// recorded site instead of adding blank space around Playwright's fixed
+// 1280x720 page. A device preset keeps its emulated viewport and device
+// traits, and a headless capture keeps the fixed default.
+func applyRecordingPageSize(options *playwright.BrowserNewContextOptions, opts Options) {
+	d := opts.Device
+	if d == nil {
+		if !opts.Headless || opts.followWindowHeadless {
+			options.NoViewport = playwright.Bool(true)
+		}
+		return
+	}
+	if d.Width > 0 && d.Height > 0 {
+		options.Viewport = &playwright.Size{Width: d.Width, Height: d.Height}
+	}
+	if d.UserAgent != "" {
+		options.UserAgent = playwright.String(d.UserAgent)
+	}
+	if d.DeviceScaleFactor > 0 {
+		options.DeviceScaleFactor = playwright.Float(d.DeviceScaleFactor)
+	}
+	options.IsMobile = playwright.Bool(d.Mobile)
+	options.HasTouch = playwright.Bool(d.HasTouch)
 }
 
 // windowArgs builds Chromium launch args for window positioning/sizing and
