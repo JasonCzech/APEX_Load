@@ -194,6 +194,11 @@ requirement — not optional. When adding or modifying code:
 - Use table-driven tests where multiple input/output combinations exist.
 - Do not mock internal packages unless required for isolation; prefer testing against real implementations.
 
+## Commit Policy
+Before any commit, agents **must** run a code review of the changes being committed and fix
+every finding, low severity included. Repeat the review and fix cycle until a review round
+finds no issues, and commit only then.
+
 ## Dashboard Copy Conventions
 - Labels use sentence case (`src/labelCasing.test.ts` ratchets Title Case leftovers).
 - Action verbs: **Save** persists a form, **Apply** takes effect now without saving, **Create** makes a new object, **Add** appends to a list, **Cancel**/**Close** dismiss. Qualify a verb only when two savable things share a screen ("Save domain changes").
@@ -235,6 +240,11 @@ retain caches while any dependent work remains.
 - Preserve source changes, dependencies (`node_modules`, Go module downloads), deliverable build outputs, images, containers, volumes, and application data. Do not use `docker system prune` for this cleanup.
 - Do not clear shared local caches while another active build or agent still needs them. Defer that cleanup until the shared work is complete, and report any deferred or permission-blocked cleanup in the final response.
 - Verify cleanup completed and briefly report the result, including reclaimed space when available.
+
+## Browser Session Cleanup
+Agents **must** close the browser sessions they open once all related work is done: tabs and
+windows, and the browser processes behind them, such as Playwright or headless Chromium. Keep a
+session open while related work still needs it, and leave sessions the user opened alone.
 
 ## Performance Targets
 These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
