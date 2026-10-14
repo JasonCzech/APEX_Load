@@ -84,16 +84,11 @@ type ConvertResult struct {
 	// ProtectedRequirements transfers the sample adapter's source values to
 	// HAR API workflows without placing them in the public conversion payload.
 	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
-}
 
-// CorrelationBaseline parses an imported HAR with the same filtering and
-// transport decoding used by Convert, but keeps the raw request/response
-// observations for the server's encrypted correlation-baseline store.
-func CorrelationBaseline(data []byte, includeStaticAssets bool) ([]correlate.Observation, error) {
-	if len(data) == 0 || strings.TrimSpace(string(data)) == "" {
-		return nil, fmt.Errorf("HAR content is required")
-	}
-	return sample.HARCorrelationBaseline(string(data), includeStaticAssets)
+	// Baseline is the raw recorded observation of each converted request, its
+	// ID the request's action index in Script (after any reshaping and
+	// transaction markers). It holds source values and must stay private.
+	Baseline []correlate.Observation `json:"-"`
 }
 
 func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -158,6 +153,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Correlations: result.Correlations,
 		SourceReview: result.SourceReview,
 		ArtifactMode: artifactMode,
+		Baseline:     result.Baseline,
 		Governance: &ArtifactGovernance{
 			ArtifactMode:        artifactMode,
 			Sensitivity:         sensitivity,

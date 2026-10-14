@@ -91,6 +91,10 @@ type Result struct {
 	// NewIndex maps each original action index to its index in the shaped
 	// script, or -1 when the action was folded into a conversation.
 	NewIndex []int
+	// StartedAt is when each action of the shaped script started in the
+	// recording: a conversation at its first request, a WebSocket step at its
+	// frame. A conversation's http_async_stop has no recorded time (zero).
+	StartedAt []time.Time
 	// Wrapped marks original actions that became http_async_start; their
 	// request moved under params.request.
 	Wrapped       map[int]bool
@@ -146,11 +150,13 @@ func Shape(script *dsl.Script, steps []Step, sockets []Socket, opts Options) Res
 		result.NewIndex[i] = -1
 	}
 	actions := make([]dsl.Action, 0, len(items))
+	result.StartedAt = make([]time.Time, 0, len(items))
 	for _, it := range items {
 		if it.orig >= 0 {
 			result.NewIndex[it.orig] = len(actions)
 		}
 		actions = append(actions, it.action)
+		result.StartedAt = append(result.StartedAt, it.at)
 	}
 	script.Actions = actions
 	return result

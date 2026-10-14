@@ -687,10 +687,14 @@ func (s *Session) AddMarker(marker Marker) (Marker, error) {
 
 // TransactionWindow is one transaction marked while recording, from its start
 // marker to its end marker. End is zero when the recording ended with it open.
+// StartOrder and EndOrder place its markers in the recorded marker sequence,
+// which orders markers that fall between the same two requests.
 type TransactionWindow struct {
-	Name  string
-	Start time.Time
-	End   time.Time
+	Name       string
+	Start      time.Time
+	End        time.Time
+	StartOrder int
+	EndOrder   int
 }
 
 // TransactionWindows pairs the session's transaction markers in recorded
@@ -700,14 +704,15 @@ func (s *Session) TransactionWindows() []TransactionWindow {
 	slices.SortStableFunc(markers, func(a, b Marker) int { return a.Timestamp.Compare(b.Timestamp) })
 	var windows []TransactionWindow
 	open := map[string][]int{}
-	for _, marker := range markers {
+	for order, marker := range markers {
 		switch marker.Kind {
 		case MarkerTransactionStart:
 			open[marker.Name] = append(open[marker.Name], len(windows))
-			windows = append(windows, TransactionWindow{Name: marker.Name, Start: marker.Timestamp})
+			windows = append(windows, TransactionWindow{Name: marker.Name, Start: marker.Timestamp, StartOrder: order})
 		case MarkerTransactionEnd:
 			if stack := open[marker.Name]; len(stack) > 0 {
-				windows[stack[len(stack)-1]].End = marker.Timestamp
+				window := &windows[stack[len(stack)-1]]
+				window.End, window.EndOrder = marker.Timestamp, order
 				open[marker.Name] = stack[:len(stack)-1]
 			}
 		}
