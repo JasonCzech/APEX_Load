@@ -16,6 +16,7 @@ import (
 	"mime"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -464,9 +465,9 @@ func redactURLParamsDepth(segment string, depth int) string {
 			}
 		} else if SensitiveName(key) {
 			part = key + "=" + Redacted
-		} else if nested, changed := sanitizeNestedHTTPURL(val, depth); changed {
+		} else if nested, changed, nestedURL := sanitizeNestedHTTPURL(val, depth); changed {
 			part = key + "=" + nested
-		} else if urlTokenLooksSensitive(val) {
+		} else if !nestedURL && urlTokenLooksSensitive(val) {
 			part = key + "=" + Redacted
 		}
 		out.WriteString(part)
@@ -480,7 +481,13 @@ type rawDecodedByte struct {
 	end   int
 }
 
-func sanitizeNestedHTTPURL(raw string, depth int) (string, bool) {
+// sanitizeNestedHTTPURL sanitizes a query value that is itself an HTTP(S)
+// URL. nestedURL reports that it is one, changed or not: its own values were
+// then inspected one by one, as a top-level URL's are, so the caller does not
+// judge it whole as well. Judged whole, its host and path read as one
+// high-entropy token and hid the URL, with any project-secret reference
+// bound inside it.
+func sanitizeNestedHTTPURL(raw string, depth int) (sanitizedValue string, changed, nestedURL bool) {
 	decoded, spans, ok := queryUnescapeWithSpans(raw)
 	if !ok {
 		// Once a query value has established an HTTP(S) prefix, a malformed
@@ -488,13 +495,13 @@ func sanitizeNestedHTTPURL(raw string, depth int) (string, bool) {
 		// sanitization. We cannot safely determine which nested component the
 		// malformed bytes belong to, so fail closed for the whole nested URL.
 		if rawBeginsHTTPURL(raw) {
-			return url.QueryEscape(Redacted), true
+			return url.QueryEscape(Redacted), true, true
 		}
-		return raw, false
+		return raw, false, false
 	}
 	lower := strings.ToLower(decoded)
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
-		return raw, false
+		return raw, false, false
 	}
 
 	sanitized := Redacted
@@ -502,16 +509,16 @@ func sanitizeNestedHTTPURL(raw string, depth int) (string, bool) {
 		sanitized = redactURLBuiltIns(decoded, depth+1)
 	}
 	if sanitized == decoded {
-		return raw, false
+		return raw, false, true
 	}
 	rewritten, ok := rewriteDecodedURLPreservingEscapes(raw, decoded, sanitized, spans)
 	if !ok {
 		// The decoded value is already known to contain an HTTP(S) URL and the
 		// sanitizer changed it. If alignment ever fails, fail closed instead of
 		// returning the original nested credential.
-		return url.QueryEscape(Redacted), true
+		return url.QueryEscape(Redacted), true, true
 	}
-	return rewritten, true
+	return rewritten, true, true
 }
 
 // rawBeginsHTTPURL recognizes a literal, encoded, or mixed-encoded HTTP(S)
@@ -728,7 +735,7 @@ func rewriteDecodedURLPreservingEscapes(
 			}
 			nextAt = decodedAt + offset
 		}
-		out.WriteString(url.QueryEscape(redaction))
+		out.WriteString(queryEscapeRedaction(redaction))
 		out.WriteString(rawRange(nextAt, nextAt+len(next)))
 		decodedAt = nextAt + len(next)
 	}
@@ -736,6 +743,132 @@ func rewriteDecodedURLPreservingEscapes(
 		return "", false
 	}
 	return out.String(), true
+}
+
+// queryEscapeRedaction escapes a redaction for a query value only where the
+// value's structure needs it, so a literal [REDACTED] stays literal inside a
+// nested URL as it does in a top-level parameter, where credential review
+// finds it, and an already-escaped placeholder keeps decoding to itself.
+func queryEscapeRedaction(redaction string) string {
+	var out strings.Builder
+	for index := 0; index < len(redaction); index++ {
+		c := redaction[index]
+		if c <= ' ' || c >= 0x7f || strings.IndexByte("%&+=#;", c) >= 0 {
+			fmt.Fprintf(&out, "%%%02X", c)
+			continue
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
+}
+
+// nestedQueryDelimiterPattern matches a literal or percent-encoded (at any
+// depth) URL delimiter: ? & # ; or =.
+var nestedQueryDelimiterPattern = regexp.MustCompile(`(?i)[?&#;=]|%(?:25)*(?:3F|26|23|3B|3D)`)
+
+// ProtectNestedQueryPairs hides from ValueURL each name=value pair inside a
+// percent-encoded nested URL whose value is exactly one of the spans of text
+// in values (start-ordered [start, end) pairs). The pair's '=' is written %3D
+// (%253D a level deeper) and its name follows a ? & # or ; escaped to the same
+// depth, so the name is a nested parameter's, never part of a value. ValueURL
+// redacts a nested value under a sensitive name whatever it holds, so a
+// caller keeping a reference it bound there replaces the pair first: each
+// becomes placeholder(n), which must itself pass through ValueURL unchanged,
+// and the pairs come back keyed by placeholder for restoring.
+func ProtectNestedQueryPairs(text string, values [][]int, placeholder func(int) string) (string, map[string]string) {
+	var out strings.Builder
+	var pairs map[string]string
+	var delimiters [][]int
+	cursor := 0
+	for _, span := range values {
+		start, end := span[0], span[1]
+		if start < cursor {
+			continue
+		}
+		equals := percentEscapeStart(text[cursor:start], "3D")
+		if equals < 0 {
+			continue
+		}
+		equals += cursor
+		if !nestedQueryValueEnds(text[end:], start-equals) {
+			continue
+		}
+		if delimiters == nil {
+			delimiters = nestedQueryDelimiterPattern.FindAllStringIndex(text, -1)
+		}
+		// The name runs back to the nearest delimiter, which must open a
+		// nested pair at the '=' sign's depth.
+		previous := sort.Search(len(delimiters), func(index int) bool { return delimiters[index][1] > equals }) - 1
+		if previous < 0 || delimiters[previous][0] < cursor || delimiters[previous][1] == equals {
+			continue
+		}
+		delimiter := text[delimiters[previous][0]:delimiters[previous][1]]
+		switch strings.ToUpper(delimiter[max(0, len(delimiter)-2):]) {
+		case "3F", "26", "23", "3B":
+		default:
+			continue
+		}
+		if delimiter[0] != '%' || len(delimiter) != start-equals {
+			continue
+		}
+		nameStart := delimiters[previous][1]
+		if pairs == nil {
+			pairs = make(map[string]string)
+		}
+		key := placeholder(len(pairs))
+		pairs[key] = text[nameStart:end]
+		out.WriteString(text[cursor:nameStart])
+		out.WriteString(key)
+		cursor = end
+	}
+	if pairs == nil {
+		return text, nil
+	}
+	out.WriteString(text[cursor:])
+	return out.String(), pairs
+}
+
+// percentEscapeStart returns where text ends with the percent escape of hex,
+// itself escaped any number of times (%3D, %253D, ...), or -1.
+func percentEscapeStart(text, hex string) int {
+	at := len(text) - len(hex)
+	if at < 1 || !strings.EqualFold(text[at:], hex) {
+		return -1
+	}
+	for {
+		if text[at-1] == '%' {
+			return at - 1
+		}
+		if at < 3 || text[at-2:at] != "25" {
+			return -1
+		}
+		at -= 2
+	}
+}
+
+// nestedQueryValueEnds reports whether a nested query value whose '=' was
+// an escape escapeLength bytes long ends at the start of rest: at its end, or
+// at a literal & # or ;, or one escaped no deeper than that '=' (a deeper one
+// is a character of the value).
+func nestedQueryValueEnds(rest string, escapeLength int) bool {
+	if rest == "" || strings.IndexByte("&#;", rest[0]) >= 0 {
+		return true
+	}
+	if rest[0] != '%' {
+		return false
+	}
+	at := 1
+	for len(rest) >= at+4 && rest[at:at+2] == "25" {
+		at += 2
+	}
+	if len(rest) < at+2 || at+2 > escapeLength {
+		return false
+	}
+	switch strings.ToUpper(rest[at : at+2]) {
+	case "26", "23", "3B":
+		return true
+	}
+	return false
 }
 
 func splitSanitizedURLRedactions(value string) ([]string, []string) {

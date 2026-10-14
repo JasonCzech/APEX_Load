@@ -25,13 +25,36 @@ func ProjectJSON(payload []byte, options Options) ([]byte, Result, error) {
 // avoids raw-regex bypasses such as "qu\u0065ry", while retaining every
 // duplicate query occurrence in source order.
 func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []string, error) {
+	projected, _, result, queries, err := projectJSONSpans(payload, options)
+	return projected, result, queries, err
+}
+
+// projectJSONSpans is projectJSONWithQueries that also returns the byte spans
+// of payload it replaced, sorted, so a caller holding the document in another
+// encoding can apply them there. Spans are nil when nothing was replaced.
+func projectJSONSpans(payload []byte, options Options) ([]byte, []replacement, Result, []string, error) {
+	projected, result, queries, err := projectJSONDocument(payload, options)
+	if projected == nil {
+		return nil, nil, result, queries, err
+	}
+	return projected.bytes, projected.spans, result, queries, err
+}
+
+// projectedJSON is a projected document and the spans it replaced.
+type projectedJSON struct {
+	bytes []byte
+	spans []replacement
+}
+
+func projectJSONDocument(payload []byte, options Options) (*projectedJSON, Result, []string, error) {
+	unchanged := func() *projectedJSON { return &projectedJSON{bytes: append([]byte(nil), payload...)} }
 	options, err := normalizeOptions(options)
 	if err != nil {
 		return nil, Result{}, nil, err
 	}
 	if len(payload) > options.Limits.MaxBytes {
 		if options.Mode == Preserve {
-			return append([]byte(nil), payload...),
+			return unchanged(),
 				preservedOpaquePayloadResult(
 					payload,
 					options,
@@ -45,7 +68,7 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 	}
 	if !utf8.Valid(payload) {
 		if options.Mode == Preserve {
-			return append([]byte(nil), payload...),
+			return unchanged(),
 				preservedOpaquePayloadResult(
 					payload,
 					options,
@@ -61,7 +84,7 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 	}
 	parser.skipSpace()
 	if parser.index == len(payload) {
-		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_empty"), nil, nil
+		return unchanged(), blocked(options.Source, "credential_json_empty"), nil, nil
 	}
 	if err := parser.parseValue("", "", options.jsonDepthBase, false); err != nil {
 		if options.Mode == Preserve {
@@ -71,7 +94,7 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 				options,
 				"credential_json_malformed",
 			))
-			return append([]byte(nil), payload...), result, nil, nil
+			return unchanged(), result, nil, nil
 		}
 		if options.Mode == Redact && parser.result.Disposition == Rejected {
 			return nil, parser.result, nil, nil
@@ -85,12 +108,12 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 		if options.KnownCredentialMatcher != nil {
 			return nil, rejected(options.Source, "credential_json_known_value_malformed"), nil, nil
 		}
-		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_malformed"), nil, nil
+		return unchanged(), blocked(options.Source, "credential_json_malformed"), nil, nil
 	}
 	parser.skipSpace()
 	if parser.index != len(payload) {
 		if options.Mode == Preserve {
-			return append([]byte(nil), payload...),
+			return unchanged(),
 				preservedOpaquePayloadResult(
 					payload,
 					options,
@@ -105,7 +128,7 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 			options.KnownCredentialMatcher != nil {
 			return nil, rejected(options.Source, "credential_json_trailing_value_sensitive"), nil, nil
 		}
-		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_trailing_value"), nil, nil
+		return unchanged(), blocked(options.Source, "credential_json_trailing_value"), nil, nil
 	}
 	if parser.result.Disposition == Rejected {
 		return nil, parser.result, nil, nil
@@ -113,7 +136,11 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 	if options.Mode == Redact && !structuredRedactionOutputWithinLimit(payload, parser.replacements, options.Limits.MaxBytes) {
 		return nil, rejected(options.Source, "credential_structured_output_limit_exceeded"), nil, nil
 	}
-	return applyReplacements(payload, parser.replacements), parser.result, parser.graphQLQueries, nil
+	projected := &projectedJSON{bytes: applyReplacements(payload, parser.replacements)}
+	if len(parser.replacements) > 0 {
+		projected.spans = parser.replacements
+	}
+	return projected, parser.result, parser.graphQLQueries, nil
 }
 
 type jsonProjectionParser struct {
@@ -269,7 +296,8 @@ func (parser *jsonProjectionParser) parseValue(
 			nestedOptions.nestedJSONStringDepth++
 			nestedOptions.jsonDepthBase = depth + 1
 			nestedOptions.nestedJSON = true
-			projected, item, nestedErr := ProjectRequestBody([]byte(decoded), "application/json", nestedOptions)
+			var spans []replacement
+			projected, item, nestedErr := projectRequestBody([]byte(decoded), "application/json", nestedOptions, &spans)
 			if nestedErr != nil {
 				return nestedErr
 			}
@@ -285,6 +313,16 @@ func (parser *jsonProjectionParser) parseValue(
 			if string(projected) != decoded {
 				if !reserveJSONEncodedRedaction(parser.options, projected) {
 					parser.result.Merge(rejected(parser.options.Source, "credential_structured_output_limit_exceeded"))
+					return nil
+				}
+				// Write only the bytes the projection replaced, as in a form
+				// value: re-encoding the whole string escaped HTML characters
+				// around a credential, so the projection no longer lined up with
+				// the recording.
+				if spliced, ok := spliceJSONString(string(parser.payload[valueStart:end]), decoded, string(projected), spans); ok {
+					for _, span := range spliced {
+						parser.replacements = append(parser.replacements, replacement{start: valueStart + span.start, end: valueStart + span.end, value: span.value})
+					}
 					return nil
 				}
 				encoded, marshalErr := json.Marshal(string(projected))
