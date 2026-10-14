@@ -26,7 +26,7 @@ const ARTIFACTS: DownloadArtifact[] = [
   {
     key: 'recording-agent',
     name: 'Recording Agent',
-    description: 'Local browser-recording bridge for recording sessions from your workstation.',
+    description: 'Records browser sessions on your workstation for this controller.',
     path: '/downloads/recording-agent/latest',
     fallbackFilename: 'apexload-recording-agent.tar.gz',
   },

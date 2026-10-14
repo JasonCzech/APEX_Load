@@ -35,6 +35,20 @@ saving misbehaves.
 The agent's terminal shows its startup details, each pairing and failing
 requests; successful requests are not logged there.
 
+Exclude hosts (and the HTTP proxy's include and exclude hosts) take host
+names: each entry covers that host and its subdomains, `*.example.com` works
+too, and an entry with a port matches that port only. Parts of a name no
+longer match, so `t.co` does not catch `microsoft.com`. When the recording
+stops, its warnings say how many HAR entries each entry left out and which
+entries matched nothing. The recording panel groups console and network
+issues by host and error, the recorded site's own first, and folds requests
+cancelled as pages moved on into one line.
+
+Verify replays a recording headless by default. Some sites refuse a headless
+browser they let a person's browser through; with the agent connected,
+**Verify in a visible browser on your computer** replays a browser output in
+a visible window instead, and a refused headless replay points to it.
+
 Credential bindings and parameterization chosen while reviewing a recording
 are applied by the agent, which converted the recording; saving then hands the
 reviewed scripts to the controller.

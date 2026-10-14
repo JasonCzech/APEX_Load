@@ -3671,6 +3671,16 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain(
       "is no longer accepting new pairings. Stop it with Ctrl-C, run the command above again and paste the pairing token shown here.",
     );
+
+    apiMock.pairBrowserRecorderBridge.mockRejectedValueOnce(
+      Object.assign(new Error("too many invalid browser recorder bridge pairing attempts; retry after the lockout window"), { status: 429 }),
+    );
+    await act(async () => {
+      connect!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(container.textContent).toContain("Too many failed pairing attempts. Wait a minute, check that the Recording Agent");
+    expect(container.textContent).not.toContain("lockout window");
   });
 
   it("says to connect again when the paired agent no longer knows this connection", async () => {

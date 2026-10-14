@@ -321,7 +321,7 @@ function generateBridgePairingToken(): string {
     return cryptoObj.randomUUID().replace(/-/g, "");
   }
   throw new Error(
-    "Secure browser crypto is required to generate a bridge pairing token",
+    "Secure browser crypto is required to generate a pairing token",
   );
 }
 
@@ -548,6 +548,11 @@ function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
   const unreachable = bridgeUnreachableMessage(error, bridgeOrigin);
   if (unreachable) return unreachable;
   const message = error?.message || "";
+  // Repeated refusals lock pairing from this browser for a minute; the usual
+  // cause is an agent started with another token.
+  if (error?.status === 429 || /too many invalid .*pairing attempts/i.test(message)) {
+    return `Too many failed pairing attempts. Wait a minute, check that the Recording Agent at ${bridgeOrigin} was started with the pairing token shown here, then click Connect.`;
+  }
   // Pairing answers 401 once the agent's pairing window has closed, or for a
   // token it was not started with; both are fixed by starting it again.
   if (/pairing token has expired/i.test(message)) {
@@ -1195,7 +1200,7 @@ export default function RecordingStudio({
       return token;
     } catch (e: any) {
       showFeedback(
-        e.message || "Failed to generate bridge pairing token",
+        e.message || "Failed to generate a pairing token",
         "error",
       );
       return "";
@@ -1231,7 +1236,7 @@ export default function RecordingStudio({
       showFeedback("New pairing token generated. Start the Recording Agent again with it before you connect.");
     } catch (e: any) {
       showFeedback(
-        e.message || "Failed to generate bridge pairing token",
+        e.message || "Failed to generate a pairing token",
         "error",
       );
     }
