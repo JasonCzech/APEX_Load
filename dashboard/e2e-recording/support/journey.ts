@@ -16,9 +16,12 @@ export async function studio(page: Page, h: Harness) {
 }
 export async function pairAgent(page: Page, h: Harness, info: TestInfo) {
   await expect(page.getByTestId('browser-recorder-bridge-panel')).toBeVisible()
+  // The studio masks the token; show it only long enough to read it.
+  await page.addStyleTag({content:'[data-testid=browser-recorder-bridge-token]{-webkit-text-security:disc}'})
+  await page.getByRole('button', { name: 'Show token', exact: true }).click()
   const token = (await page.getByTestId('browser-recorder-bridge-token').textContent())!.trim()
   recordSensitive(token)
-  await page.addStyleTag({content:'[data-testid=browser-recorder-bridge-token]{-webkit-text-security:disc}'})
+  await page.getByRole('button', { name: 'Hide token', exact: true }).click()
   const port = await freePort(), origin = `http://127.0.0.1:${port}`
   h.ownedPorts.push(port)
   const agent = startProcess(resolve(process.env.APEXLOAD_RECORDING_E2E_BIN_DIR!, 'agent'), ['--addr', `127.0.0.1:${port}`, '--token-stdin', '--allow-origin', h.url, '--json'], h.dir, { ...h.env, APEXLOAD_BROWSER_RECORDER: 'on', APEXLOAD_RECORDING_E2E_CDP_PORT: String(h.agentCDP) }, info.outputPath('agent.log'))
@@ -113,12 +116,19 @@ export async function editSource(page: Page, script: Script) {
   await page.keyboard.insertText(JSON.stringify(script))
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await page.getByRole('button', { name: 'Save script', exact: true }).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+  await expect(page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: /^Saved/ })).toBeVisible()
+}
+// The last debug run's outcome: Debug's session bar owns it, Author's status
+// row repeats it.
+export async function expectDebugOutcome(page: Page, success = true) {
+  const badge = page.locator('.debug-session-bar .replay-live-badge').filter({ hasText: success ? /^Passed$/ : /^Failed$/ })
+  const chip = page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: success ? /^Debugged/ : /^Debug failed/ })
+  await expect(badge.or(chip).first()).toBeVisible({ timeout: 60_000 })
 }
 export async function debug(page: Page, info: TestInfo, success = true) {
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
-  await expect(page.getByLabel('Script evidence states')).toContainText(success ? 'Debugged: passed' : 'Debugged: failed', { timeout: 60_000 })
+  await expectDebugOutcome(page, success)
   const downloading = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export session', exact: true }).click()
   const download = await downloading
@@ -236,7 +246,7 @@ export async function executeSaved(page:Page,h:Harness,id:string,info:TestInfo) 
   await override.getByRole('button',{name:'Save Run Override',exact:true}).click()
   await page.getByRole('combobox',{name:'Release',exact:true}).selectOption(h.workspace.releaseId)
   await page.getByLabel('Run Name',{exact:true}).fill(`One VUser ${script.protocol}`)
-  const start=page.getByRole('button',{name:'Start Now',exact:true})
+  const start=page.getByRole('button',{name:'Start now',exact:true})
   await expect(start).toBeEnabled({timeout:30_000})
   const created=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/api/v1/tests')
   const before=h.target.events.length

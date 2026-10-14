@@ -1,5 +1,5 @@
 import { test, expect } from './support/fixtures'
-import { studio, startRecording, stopRecording, preview, verifyOutputs, saveRecording, editor, editSource, debug, executeSaved, recordSensitive, type Script } from './support/journey'
+import { studio, startRecording, stopRecording, preview, verifyOutputs, saveRecording, editor, editSource, debug, expectDebugOutcome, executeSaved, recordSensitive, type Script } from './support/journey'
 import type { Page, TestInfo } from '@playwright/test'
 import type { Harness } from './support/fixtures'
 
@@ -166,13 +166,13 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.getByRole('tab',{name:/^Problems/}).click()
   await expect(page.getByRole('tabpanel',{name:'Problems'})).toContainText('1 runtime failures')
   await page.getByRole('button',{name:'Continue',exact:true}).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: failed')
+  await expectDebugOutcome(page, false)
   await page.getByRole('button',{name:'Edit this action',exact:true}).click()
   await page.getByLabel('Assertion 1 expected number',{exact:true}).fill('200')
   await page.locator('.topbar-debug-action-run').click()
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled()
   await page.getByRole('button',{name:'Continue',exact:true}).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page)
   expect(h.target.events.some(e=>e.query.value==='fresh-customer')).toBe(true)
   await page.getByRole('tab',{name:'Variables',exact:true}).click()
   await page.getByRole('button',{name:'Pin customer',exact:true}).click()
@@ -200,7 +200,7 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.getByRole('button',{name:'Continue',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: Finish'})).toBeVisible()
   await page.getByRole('button',{name:'Continue',exact:true}).click()
-  await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+  await expectDebugOutcome(page)
   script.actions=[{...request,name:'Slow action',target:'/event?name=slow&delay_ms=1500'},
     {...request,name:'After pause',target:'/event?name=after-pause'}]
   await editSource(page,script)

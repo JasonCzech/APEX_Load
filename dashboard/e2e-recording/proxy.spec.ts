@@ -7,7 +7,7 @@ test('HTTP proxy captures HTTP and HTTPS, edits requests, correlates and replays
   test.setTimeout(300_000)
   await studio(page,h)
   await page.getByRole('button',{name:'HTTP proxy (advanced)',exact:true}).click()
-  await page.getByPlaceholder('e.g. Login & Checkout Flow').fill('Proxy checkout')
+  await page.locator('#rec-proxy-session-name').fill('Proxy checkout')
   await page.getByPlaceholder('e.g. api.example.com, app.example.com').fill('127.0.0.1')
   await page.getByPlaceholder('e.g. analytics.google.com, cdn.example.com').fill('localhost')
   const started=page.waitForResponse(r=>r.url().endsWith('/recorder/start'))
