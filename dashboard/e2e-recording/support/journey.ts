@@ -10,7 +10,7 @@ export type Script = Record<string, any> // DSL changes are checked by the real 
 export async function studio(page: Page, h: Harness) {
   await page.goto(`${h.url}/#/scripts?${scopeQuery(h.workspace)}`)
   await page.reload()
-  await page.getByRole('button', { name: 'Script Builder', exact: true }).click()
+  await page.getByRole('button', { name: 'Script builder', exact: true }).click()
   await page.getByRole('button', { name: 'Record', exact: true }).click()
   await expect(page.getByRole('group', { name: 'Recording method' })).toBeVisible()
 }

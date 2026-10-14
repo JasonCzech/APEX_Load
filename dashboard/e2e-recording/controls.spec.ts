@@ -129,7 +129,7 @@ test('dashboard and closed-shadow toolbar control the same live session', async 
     await bar.click('.navGo')
     await expect(rec.target).toHaveURL(/toolbar=1/)
     await page.reload()
-    await page.getByRole('button',{name:'Script Builder',exact:true}).click()
+    await page.getByRole('button',{name:'Script builder',exact:true}).click()
     await page.getByRole('button',{name:'Record',exact:true}).click()
     await expect(page.getByRole('button',{name:'Pause recording',exact:true})).toBeVisible()
     await stopRecording(page)

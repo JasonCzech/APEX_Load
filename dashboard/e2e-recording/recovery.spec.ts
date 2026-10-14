@@ -15,7 +15,7 @@ test('reject duplicate capture, survive dashboard reload and recover after windo
     await page.reload()
     // Studio selection is an internal authoring state; recover via the visible
     // recording entry when reloading the library route.
-    await page.getByRole('button',{name:'Script Builder',exact:true}).click()
+    await page.getByRole('button',{name:'Script builder',exact:true}).click()
     await page.getByRole('button',{name:'Record',exact:true}).click()
     await expect(page.getByRole('button',{name:'Stop recording',exact:true})).toBeVisible()
     await rec.target.close()
