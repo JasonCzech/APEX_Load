@@ -1334,14 +1334,11 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 		path   string
 	}
 	alignedValues := make(map[location][]string)
-	for index := range requirements {
-		requirement := &requirements[index]
-		requirement.ValueGroupID = ""
-		requirement.DestinationValuePreserved = false
+	annotate := func(requirement *SecretBindingRequirement) {
 		scriptIndex := requirement.ScriptIndex
 		if scriptIndex < 0 || scriptIndex >= len(rawNodes) ||
 			scriptIndex >= len(projectedNodes) {
-			continue
+			return
 		}
 		key := location{scriptIndex, requirement.Path}
 		values, cached := alignedValues[key]
@@ -1354,7 +1351,7 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 			alignedValues[key] = values
 		}
 		if requirement.Occurrence < 0 || requirement.Occurrence >= len(values) {
-			continue
+			return
 		}
 		sourceValue := values[requirement.Occurrence]
 		status := credentialpolicy.ClassifySourceCredentialValue(sourceValue)
@@ -1383,7 +1380,31 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 			setSecretBindingPreservationUnavailable(requirement, status)
 		}
 	}
+	for index := range requirements {
+		requirement := &requirements[index]
+		requirement.ValueGroupID = ""
+		requirement.DestinationValuePreserved = false
+		annotate(requirement)
+		if secretBindingInProvenance(requirement.Path) {
+			// Recorded provenance (an action's or the script's own metadata,
+			// such as a HAR's response cookies) is never sent and cannot be
+			// rebound without changing imported bytes, so it keeps its value;
+			// equal values still group together.
+			requirement.DestinationValuePreserved = true
+			requirement.PreservationUnavailableReason = ""
+			requirement.PreservationUnavailableDescription = ""
+		}
+	}
 	return requirements
+}
+
+var secretBindingProvenancePath = regexp.MustCompile(`^/(?:(?:init|actions|teardown)/\d+/)?metadata(?:/|$)`)
+
+// secretBindingInProvenance reports whether a requirement sits in recorded
+// provenance: an action's or the script's own metadata, which replay never
+// sends.
+func secretBindingInProvenance(path string) bool {
+	return secretBindingProvenancePath.MatchString(path)
 }
 
 // replaceUnavailableImportCredentialValues removes disclosure placeholders

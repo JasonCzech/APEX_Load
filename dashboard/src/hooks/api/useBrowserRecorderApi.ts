@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { type StoredScript } from '../../types'
 import type { RecordingEnvironment } from '../../types/recordingEnvironment'
+import type { ApplyParameterizationRequest, ApplyParameterizationResponse, ApplySecretBindingsRequest, ApplySecretBindingsResponse } from '../../types/scriptImports'
 import {
   type RecorderImportResult,
   type SecretBindingSelection,
@@ -302,6 +303,21 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
+  // The conversion preview's import draft belongs to whoever converted it: the
+  // paired Recording Agent or this controller. Review steps that change that
+  // draft go to the same place, or the draft is refused as unknown.
+  const applyBrowserRecordingSecretBindings = useCallback(
+    (payload: ApplySecretBindingsRequest) =>
+      recorderRequest<ApplySecretBindingsResponse>('/scripts/secret-bindings/apply', { method: 'POST', body: JSON.stringify(payload) }),
+    [recorderRequest],
+  )
+
+  const applyBrowserRecordingImportParameterization = useCallback(
+    (payload: ApplyParameterizationRequest) =>
+      recorderRequest<ApplyParameterizationResponse>('/scripts/import/parameterize/apply', { method: 'POST', body: JSON.stringify(payload) }),
+    [recorderRequest],
+  )
+
   const focusBrowserRecording = useCallback(
     (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/focus`, { method: 'POST' }),
     [recorderRequest],
@@ -483,6 +499,8 @@ export function useBrowserRecorderApi() {
       resumeBrowserRecording,
       navigateBrowserRecording,
       focusBrowserRecording,
+      applyBrowserRecordingSecretBindings,
+      applyBrowserRecordingImportParameterization,
       startBrowserRecordingTransaction,
       endBrowserRecordingTransaction,
       addBrowserRecordingNote,
@@ -519,6 +537,8 @@ export function useBrowserRecorderApi() {
       resumeBrowserRecording,
       navigateBrowserRecording,
       focusBrowserRecording,
+      applyBrowserRecordingSecretBindings,
+      applyBrowserRecordingImportParameterization,
       startBrowserRecordingTransaction,
       endBrowserRecordingTransaction,
       addBrowserRecordingNote,

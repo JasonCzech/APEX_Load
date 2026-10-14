@@ -32,21 +32,53 @@ const ITEMIZED_WARNING = /^(variable\(s\) with no seed|configure project secret\
 const normalize = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase()
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
+/** A review gate message taken apart: where it sits and what blocks. */
+export interface ReviewGateIssue {
+  phase: 'init' | 'actions' | 'teardown'
+  actionIndex: number
+  /** The path below the action, for a nested request (`.params.request`). */
+  subPath: string
+  /** What blocks replay, as worded after the action path. */
+  rest: string
+  /** Execution blocker codes, when the gate is one. */
+  codes: string[]
+}
+
+/**
+ * Parses `actions[3] "Name": <what blocks replay>` as the server and the
+ * local preflight word a review gate. Codes are split on the commas between
+ * them, not the ones inside a code's `(names)` detail.
+ */
+export function parseReviewGateIssue(message: string): ReviewGateIssue | null {
+  const trimmed = message.trim()
+  const gate = GATE_MESSAGE.exec(trimmed)
+  const path = PHASE_PATH.exec(trimmed)
+  if (!gate || !path) return null
+  const [, subPath, rest] = gate
+  const blocker = EXECUTION_BLOCKER.exec(rest)
+  const codes = blocker
+    ? blocker[1].split(/,\s*(?![^()]*\))/).map(code => code.replace(/\s*\(.*\)$/, '').trim()).filter(Boolean)
+    : []
+  return { phase: path[1] as ReviewGateIssue['phase'], actionIndex: Number(path[2]), subPath, rest, codes }
+}
+
+/** The reader-facing title of an execution blocker code. */
+export function blockerTitle(code: string): string {
+  return sentence(issueTitle(code))
+}
+
 /**
  * Titles a preflight issue the way the importer titles the same finding, and
- * drops the action path the breadcrumb already shows. Codes are split on the
- * commas between them, not the ones inside a code's `(names)` detail.
+ * drops the action path the breadcrumb already shows.
  */
 function issueText(message: string): { title: string; description?: string } {
-  const gate = GATE_MESSAGE.exec(message)
+  const gate = parseReviewGateIssue(message)
   if (!gate) return { title: message }
-  const [, subPath, rest] = gate
+  const { subPath, rest, codes } = gate
   // A nested request's own path is not in the breadcrumb, so keep it in view.
   const description = subPath ? message : sentence(rest)
-  const blocker = EXECUTION_BLOCKER.exec(rest)
-  if (!blocker) return subPath ? { title: sentence(rest), description } : { title: sentence(rest) }
-  const codes = blocker[1].split(/,\s*(?![^()]*\))/).map(code => code.replace(/\s*\(.*\)$/, '').trim()).filter(Boolean)
-  return { title: codes.map(code => sentence(issueTitle(code))).join(' · '), description }
+  if (codes.length === 0) return subPath ? { title: sentence(rest), description } : { title: sentence(rest) }
+  return { title: codes.map(blockerTitle).join(' · '), description }
 }
 
 /** The preflight facts readiness problems are built from. */

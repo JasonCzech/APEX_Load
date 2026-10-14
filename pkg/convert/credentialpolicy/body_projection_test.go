@@ -299,3 +299,30 @@ func TestProjectMultipartWireRejectsAmbiguousCredentialDisposition(t *testing.T)
 	}
 	assertDisclosureSafe(t, output, result)
 }
+
+// A template the caller trusts may stand where a JSON value goes (a refreshed
+// client timestamp stays a number); the rest of the body is still projected.
+// An untrusted unquoted expression leaves the body malformed, as before.
+func TestProjectRequestBodyKeepsTrustedUnquotedTemplates(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{"password":"synthetic-pass-6612","events":[{"t":{{fn.timestamp.unix_ms}}}]}`)
+	options := Options{
+		Mode:               Redact,
+		Source:             SourceRef{Format: "test"},
+		RequestKey:         "events",
+		TrustedWholeValues: map[string]struct{}{"{{fn.timestamp.unix_ms}}": {}},
+	}
+	projected, result, err := ProjectRequestBody(payload, "application/json", options)
+	if err != nil || result.Disposition == Rejected {
+		t.Fatalf("projection = %v, %+v", err, result)
+	}
+	if strings.Contains(string(projected), "synthetic-pass-6612") || !bytes.Contains(projected, []byte(`"t":{{fn.timestamp.unix_ms}}`)) {
+		t.Fatalf("projected = %s, want the password masked and the template kept", projected)
+	}
+
+	options.TrustedWholeValues = nil
+	projected, result, _ = ProjectRequestBody(payload, "application/json", options)
+	if result.Disposition != Rejected && bytes.Contains(projected, []byte("synthetic-pass-6612")) {
+		t.Fatalf("untrusted template body = %s, %+v; want it refused or masked", projected, result)
+	}
+}

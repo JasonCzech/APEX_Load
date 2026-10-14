@@ -200,6 +200,11 @@ func (s *Server) bridgeRoutes() {
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/verify", cors(log(auth(http.HandlerFunc(s.handleVerifyBrowserRecording)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/convert/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewBrowserRecordingConversion)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/convert", cors(log(auth(http.HandlerFunc(s.handleConvertBrowserRecording)))))
+	// The agent mints the conversion preview's import draft, so the review
+	// steps that change that draft (credential bindings, parameterization) run
+	// here too; the controller cannot vouch for a draft it did not create.
+	s.mux.Handle("POST /api/v1/scripts/secret-bindings/apply", cors(log(auth(http.HandlerFunc(s.handleApplyScriptSecretBindings)))))
+	s.mux.Handle("POST /api/v1/scripts/import/parameterize/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportParameterization)))))
 	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}/export", cors(log(auth(http.HandlerFunc(s.handleExportBrowserRecording)))))
 	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}/storage-state", cors(log(auth(http.HandlerFunc(s.handleExportBrowserRecordingStorageState)))))
 	s.mux.Handle("GET /api/v1/browser-recorder/devices", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecorderDevices)))))

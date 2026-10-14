@@ -302,7 +302,10 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		if errors.Is(err, errScriptDebugSessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) || errors.Is(err, errScriptReplayBlocked) {
+		if writeScriptReplayBlocked(w, err) {
+			return
+		}
+		if errors.Is(err, errScriptDebugSessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}

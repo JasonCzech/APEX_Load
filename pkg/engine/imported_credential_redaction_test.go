@@ -189,6 +189,44 @@ func TestImportedCredentialValuesForDisclosureFailsClosedBesideStaleLocator(t *t
 	}
 }
 
+// A converter may write a template expression where a JSON value goes (a
+// refreshed client timestamp stays a number). The credential locator still
+// reads the literal it points at.
+func TestImportedCredentialValuesReadTemplatedJSONBodies(t *testing.T) {
+	const session = "session-templated-4821"
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "har",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:       "events",
+			Type:       "POST",
+			Method:     "POST",
+			Target:     "/v1/events",
+			HeaderList: dsl.HeaderList{{Name: "Content-Type", Value: "application/json"}},
+			Body:       `{"visitors":[{"session_id":"` + session + `","events":[{"t":{{fn.timestamp.unix_ms}}}]}]}`,
+			Metadata: map[string]any{
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+					map[string]any{"field": "body", "pointer": "/visitors/0/session_id"},
+				},
+			},
+		}},
+	}
+	for name, read := range map[string]func(*dsl.Script) ([]string, error){
+		"runtime":    ImportedCredentialValues,
+		"disclosure": ImportedCredentialValuesForDisclosure,
+	} {
+		values, err := read(script)
+		if err != nil || len(values) != 1 || values[0] != session {
+			t.Fatalf("%s values = %#v, %v; want the session literal", name, values, err)
+		}
+	}
+}
+
 func TestImportedCredentialValuesAcceptsNativeHTTPSequenceCredentialSurfaces(t *testing.T) {
 	const (
 		cookieValue = "session-native-7319"

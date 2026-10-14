@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import {
+  type ApplyParameterizationRequest,
+  type ApplyParameterizationResponse,
   type Parameterization,
   type ParameterizationDiff,
   type ParameterizationSuggestion,
@@ -23,6 +25,12 @@ interface Props {
   reviewGeneration?: string | number
   disabled?: boolean
   onApplyingChange?: (applying: boolean) => void
+  /**
+   * Applies the selection to the import draft. Defaults to this controller;
+   * a draft another server converted (the paired Recording Agent) must be
+   * changed there.
+   */
+  applyParameterization?: (payload: ApplyParameterizationRequest) => Promise<ApplyParameterizationResponse>
   onApplied: (
     script: ScriptDefinition,
     diffs: ParameterizationDiff[],
@@ -86,7 +94,7 @@ function diffDisplayValue(
   return '••••••'
 }
 
-export default function ParameterizationReview({ parameterization, script, scriptName, reviewGeneration = 0, guided = false, disabled = false, onApplyingChange, onApplied }: Props) {
+export default function ParameterizationReview({ parameterization, script, scriptName, reviewGeneration = 0, guided = false, disabled = false, onApplyingChange, applyParameterization, onApplied }: Props) {
   const api = useApi()
   const suggestions = useMemo(
     () => (parameterization.suggestions ?? []).filter(s => !scriptName || !s.script_name || s.script_name === scriptName),
@@ -192,7 +200,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
     setError('')
     setBlockedReason('')
     try {
-      const response = await api.applyImportParameterization({
+      const response = await (applyParameterization ?? api.applyImportParameterization)({
         script,
         suggestions,
         selected_ids: selectedIds,

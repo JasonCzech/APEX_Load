@@ -126,6 +126,22 @@ type jsonProjectionParser struct {
 	graphQLQueries []string
 }
 
+// trustedUnquotedTemplate reports the template expression that starts at the
+// parser's position, when it is one the caller trusts as a whole value.
+func (parser *jsonProjectionParser) trustedUnquotedTemplate() (string, bool) {
+	rest := parser.payload[parser.index:]
+	if len(parser.options.TrustedWholeValues) == 0 || !bytes.HasPrefix(rest, []byte("{{")) {
+		return "", false
+	}
+	end := bytes.Index(rest[2:], []byte("}}"))
+	if end < 0 {
+		return "", false
+	}
+	template := string(rest[:2+end+2])
+	_, trusted := parser.options.TrustedWholeValues[strings.TrimSpace(template)]
+	return template, trusted
+}
+
 func (parser *jsonProjectionParser) parseValue(
 	sensitiveName,
 	pointer string,
@@ -157,6 +173,13 @@ func (parser *jsonProjectionParser) parseValue(
 	parser.skipSpace()
 	if parser.index >= len(parser.payload) {
 		return errors.New("JSON value is missing")
+	}
+	if template, ok := parser.trustedUnquotedTemplate(); ok {
+		// A converter may write a template where a value goes (a refreshed
+		// client timestamp stays a number). One the caller trusts is a
+		// runtime reference, not a literal, so it is kept as it is.
+		parser.index += len(template)
+		return nil
 	}
 	valueStart := parser.index
 	switch parser.payload[parser.index] {

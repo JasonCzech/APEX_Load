@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/internal/templatedjson"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
@@ -561,6 +562,13 @@ func (c *secretCollector) collectJSON(payload []byte, sensitive bool, layers int
 	if !c.structuredBudget.reserveBytes(len(payload)) || !validCollectionJSONUnicode(payload) {
 		c.structuredBudget.incomplete = true
 		return
+	}
+	// A converter may write a portable template where a value goes (a
+	// refreshed timestamp stays a number). Those carry no literal, so they
+	// read as null; any other unquoted expression still fails the parse and
+	// leaves collection incomplete.
+	if readable, ok := templatedjson.NullExpressions(payload, isSupportedPortableTemplate); ok {
+		payload = readable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()

@@ -46,6 +46,7 @@ import {
   importDraftExpiryStatus,
 } from './protectedImportSession'
 import { createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
+import { replayBlockedIssues, summarizeReplayBlockers, type ReplayBlockerGroup } from './replayBlockers'
 import { HTTPVersionModeField } from './HTTPVersionModeField'
 import type { HTTPVersionImportMode } from './httpVersionModel'
 import './RecordingStudio.css'
@@ -147,6 +148,20 @@ function importResultScripts(result?: RecorderImportResult | SalesforceImportRes
 
 function scriptStepCount(script: ScriptDefinition): number {
   return (script.init?.length || 0) + (script.actions?.length || 0) + (script.teardown?.length || 0)
+}
+
+// Why a finished verification failed, in one line: the first step that failed
+// on its own (later steps on a refused page only report "skipped").
+function verificationFailureReason(report: BrowserReplayReport): string {
+  const failed = report.events?.find(event => !event.success && event.error_message && !event.error_message.startsWith('skipped:'))
+    ?? report.events?.find(event => !event.success && event.error_message)
+  const reason = failed ? `${failed.action_name || failed.action_type}: ${failed.error_message}` : report.error || ''
+  return reason.length > 240 ? `${reason.slice(0, 239)}…` : reason
+}
+
+function blockerHosts(hosts: ReplayBlockerGroup['hosts']): string {
+  const shown = hosts.slice(0, 3).map(({ host, count }) => `${host} (${count})`).join(', ')
+  return hosts.length > 3 ? `${shown} and ${hosts.length - 3} more` : shown
 }
 
 // verificationProgressLabel says how far a running verification has got and
@@ -349,21 +364,36 @@ export default function BrowserRecorderControlPanel({
   const verificationGenerationRef = useRef(0)
   const verificationOutputRef = useRef(0)
   const [outputReports, setOutputReports] = useState<Record<number, BrowserReplayReport>>({})
+  // Why verification could not start, per output: the message and, when the
+  // script's review gates refused it, each gate.
+  const [outputStartErrors, setOutputStartErrors] = useState<Record<number, { message: string; issues: string[] | null }>>({})
+  // A replay is followed only once its start was accepted (or its answer was
+  // lost), so its progress never polls a session that does not exist yet.
+  const [replayAccepted, setReplayAccepted] = useState(false)
+  // Save outcomes and problems, shown beside the Save button.
+  const [saveFeedback, setSaveFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [salesforceSaveFeedback, setSalesforceSaveFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const invalidateVerification = useCallback(() => {
     verificationRevisionRef.current += 1
     setFeedback(current => /^(Replay verification|Verifying)/.test(current) ? '' : current)
     setLastVerifyReport(null)
     setReplaySessionId(null)
+    setReplayAccepted(false)
     setOutputReports({})
+    setOutputStartErrors({})
   }, [])
   const advancePreviewReviewGeneration = useCallback(() => {
     invalidateVerification()
+    // A changed or re-run conversion is a new draft: the last save outcome
+    // no longer describes it.
+    setSaveFeedback(null)
     const next = previewReviewGenerationRef.current + 1
     previewReviewGenerationRef.current = next
     setPreviewReviewGeneration(next)
     return next
   }, [invalidateVerification])
   const advanceSalesforceReviewGeneration = useCallback(() => {
+    setSalesforceSaveFeedback(null)
     const next = salesforceReviewGenerationRef.current + 1
     salesforceReviewGenerationRef.current = next
     setSalesforceReviewGeneration(next)
@@ -502,7 +532,11 @@ export default function BrowserRecorderControlPanel({
     setSavedScript(null)
     setSuggestions([])
     setReplaySessionId(null)
+    setReplayAccepted(false)
     setLastVerifyReport(null)
+    setOutputStartErrors({})
+    setSaveFeedback(null)
+    setSalesforceSaveFeedback(null)
     setStepSearch('')
     setStepThumbnails({})
     setStepThumbnailsLoading(false)
@@ -817,6 +851,9 @@ export default function BrowserRecorderControlPanel({
     bindings: SecretBindingSelection[],
     publish: (next: T) => void,
     requestIsCurrent: () => boolean,
+    // Where the draft was converted: the paired agent's preview must be
+    // changed on the agent, a controller import on the controller.
+    applySecretBindings: typeof api.applySecretBindings,
   ): Promise<T> {
     let resolvedResult = result
     let scripts = importResultScripts(result)
@@ -832,7 +869,7 @@ export default function BrowserRecorderControlPanel({
       if (scriptBindings.length === 0) continue
       try {
         if (!requestIsCurrent()) throw new Error('The recording draft changed while credentials were being prepared. Review the current draft and try again.')
-        const resolved = await api.applySecretBindings({
+        const resolved = await applySecretBindings({
           script,
           script_index: scriptIndex,
           bindings: scriptBindings,
@@ -887,7 +924,7 @@ export default function BrowserRecorderControlPanel({
       && !importDraftHasExpired(preview)
     const resolved = await applyBindingsToResult(preview, bindings, next => {
       if (isCurrentSession()) setPreview(next)
-    }, requestIsCurrent)
+    }, requestIsCurrent, api.applyBrowserRecordingSecretBindings)
     if (!isCurrentSession()) return
     if (importDraftHasExpired(resolved)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
     const requirementsByID = new Map(
@@ -1052,6 +1089,7 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleSave = async () => {
+    setSaveFeedback(null)
     if (!(await confirmReplaySaveRisk())) return
     const requestKey = JSON.stringify(convertRequest())
     const hadCurrentPreview = preview !== null && previewRequestKeyRef.current === requestKey
@@ -1091,11 +1129,14 @@ export default function BrowserRecorderControlPanel({
       }
       if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       if (!hadCurrentPreview && (result.secret_binding_requirements?.length || 0) > 0) {
-        showFeedback('Credentials detected. Review the optional values below, then save with the prefilled references.')
+        setSaveFeedback({ message: 'Credentials detected. Review the credential choices above, then save with the prefilled references.', type: 'success' })
         return
       }
       const scripts = await preparePreviewScripts(result)
-      if (!scripts) return
+      if (!scripts) {
+        if (isCurrentSession()) setSaveFeedback({ message: 'Not saved: the credential review above needs attention. Resolve it, then save again.', type: 'error' })
+        return
+      }
       if (!isCurrentSession()) return
       if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       if (scripts.length === 0) throw new Error('Conversion produced no scripts to save')
@@ -1140,12 +1181,14 @@ export default function BrowserRecorderControlPanel({
       }
       setSavedScript(persisted[0])
       onImported?.({ scripts: persisted })
-      const libraryLabel = api.browserRecorderBridge ? 'remote script library' : 'script library'
-      showFeedback(persisted.length === 1
-        ? `Script "${persisted[0].name}" saved to the ${libraryLabel}`
-        : `Saved ${persisted.length} scripts to the ${libraryLabel}`)
+      setSaveFeedback({
+        message: persisted.length === 1
+          ? `Script "${persisted[0].name}" saved to the script library`
+          : `Saved ${persisted.length} scripts to the script library`,
+        type: 'success',
+      })
     } catch (e: any) {
-      if (isCurrentSession()) showFeedback(e.message, 'error')
+      if (isCurrentSession()) setSaveFeedback({ message: `Not saved: ${getErrorMessage(e, 'the save did not complete')}`, type: 'error' })
     } finally {
       if (isCurrentSession()) setBusy(false)
     }
@@ -1229,6 +1272,12 @@ export default function BrowserRecorderControlPanel({
     verificationOutputRef.current = scriptIndex
     setLastVerifyReport(null)
     setVerifyProgress(null)
+    setReplayAccepted(false)
+    setOutputStartErrors(previous => {
+      const next = { ...previous }
+      delete next[scriptIndex]
+      return next
+    })
     setReplaySessionId(clientReplaySessionId || null)
     try {
       const res = await api.verifyBrowserRecording(sessionId, clientReplaySessionId || undefined, {
@@ -1241,6 +1290,7 @@ export default function BrowserRecorderControlPanel({
       rememberVerification(res.replay_session_id)
       if (verificationRevisionRef.current !== revision) return false
       setReplaySessionId(res.replay_session_id)
+      setReplayAccepted(true)
       showFeedback(successMessage)
       return true
     } catch (e: any) {
@@ -1248,11 +1298,16 @@ export default function BrowserRecorderControlPanel({
       if (clientReplaySessionId && !isDefiniteReplayStartRejection(e)) {
         rememberVerification(clientReplaySessionId)
         if (verificationRevisionRef.current !== revision) return false
+        setReplayAccepted(true)
         showFeedback('The replay start response was interrupted. Confirming the accepted replay session…')
         return true
       }
       setReplaySessionId(null)
-      showFeedback(e.message || 'Failed to start replay verification', 'error')
+      // Shown with the output it was for, not at the top of the panel.
+      setOutputStartErrors(previous => ({
+        ...previous,
+        [scriptIndex]: { message: e.message || 'Failed to start replay verification', issues: replayBlockedIssues(e) },
+      }))
       return false
     } finally {
       if (verificationStartScopeRef.current === verificationScope) {
@@ -1360,9 +1415,14 @@ export default function BrowserRecorderControlPanel({
       return
     }
     setBusy(true)
+    setSaveFeedback(null)
     try {
       const scripts = await preparePreviewScripts(preview)
-      if (isCurrentSession() && scripts?.[0]) onEdit?.(scripts[0])
+      if (!isCurrentSession()) return
+      if (scripts?.[0]) onEdit?.(scripts[0])
+      else setSaveFeedback({ message: 'Not opened: the credential review above needs attention. Resolve it, then try again.', type: 'error' })
+    } catch (e: unknown) {
+      if (isCurrentSession()) setSaveFeedback({ message: `Not opened: ${getErrorMessage(e, 'the draft could not be prepared')}`, type: 'error' })
     } finally {
       if (isCurrentSession()) setBusy(false)
     }
@@ -1462,7 +1522,7 @@ export default function BrowserRecorderControlPanel({
       && !importDraftHasExpired(salesforceDraft)
     const resolved = await applyBindingsToResult(salesforceDraft, bindings, next => {
       if (isCurrentSession()) setSalesforceDraft(next)
-    }, requestIsCurrent)
+    }, requestIsCurrent, api.applySecretBindings)
     if (!isCurrentSession()) return
     if (importDraftHasExpired(resolved)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
     salesforcePreparedScriptsRef.current = importResultScripts(resolved)
@@ -1535,9 +1595,13 @@ export default function BrowserRecorderControlPanel({
       return
     }
     setBusy(true)
+    setSalesforceSaveFeedback(null)
     try {
       const scripts = await prepareSalesforceScripts()
-      if (!scripts?.length) return
+      if (!scripts?.length) {
+        if (isCurrentSession()) setSalesforceSaveFeedback({ message: 'Not saved: the Salesforce credential review above needs attention. Resolve it, then save again.', type: 'error' })
+        return
+      }
       if (!isCurrentSession()) return
       if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       const persisted = await saveScriptsAtomically(scripts, 'salesforce', salesforceDraft, () => {
@@ -1556,9 +1620,12 @@ export default function BrowserRecorderControlPanel({
       }
       setSavedScript(persisted[0])
       onImported?.({ scripts: persisted })
-      showFeedback(`Saved ${persisted.length === 1 ? `Salesforce HTTP script "${persisted[0].name}"` : `${persisted.length} Salesforce HTTP scripts`} to the script library`)
-    } catch (e: any) {
-      if (isCurrentSession()) showFeedback(e.message, 'error')
+      setSalesforceSaveFeedback({
+        message: `Saved ${persisted.length === 1 ? `Salesforce HTTP script "${persisted[0].name}"` : `${persisted.length} Salesforce HTTP scripts`} to the script library`,
+        type: 'success',
+      })
+    } catch (e: unknown) {
+      if (isCurrentSession()) setSalesforceSaveFeedback({ message: `Not saved: ${getErrorMessage(e, 'the save did not complete')}`, type: 'error' })
     } finally {
       if (isCurrentSession()) setBusy(false)
     }
@@ -1623,9 +1690,10 @@ export default function BrowserRecorderControlPanel({
   // The HTTP output, when the preview made one, is the last output.
   const httpOutputCorrelations = preview && 'http_script' in preview ? previewCorrelations(preview) : null
   const allOutputsVerified = !!preview && importResultScripts(preview).length > 0 && importResultScripts(preview).every((_, index) => outputReports[index]?.success && !outputReports[index]?.stopped)
-  const previewSaveLabel = previewDeferredSecretCount > 0
-    ? `Save with ${previewDeferredSecretCount} ${previewDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-    : allOutputsVerified ? 'Save verified draft' : 'Save unverified draft'
+  // Whether every output verified stays in the label even when secrets wait.
+  const previewSaveLabel = `${allOutputsVerified ? 'Save verified draft' : 'Save unverified draft'}${previewDeferredSecretCount > 0
+    ? ` · ${previewDeferredSecretCount} ${previewDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
+    : ''}`
   const salesforceSecretRequirements = salesforceDraft?.secret_binding_requirements || []
   const previewRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
     preview,
@@ -1645,9 +1713,54 @@ export default function BrowserRecorderControlPanel({
       new Set(salesforceSecretRequirements
         .filter(requirement => requirement.destination_value_preserved !== true)
         .map(requirement => requirement.suggested_name)).size
-  const salesforceSaveLabel = salesforceDeferredSecretCount > 0
-    ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-    : 'Save Salesforce HTTP script'
+  const salesforceSaveLabel = `Save Salesforce HTTP script${salesforceDeferredSecretCount > 0
+    ? ` · ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
+    : ''}`
+
+  // The running or finished verification, shown with the output it verifies.
+  const replayProgress = stopped && replaySessionId && replayAccepted ? (
+    <BrowserReplayProgress
+      replaySessionId={replaySessionId}
+      projectId={session.project_id}
+      bridge={api.browserRecorderBridge}
+      onApplySuggestion={handleApplyReplaySuggestion}
+      onComplete={report => handleReplayComplete(replaySessionId, report)}
+      onProgress={setVerifyProgress}
+      onDismiss={() => setReplaySessionId(null)}
+    />
+  ) : null
+  const outputStatus = (index: number, script: ScriptDefinition) => {
+    if (replaySessionId && !lastVerifyReport && verificationOutputRef.current === index) {
+      return verificationProgressLabel(verifyProgress, scriptStepCount(script))
+    }
+    const report = outputReports[index]
+    if (!report) return outputStartErrors[index] ? 'Verification could not start' : 'Unverified draft'
+    if (report.success) return 'Verification passed for this conversion'
+    const reason = verificationFailureReason(report)
+    return reason ? `Verification failed — ${reason}` : 'Verification incomplete or failed — review evidence'
+  }
+  // Why verification could not start: the review gates grouped by reason, so
+  // a long refusal reads as a few lines with the hosts they call.
+  const renderStartError = (index: number, script?: ScriptDefinition) => {
+    const failure = outputStartErrors[index]
+    if (!failure) return null
+    if (!failure.issues?.length) return <div className="rec-feedback error" role="alert">{failure.message}</div>
+    const summary = summarizeReplayBlockers(failure.issues, script)
+    return (
+      <div className="rec-feedback error brp-replay-blocked" role="alert">
+        <p>Verification could not start: {summary.steps} {summary.steps === 1 ? 'step is' : 'steps are'} blocked from replay.</p>
+        <ul>
+          {summary.groups.map(group => (
+            <li key={group.title}>
+              {group.count} · {group.title}{group.hosts.length > 0 ? ` — ${blockerHosts(group.hosts)}` : ''}
+            </li>
+          ))}
+        </ul>
+        <p>Remove these steps in the editor after saving, or leave their hosts out with a recording profile's Exclude hosts and preview again.</p>
+      </div>
+    )
+  }
+  const sessionWarnings = new Set(session.warnings || [])
 
   return (
     <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`} data-testid="browser-recorder-panel">
@@ -1961,17 +2074,6 @@ export default function BrowserRecorderControlPanel({
         </div>
       )}
 
-      {stopped && replaySessionId && (
-        <BrowserReplayProgress
-          replaySessionId={replaySessionId}
-          projectId={session.project_id}
-          bridge={api.browserRecorderBridge}
-          onApplySuggestion={handleApplyReplaySuggestion}
-          onComplete={report => handleReplayComplete(replaySessionId, report)}
-          onProgress={setVerifyProgress}
-          onDismiss={() => setReplaySessionId(null)}
-        />
-      )}
 
       {stopped && (
         <div className="brp-convert">
@@ -2006,6 +2108,7 @@ export default function BrowserRecorderControlPanel({
               reviewGeneration={`${previewReviewGeneration}:${sessionId}`}
               disabled={previewImportDraftExpiry?.expired || busy}
               onApplyingChange={setPreviewParameterizationApplying}
+              applyParameterization={api.applyBrowserRecordingImportParameterization}
               onApplied={handleApplyPreviewParameterization(scriptIndex)}
             />
           ))}
@@ -2061,9 +2164,7 @@ export default function BrowserRecorderControlPanel({
                   <strong>{script.name} · {script.protocol}</strong>
                   <RecordingEnvironmentReview script={script} agentReported={!!api.browserRecorderBridge} showUnavailable />
                   <p>{script.init?.length || 0} init · {script.actions?.length || 0} main · {script.teardown?.length || 0} teardown actions</p>
-                  <p role="status">{replaySessionId && !lastVerifyReport && verificationOutputRef.current === index
-                    ? verificationProgressLabel(verifyProgress, scriptStepCount(script))
-                    : outputReports[index] ? outputReports[index].success ? 'Verification passed for this conversion' : 'Verification incomplete or failed — review evidence' : 'Unverified draft'}</p>
+                  <p className="brp-output-status" role="status">{outputStatus(index, script)}</p>
                   <details><summary>Journey and dependencies</summary>
                     {(['init', 'actions', 'teardown'] as const).map(phase => <ol key={phase} aria-label={phase}>{script[phase]?.map((action, actionIndex) => <li key={actionIndex}>{action.name || action.type} · {action.type}</li>)}</ol>)}
                     <p>Data sources: {(script.data_sources || []).map(source => source.name).join(', ') || 'None'}</p>
@@ -2089,18 +2190,21 @@ export default function BrowserRecorderControlPanel({
                     )}
                   </details>
                   <button className="btn btn-secondary" disabled={busy || (!!replaySessionId && !lastVerifyReport) || previewParameterizationApplying || previewRequestKeyRef.current !== JSON.stringify(convertRequest())} onClick={() => void startVerificationReplay(`Verifying ${script.name}`, index)}>Verify output {index + 1}</button>
+                  {renderStartError(index, script)}
+                  {verificationOutputRef.current === index && replayProgress}
                 </section>
               ))}
-              {(preview.warnings?.length ?? 0) > 0 && (
+              {/* Recording warnings already show above; list only the conversion's own. */}
+              {(preview.warnings || []).some(warning => !sessionWarnings.has(warning)) && (
                 <div className="brp-warnings">
-                  {preview.warnings.map((warning, idx) => (
+                  {preview.warnings.filter(warning => !sessionWarnings.has(warning)).map((warning, idx) => (
                     <div key={idx} className="brp-warning">{warning}</div>
                   ))}
                 </div>
               )}
             </div>
           )}
-          {!lastVerifyReport && (
+          {!lastVerifyReport && Object.keys(outputReports).length === 0 && (
             <div className="brp-hint">Replay verification has not completed for this recording.</div>
           )}
           {lastVerifyReport && !lastVerifyReport.success && (
@@ -2112,8 +2216,12 @@ export default function BrowserRecorderControlPanel({
             </div>
           )}
           {destinationControl}
+          {/* Without a preview there are no output cards; verification shows here. */}
+          {!preview && renderStartError(0)}
+          {!preview && replayProgress}
           <div className="brp-actions">
-            {!replaySessionId && (
+            {/* A previewed conversion verifies per output, in its card. */}
+            {!replaySessionId && !preview && (
               <button className="btn btn-secondary" onClick={handleVerify} disabled={busy} data-testid="verify-recording">Verify primary output</button>
             )}
             <button className="btn btn-secondary" onClick={handlePreview} disabled={busy}>Preview conversion</button>
@@ -2127,6 +2235,11 @@ export default function BrowserRecorderControlPanel({
               </button>
             )}
           </div>
+          {saveFeedback && (
+            <div className={`rec-feedback ${saveFeedback.type === 'error' ? 'error' : ''}`} role={saveFeedback.type === 'error' ? 'alert' : 'status'} data-testid="recording-save-feedback">
+              {saveFeedback.message}
+            </div>
+          )}
           {previewImportDraftExpiry && (
             <div className={`rec-feedback ${previewImportDraftExpiry.expired ? 'error' : ''}`} role={previewImportDraftExpiry.expired ? 'alert' : 'status'}>
               {previewImportDraftExpiry.label}
@@ -2186,6 +2299,11 @@ export default function BrowserRecorderControlPanel({
                   </button>
                 )}
               </div>
+              {salesforceSaveFeedback && (
+                <div className={`rec-feedback ${salesforceSaveFeedback.type === 'error' ? 'error' : ''}`} role={salesforceSaveFeedback.type === 'error' ? 'alert' : 'status'} data-testid="salesforce-save-feedback">
+                  {salesforceSaveFeedback.message}
+                </div>
+              )}
               {salesforceImportDraftExpiry && (
                 <div className={`rec-feedback ${salesforceImportDraftExpiry.expired ? 'error' : ''}`} role={salesforceImportDraftExpiry.expired ? 'alert' : 'status'}>
                   {salesforceImportDraftExpiry.label}

@@ -1311,6 +1311,41 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 	t.Fatal("session did not reach terminal state after resume")
 }
 
+// A refusal from the script's review gates lists each gate, so the dashboard
+// can group them instead of showing one long sentence.
+func TestWriteBrowserReplayStartErrorListsTheBlockingGates(t *testing.T) {
+	script := &dsl.Script{Name: "HAR", Protocol: "http", Actions: []dsl.Action{
+		{Name: "POST ctp", Type: "http_post", Target: "https://a.example.test/ctp", Metadata: map[string]any{"execution_blocker": "credential_json_invalid_utf8"}},
+		{Name: "GET page", Type: "http_get", Target: "https://www.example.test/"},
+		{Name: "POST collect", Type: "http_post", Target: "https://b.example.test/collect", Metadata: map[string]any{"execution_blockers": []any{"import_review_required"}}},
+	}}
+	err := replayReviewGateError(script)
+	if !errors.Is(err, errScriptReplayBlocked) {
+		t.Fatalf("gate error = %v, want errScriptReplayBlocked", err)
+	}
+	recorder := httptest.NewRecorder()
+	writeBrowserReplayStartError(recorder, err)
+	var body struct {
+		Error  string   `json:"error"`
+		Code   string   `json:"code"`
+		Issues []string `json:"issues"`
+	}
+	if decodeErr := json.Unmarshal(recorder.Body.Bytes(), &body); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if recorder.Code != http.StatusConflict || body.Code != "script_replay_blocked" || len(body.Issues) != 2 {
+		t.Fatalf("response = %d %+v, want 409 script_replay_blocked with 2 issues", recorder.Code, body)
+	}
+	if !strings.HasPrefix(body.Issues[0], `actions[0] "POST ctp": execution blocker credential_json_invalid_utf8`) ||
+		!strings.HasPrefix(body.Issues[1], `actions[2] "POST collect": execution blocker import_review_required`) {
+		t.Fatalf("issues = %q", body.Issues)
+	}
+	// Older clients still read the whole refusal from error.
+	if !strings.Contains(body.Error, "script replay is blocked: actions[0]") {
+		t.Fatalf("error = %q, want the full message", body.Error)
+	}
+}
+
 // A replay the script's own review gates refuse is the caller's to resolve
 // (409 with the reason); any other start failure is a 500 whose cause is
 // logged under the response's ref and never sent.

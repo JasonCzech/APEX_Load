@@ -20,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/internal/templatedjson"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
@@ -2406,6 +2407,12 @@ func (collector *importedCredentialCollector) collectBodyTarget(
 }
 
 func jsonValuesAtPointer(payload []byte, pointer string) ([]string, error) {
+	// A converter may write a template expression where a value goes; the
+	// locator reads a literal at pointer, so any expression elsewhere reads
+	// as null.
+	if readable, ok := templatedjson.NullExpressions(payload, nil); ok {
+		payload = readable
+	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
 	var values []string

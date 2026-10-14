@@ -280,6 +280,34 @@ func TestBrowserRecorderBridgeMountsOnlyBridgeSurface(t *testing.T) {
 	}
 }
 
+// The agent mints the preview's import draft, so the review steps that change
+// that draft run on the agent too, behind the bridge's own pairing.
+func TestBrowserRecorderBridgeServesImportDraftReviewSteps(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+	sessionID := pairBridgeForTest(t, server, bridgeTestOrigin)
+	for _, path := range []string{"/api/v1/scripts/secret-bindings/apply", "/api/v1/scripts/import/parameterize/apply"} {
+		unauthenticated := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{}`))
+		unauthenticated.Header.Set("Origin", bridgeTestOrigin)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, unauthenticated)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("%s without the bridge token = %d, want 401", path, resp.Code)
+		}
+
+		paired := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{}`))
+		paired.Header.Set("Origin", bridgeTestOrigin)
+		paired.Header.Set("Content-Type", "application/json")
+		paired.Header.Set(bridgeTokenHeader, bridgeTestToken)
+		paired.Header.Set(bridgeSessionHeader, sessionID)
+		resp = httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, paired)
+		// An empty request reaches the handler, which rejects it as incomplete.
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("%s with the bridge token = %d %s, want the handler's 400", path, resp.Code, resp.Body.String())
+		}
+	}
+}
+
 func TestBrowserRecorderBridgeAllowsProductionAvailability(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		t.Setenv("DISPLAY", ":0")

@@ -154,6 +154,30 @@ func TestNestedCollectionLimitsAreSharedAndFailClosed(t *testing.T) {
 	}
 }
 
+// A JSON body with a portable template where a value goes is still read, so
+// its credentials are masked; an unquoted expression the collector cannot
+// vouch for keeps the projection closed.
+func TestCollectionReadsPortableTemplatesInJSONBodies(t *testing.T) {
+	const secret = "synthetic-templated-credential"
+	templated := `{"apiToken":"` + secret + `","events":[{"t":{{fn.timestamp.unix_ms}}}]}`
+	script := &dsl.Script{Name: "templated", Protocol: "http", Actions: []dsl.Action{{Name: secret, Type: "POST", Target: "/events", Body: templated}}}
+	safe, err := Project(script)
+	if err != nil || safe == nil {
+		t.Fatalf("projection: %v", err)
+	}
+	if safe.Actions[0].Name != credential.Redacted || strings.Contains(safe.Actions[0].Body, secret) {
+		t.Fatalf("templated body credential survived: %+v", safe.Actions[0])
+	}
+	if !strings.Contains(safe.Actions[0].Body, "{{fn.timestamp.unix_ms}}") {
+		t.Fatalf("template expression was not kept: %s", safe.Actions[0].Body)
+	}
+
+	literal := &dsl.Script{Name: "literal", Protocol: "http", Actions: []dsl.Action{{Type: "POST", Target: "/", Body: `{"apiToken":{{fn.base64("` + secret + `")}}}`}}}
+	if safe, err := Project(literal); err == nil || safe != nil {
+		t.Fatal("an unquoted expression with a literal argument was disclosed")
+	}
+}
+
 func TestNestedCollectionRejectsJSONUnicodeSemanticLoss(t *testing.T) {
 	for _, body := range []string{
 		"{\"apiToken\":\"synthetic-" + string([]byte{0xff}) + "-credential\"}",
@@ -180,7 +204,6 @@ func TestMalformedNestedCredentialCollectionNeverPublishesReplicas(t *testing.T)
 		`{ordinary:invalid,"apiToken":"` + secret + `"}`,
 		`{"ordinary":x,"apiToken:` + secret + `}`,
 		`{"ordinary":x,"api\u0054oken:` + secret + `}`,
-		`{"ordinary":{{var.number}},"api\u0054oken":"` + secret + `"}`,
 		`{"ordinary":"safe"} {"apiToken":"` + secret + `"}`,
 		`{ordinary:invalid,"payload":"{\"apiToken\":\"` + secret + `\"}"}`,
 	} {
@@ -193,6 +216,26 @@ func TestMalformedNestedCredentialCollectionNeverPublishesReplicas(t *testing.T)
 			if got := ProjectLabel(secret, script); got != credential.Redacted {
 				t.Fatal("malformed collection published a credential label")
 			}
+		}
+	}
+}
+
+// A portable template where a nested JSON value goes no longer makes that JSON
+// unreadable; the credential beside it is still masked wherever it appears.
+func TestNestedTemplatedJSONStillMasksItsCredentials(t *testing.T) {
+	const secret = "synthetic-hidden-credential"
+	nested := `{"ordinary":{{var.number}},"api\u0054oken":"` + secret + `"}`
+	quoted, _ := json.Marshal(nested)
+	for _, body := range []string{"message=" + url.QueryEscape(nested), `{"payload":` + string(quoted) + `}`} {
+		script := &dsl.Script{Name: secret, Protocol: "http", Actions: []dsl.Action{{Name: secret, Type: "POST", Target: "/", Body: body, Metadata: map[string]any{"note": secret}}}}
+		if safe, err := Project(script); err == nil {
+			encoded, _ := json.Marshal(safe)
+			if strings.Contains(string(encoded), secret) {
+				t.Fatalf("templated nested JSON published its credential: %s", encoded)
+			}
+		}
+		if got := ProjectLabel(secret, script); got != credential.Redacted {
+			t.Fatal("templated nested JSON published a credential label")
 		}
 	}
 }

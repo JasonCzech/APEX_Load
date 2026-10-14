@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -56,12 +57,44 @@ func replayReviewGateIssues(script *dsl.Script) []string {
 // the caller must resolve them, so it is not a server failure.
 var errScriptReplayBlocked = errors.New("script replay is blocked")
 
+// scriptReplayBlockedError is errScriptReplayBlocked with the gates that
+// refused the replay, so a response can list them instead of one long sentence.
+type scriptReplayBlockedError struct {
+	issues []string
+}
+
+func (e *scriptReplayBlockedError) Error() string {
+	return fmt.Sprintf("%s: %s", errScriptReplayBlocked, strings.Join(e.issues, "; "))
+}
+
+func (e *scriptReplayBlockedError) Unwrap() error { return errScriptReplayBlocked }
+
+func newScriptReplayBlockedError(issues []string) error {
+	return &scriptReplayBlockedError{issues: append([]string(nil), issues...)}
+}
+
+// writeScriptReplayBlocked answers a replay its review gates refused: 409 with
+// the message older clients show plus each gate in issues. It reports whether
+// err was such a refusal.
+func writeScriptReplayBlocked(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, errScriptReplayBlocked) {
+		return false
+	}
+	body := map[string]any{"error": err.Error(), "code": "script_replay_blocked"}
+	var blocked *scriptReplayBlockedError
+	if errors.As(err, &blocked) {
+		body["issues"] = blocked.issues
+	}
+	writeJSON(w, http.StatusConflict, body)
+	return true
+}
+
 func replayReviewGateError(script *dsl.Script) error {
 	issues := replayReviewGateIssues(script)
 	if len(issues) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: %s", errScriptReplayBlocked, strings.Join(issues, "; "))
+	return newScriptReplayBlockedError(issues)
 }
 
 // storedScriptReplayGateError protects immutable import gates before a
@@ -77,7 +110,7 @@ func storedScriptReplayGateError(script *dsl.Script) error {
 		if len(issues) == 0 {
 			return nil
 		}
-		return fmt.Errorf("%w: %s", errScriptReplayBlocked, strings.Join(issues, "; "))
+		return newScriptReplayBlockedError(issues)
 	}
 	return replayReviewGateError(script)
 }

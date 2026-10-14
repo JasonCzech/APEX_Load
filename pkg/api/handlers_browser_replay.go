@@ -219,7 +219,10 @@ func writeBrowserReplayStartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	if errors.Is(err, errBrowserReplaySessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) || errors.Is(err, errScriptReplayBlocked) {
+	if writeScriptReplayBlocked(w, err) {
+		return
+	}
+	if errors.Is(err, errBrowserReplaySessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}

@@ -455,6 +455,53 @@ func TestCredentialValueGroupsRequireEqualRecoverableServerValues(t *testing.T) 
 	}
 }
 
+// Recorded provenance (a HAR's response cookies in action metadata) is never
+// sent and cannot be rebound, so its requirement keeps the recorded value even
+// when the masked value does not align; an executable field does not.
+func TestProvenanceCredentialRequirementsKeepRecordedValues(t *testing.T) {
+	raw := map[string]any{"name": "har", "protocol": "http", "config": map[string]any{}, "actions": []any{
+		map[string]any{
+			"headers": map[string]any{"Authorization": "[REDACTED]"},
+			"metadata": map[string]any{"har.response.cookies": []any{
+				map[string]any{"value": "abc.1.0.1.def"},
+				map[string]any{"value": "session-cookie-7712"},
+				map[string]any{"value": "session-cookie-7712"},
+			}},
+		},
+	}}
+	projected := map[string]any{"name": "har", "protocol": "http", "config": map[string]any{}, "actions": []any{
+		map[string]any{
+			"headers": map[string]any{"Authorization": maskedScriptSecret},
+			"metadata": map[string]any{"har.response.cookies": []any{
+				map[string]any{"value": maskedScriptSecret + ".1.0.1." + maskedScriptSecret},
+				map[string]any{"value": maskedScriptSecret},
+				map[string]any{"value": maskedScriptSecret},
+			}},
+		},
+	}}
+	reqs := []SecretBindingRequirement{
+		{ID: "cookie", Path: "/actions/0/metadata/har.response.cookies/0/value", Occurrence: 1},
+		{ID: "script", Path: "/metadata/import/source_note"},
+		{ID: "auth", Path: "/actions/0/headers/Authorization"},
+		{ID: "same-1", Path: "/actions/0/metadata/har.response.cookies/1/value"},
+		{ID: "same-2", Path: "/actions/0/metadata/har.response.cookies/2/value"},
+	}
+	got := annotateSecretBindingDestinationValues(reqs, raw, projected)
+	if !got[0].DestinationValuePreserved || !got[1].DestinationValuePreserved || got[0].PreservationUnavailableReason != "" {
+		t.Fatalf("provenance requirements = %#v, want their recorded values kept", got[:2])
+	}
+	if got[2].DestinationValuePreserved {
+		t.Fatal("an unavailable executable credential was marked kept")
+	}
+	// Equal recorded values still group, so the review lists them once.
+	if got[3].ValueGroupID == "" || got[3].ValueGroupID != got[4].ValueGroupID || !got[3].DestinationValuePreserved {
+		t.Fatalf("equal provenance values = %#v, want one kept group", got[3:])
+	}
+	if !secretBindingInProvenance("/teardown/3/metadata") || secretBindingInProvenance("/actions/0/params/metadata/key") {
+		t.Fatal("provenance is only an action's or the script's own metadata")
+	}
+}
+
 func TestPreservedCredentialGroupsRetainBatchIndex(t *testing.T) {
 	script := &dsl.Script{Name: "batch second", Protocol: "http", Actions: []dsl.Action{
 		{Name: "first", Type: "request", Headers: map[string]string{"Authorization": "Bearer literal-token"}},
