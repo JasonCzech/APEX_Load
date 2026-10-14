@@ -111,6 +111,7 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 	skipped := 0
 	warnings := []string{}
 	h3Advertised := map[string]bool{}
+	revalidations := 0
 	h3Used := map[string]bool{}
 	// Per origin: final h3 requests mapped by mode, and draft tokens seen.
 	h3Mapped := map[string]int{}
@@ -145,6 +146,9 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			warnings = append(warnings, fmt.Sprintf("HAR entry %d was skipped: %s", index+1, err.Error()))
 			skipped++
 			continue
+		}
+		if ex.CacheValidatorsDropped {
+			revalidations++
 		}
 		responseData, _ := item["response"].(map[string]any)
 		requestVersion, requestPresent := requestData["httpVersion"]
@@ -222,6 +226,11 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			detail = "The origin advertises HTTP/3 (Alt-Svc), and captured requests used it."
 		}
 		diagnostics.AddCoded(diag.Info, OriginAdvertisesH3Code, "HTTP/3 advertisement", origin, detail)
+	}
+	if revalidations > 0 {
+		diagnostics.Add(diag.Info, "HAR cache validators", "HAR import", fmt.Sprintf(
+			"%d request%s carried the browser's cache validators (If-None-Match, If-Modified-Since, If-Range), which were removed: replay fetches the full response, as a virtual user without the recording browser's cache does, and a recorded 304 Not Modified is checked as the full response.",
+			revalidations, pluralSuffix(revalidations, "", "s")))
 	}
 	if filtered > 0 {
 		diagnostics.Add(diag.Info, "HAR static asset filter", "HAR import", fmt.Sprintf("%d static asset entr%s skipped by default; enable include_static_assets to retain browser assets", filtered, pluralSuffix(filtered, "y was", "ies were")))
@@ -387,8 +396,27 @@ func parseHARItemWithProvenance(item map[string]any, diagnostics *diag.Collector
 	}
 	normalizeHARContentLength(&ex, requestData, diagnostics, location)
 	normalizeHARPseudoHeaders(&ex, diagnostics, location)
+	dropHARCacheValidators(&ex)
 	applyRecorderEntryFields(&ex, item, index)
 	return ex, nil
+}
+
+// harCacheValidatorHeaders are the conditional headers a browser adds from
+// its own cache. Replayed, the recording's validators make the server answer
+// 304 Not Modified, or 200 where the recording got 304, depending on what a
+// CDN edge holds; a virtual user has no such cache. LoadRunner leaves them
+// out too. If-Match and If-Unmodified-Since are the application's own
+// concurrency checks, and stay.
+var harCacheValidatorHeaders = []string{"If-None-Match", "If-Modified-Since", "If-Range"}
+
+// dropHARCacheValidators removes a captured request's browser cache
+// validators, so replay fetches the full response.
+func dropHARCacheValidators(ex *exchange) {
+	before := len(ex.HeaderList) + len(ex.Headers)
+	dropHARRequestHeaders(ex, harCacheValidatorHeaders...)
+	if len(ex.HeaderList)+len(ex.Headers) < before {
+		ex.CacheValidatorsDropped = true
+	}
 }
 
 // HAR entry fields the APEX Load proxy recorder writes, for what a HAR

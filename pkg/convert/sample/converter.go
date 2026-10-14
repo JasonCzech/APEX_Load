@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/convert/convertresult"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -165,6 +166,10 @@ type exchange struct {
 	StepName             string
 	RecordedThinkTimeMs  int64
 	HasRecordedThinkTime bool
+	// CacheValidatorsDropped marks a captured request whose browser cache
+	// validators were removed (see dropHARCacheValidators): replay asks for
+	// the full response.
+	CacheValidatorsDropped bool
 }
 
 type response struct {
@@ -445,7 +450,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 		if ex.Response != nil {
 			if includeAssertions && ex.Response.Status > 0 {
-				action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: ex.Response.Status})
+				action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: replayedStatus(ex)})
 				if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
 					sourceMappings = append(sourceMappings, sourceview.Mapping{
 						SourceFile: location.SourceFile,
@@ -846,6 +851,19 @@ func correlationValues(correlations []Correlation) []string {
 		values = append(values, corr.Value)
 	}
 	return values
+}
+
+// replayedStatus is the status a converted request should get. A 304 the
+// browser's cache revalidation earned becomes the full response once the
+// validators are gone: 206 for a range request, 200 otherwise.
+func replayedStatus(ex exchange) int {
+	if !ex.CacheValidatorsDropped || ex.Response.Status != http.StatusNotModified {
+		return ex.Response.Status
+	}
+	if headerLookup(ex.Headers, "Range") != "" {
+		return http.StatusPartialContent
+	}
+	return http.StatusOK
 }
 
 func withoutHeaders(list dsl.HeaderList, names ...string) dsl.HeaderList {
