@@ -342,6 +342,12 @@
       frame_path: framePath(),
       element: el ? safeMetaFor(el) : null
     };
+    // The page size the step was recorded at, so replay can use the same
+    // viewport. Only the top frame's: a frame's own size is not the page's.
+    if (window.top === window) {
+      payload.viewport_width = Math.round(window.innerWidth || 0);
+      payload.viewport_height = Math.round(window.innerHeight || 0);
+    }
     if (extra && typeof extra === 'object') Object.assign(payload, extra);
     return payload;
   }
