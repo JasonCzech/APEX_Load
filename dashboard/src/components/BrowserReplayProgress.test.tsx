@@ -109,6 +109,19 @@ describe('BrowserReplayProgress', () => {
     expect(container.textContent).toContain('1 fix')
   })
 
+  it('reports the steps replayed and the latest failure as events arrive', async () => {
+    const onProgress = vi.fn()
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-1" onProgress={onProgress} />)
+    })
+    expect(onProgress).toHaveBeenLastCalledWith({ steps: 0, lastError: undefined })
+
+    await send({ type: 'browser_replay_event', replay_session_id: 'rep-1', event: { event_index: 0, action_name: 'Open', action_type: 'browser_navigate', success: false, duration_ms: 40, error_message: 'the site refused the page' } } as any)
+    await send({ type: 'browser_replay_event', replay_session_id: 'rep-1', event: { event_index: 1, action_name: 'Click', action_type: 'browser_click', success: false, duration_ms: 1, error_message: 'skipped: the site refused the page' } } as any)
+    await send({ type: 'browser_replay_event', replay_session_id: 'rep-1', event: { event_index: 2, action_name: 'Wait', action_type: 'browser_wait', success: true, duration_ms: 5 } } as any)
+    expect(onProgress).toHaveBeenLastCalledWith({ steps: 3, lastError: 'skipped: the site refused the page' })
+  })
+
   it('shows the completed state with report-level self-heal suggestions', async () => {
     await act(async () => {
       root.render(<BrowserReplayProgress replaySessionId="rep-2" />)

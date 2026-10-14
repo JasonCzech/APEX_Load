@@ -25,16 +25,16 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_navigate requires target")
 		}
 		b.resetWSEvents()
-		return b.navigate(ctx, action, b.resolveURL(action.Target)), false
+		return b.navigate(ctx, action, result, b.resolveURL(action.Target)), false
 	case "browser_back":
 		b.resetWSEvents()
-		return b.historyBackAction(ctx, action), false
+		return b.historyBackAction(ctx, action, result), false
 	case "browser_forward":
 		b.resetWSEvents()
-		return b.historyForwardAction(ctx, action), false
+		return b.historyForwardAction(ctx, action, result), false
 	case "browser_reload":
 		b.resetWSEvents()
-		return b.reloadAction(ctx, action), false
+		return b.reloadAction(ctx, action, result), false
 	case "browser_open_window":
 		b.resetWSEvents()
 		return b.dispatchOpenWindow(ctx, action), false

@@ -20,7 +20,14 @@ export interface BrowserReplayProgressProps {
   onDismiss?: () => void
   onApplySuggestion?: (suggestion: ReplayRepairSuggestion) => Promise<void> | void
   onComplete?: (report: BrowserReplayReport | null, events: BrowserReplayEvent[]) => void
+  /** Reports the steps replayed so far and the latest failure, as they arrive. */
+  onProgress?: (progress: BrowserReplayProgressSummary) => void
   bridge?: BrowserRecorderBridgeConnection | null
+}
+
+export interface BrowserReplayProgressSummary {
+  steps: number
+  lastError?: string
 }
 
 type Phase = 'running' | 'completed' | 'failed' | 'stopped'
@@ -32,7 +39,7 @@ const REPLAY_NOT_FOUND_RETRY_LIMIT = 4
 // the just-recorded script and shows per-step pass/fail with selector self-heal
 // suggestions, subscribing to the same browser_replay_* events the full
 // debugger uses.
-export default function BrowserReplayProgress({ replaySessionId, projectId, onDismiss, onApplySuggestion, onComplete, bridge }: BrowserReplayProgressProps) {
+export default function BrowserReplayProgress({ replaySessionId, projectId, onDismiss, onApplySuggestion, onComplete, onProgress, bridge }: BrowserReplayProgressProps) {
   const [events, setEvents] = useState<BrowserReplayEvent[]>([])
   const [phase, setPhase] = useState<Phase>('running')
   const [report, setReport] = useState<BrowserReplayReport | null>(null)
@@ -47,8 +54,10 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const notFoundCountRef = useRef(0)
   const onCompleteRef = useRef(onComplete)
   const onApplySuggestionRef = useRef(onApplySuggestion)
+  const onProgressRef = useRef(onProgress)
   onCompleteRef.current = onComplete
   onApplySuggestionRef.current = onApplySuggestion
+  onProgressRef.current = onProgress
   const replayScopeGenerationRef = useRef(0)
   const applyingSuggestionIdsRef = useRef<Set<string>>(new Set())
   const bridgeScopeKey = bridge
@@ -254,6 +263,13 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const real = events.filter(Boolean)
   const passed = real.filter(e => e.success).length
   const failed = real.filter(e => !e.success).length
+  let lastError: string | undefined
+  for (const event of real) {
+    if (!event.success && event.error_message) lastError = event.error_message
+  }
+  useEffect(() => {
+    onProgressRef.current?.({ steps: real.length, lastError })
+  }, [real.length, lastError])
   const reportSuggestions: ReplayRepairSuggestion[] = report?.repair_suggestions ?? []
 
   const applySuggestion = async (suggestion: ReplayRepairSuggestion) => {

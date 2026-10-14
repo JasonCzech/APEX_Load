@@ -35,6 +35,7 @@ type Browser struct {
 	devicePlatform             string
 	deviceTier                 string
 	headless                   bool
+	httpErrorsAsWarnings       bool
 	cacheEnabled               bool
 	cacheContentURLs           bool
 	cacheContentURLsConfigured bool
@@ -114,7 +115,12 @@ type Browser struct {
 	createCDPSession     func(playwright.BrowserContext, playwright.Page) (playwright.CDPSession, error)
 	currentFrameSelector string
 
-	mu             sync.Mutex
+	mu sync.Mutex
+	// refusedPage is the page whose document at refusedURL the site refused,
+	// and refusal why; its later steps are skipped while it shows that URL.
+	refusedPage    playwright.Page
+	refusedURL     string
+	refusal        string
 	consoleEntries []protocol.ConsoleEntry
 	consoleDropped int
 	networkEntries []protocol.NetworkEntry
@@ -299,6 +305,14 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		b.applyEvidenceOutcome(result)
 		return result, nil
 	}
+	if refusal := b.refusalBlocking(action); refusal != "" {
+		// Every step on a refused page would wait out its timeout; one
+		// reason, at once, says what happened instead.
+		result.Duration = time.Since(result.StartTime)
+		result.ErrorMessage = "skipped: " + refusal
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
+	}
 
 	b.beginEvidenceAction()
 	defer func() { b.endEvidenceAction(ctx.Err() != nil) }()
@@ -365,6 +379,52 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		b.noteHARError()
 	}
 	return result, nil
+}
+
+// browserPageNavigation reports the steps that leave the current page or
+// change pages, which still run after a page was refused.
+func browserPageNavigation(actionType string) bool {
+	switch actionType {
+	case "browser_navigate", "browser_back", "browser_forward", "browser_reload", "browser_open_window", "browser_switch_window":
+		return true
+	default:
+		return false
+	}
+}
+
+// noteDocumentResponse records how the site answered a page load on page:
+// its status on result, and, for an error status the step does not expect,
+// the refusal the load fails with. Another answer ends an earlier refusal.
+func (b *Browser) noteDocumentResponse(action *protocol.Action, result *protocol.Result, page playwright.Page, response playwright.Response) error {
+	if response == nil {
+		return nil
+	}
+	result.StatusCode = response.Status()
+	refusal := b.documentRefusal(action, response.URL(), response.Status(), page)
+	pageURL := page.URL()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if refusal == "" {
+		b.refusedPage, b.refusedURL, b.refusal = nil, "", ""
+		return nil
+	}
+	b.refusedPage, b.refusedURL, b.refusal = page, pageURL, refusal
+	return errors.New(refusal)
+}
+
+// refusalBlocking is why action cannot run: the current page still shows a
+// document the site refused, and action does not leave it.
+func (b *Browser) refusalBlocking(action *protocol.Action) string {
+	if browserPageNavigation(action.Type) {
+		return ""
+	}
+	b.mu.Lock()
+	page, refusedPage, refusedURL, refusal := b.pwPage, b.refusedPage, b.refusedURL, b.refusal
+	b.mu.Unlock()
+	if refusedPage == nil || refusedPage != page || page.URL() != refusedURL {
+		return ""
+	}
+	return refusal
 }
 
 func (b *Browser) Teardown(ctx context.Context) error {

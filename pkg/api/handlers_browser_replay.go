@@ -219,11 +219,12 @@ func writeBrowserReplayStartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	if errors.Is(err, errBrowserReplaySessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) {
+	if errors.Is(err, errBrowserReplaySessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) || errors.Is(err, errScriptReplayBlocked) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	writeError(w, http.StatusInternalServerError, "failed to start browser replay")
+	// The cause is logged with the response's ref, never sent.
+	writeError(w, http.StatusInternalServerError, "failed to start browser replay: "+err.Error())
 }
 
 func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartRequest) *dsl.Script {

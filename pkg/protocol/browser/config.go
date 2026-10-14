@@ -146,6 +146,9 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
 	}
+	// The script's "HTTP errors as warnings" runtime setting also lets a page
+	// load answered with an error status proceed.
+	b.httpErrorsAsWarnings, _ = config["http_errors_as_warnings"].(bool)
 	b.quic = browserQUICAuto
 	if quic, ok := config["browser_quic"].(string); ok && strings.TrimSpace(quic) != "" {
 		b.quic = strings.ToLower(strings.TrimSpace(quic))

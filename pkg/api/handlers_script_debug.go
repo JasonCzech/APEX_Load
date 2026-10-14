@@ -302,11 +302,12 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		if errors.Is(err, errScriptDebugSessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) {
+		if errors.Is(err, errScriptDebugSessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) || errors.Is(err, errScriptReplayBlocked) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to start script debug session")
+		// The cause is logged with the response's ref, never sent.
+		writeError(w, http.StatusInternalServerError, "failed to start script debug session: "+err.Error())
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.session.start", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused, "log_level": session.LogLevel})

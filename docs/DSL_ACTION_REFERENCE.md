@@ -534,7 +534,7 @@ Requires one of: `target`, `selector`, `object_ref`
 
 ### `browser_navigate`
 
-Navigates the page to a URL.
+Navigates the page to a URL. A page load the site answers with an HTTP error status (400 or above, such as a bot wall's 403) fails the step, as it does for browser_reload, browser_back and browser_forward, and the steps after it on that page are skipped with the same reason, unless the step asserts its status_code or the script sets config.http.http_errors_as_warnings.
 
 Requires one of: `target`, `selector`
 

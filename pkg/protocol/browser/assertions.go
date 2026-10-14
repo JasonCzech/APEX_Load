@@ -20,6 +20,15 @@ func requiresBrowserAssertionHTML(assertions []protocol.Assertion) bool {
 func (b *Browser) evaluateBrowserAssertions(action *protocol.Action, assertions []protocol.Assertion, result *protocol.Result) error {
 	for _, assertion := range assertions {
 		switch assertion.Type {
+		case "status_code":
+			expected, ok := protocol.AssertionInt(assertion.Expected)
+			if !ok {
+				return fmt.Errorf("status_code assertion: expected integer, got %v", assertion.Expected)
+			}
+			if result.StatusCode != expected {
+				recordAssertionMismatch(result, assertion.Type, fmt.Sprint(expected), fmt.Sprint(result.StatusCode))
+				return fmt.Errorf("browser page status = %d, want %d", result.StatusCode, expected)
+			}
 		case "response_time_ms":
 			if assertion.Max > 0 && result.Duration.Milliseconds() > int64(assertion.Max) {
 				return fmt.Errorf("browser response time %dms exceeded max %dms", result.Duration.Milliseconds(), assertion.Max)

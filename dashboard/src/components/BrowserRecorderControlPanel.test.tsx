@@ -76,9 +76,12 @@ vi.mock('../desktop/desktopFiles', () => ({
 }))
 
 vi.mock('./BrowserReplayProgress', () => ({
-  default: ({ replaySessionId, onApplySuggestion, onComplete }: { replaySessionId: string; onApplySuggestion?: (suggestion: any) => void; onComplete?: (report: any, events: any[]) => void }) => (
+  default: ({ replaySessionId, onApplySuggestion, onComplete, onProgress }: { replaySessionId: string; onApplySuggestion?: (suggestion: any) => void; onComplete?: (report: any, events: any[]) => void; onProgress?: (progress: { steps: number; lastError?: string }) => void }) => (
     <div data-testid="replay-progress">
       <span>Replay {replaySessionId}</span>
+      <button type="button" onClick={() => onProgress?.({ steps: 2, lastError: 'skipped: the site refused the page: https://shop.example/ answered HTTP 403 ("Access Denied")' })}>
+        Report Replay Progress
+      </button>
       <button
         type="button"
         onClick={() => onApplySuggestion?.({ id: 'repair-unsupported', title: 'Patch wait', description: 'Change timeout', draft_patch_type: 'update_timeout', fields: {} })}
@@ -374,6 +377,25 @@ describe('BrowserRecorderControlPanel', () => {
     })
     await clickButton('Preview conversion')
     expect(container.querySelector('[aria-label="Output 2: HTTP"]')!.textContent).toContain('Correlations: None detected')
+  })
+
+  it('shows a running verification\'s progress and latest error beside the output it verifies', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    const browserScript = { name: 'Browser', protocol: 'browser', config: {}, actions: [{ type: 'browser_navigate' }, { type: 'browser_click' }, { type: 'browser_click' }] }
+    apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce({ scripts: [browserScript], warnings: [], stats: {} })
+    await renderPanel()
+    await clickButton('Preview conversion')
+    const output = () => Array.from(container.querySelectorAll('[aria-label="Output 1: Browser"] [role="status"]'))
+      .map(status => status.textContent)
+      .find(text => /^(Unverified|Verif)/.test(text || ''))
+    expect(output()).toBe('Unverified draft')
+
+    await clickButton('Verify output 1')
+    expect(output()).toBe('Verifying — starting the replay')
+    await clickButton('Report Replay Progress')
+    expect(output()).toBe('Verifying — step 2 of 3 done. Last error: skipped: the site refused the page: https://shop.example/ answered HTTP 403 ("Access Denied")')
+    await clickButton('Complete Replay')
+    expect(output()).toBe('Verification passed for this conversion')
   })
 
   it('invalidates current conversion verification when an in-flight refresh returns changed receipt observations', async () => {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -51,12 +52,16 @@ func replayReviewGateIssues(script *dsl.Script) []string {
 	return scriptReviewGateIssues(script, "replay")
 }
 
+// errScriptReplayBlocked marks a replay a script's own review gates refuse:
+// the caller must resolve them, so it is not a server failure.
+var errScriptReplayBlocked = errors.New("script replay is blocked")
+
 func replayReviewGateError(script *dsl.Script) error {
 	issues := replayReviewGateIssues(script)
 	if len(issues) == 0 {
 		return nil
 	}
-	return fmt.Errorf("script replay is blocked: %s", strings.Join(issues, "; "))
+	return fmt.Errorf("%w: %s", errScriptReplayBlocked, strings.Join(issues, "; "))
 }
 
 // storedScriptReplayGateError protects immutable import gates before a
@@ -72,7 +77,7 @@ func storedScriptReplayGateError(script *dsl.Script) error {
 		if len(issues) == 0 {
 			return nil
 		}
-		return fmt.Errorf("script replay is blocked: %s", strings.Join(issues, "; "))
+		return fmt.Errorf("%w: %s", errScriptReplayBlocked, strings.Join(issues, "; "))
 	}
 	return replayReviewGateError(script)
 }

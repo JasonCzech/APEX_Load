@@ -29,7 +29,7 @@ import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import AuraOutcomeReview from './AuraOutcomeReview'
 import RecordingEnvironmentReview from './RecordingEnvironmentReview'
 import { recordingEnvironmentFingerprint } from './recordingEnvironmentModel'
-import BrowserReplayProgress, { type BrowserReplayProgressProps } from './BrowserReplayProgress'
+import BrowserReplayProgress, { type BrowserReplayProgressProps, type BrowserReplayProgressSummary } from './BrowserReplayProgress'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import ParameterizationReview from './ParameterizationReview'
 import SecretBindingReview, {
@@ -143,6 +143,18 @@ function hasSalesforceSignal(session: BrowserRecorderSession, preview?: Recorder
 function importResultScripts(result?: RecorderImportResult | SalesforceImportResult | null): ScriptDefinition[] {
   if (result?.scripts?.length) return result.scripts
   return result?.script ? [result.script] : []
+}
+
+function scriptStepCount(script: ScriptDefinition): number {
+  return (script.init?.length || 0) + (script.actions?.length || 0) + (script.teardown?.length || 0)
+}
+
+// verificationProgressLabel says how far a running verification has got and
+// why its latest step failed, so a long replay is never a silent wait.
+function verificationProgressLabel(progress: BrowserReplayProgressSummary | null, total: number): string {
+  const steps = Math.min(progress?.steps ?? 0, total)
+  const label = steps === 0 ? 'Verifying — starting the replay' : `Verifying — step ${steps} of ${total} done`
+  return progress?.lastError ? `${label}. Last error: ${progress.lastError}` : label
 }
 
 interface PreviewCorrelation {
@@ -273,6 +285,8 @@ export default function BrowserRecorderControlPanel({
   const replaySessionIdRef = useRef<string | null>(replaySessionId)
   replaySessionIdRef.current = replaySessionId
   const [lastVerifyReport, setLastVerifyReport] = useState<BrowserReplayReport | null>(null)
+  // The running verification's progress, shown beside the output it verifies.
+  const [verifyProgress, setVerifyProgress] = useState<BrowserReplayProgressSummary | null>(null)
   const [stepSearch, setStepSearch] = useState('')
   const [showAllSteps, setShowAllSteps] = useState(false)
   const steps = useMemo(() => session?.steps || [], [session?.steps])
@@ -1214,6 +1228,7 @@ export default function BrowserRecorderControlPanel({
     verificationGenerationRef.current = verificationRevisionRef.current
     verificationOutputRef.current = scriptIndex
     setLastVerifyReport(null)
+    setVerifyProgress(null)
     setReplaySessionId(clientReplaySessionId || null)
     try {
       const res = await api.verifyBrowserRecording(sessionId, clientReplaySessionId || undefined, {
@@ -1953,6 +1968,7 @@ export default function BrowserRecorderControlPanel({
           bridge={api.browserRecorderBridge}
           onApplySuggestion={handleApplyReplaySuggestion}
           onComplete={report => handleReplayComplete(replaySessionId, report)}
+          onProgress={setVerifyProgress}
           onDismiss={() => setReplaySessionId(null)}
         />
       )}
@@ -2045,7 +2061,9 @@ export default function BrowserRecorderControlPanel({
                   <strong>{script.name} · {script.protocol}</strong>
                   <RecordingEnvironmentReview script={script} agentReported={!!api.browserRecorderBridge} showUnavailable />
                   <p>{script.init?.length || 0} init · {script.actions?.length || 0} main · {script.teardown?.length || 0} teardown actions</p>
-                  <p role="status">{outputReports[index] ? outputReports[index].success ? 'Verification passed for this conversion' : 'Verification incomplete or failed — review evidence' : 'Unverified draft'}</p>
+                  <p role="status">{replaySessionId && !lastVerifyReport && verificationOutputRef.current === index
+                    ? verificationProgressLabel(verifyProgress, scriptStepCount(script))
+                    : outputReports[index] ? outputReports[index].success ? 'Verification passed for this conversion' : 'Verification incomplete or failed — review evidence' : 'Unverified draft'}</p>
                   <details><summary>Journey and dependencies</summary>
                     {(['init', 'actions', 'teardown'] as const).map(phase => <ol key={phase} aria-label={phase}>{script[phase]?.map((action, actionIndex) => <li key={actionIndex}>{action.name || action.type} · {action.type}</li>)}</ol>)}
                     <p>Data sources: {(script.data_sources || []).map(source => source.name).join(', ') || 'None'}</p>

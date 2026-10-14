@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -1307,4 +1309,28 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("session did not reach terminal state after resume")
+}
+
+// A replay the script's own review gates refuse is the caller's to resolve
+// (409 with the reason); any other start failure is a 500 whose cause is
+// logged under the response's ref and never sent.
+func TestWriteBrowserReplayStartErrorExplainsTheCause(t *testing.T) {
+	blocked := httptest.NewRecorder()
+	writeBrowserReplayStartError(blocked, fmt.Errorf("%w: execution blocker import_review_required blocks replay", errScriptReplayBlocked))
+	if blocked.Code != http.StatusConflict || !strings.Contains(blocked.Body.String(), "import_review_required") {
+		t.Fatalf("blocked start = %d %s, want 409 with the blocker", blocked.Code, blocked.Body.String())
+	}
+
+	logs := &lockedBuffer{}
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	failed := httptest.NewRecorder()
+	writeBrowserReplayStartError(failed, errors.New("browser runtime missing"))
+	if failed.Code != http.StatusInternalServerError || strings.Contains(failed.Body.String(), "runtime missing") {
+		t.Fatalf("failed start = %d %s, want a 500 without the cause", failed.Code, failed.Body.String())
+	}
+	if !strings.Contains(logs.String(), "failed to start browser replay: browser runtime missing") {
+		t.Fatalf("logs = %s, want the cause logged", logs.String())
+	}
 }

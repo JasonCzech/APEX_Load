@@ -9,7 +9,7 @@ import (
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
-func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action) error {
+func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	page := b.currentPage()
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
@@ -20,10 +20,11 @@ func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action
 	if err != nil {
 		return err
 	}
-	if _, err := page.GoBack(playwright.PageGoBackOptions{
+	response, err := page.GoBack(playwright.PageGoBackOptions{
 		Timeout:   playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 		WaitUntil: waitUntil,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	afterURL := page.URL()
@@ -32,10 +33,10 @@ func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action
 		return fmt.Errorf("browser_back did not change page URL; no previous history entry")
 	}
 	b.currentURL = afterURL
-	return nil
+	return b.noteDocumentResponse(action, result, page, response)
 }
 
-func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Action) error {
+func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	page := b.currentPage()
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
@@ -46,10 +47,11 @@ func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Act
 	if err != nil {
 		return err
 	}
-	if _, err := page.GoForward(playwright.PageGoForwardOptions{
+	response, err := page.GoForward(playwright.PageGoForwardOptions{
 		Timeout:   playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 		WaitUntil: waitUntil,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	afterURL := page.URL()
@@ -58,10 +60,10 @@ func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Act
 		return fmt.Errorf("browser_forward did not change page URL; no next history entry")
 	}
 	b.currentURL = afterURL
-	return nil
+	return b.noteDocumentResponse(action, result, page, response)
 }
 
-func (b *Browser) reloadAction(ctx context.Context, action *protocol.Action) error {
+func (b *Browser) reloadAction(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	page := b.currentPage()
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
@@ -70,14 +72,15 @@ func (b *Browser) reloadAction(ctx context.Context, action *protocol.Action) err
 	if err != nil {
 		return err
 	}
-	if _, err := page.Reload(playwright.PageReloadOptions{
+	response, err := page.Reload(playwright.PageReloadOptions{
 		Timeout:   playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 		WaitUntil: waitUntil,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	b.currentURL = page.URL()
-	return nil
+	return b.noteDocumentResponse(action, result, page, response)
 }
 
 func navigationWaitUntil(action *protocol.Action) (*playwright.WaitUntilState, error) {

@@ -86,7 +86,7 @@ func (b *Browser) capturePageState(ctx context.Context, action *protocol.Action,
 	return pageURL, pageTitle, domSummary, html, screenshot, nil
 }
 
-func (b *Browser) navigate(ctx context.Context, action *protocol.Action, target string) error {
+func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result *protocol.Result, target string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -102,13 +102,38 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, target 
 	}
 
 	timeout := b.actionTimeout(action)
-	if _, err := page.Goto(resolvedTarget, playwright.PageGotoOptions{
+	response, err := page.Goto(resolvedTarget, playwright.PageGotoOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	b.currentURL = resolvedTarget
+	if err := b.noteDocumentResponse(action, result, page, response); err != nil {
+		return err
+	}
 	return b.waitVisibleWithTimeout(ctx, "body", timeout)
+}
+
+// documentRefusal explains a page load the site answered with an error
+// status, such as a bot-protection "Access Denied" 403. Steps that need the
+// page cannot run on it, so the load fails. A step that asserts its
+// status_code expects that answer, and a script that treats HTTP errors as
+// warnings accepts it.
+func (b *Browser) documentRefusal(action *protocol.Action, target string, status int, page playwright.Page) string {
+	if status < 400 || b.httpErrorsAsWarnings {
+		return ""
+	}
+	for _, assertion := range action.Assertions {
+		if assertion.Type == "status_code" {
+			return ""
+		}
+	}
+	refusal := fmt.Sprintf("the site refused the page: %s answered HTTP %d", target, status)
+	if title, err := page.Title(); err == nil && strings.TrimSpace(title) != "" {
+		refusal += fmt.Sprintf(" (%q)", strings.TrimSpace(title))
+	}
+	return refusal
 }
 
 func (b *Browser) click(ctx context.Context, action *protocol.Action, selector string) error {

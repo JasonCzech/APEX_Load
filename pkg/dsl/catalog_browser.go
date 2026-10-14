@@ -43,7 +43,7 @@ func browserActionSpecs() []ActionSpec {
 		{
 			Type:         "browser_navigate",
 			Protocols:    []string{"browser"},
-			Summary:      "Navigates the page to a URL.",
+			Summary:      "Navigates the page to a URL. A page load the site answers with an HTTP error status (400 or above, such as a bot wall's 403) fails the step, as it does for browser_reload, browser_back and browser_forward, and the steps after it on that page are skipped with the same reason, unless the step asserts its status_code or the script sets config.http.http_errors_as_warnings.",
 			RequireOneOf: [][]string{{"target", "selector"}},
 			Fields: []FieldSpec{
 				{Name: "target", Kind: FieldKindString, Doc: "Destination URL; target or selector is required."},
