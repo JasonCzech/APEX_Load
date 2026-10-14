@@ -86,8 +86,84 @@ func TestNestedCredentialRedactionMasksEveryDuplicateOccurrence(t *testing.T) {
 		t.Fatalf("duplicate projection failed: %v / %s", err, result.Disposition)
 	}
 	assertDisclosureSafe(t, []byte(output), result)
-	if strings.Count(output, url.QueryEscape(credential.Redacted)) != 4 {
+	if strings.Count(output, credential.Redacted) != 4 {
 		t.Fatal("not every duplicate credential occurrence was masked")
+	}
+}
+
+// A credential inside a JSON form value is masked where it sits: every other
+// byte keeps its recorded encoding, so the projection lines up with the
+// recording, and the placeholder stays literal, where review finds it.
+func TestNestedJSONFormValueKeepsItsRecordedEncoding(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, body, want string }{
+		{
+			name: "raw JSON",
+			body: `password=` + projectionCanary + `&data={"api_key":"` + projectionCanary + `"}`,
+			want: `password=[REDACTED]&data={"api_key":"[REDACTED]"}`,
+		},
+		{
+			name: "uppercase escapes",
+			body: `data=%7B%22api_key%22%3A%22` + projectionCanary + `%22%7D&x=1`,
+			want: `data=%7B%22api_key%22%3A%22[REDACTED]%22%7D&x=1`,
+		},
+		{
+			name: "lowercase escapes",
+			body: `data=%7b%22api_key%22%3a%22` + projectionCanary + `%22%7d`,
+			want: `data=%7b%22api_key%22%3a%22[REDACTED]%22%7d`,
+		},
+		{
+			name: "spaces and non-ASCII around it",
+			body: `data=%7B%22note%22%3A%22caf%C3%A9+au+lait%22%2C%22token%22%3A%22` + projectionCanary + `%22%7D`,
+			want: `data=%7B%22note%22%3A%22caf%C3%A9+au+lait%22%2C%22token%22%3A%22[REDACTED]%22%7D`,
+		},
+		{
+			name: "credential sharing the placeholder's brackets",
+			body: `data=%7B%22api_key%22%3A%22%5B` + projectionCanary + `%5D%22%7D`,
+			want: `data=%7B%22api_key%22%3A%22[REDACTED]%22%7D`,
+		},
+		{
+			name: "two credentials",
+			body: `message={"apiToken":"` + projectionCanary + `","recordId":"business","secret":"` + projectionCanary + `"}&ordinary=a%2fb`,
+			want: `message={"apiToken":"[REDACTED]","recordId":"business","secret":"[REDACTED]"}&ordinary=a%2fb`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output, _, result, err := ProjectFormURLEncoded(test.body, Options{Mode: Redact})
+			if err != nil || result.Disposition == Rejected {
+				t.Fatalf("projection failed: %v / %s", err, result.Disposition)
+			}
+			assertDisclosureSafe(t, []byte(output), result)
+			if output != test.want {
+				t.Fatalf("projected = %s\nwant      %s", output, test.want)
+			}
+		})
+	}
+}
+
+// The splice keeps a replacement's unchanged ends as recorded, writes the
+// rest escaped only as a form requires, and refuses what does not round-trip.
+func TestSpliceFormValue(t *testing.T) {
+	t.Parallel()
+	raw := `%7B%22k%22%3A%22old%22%7D`
+	decoded := `{"k":"old"}`
+	spans := []replacement{{start: 5, end: 10, value: []byte(`"a&b c%"`)}}
+	projected := `{"k":"a&b c%"}`
+	got, ok := spliceFormValue(raw, decoded, projected, spans)
+	if !ok || got != `%7B%22k%22%3A%22a%26b+c%25%22%7D` {
+		t.Fatalf("splice = %q %t", got, ok)
+	}
+	if _, ok := spliceFormValue(raw, `{"k":"other"}`, projected, spans); ok {
+		t.Fatal("a raw value that does not decode to the decoded text was spliced")
+	}
+	if _, ok := spliceFormValue(raw, decoded, `{"k":"different"}`, spans); ok {
+		t.Fatal("a splice that does not decode to the projection was accepted")
+	}
+	if _, ok := spliceFormValue(raw, decoded, projected, nil); ok {
+		t.Fatal("a splice without spans was accepted")
+	}
+	if _, ok := spliceFormValue(raw, decoded, projected, []replacement{{start: 5, end: 10}, {start: 6, end: 8}}); ok {
+		t.Fatal("overlapping spans were accepted")
 	}
 }
 
@@ -438,6 +514,10 @@ func TestFormQueryKeepsKnownWholeScalarCredentialMasking(t *testing.T) {
 	if err != nil || result.Disposition == Rejected || strings.Contains(string(output), secret) || !strings.HasPrefix(string(output), "ordinary=one%20two&") || !strings.HasSuffix(string(output), "&flag") {
 		t.Fatal("known scalar query credential lost precise form projection")
 	}
+	// The placeholder stays literal, as for the password, where review finds it.
+	if want := "ordinary=one%20two&password=" + credential.Redacted + "&query=" + credential.Redacted + "&flag"; string(output) != want {
+		t.Fatalf("projected = %s, want %s", output, want)
+	}
 }
 
 func TestQueryInputObjectInsideArrayKeepsFieldAndValueContextsDistinct(t *testing.T) {
@@ -537,4 +617,103 @@ func TestGraphQLRedactionSharesAggregateTokenAndWorkBudgets(t *testing.T) {
 	if err != nil || output != nil || result.Disposition != Rejected {
 		t.Fatal("executable-query admission silently fell back after budget exhaustion")
 	}
+}
+
+// A JSON string holding JSON keeps its recorded escapes: only the credential
+// changes, where re-encoding the whole string escaped HTML characters and
+// rewrote \u and \/ escapes around it, so the projection no longer lined up
+// with the recording. The same holds inside a form value.
+func TestNestedJSONStringKeepsItsRecordedEscapes(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, body, contentType, want string }{
+		{
+			name:        "HTML characters",
+			body:        `{"payload":"{\"note\":\"a&b <c>\",\"apiToken\":\"` + projectionCanary + `\"}"}`,
+			contentType: "application/json",
+			want:        `{"payload":"{\"note\":\"a&b <c>\",\"apiToken\":\"[REDACTED]\"}"}`,
+		},
+		{
+			name:        "unicode and solidus escapes",
+			body:        jsonEscapes(`{"payload":"{U+0022urlU+0022:U+0022https:\/\/x.test\/cafU+00e9U+0022,U+0022secretU+0022:U+0022` + projectionCanary + `U+0022}"}`),
+			contentType: "application/json",
+			want:        jsonEscapes(`{"payload":"{U+0022urlU+0022:U+0022https:\/\/x.test\/cafU+00e9U+0022,U+0022secretU+0022:U+0022[REDACTED]U+0022}"}`),
+		},
+		{
+			name:        "credential sharing the placeholder's brackets",
+			body:        jsonEscapes(`{"payload":"{\"apiToken\":\"U+005b` + projectionCanary + `U+005d\"}"}`),
+			contentType: "application/json",
+			want:        `{"payload":"{\"apiToken\":\"[REDACTED]\"}"}`,
+		},
+		{
+			name:        "twice nested",
+			body:        `{"outer":"{\"inner\":\"{\\\"apiToken\\\":\\\"` + projectionCanary + `\\\",\\\"q\\\":\\\"a<b\\\"}\"}"}`,
+			contentType: "application/json",
+			want:        `{"outer":"{\"inner\":\"{\\\"apiToken\\\":\\\"[REDACTED]\\\",\\\"q\\\":\\\"a<b\\\"}\"}"}`,
+		},
+		{
+			name:        "inside a form value",
+			body:        `message=` + url.QueryEscape(`{"payload":"{\"note\":\"a&b\",\"apiToken\":\"`+projectionCanary+`\"}"}`),
+			contentType: "application/x-www-form-urlencoded",
+			want:        `message=` + strings.Replace(url.QueryEscape(`{"payload":"{\"note\":\"a&b\",\"apiToken\":\"`+projectionCanary+`\"}"}`), projectionCanary, "[REDACTED]", 1),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output, result, err := ProjectRequestBody([]byte(test.body), test.contentType, Options{Mode: Redact})
+			if err != nil || result.Disposition == Rejected {
+				t.Fatalf("projection failed: %v / %s", err, result.Disposition)
+			}
+			assertDisclosureSafe(t, output, result)
+			if string(output) != test.want {
+				t.Fatalf("projected = %s\nwant      %s", output, test.want)
+			}
+		})
+	}
+}
+
+// The JSON string splice maps spans through every escape form, refuses a
+// boundary inside a character one \u escape wrote, and refuses what does not
+// round-trip.
+func TestSpliceJSONString(t *testing.T) {
+	t.Parallel()
+	token := jsonEscapes(`"{U+0022kU+0022:\"old\",\"n\":\"U+d83dU+de00\"}"`)
+	decoded := "{\"k\":\"old\",\"n\":\"\U0001F600\"}"
+	text, _, ok := jsonStringByteStarts(token)
+	if !ok || text != decoded {
+		t.Fatalf("decoded = %q %t", text, ok)
+	}
+	spans := []replacement{{start: 5, end: 10, value: []byte(`"a<b\"c"`)}}
+	projected := "{\"k\":\"a<b\\\"c\",\"n\":\"\U0001F600\"}"
+	replaced, ok := spliceJSONString(token, decoded, projected, spans)
+	if !ok || string(applyReplacements([]byte(token), replaced)) != jsonEscapes(`"{U+0022kU+0022:\"a<b\\\"c\",\"n\":\"U+d83dU+de00\"}"`) {
+		t.Fatalf("splice = %q %t", applyReplacements([]byte(token), replaced), ok)
+	}
+	if _, ok := spliceJSONString(token, `{"k":"other"}`, projected, spans); ok {
+		t.Fatal("a token that does not decode to the decoded text was spliced")
+	}
+	if _, ok := spliceJSONString(token, decoded, `{"k":"different"}`, spans); ok {
+		t.Fatal("a splice that does not decode to the projection was accepted")
+	}
+	emoji := strings.Index(decoded, "\U0001F600")
+	if _, ok := spliceJSONString(token, decoded, projected, []replacement{{start: emoji + 1, end: emoji + 2, value: []byte("x")}}); ok {
+		t.Fatal("a boundary inside an escaped character was accepted")
+	}
+	// A replacement that only repeats the placeholder recorded there writes
+	// nothing beyond it: the recorded quotes keep their escapes.
+	recorded := jsonEscapes(`"{U+0022kU+0022:U+0022[REDACTED]U+0022}"`)
+	placeholder := `{"k":"[REDACTED]"}`
+	replaced, ok = spliceJSONString(recorded, placeholder, placeholder, []replacement{{start: 5, end: 17, value: []byte(`"[REDACTED]"`)}})
+	if !ok || string(applyReplacements([]byte(recorded), replaced)) != recorded {
+		t.Fatalf("splice = %q %t, want the recorded token", applyReplacements([]byte(recorded), replaced), ok)
+	}
+	for _, malformed := range []string{jsonEscapes(`"U+d83d"`), jsonEscapes(`"U+de00"`), `"\q"`, jsonEscapes(`"U+12"`), `"abc`, `"abc\"`} {
+		if _, _, ok := jsonStringByteStarts(malformed); ok {
+			t.Fatalf("malformed token %s decoded", malformed)
+		}
+	}
+}
+
+// jsonEscapes spells U+XXXX as a JSON \u escape, so these fixtures keep their
+// escapes literal in source.
+func jsonEscapes(text string) string {
+	return strings.ReplaceAll(text, "U+", `\`+"u")
 }

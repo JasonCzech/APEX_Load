@@ -530,3 +530,18 @@ func TestNeutralQueryAndSentinelProjectionIsStable(t *testing.T) {
 		}
 	}
 }
+
+// A project-secret reference bound inside a URL nested in a query value is
+// shown, not masked again, while the nested URL's other credentials are.
+func TestProjectKeepsReferencesBoundInsideNestedURLs(t *testing.T) {
+	target := "/login?redirect=https%3A%2F%2Finner.example.test%2Fsso%3Fpassword%3D{{secret.NESTED_PASSWORD}}%26token%3Dsynthetic-nested-token-9c1e%26safe%3Dok&x=1"
+	script := &dsl.Script{Name: "Nested", Protocol: "http", Actions: []dsl.Action{{Name: "Login", Type: "request", Method: "GET", Target: target}}}
+	safe, err := Project(script)
+	if err != nil || safe == nil {
+		t.Fatalf("projection failed: %v", err)
+	}
+	want := "/login?redirect=https%3A%2F%2Finner.example.test%2Fsso%3Fpassword%3D{{secret.NESTED_PASSWORD}}%26token%3D" + credential.Redacted + "%26safe%3Dok&x=1"
+	if got := safe.Actions[0].Target; got != want {
+		t.Fatalf("target = %s, want %s", got, want)
+	}
+}

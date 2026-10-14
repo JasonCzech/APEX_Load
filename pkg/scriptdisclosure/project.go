@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
 	"sort"
 	"strconv"
@@ -967,7 +968,19 @@ func protectURLBindings(value string) (string, map[string]string) {
 		replacements[placeholder] = part
 		value = strings.Replace(value, part, placeholder, 1)
 	}
-	return value, replacements
+	// A reference bound inside a nested URL is protected the same way.
+	var references [][]int
+	for _, match := range portableTemplatePattern.FindAllStringIndex(value, -1) {
+		if isSupportedPortableTemplate(value[match[0]:match[1]]) {
+			references = append(references, match)
+		}
+	}
+	offset := len(replacements)
+	protected, nested := scrub.ProtectNestedQueryPairs(value, references, func(index int) string {
+		return uniquePlaceholder(value, "binding", offset+index) + "=safe"
+	})
+	maps.Copy(replacements, nested)
+	return protected, replacements
 }
 
 func uniquePlaceholder(value, domain string, index int) string {

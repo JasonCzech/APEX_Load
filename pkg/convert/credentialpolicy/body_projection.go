@@ -17,6 +17,14 @@ import (
 // XML, form, multipart, and GraphQL bodies are projected by their dedicated
 // byte-preserving codecs. Unrecognized raw/file bytes remain byte-identical.
 func ProjectRequestBody(payload []byte, contentType string, options Options) ([]byte, Result, error) {
+	return projectRequestBody(payload, contentType, options, nil)
+}
+
+// projectRequestBody is ProjectRequestBody. A JSON body's projection also
+// stores in spans the byte spans of payload it replaced, so a caller holding
+// the body in another encoding can apply them there; spans stays nil for
+// other bodies and when nothing was replaced.
+func projectRequestBody(payload []byte, contentType string, options Options, spans *[]replacement) ([]byte, Result, error) {
 	options, err := normalizeOptions(options)
 	if err != nil {
 		return nil, Result{}, err
@@ -72,7 +80,7 @@ func ProjectRequestBody(payload []byte, contentType string, options Options) ([]
 
 	switch kind {
 	case "json":
-		projected, result, queries, err := projectJSONWithQueries(payload, options)
+		projected, replaced, result, queries, err := projectJSONSpans(payload, options)
 		if err != nil || result.Disposition == Rejected || projected == nil {
 			return projected, result, err
 		}
@@ -85,6 +93,9 @@ func ProjectRequestBody(payload []byte, contentType string, options Options) ([]
 		}
 		if result.Disposition == Rejected {
 			return nil, result, nil
+		}
+		if spans != nil {
+			*spans = replaced
 		}
 		return projected, result, nil
 	case "xml":

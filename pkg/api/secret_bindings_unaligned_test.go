@@ -14,49 +14,64 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// The disclosure projection re-encodes a form field whose value is JSON, so a
-// form body that also carries a plain password cannot be aligned byte for
-// byte with its recorded value. Swapping the password for a project secret
-// would change the other field's bytes, which the binding route refuses. The
+// A SOAP request whose WS-Addressing message ID looks like a token is shown
+// in review with that ID as {{fn.uuid()}}, so the body's disclosure
+// projection cannot be aligned byte for byte with its recorded bytes.
+// Swapping the WS-Security password for a project secret would then change
+// other recorded bytes in the body, which the binding route refuses. The
 // review must say so up front, keep the value as recorded, and let the draft
 // save.
-const unalignedFormJSONField = `data={"api_key":"k-synthetic-0123456789abcdef"}`
+const unalignedSOAPMessageID = "Q2hhbGxlbmdlVG9rZW4tOWYzYTdjMWIyZDRlNWY2YTdiOGM5ZDBl"
 
-func unalignedFormCredentialScript(password string) *dsl.Script {
+func unalignedSOAPBody(password, note string) string {
+	return `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsa="http://www.w3.org/2005/08/addressing" ` +
+		`xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><soap:Header>` +
+		`<wsa:MessageID>` + unalignedSOAPMessageID + `</wsa:MessageID><wsse:Security><wsse:UsernameToken>` +
+		`<wsse:Username>alice</wsse:Username><wsse:Password>` + password + `</wsse:Password></wsse:UsernameToken></wsse:Security>` +
+		`</soap:Header><soap:Body><Ping>` + note + `</Ping></soap:Body></soap:Envelope>`
+}
+
+func loginScript(name, contentType, body string) *dsl.Script {
 	return &dsl.Script{
-		Name: "Unaligned form", Version: "1.0.0", Protocol: "http", ProjectID: storage.DefaultProjectID,
+		Name: name, Version: "1.0.0", Protocol: "http", ProjectID: storage.DefaultProjectID,
 		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "har", Preserved: map[string]any{}}},
 		Actions: []dsl.Action{
 			{Name: "Open login", Type: "request", Method: "GET", Target: "/login"},
 			{
 				Name: "Submit login", Type: "request", Method: "POST", Target: "/login",
-				Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-				Body:    "password=" + password + "&" + unalignedFormJSONField,
+				Headers: map[string]string{"Content-Type": contentType},
+				Body:    body,
 			},
 		},
 	}
 }
 
-func singleBodyRequirement(t *testing.T, requirements []SecretBindingRequirement) SecretBindingRequirement {
+func unalignedSOAPCredentialScript(password string) *dsl.Script {
+	return loginScript("Unaligned SOAP", "text/xml; charset=utf-8", unalignedSOAPBody(password, ""))
+}
+
+// passwordRequirement is the requirement for the login body's first value,
+// its password.
+func passwordRequirement(t *testing.T, requirements []SecretBindingRequirement) SecretBindingRequirement {
 	t.Helper()
 	var found []SecretBindingRequirement
 	for _, requirement := range requirements {
-		if requirement.Path == "/actions/1/body" {
+		if requirement.Path == "/actions/1/body" && requirement.Occurrence == 0 {
 			found = append(found, requirement)
 		}
 	}
 	if len(found) != 1 {
-		t.Fatalf("body requirements = %#v, want exactly one", requirements)
+		t.Fatalf("password requirements = %#v, want exactly one", requirements)
 	}
 	return found[0]
 }
 
 func TestUnalignedCredentialIsKeptAsRecordedAndNotOfferedForRebinding(t *testing.T) {
-	const password = "synthetic-form-password-4d21"
-	script := unalignedFormCredentialScript(password)
+	const password = "synthetic-soap-password-4d21"
+	script := unalignedSOAPCredentialScript(password)
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
-	requirement := singleBodyRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
+	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	if !requirement.DestinationValuePreserved || requirement.PreservationUnavailableReason != "" {
 		t.Fatalf("requirement = %#v, want the recorded value kept", requirement)
 	}
@@ -73,7 +88,7 @@ func TestUnalignedCredentialIsKeptAsRecordedAndNotOfferedForRebinding(t *testing
 	if got := resolved.Actions[1].Body; got != script.Actions[1].Body {
 		t.Fatalf("body = %q, want recorded bytes", got)
 	}
-	if kept := singleBodyRequirement(t, remaining); kept.RebindUnavailableReason == "" || !kept.DestinationValuePreserved {
+	if kept := passwordRequirement(t, remaining); kept.RebindUnavailableReason == "" || !kept.DestinationValuePreserved {
 		t.Fatalf("remaining requirement = %#v, want it still kept and not rebindable", kept)
 	}
 	committed, err := replaceUnavailableImportCredentialValues(script)
@@ -86,9 +101,9 @@ func TestUnalignedCredentialIsKeptAsRecordedAndNotOfferedForRebinding(t *testing
 }
 
 func TestUnalignedRebindRefusalNamesTheActionAndField(t *testing.T) {
-	script := unalignedFormCredentialScript("synthetic-form-password-7c90")
+	script := unalignedSOAPCredentialScript("synthetic-soap-password-7c90")
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
-	requirement := singleBodyRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
+	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	_, _, err := applyCredentialPreservingSecretBindings(script, 0, []secretBindingSelection{{
 		RequirementID: requirement.ID,
 		SecretName:    "LOGIN_PASSWORD",
@@ -172,16 +187,11 @@ func TestStructurallyAlignedCredentialIsNotOfferedForRebinding(t *testing.T) {
 // having no usable value: the projection masking more than the recording
 // held means it replaced at least one real value.
 func TestUnalignedFieldWithUnrelatedPlaceholderTextKeepsItsCredential(t *testing.T) {
-	script := unalignedFormCredentialScript("synthetic-form-password-3f8a")
-	script.Actions[1].Body += "&note=" + maskedScriptSecret
+	script := unalignedSOAPCredentialScript("synthetic-soap-password-3f8a")
+	script.Actions[1].Body = unalignedSOAPBody("synthetic-soap-password-3f8a", "<Note>"+maskedScriptSecret+"</Note>")
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
-	var password *SecretBindingRequirement
-	for _, requirement := range response["secret_binding_requirements"].([]SecretBindingRequirement) {
-		if requirement.Path == "/actions/1/body" && requirement.Occurrence == 0 {
-			password = &requirement
-		}
-	}
-	if password == nil || !password.DestinationValuePreserved || password.PreservationUnavailableReason != "" ||
+	password := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
+	if !password.DestinationValuePreserved || password.PreservationUnavailableReason != "" ||
 		password.RebindUnavailableReason == "" {
 		t.Fatalf("password requirement = %#v, want the real credential kept and not rebindable", password)
 	}
@@ -191,9 +201,9 @@ func TestUnalignedFieldWithUnrelatedPlaceholderTextKeepsItsCredential(t *testing
 // the same misalignment rules out a project secret. Neither is offered, and
 // committing the draft keeps the placeholder rather than failing the save.
 func TestUnalignedPlaceholderCanBeNeitherKeptNorReboundButStillCommits(t *testing.T) {
-	script := unalignedFormCredentialScript(maskedScriptSecret)
+	script := unalignedSOAPCredentialScript(maskedScriptSecret)
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
-	requirement := singleBodyRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
+	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	if requirement.DestinationValuePreserved || requirement.PreservationUnavailableReason != "redacted_source_value" {
 		t.Fatalf("requirement = %#v, want preservation unavailable for a placeholder", requirement)
 	}
@@ -212,11 +222,9 @@ func TestUnalignedPlaceholderCanBeNeitherKeptNorReboundButStillCommits(t *testin
 // Formatted JSON keeps its layout through projection, so it still aligns
 // byte for byte and stays rebindable.
 func TestAlignedCredentialStaysRebindable(t *testing.T) {
-	script := unalignedFormCredentialScript("synthetic-form-password-1a2b")
-	script.Actions[1].Headers = map[string]string{"Content-Type": "application/json"}
-	script.Actions[1].Body = "{\n  \"note\": \"x\",\n  \"password\": \"synthetic-json-password-5e6f\"\n}"
+	script := loginScript("Aligned JSON", "application/json", "{\n  \"note\": \"x\",\n  \"password\": \"synthetic-json-password-5e6f\"\n}")
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
-	requirement := singleBodyRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
+	requirement := passwordRequirement(t, response["secret_binding_requirements"].([]SecretBindingRequirement))
 	if requirement.RebindUnavailableReason != "" || !requirement.DestinationValuePreserved {
 		t.Fatalf("requirement = %#v, want preserved and rebindable", requirement)
 	}
@@ -242,13 +250,13 @@ func TestUnalignedCredentialImportDraftSavesThroughTheAPI(t *testing.T) {
 	}
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store})
-	const password = "synthetic-form-password-api-9b3e"
-	script := unalignedFormCredentialScript(password)
+	const password = "synthetic-soap-password-api-9b3e"
+	script := unalignedSOAPCredentialScript(password)
 	preview := server.newScriptImportResponseWithSourceSecrets(
 		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil),
 		scriptImportResponseOptions{Script: script, Scripts: []*dsl.Script{script}},
 	)
-	requirement := singleBodyRequirement(t, preview["secret_binding_requirements"].([]SecretBindingRequirement))
+	requirement := passwordRequirement(t, preview["secret_binding_requirements"].([]SecretBindingRequirement))
 	if requirement.RebindUnavailableReason == "" || !requirement.DestinationValuePreserved {
 		t.Fatalf("requirement = %#v, want kept as recorded and not rebindable", requirement)
 	}
@@ -279,7 +287,7 @@ func TestUnalignedCredentialImportDraftSavesThroughTheAPI(t *testing.T) {
 	if err := json.Unmarshal(refused.Body.Bytes(), &refreshed); err != nil {
 		t.Fatal(err)
 	}
-	if got := singleBodyRequirement(t, refreshed.Requirements); got.ID != requirement.ID || got.RebindUnavailableReason == "" {
+	if got := passwordRequirement(t, refreshed.Requirements); got.ID != requirement.ID || got.RebindUnavailableReason == "" {
 		t.Fatalf("refreshed requirement = %#v, want the refused one flagged", got)
 	}
 	if refusal.Code != secretBindingRebindUnavailableCode || refusal.RequirementID != requirement.ID ||

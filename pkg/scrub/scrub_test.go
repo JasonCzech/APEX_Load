@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -516,12 +517,60 @@ func TestValueURLRecursivelySanitizesEncodedNestedHTTPURLs(t *testing.T) {
 			t.Fatalf("nested encoded URL leaked %q: %s", secret, got)
 		}
 	}
+	// Only the credential changes; the placeholder stays literal, as in a
+	// top-level parameter, so credential review finds it.
 	for _, exactShape := range []string{
-		"redirect=https%3A%2F%2Finner.example.test%2Flogin%3Fpassword%3D%5BREDACTED%5D%26safe%3Dok",
-		"next=https%3A%2F%2Finner.example.test%2Fcallback%3Fclient%255Fsecret%3D%5BREDACTED%5D",
+		"redirect=https%3A%2F%2Finner.example.test%2Flogin%3Fpassword%3D[REDACTED]%26safe%3Dok",
+		"next=https%3A%2F%2Finner.example.test%2Fcallback%3Fclient%255Fsecret%3D[REDACTED]",
 	} {
 		if !strings.Contains(got, exactShape) {
 			t.Fatalf("nested URL encoding/shape changed; missing %q in %s", exactShape, got)
+		}
+	}
+}
+
+// A placeholder written two URLs deep stays literal and decodes to itself at
+// every level.
+func TestValueURLWritesDoublyNestedRedactionLiterally(t *testing.T) {
+	inner := "https://inner.example.test/login?password=short-secret&safe=ok"
+	middle := "https://middle.example.test/next?to=" + url.QueryEscape(inner)
+	got := ValueURL("https://outer.example.test/?redirect="+url.QueryEscape(middle), Policy{})
+	if strings.Contains(got, "short-secret") || strings.Count(got, Redacted) != 1 {
+		t.Fatalf("doubly nested URL = %s, want one literal placeholder", got)
+	}
+	outer, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedMiddle, err := url.Parse(outer.Query().Get("redirect"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if password := mustParseQuery(t, decodedMiddle.Query().Get("to")).Get("password"); password != Redacted {
+		t.Fatalf("innermost password = %q, want the placeholder", password)
+	}
+}
+
+func mustParseQuery(t *testing.T, rawURL string) url.Values {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed.Query()
+}
+
+func TestQueryEscapeRedaction(t *testing.T) {
+	for redaction, want := range map[string]string{
+		Redacted:                  Redacted,
+		url.QueryEscape(Redacted): "%255BREDACTED%255D",
+		"a b&c=d+e#f;g\x00\u00e9": "a%20b%26c%3Dd%2Be%23f%3Bg%00%C3%A9",
+	} {
+		if got := queryEscapeRedaction(redaction); got != want {
+			t.Fatalf("queryEscapeRedaction(%q) = %q, want %q", redaction, got, want)
+		}
+		if decoded, err := url.QueryUnescape(queryEscapeRedaction(redaction)); err != nil || decoded != redaction {
+			t.Fatalf("%q decodes to %q (%v)", redaction, decoded, err)
 		}
 	}
 }
@@ -1419,6 +1468,65 @@ func TestValueLeavesOrdinaryPathLikeTextIntact(t *testing.T) {
 	} {
 		if got := Value(input, Policy{}); got != input {
 			t.Fatalf("Value rewrote ordinary text %q -> %q", input, got)
+		}
+	}
+}
+
+// A nested URL is inspected value by value, as a top-level URL is: one with
+// nothing secret-shaped in its query stays readable instead of being judged
+// whole as a high-entropy token, while its own token-shaped values are still
+// redacted.
+func TestValueURLInspectsNestedURLValueByValue(t *testing.T) {
+	plain := "https://outer.example.test/?next=https%3A%2F%2Finner.example.test%2Fapp%2F0015g00000AbCdE7%3Fid%3D42%26tab%3D7"
+	if got := ValueURL(plain, Policy{}); got != plain {
+		t.Fatalf("credential-free nested URL = %s, want it unchanged", got)
+	}
+	signed := "https://outer.example.test/?next=https%3A%2F%2Finner.example.test%2F%3Fsig%3DkQ9vX2mL7pR4tY8wZ3nB6cF1hJ5dG0sA%26tab%3D7"
+	want := "https://outer.example.test/?next=https%3A%2F%2Finner.example.test%2F%3Fsig%3D" + Redacted + "%26tab%3D7"
+	if got := ValueURL(signed, Policy{}); got != want {
+		t.Fatalf("nested token-shaped value = %s, want %s", got, want)
+	}
+	if got := ValueURL("https://outer.example.test/?next=kQ9vX2mL7pR4tY8wZ3nB6cF1hJ5dG0sA", Policy{}); got != "https://outer.example.test/?next="+Redacted {
+		t.Fatalf("token-shaped value that is not a URL = %s, want it redacted whole", got)
+	}
+}
+
+func TestProtectNestedQueryPairs(t *testing.T) {
+	references := regexp.MustCompile(`\{\{[^{}]+\}\}`)
+	for _, test := range []struct {
+		value     string
+		protected []string
+	}{
+		{"/x?u=https%3A%2F%2Fa%2F%3Fpassword%3D{{secret.A}}%26b%3D1", []string{"password%3D{{secret.A}}"}},
+		{"/x?u=https%253A%252F%252Fa%252F%253Ftoken%253D{{secret.A}}", []string{"token%253D{{secret.A}}"}},
+		{"/x?u=https%3a%2f%2fa%2f%3fk%3d{{secret.A}}%23top", []string{"k%3d{{secret.A}}"}},
+		{"/x?u=https%3A%2F%2Fa%2F%3Fa%3D{{secret.A}}%26b%3D{{secret.B}}", []string{"a%3D{{secret.A}}", "b%3D{{secret.B}}"}},
+		{"/x?u=a%3Dprefix{{secret.A}}", nil},                               // the reference is not the whole value
+		{"/x?u=https%3A%2F%2Fa%2F%3Fk%3D{{secret.A}}tail", nil},            // nor here
+		{"/x?u=k={{secret.A}}", nil},                                       // a literal '=' is the top level's
+		{"%3D{{secret.A}}", nil},                                           // not inside a query
+		{"/x?note=kQ9vX2mL7pR4tY8wZ3nB6cF1%3D{{secret.A}}", nil},           // the "name" is part of a value
+		{"/x?a%3D{{secret.A}}", nil},                                       // a top-level segment, not a nested pair
+		{"/x?u=https%3A%2F%2Fa%2F%3Ftoken%3DkQ9vX2mL%3D{{secret.A}}", nil}, // nor this, after a nested '='
+		{"/x?u=https%3A%2F%2Fa%2F%3Fk%253D{{secret.A}}", nil},              // '=' escaped deeper than its '?'
+		{"/x?u=https%3A%2F%2Fa%2F%3Fk%3D{{secret.A}}%2526tail", nil},       // the value goes on past a deeper '&'
+		{"/x?u=https%3A%2F%2Fa%2F%3Fa%3D{{secret.A}}%26b%3D{{secret.B}}%2526tail", []string{"a%3D{{secret.A}}"}},
+		{"/x?u=https%3A%2F%2Fm%2F%3Fr%3Dhttps%253A%252F%252Fi%252F%253Fk%253D{{secret.A}}%26x%3D1", []string{"k%253D{{secret.A}}"}},
+	} {
+		protected, pairs := ProtectNestedQueryPairs(test.value, references.FindAllStringIndex(test.value, -1), func(index int) string {
+			return "apex~" + strconv.Itoa(index) + "=safe"
+		})
+		var got []string
+		for index := range len(pairs) {
+			placeholder := "apex~" + strconv.Itoa(index) + "=safe"
+			if !strings.Contains(protected, placeholder) || ValueURL(placeholder, Policy{}) != placeholder {
+				t.Fatalf("%s: placeholder %s missing from %s", test.value, placeholder, protected)
+			}
+			got = append(got, pairs[placeholder])
+			protected = strings.Replace(protected, placeholder, pairs[placeholder], 1)
+		}
+		if protected != test.value || strings.Join(got, " ") != strings.Join(test.protected, " ") {
+			t.Fatalf("%s: protected %q (restored %q), want %q", test.value, got, protected, test.protected)
 		}
 	}
 }

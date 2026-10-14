@@ -167,6 +167,11 @@ func decimalTokenIndex(value string, length int) (int, bool) {
 
 const maxProjectedRedactionAlignmentWork = 8 << 20
 
+// projectedRedactionCandidateWork charges each candidate literal position for
+// the alignment state it allocates, so input matching a short literal
+// everywhere exhausts the budget long before it holds a state per byte.
+const projectedRedactionCandidateWork = 64
+
 type projectedRedactionAlignment struct {
 	cursor   int
 	count    uint8
@@ -195,11 +200,28 @@ func extractLinearlyProjectedRedactions(raw, projected string) ([]string, bool) 
 	if len(parts) < 2 || !strings.HasPrefix(raw, parts[0]) {
 		return nil, false
 	}
-	// Each DP stage scans the scalar at most once. Bound the product so an
-	// adversarial import cannot turn ambiguity proof into unbounded CPU work.
-	if len(raw) > 0 && len(parts) > maxProjectedRedactionAlignmentWork/len(raw) {
-		return nil, false
+	// latest[i] is the last position parts[i] can begin at and still leave
+	// room for every later literal, the last one ending the scalar. An
+	// occurrence after it begins only paths that never reach the end, so a
+	// stage scans just from the earliest cursor a path reaches to there, and a
+	// unique alignment costs about three passes over the scalar (this one, the
+	// stages' scans and their literal comparisons) however many sentinels it
+	// has; scanning the whole rest of the scalar per sentinel refused large
+	// recorded bodies carrying many credentials.
+	latest := make([]int, len(parts))
+	latest[len(parts)-1] = len(raw) - len(parts[len(parts)-1])
+	for index := len(parts) - 2; index >= 1; index-- {
+		if latest[index+1] < 0 {
+			return nil, false
+		}
+		latest[index] = strings.LastIndex(raw[:latest[index+1]], parts[index])
 	}
+	// Bound the bytes scanned and compared, and the candidate states
+	// allocated, so an adversarial import cannot turn ambiguity proof into
+	// unbounded CPU or memory. A unique alignment needs those three passes and
+	// a state per sentinel, so the bound grows with the scalar and only
+	// ambiguous input reaches it.
+	work, budget := len(raw), maxProjectedRedactionAlignmentWork+4*len(raw)
 	states := []*projectedRedactionAlignment{{cursor: len(parts[0]), count: 1}}
 	for index := 0; index < len(parts)-1; index++ {
 		nextLiteral := parts[index+1]
@@ -238,14 +260,23 @@ func extractLinearlyProjectedRedactions(raw, projected string) ([]string, bool) 
 		stateIndex := 0
 		var prefixCount uint8
 		var uniquePrefix *projectedRedactionAlignment
-		searchFrom := 0
-		for searchFrom <= len(raw)-len(nextLiteral) {
-			relative := strings.Index(raw[searchFrom:], nextLiteral)
+		searchFrom, last := states[0].cursor, latest[index+1]
+		if index == len(parts)-2 {
+			searchFrom = max(searchFrom, last)
+		}
+		if work += max(0, last-searchFrom) + 1; work > budget {
+			return nil, false
+		}
+		for searchFrom <= last {
+			relative := strings.Index(raw[searchFrom:last+len(nextLiteral)], nextLiteral)
 			if relative < 0 {
 				break
 			}
 			position := searchFrom + relative
 			searchFrom = position + 1 // retain overlapping literal occurrences
+			if work += len(nextLiteral) + projectedRedactionCandidateWork; work > budget {
+				return nil, false
+			}
 			if index == len(parts)-2 && position+len(nextLiteral) != len(raw) {
 				continue
 			}

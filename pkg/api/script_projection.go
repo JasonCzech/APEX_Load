@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -1896,6 +1897,18 @@ func protectTemplateBindings(value string) (string, map[string]string) {
 		replacements[placeholder] = part
 		value = strings.Replace(value, part, placeholder, 1)
 	}
+	// A reference bound inside a nested URL is protected the same way.
+	var references [][]int
+	for _, match := range scriptPortableTemplatePattern.FindAllStringIndex(value, -1) {
+		if isPortableScriptTemplateReference(value[match[0]:match[1]]) {
+			references = append(references, match)
+		}
+	}
+	offset := len(replacements)
+	value, nested := scrub.ProtectNestedQueryPairs(value, references, func(index int) string {
+		return placeholderPrefix + strconv.Itoa(offset+index) + "=safe"
+	})
+	maps.Copy(replacements, nested)
 	return value, replacements
 }
 

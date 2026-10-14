@@ -376,21 +376,27 @@ func TestAuraNestedFormCredentialDisclosureBoundary(t *testing.T) {
 	}
 }
 
+// bodyPlacements puts request at the top level, inside a control step and
+// inside an HTTP sequence.
+func bodyPlacements(request dsl.Action) map[string]dsl.Action {
+	return map[string]dsl.Action{
+		"top-level": request,
+		"control":   {Type: "control_loop", Control: &dsl.ControlFlow{Steps: []dsl.Action{request}}},
+		"sequence":  {Type: "http_sequence", Params: map[string]any{"requests": []any{map[string]any{"type": "POST", "target": request.Target, "body": request.Body}}}},
+	}
+}
+
+// A body difference review cannot locate, here a SOAP body whose token-like
+// message ID review shows as {{fn.uuid()}}, is protected by the draft's exact
+// execution digest.
 func TestRequestBodyProjectionDifferenceRequiresExactDraftProtection(t *testing.T) {
-	request := dsl.Action{Type: "POST", Target: "/aura", Body: "message=" + url.QueryEscape(`{"actions":[{"id":"synthetic-id","descriptor":"synthetic://save","params":{"apiToken":"synthetic-credential","recordId":"safe"}}]}`)}
-	for _, tc := range []struct {
-		name   string
-		action dsl.Action
-	}{
-		{"top-level", request},
-		{"control", dsl.Action{Type: "control_loop", Control: &dsl.ControlFlow{Steps: []dsl.Action{request}}}},
-		{"sequence", dsl.Action{Type: "http_sequence", Params: map[string]any{"requests": []any{map[string]any{"type": "POST", "target": request.Target, "body": request.Body}}}}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			script := &dsl.Script{Name: "safe", Protocol: "http", Actions: []dsl.Action{tc.action}}
+	request := dsl.Action{Type: "POST", Target: "/ws", Body: unalignedSOAPBody("synthetic-credential", "")}
+	for name, action := range bodyPlacements(request) {
+		t.Run(name, func(t *testing.T) {
+			script := &dsl.Script{Name: "safe", Protocol: "http", Actions: []dsl.Action{action}}
 			projected := maskScriptSecrets(script)
 			if projected == nil || !runtimeCredentialSourceProjectionChanged(script, projected) {
-				t.Fatal("nested body credential change had no exact draft fallback")
+				t.Fatal("unlocated body credential change had no exact draft fallback")
 			}
 			fingerprint, err := fingerprintImportDraftCredentials(script)
 			if err != nil || !fingerprint.HasRawCredentials || fingerprint.FullDigest == "" {
@@ -399,6 +405,23 @@ func TestRequestBodyProjectionDifferenceRequiresExactDraftProtection(t *testing.
 			unchanged := cloneScriptDefinition(script)
 			if runtimeCredentialSourceProjectionChanged(script, unchanged) {
 				t.Fatal("unchanged body was classified as a credential difference")
+			}
+		})
+	}
+}
+
+// A credential nested in a JSON form value keeps its recorded encoding, so
+// review locates it and its digest protects the draft, as for any guided body
+// credential, instead of the draft's exact execution digest.
+func TestLocatedNestedFormCredentialKeepsGuidedDraftProtection(t *testing.T) {
+	request := dsl.Action{Type: "POST", Target: "/aura", Body: "message=" + url.QueryEscape(`{"actions":[{"id":"synthetic-id","descriptor":"synthetic://save","params":{"apiToken":"synthetic-credential","recordId":"safe"}}]}`)}
+	for name, action := range bodyPlacements(request) {
+		t.Run(name, func(t *testing.T) {
+			script := &dsl.Script{Name: "safe", Protocol: "http", Actions: []dsl.Action{action}}
+			fingerprint, err := fingerprintImportDraftCredentials(script)
+			if err != nil || !fingerprint.HasRawCredentials || fingerprint.FullDigest != "" ||
+				fingerprint.StructureDigest == "" || len(fingerprint.CredentialDigests) != 1 {
+				t.Fatalf("fingerprint = %+v, %v; want the located credential's digest", fingerprint, err)
 			}
 		})
 	}

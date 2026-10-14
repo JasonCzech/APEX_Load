@@ -2,9 +2,14 @@ package credentialpolicy
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 )
@@ -407,4 +412,269 @@ func wholeStructuredRuntimeTemplate(value string) bool {
 	}
 	expression := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 	return expression == "run.id" || structuredRuntimeReferenceExpression.MatchString(expression) || structuredRuntimeFunctionExpression.MatchString(expression)
+}
+
+// spliceFormValue applies spans, found in a form value's decoded text, to its
+// raw percent-encoded bytes (see spliceDecodedSpans), escaping the changed
+// bytes just enough to keep the form's structure and in the recording's hex
+// case. False when raw does not decode to decoded, or the result would not
+// decode to projected.
+func spliceFormValue(raw, decoded, projected string, spans []replacement) (string, bool) {
+	text, starts, ok := formValueByteStarts(raw)
+	if !ok || text != decoded {
+		return "", false
+	}
+	lowerHex := recordedLowerHex(raw)
+	replaced, ok := spliceDecodedSpans(decoded, starts, spans, func(out *strings.Builder, value string) {
+		writeFormEscaped(out, value, lowerHex)
+	})
+	if !ok {
+		return "", false
+	}
+	spliced := string(applyReplacements([]byte(raw), replaced))
+	if check, err := url.QueryUnescape(spliced); err != nil || check != projected {
+		return "", false
+	}
+	return spliced, true
+}
+
+// spliceJSONString returns the replacements that apply spans, found in a JSON
+// string's decoded text, to the string token (quotes included) it was decoded
+// from (see spliceDecodedSpans), JSON-escaping only the changed bytes. False
+// when token does not decode to decoded, or the result would not decode to
+// projected.
+func spliceJSONString(token, decoded, projected string, spans []replacement) ([]replacement, bool) {
+	text, starts, ok := jsonStringByteStarts(token)
+	if !ok || text != decoded {
+		return nil, false
+	}
+	replaced, ok := spliceDecodedSpans(decoded, starts, spans, writeJSONEscaped)
+	if !ok {
+		return nil, false
+	}
+	var check string
+	if err := json.Unmarshal(applyReplacements([]byte(token), replaced), &check); err != nil || check != projected {
+		return nil, false
+	}
+	return replaced, true
+}
+
+// spliceDecodedSpans maps spans, found in a text decoded from raw bytes, onto
+// those raw bytes. starts[i] is where decoded byte i begins in raw, or -1
+// inside a character one escape wrote, and starts[len(decoded)] is where the
+// decoded text ends. Every byte outside a span keeps its recorded encoding,
+// and so does the part of a span its replacement leaves unchanged (a JSON
+// string's quotes, say): only the changed bytes are written, by escape, so a
+// disclosure placeholder such as [REDACTED] stays literal where review finds
+// it. False without spans, or when spans overlap or a changed part begins or
+// ends inside an escape.
+func spliceDecodedSpans(decoded string, starts []int, spans []replacement, escape func(*strings.Builder, string)) ([]replacement, bool) {
+	if len(spans) == 0 || len(starts) != len(decoded)+1 {
+		return nil, false
+	}
+	replaced := make([]replacement, 0, len(spans))
+	previousEnd := 0
+	for _, span := range spans {
+		if span.start < previousEnd || span.end < span.start || span.end > len(decoded) {
+			return nil, false
+		}
+		previousEnd = span.end
+		original, value := decoded[span.start:span.end], string(span.value)
+		// A credential that begins with "[" or ends with "]" shares it with
+		// the placeholder; write the whole placeholder rather than keep a
+		// recorded %5B or [ that review would not read as one.
+		prefix := commonPrefixLength(original, value)
+		if first := strings.Index(value, credential.Redacted); first >= 0 && first < prefix {
+			prefix = first
+		}
+		suffix := commonSuffixLength(original[prefix:], value[prefix:])
+		if at := strings.LastIndex(value, credential.Redacted); at >= 0 && at+len(credential.Redacted) > len(value)-suffix {
+			suffix = len(value) - at - len(credential.Redacted)
+		}
+		start, end := starts[span.start+prefix], starts[span.end-suffix]
+		if start < 0 || end < 0 {
+			return nil, false
+		}
+		var middle strings.Builder
+		escape(&middle, value[prefix:len(value)-suffix])
+		replaced = append(replaced, replacement{start: start, end: end, value: []byte(middle.String())})
+	}
+	return replaced, true
+}
+
+// formValueByteStarts decodes a form value as url.QueryUnescape does and
+// returns where each decoded byte starts in raw, with len(raw) last.
+func formValueByteStarts(raw string) (string, []int, bool) {
+	decoded := make([]byte, 0, len(raw))
+	starts := make([]int, 0, len(raw)+1)
+	for index := 0; index < len(raw); {
+		starts = append(starts, index)
+		switch raw[index] {
+		case '%':
+			if index+2 >= len(raw) {
+				return "", nil, false
+			}
+			value, err := strconv.ParseUint(raw[index+1:index+3], 16, 8)
+			if err != nil {
+				return "", nil, false
+			}
+			decoded = append(decoded, byte(value))
+			index += 3
+		case '+':
+			decoded = append(decoded, ' ')
+			index++
+		default:
+			decoded = append(decoded, raw[index])
+			index++
+		}
+	}
+	starts = append(starts, len(raw))
+	return string(decoded), starts, true
+}
+
+// recordedLowerHex reports whether a form value's first percent escape uses
+// lowercase hex digits.
+func recordedLowerHex(raw string) bool {
+	index := strings.IndexByte(raw, '%')
+	if index < 0 || index+2 >= len(raw) {
+		return false
+	}
+	return strings.ContainsAny(raw[index+1:index+3], "abcdef")
+}
+
+// writeFormEscaped writes value into a form value, escaping only what would
+// change how the form parses or that is not printable ASCII. A disclosure
+// placeholder such as [REDACTED] stays literal, where review finds it.
+func writeFormEscaped(out *strings.Builder, value string, lowerHex bool) {
+	digits := "0123456789ABCDEF"
+	if lowerHex {
+		digits = "0123456789abcdef"
+	}
+	for index := 0; index < len(value); index++ {
+		c := value[index]
+		switch {
+		case c == ' ':
+			out.WriteByte('+')
+		case c <= 0x20 || c >= 0x7f || strings.IndexByte("%&+=#;", c) >= 0:
+			out.WriteByte('%')
+			out.WriteByte(digits[c>>4])
+			out.WriteByte(digits[c&0x0f])
+		default:
+			out.WriteByte(c)
+		}
+	}
+}
+
+func commonPrefixLength(left, right string) int {
+	length := 0
+	for length < len(left) && length < len(right) && left[length] == right[length] {
+		length++
+	}
+	return length
+}
+
+func commonSuffixLength(left, right string) int {
+	length := 0
+	for length < len(left) && length < len(right) && left[len(left)-1-length] == right[len(right)-1-length] {
+		length++
+	}
+	return length
+}
+
+// jsonStringByteStarts decodes a JSON string token, quotes included, and
+// returns where each decoded byte starts in token: -1 for the later bytes of a
+// character one \u escape wrote, and the closing quote's offset last.
+func jsonStringByteStarts(token string) (string, []int, bool) {
+	if len(token) < 2 || token[0] != '"' || token[len(token)-1] != '"' {
+		return "", nil, false
+	}
+	closing := len(token) - 1
+	decoded := make([]byte, 0, closing)
+	starts := make([]int, 0, closing)
+	for index := 1; index < closing; {
+		start := index
+		if token[index] != '\\' {
+			decoded = append(decoded, token[index])
+			starts = append(starts, start)
+			index++
+			continue
+		}
+		if index+1 >= closing {
+			return "", nil, false
+		}
+		var char rune
+		switch escaped := token[index+1]; escaped {
+		case '"', '\\', '/':
+			char = rune(escaped)
+		case 'b':
+			char = '\b'
+		case 'f':
+			char = '\f'
+		case 'n':
+			char = '\n'
+		case 'r':
+			char = '\r'
+		case 't':
+			char = '\t'
+		case 'u':
+			code, ok := jsonStringUnicodeEscape(token[:closing], index)
+			if !ok {
+				return "", nil, false
+			}
+			char = code
+			if utf16.IsSurrogate(code) {
+				low, ok := jsonStringUnicodeEscape(token[:closing], index+6)
+				if char = utf16.DecodeRune(code, low); !ok || char == utf8.RuneError {
+					return "", nil, false
+				}
+				index += 6
+			}
+			index += 4
+		default:
+			return "", nil, false
+		}
+		index += 2
+		width := len(decoded)
+		decoded = utf8.AppendRune(decoded, char)
+		starts = append(starts, start)
+		for range len(decoded) - width - 1 {
+			starts = append(starts, -1)
+		}
+	}
+	return string(decoded), append(starts, closing), true
+}
+
+// jsonStringUnicodeEscape reads the \uXXXX escape at token[index:].
+func jsonStringUnicodeEscape(token string, index int) (rune, bool) {
+	if index+6 > len(token) || token[index] != '\\' || token[index+1] != 'u' {
+		return 0, false
+	}
+	code, err := strconv.ParseUint(token[index+2:index+6], 16, 16)
+	return rune(code), err == nil
+}
+
+// writeJSONEscaped writes value into a JSON string, escaping only what JSON
+// requires. Unlike json.Marshal it leaves <, > and & as they are, so the
+// bytes around a disclosure placeholder still match the recording.
+func writeJSONEscaped(out *strings.Builder, value string) {
+	const digits = "0123456789abcdef"
+	for index := 0; index < len(value); index++ {
+		switch c := value[index]; {
+		case c == '"' || c == '\\':
+			out.WriteByte('\\')
+			out.WriteByte(c)
+		case c == '\n':
+			out.WriteString(`\n`)
+		case c == '\r':
+			out.WriteString(`\r`)
+		case c == '\t':
+			out.WriteString(`\t`)
+		case c < 0x20:
+			out.WriteString(`\u00`)
+			out.WriteByte(digits[c>>4])
+			out.WriteByte(digits[c&0x0f])
+		default:
+			out.WriteByte(c)
+		}
+	}
 }

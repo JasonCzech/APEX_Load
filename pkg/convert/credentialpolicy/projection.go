@@ -1385,13 +1385,14 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 			var projected []byte
 			var item Result
 			var nestedErr error
+			var spans []replacement
 			if queryField {
 				queryJSON, work, classifyErr := InspectQueryValueStructure(field.Value, options.structuredRedactionBudget.remainingBytes)
 				if !reserveStructuredRedactionBytes(options, work) || classifyErr != nil {
 					return "", nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
 				}
 				if queryJSON {
-					projected, item, nestedErr = ProjectRequestBody([]byte(field.Value), "application/json", nestedOptions)
+					projected, item, nestedErr = projectRequestBody([]byte(field.Value), "application/json", nestedOptions, &spans)
 				} else if knownCredentialScalarMatch(options, field.Value) {
 					projected, item = []byte(credential.Redacted), exactResult()
 				} else if !queryHasExecutableStructure(strings.TrimSpace(field.Value)) {
@@ -1402,7 +1403,7 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 					projected = graphQL.Query
 				}
 			} else {
-				projected, item, nestedErr = ProjectRequestBody([]byte(field.Value), "application/json", nestedOptions)
+				projected, item, nestedErr = projectRequestBody([]byte(field.Value), "application/json", nestedOptions, &spans)
 			}
 			if nestedErr != nil {
 				return "", nil, Result{}, nestedErr
@@ -1418,8 +1419,21 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 				if !reserveFormEncodedRedaction(options, projected) {
 					return "", nil, rejected(options.Source, "credential_structured_output_limit_exceeded"), nil
 				}
+				// Write only the bytes the projection replaced and keep the
+				// recorded encoding of the rest. Re-encoding the whole value
+				// changed every byte around a credential, so the projection no
+				// longer lined up with the recording, and escaped its placeholder
+				// where review could not find it. A projection without spans (a
+				// GraphQL query, a whole known value) is one span over the value.
+				if spans == nil {
+					spans = []replacement{{start: 0, end: len(field.Value), value: projected}}
+				}
+				encoded, spliced := spliceFormValue(field.RawValue, field.Value, string(projected), spans)
+				if !spliced {
+					encoded = url.QueryEscape(string(projected))
+				}
 				field.Value = string(projected)
-				rawValue = url.QueryEscape(field.Value)
+				rawValue = encoded
 				field.RawValue = rawValue
 			}
 		} else if sensitive {
