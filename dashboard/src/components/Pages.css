@@ -1885,6 +1885,10 @@
   font-size: 14px;
 }
 
+.empty-card-actions {
+  justify-content: center;
+}
+
 .results-loading-card {
   align-items: center;
   display: flex;

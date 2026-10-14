@@ -2390,6 +2390,16 @@ describe('BrunoImport', () => {
     expect(mappings?.textContent).not.toContain('folder-sha')
   })
 
+  it('says when the requests’ own tests expect an error response', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts.forEach(candidate => Object.assign(candidate.script.actions[0], {
+      assertions: [{ type: 'status_code', expected: 500 }, { type: 'header_contains', value: 'text/xml' }],
+    }))
+    await renderAndInspect(inspection, 'folder-1')
+    expect(container.querySelector('.bruno-intent')?.textContent)
+      .toBe('2 of 2 requests expect an error response (HTTP 500). A run passes when the target answers with that error.')
+  })
+
   it('says when an imported auth mode needs translation', async () => {
     const inspection = nativeInspectionFixture()
     Object.assign(inspection.result.scripts[0].script, {

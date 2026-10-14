@@ -76,6 +76,8 @@ interface Props {
   canManageScripts?: boolean
   emptyMessage?: string
   onCreate?: () => void
+  // Opens the import sources; offered beside Create when the library is empty.
+  onImport?: () => void
   federation?: ScriptLibraryFederation
   github?: ScriptLibraryGitHub
   secretStatusByScript?: Record<string, ScriptSecretStatus>
@@ -204,6 +206,7 @@ export default function ScriptsLibraryTable({
   canManageScripts = true,
   emptyMessage = 'No scripts yet.',
   onCreate,
+  onImport,
   federation,
   github,
   secretStatusByScript = {},
@@ -311,7 +314,10 @@ export default function ScriptsLibraryTable({
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
   if (isEmpty && onCreate && canManageScripts) return <div className="empty-card">
     <p>{emptyMessage}</p><p className="empty-hint">Create or import a script to begin building your test library.</p>
-    <button type="button" className="btn btn-primary" onClick={onCreate}>Create your first script</button>
+    <div className="settings-inline-actions empty-card-actions">
+      <button type="button" className="btn btn-primary" onClick={onCreate}>Create your first script</button>
+      {onImport && <button type="button" className="btn btn-secondary" onClick={onImport}>Import scripts</button>}
+    </div>
   </div>
   return (
     <div className="data-table">
@@ -721,6 +727,9 @@ export default function ScriptsLibraryTable({
                   <span className="cell-muted">{emptyMessage}</span>
                   {onCreate && canManageScripts && (
                     <button type="button" className="btn btn-primary btn-sm" onClick={onCreate}>Create your first script</button>
+                  )}
+                  {onCreate && onImport && canManageScripts && (
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={onImport}>Import scripts</button>
                   )}
                 </div>
               </td>

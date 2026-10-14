@@ -65,6 +65,15 @@ const SKIPPED_FILE_REASONS: Record<string, string> = {
     version_control_file: 'version-control file',
     ignore_list: 'excluded by an ignore list',
 };
+// The error statuses a request's own tests expect. A collection whose
+// requests expect one is a set of negative tests: a run passes when the
+// target answers with that error.
+function expectedErrorStatuses(candidate: BrunoNativeScriptCandidate): number[] {
+    return candidate.script.actions.flatMap(action => (action.assertions || [])
+        .filter(assertion => assertion.type === 'status_code')
+        .map(assertion => Number(assertion.expected))
+        .filter(status => Number.isInteger(status) && status >= 400));
+}
 function suggestedBrunoFolderName(files: File[]) {
     if (files.length === 0)
         return 'Imported Bruno APIs';
@@ -749,6 +758,18 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         capabilities.has_bruno_apps ? 'Bruno Apps' : '',
     ].filter(Boolean) : [];
     const evidenceCandidate = nativeCandidates.find(candidate => candidate.candidate_id === evidenceCandidateId) || nativeCandidates[0];
+    const errorIntent = useMemo(() => {
+        const statuses = new Set<number>();
+        let requests = 0;
+        for (const candidate of nativeCandidates) {
+            const expected = expectedErrorStatuses(candidate);
+            if (expected.length === 0)
+                continue;
+            requests += 1;
+            expected.forEach(status => statuses.add(status));
+        }
+        return { requests, statuses: [...statuses].sort((left, right) => left - right) };
+    }, [nativeCandidates]);
     const sortedNativeCandidates = useMemo(() => {
         const selectedIDs = new Set(selectedCandidateIds);
         const direction = nativeCandidateSort.direction === 'asc' ? 1 : -1;
@@ -1680,6 +1701,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       <h3>Collection</h3>
                       <strong>{inspection.result.collection.name}</strong>
                       <p>{countLabel(inspection.result.fidelity.executable_items, 'request')} detected{inspection.result.fidelity.preserved_apps > 0 ? ` · ${countLabel(inspection.result.fidelity.preserved_apps, 'Bruno App')} preserved` : ''}</p>
+                      {errorIntent.requests > 0 && (<p className="bruno-intent" role="note">
+                          {errorIntent.requests} of {countLabel(nativeCandidates.length, 'request')} {errorIntent.requests === 1 ? 'expects' : 'expect'} an error response (HTTP {errorIntent.statuses.join(', ')}). A run passes when the target answers with that error.
+                        </p>)}
                       <CollectionTree items={inspection.result.collection.items}/>
                       <SkippedFilesList files={skippedFiles} total={skippedFileTotal}/>
                     </article>

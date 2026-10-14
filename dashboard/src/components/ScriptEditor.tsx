@@ -313,6 +313,11 @@ type WorkbenchMode = 'author' | 'debug'
 
 const DEBUG_TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped'])
 
+// A status check whose expected value is a literal status code, not a template.
+function numericStatusCheck(assertion: Assertion): boolean {
+  return assertion.type === 'status_code' && !assertion.source && /^\d{3}$/.test(String(assertion.expected ?? '').trim())
+}
+
 function isFinalizedDebugSession(session: ScriptDebugSession | undefined, report?: ReplayReport | null): boolean {
   if (!session) return Boolean(report?.completed_at)
   // Session.CompletedAt is written only after ReplayScript returns and the
@@ -5818,7 +5823,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     offersStatus: checkFamily(script.protocol) === 'http',
     disabledReason: event => !eventStep(event) ? 'This response is not from a step of the script.' : replayStepsInPlace ? '' : jsonDirty || jsonParseMessage ? 'Apply or discard the JSON edits to add from this response.' : 'The steps changed since this replay. Replay again to add from its response.',
     laterUses: (event, text) => { const position = eventStep(event); return position ? laterUses(script, position, text).length : 0 },
-    onStatus: (event, status) => addCheck(event, { type: 'status_code', expected: status }, name => `Added the check “Status is ${status}” to ${name}.`),
+    // One status check per step: a different status replaces the numeric one
+    // the step has rather than adding a check that can never pass with it.
+    onStatus: (event, status) => {
+      const checked = responseActions.checkedStatus(event)
+      return changeEventStep(event,
+        action => (action.assertions || []).some(existing => existing.type === 'status_code' && String(existing.expected ?? '') === String(status) && !existing.source),
+        action => {
+          const assertions = action.assertions || []
+          const index = assertions.findIndex(numericStatusCheck)
+          return { ...action, assertions: index < 0 ? [...assertions, { type: 'status_code', expected: status }] : assertions.map((existing, at) => at === index ? { ...existing, expected: status } : existing) }
+        },
+        name => checked === undefined ? `Added the check “Status is ${status}” to ${name}.` : `Changed the status check on ${name} from ${checked} to ${status}.`)
+    },
+    checkedStatus: event => {
+      const position = eventStep(event)
+      const check = position ? resolveAuthorJsonScopeByKey(script, authorFocusKey(position))?.action.assertions?.find(numericStatusCheck) : undefined
+      return check ? Number(check.expected) : undefined
+    },
     onContains: (event, text) => addCheck(event, { type: checkFamily(script.protocol) === 'http' ? 'text_contains' : 'body_contains', value: text }, name => `Added a check that the response contains it to ${name}.`),
     onSave: (event, selection) => {
       if (!selection.boundaries) return false

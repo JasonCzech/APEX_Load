@@ -52,6 +52,28 @@ describe('ResponseSelection', () => {
     expect(container.querySelector('[role="status"]')!.textContent).toBe('Added the check “Status is 200”.')
   })
 
+  it('changes a different status check instead of adding a second one', async () => {
+    const spy = handlers()
+    await render({ ...spy, checkedStatus: 201 })
+    await act(async () => button('Change the status check from 201 to 200').click())
+    expect(spy.onStatus).toHaveBeenCalledWith(200)
+    expect(container.querySelector('[role="status"]')!.textContent).toBe('Changed the status check to “Status is 200”.')
+  })
+
+  it('does not offer to flip a step that expects an error response', async () => {
+    const spy = handlers()
+    await render({ ...spy, checkedStatus: 500 })
+    expect([...container.querySelectorAll('button')].some(item => /status/i.test(item.textContent || ''))).toBe(false)
+    expect(container.querySelector('[role="note"]')!.textContent).toBe('This step checks for status 500, an error response. The target answered 200, so check the target and the inputs before changing the check.')
+  })
+
+  it('does not offer to accept an error answer on a step that expects success', async () => {
+    const spy = handlers()
+    await render({ ...spy, status: 500, checkedStatus: 200 })
+    expect([...container.querySelectorAll('button')].some(item => /status/i.test(item.textContent || ''))).toBe(false)
+    expect(container.querySelector('[role="note"]')!.textContent).toBe('This step checks for status 200. The target answered 500, an error response, so fix the request or the target rather than the check.')
+  })
+
   it('offers a check, a saved value and later uses for selected text', async () => {
     const spy = handlers()
     await render(spy)

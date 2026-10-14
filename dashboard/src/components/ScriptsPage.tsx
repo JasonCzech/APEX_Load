@@ -1398,6 +1398,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
             canManageScripts={canManageScripts}
             emptyMessage={scriptsLoading ? 'Loading scripts…' : scriptsLoadFailed ? 'Scripts unavailable. Use Refresh to retry.' : assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
             onCreate={!scriptsLoading && !scriptsLoadFailed && scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' && folderFilter === 'all' ? openCreateOptions : undefined}
+            onImport={() => { setCreateWorkflow('source'); openCreateOptions() }}
             folders={scriptFolders}
             federation={scriptFederation}
             github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}

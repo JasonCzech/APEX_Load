@@ -106,6 +106,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     order: 15,
     launcher: 'bruno',
     visible: true,
+    protocols: ['HTTP', 'REST', 'SOAP'],
   },
   {
     id: 'postman',
@@ -116,6 +117,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     order: 20,
     launcher: 'postman',
     visible: true,
+    protocols: ['HTTP', 'REST', 'SOAP'],
   },
   {
     id: 'wsdl',
@@ -699,6 +701,7 @@ export default function ScriptCreateOptions({
   const visibleImportSurfaces = importSurfaces.filter(surface => surface.visible)
   const filteredImportSurfaces = visibleImportSurfaces.filter(surface => {
     const text = [surface.title, surface.description, surface.category, surface.badge, surface.id,
+      ...(surface.protocols || []),
       ...(surface.modes || []).flatMap(mode => [mode.label, mode.description])].join(' ').toLowerCase()
     return sourceQuery.toLowerCase().trim().split(/\s+/).every(term => text.includes(term))
   })
@@ -1103,6 +1106,11 @@ export default function ScriptCreateOptions({
                         <span className="script-create-type-badge import">{surface.badge}</span>
                         <h3>{surface.title}</h3>
                         <p>{surface.description}</p>
+                        {surface.protocols?.length ? (
+                          <span className="script-create-template-tags compact" aria-label={`${surface.title} protocols`}>
+                            {surface.protocols.map(protocol => <span key={protocol} className="tag-chip">{protocol}</span>)}
+                          </span>
+                        ) : null}
                         {surface.modes?.length ? (
                           <span className="script-create-template-tags compact" aria-label={`${surface.title} modes`}>
                             {surface.modes.map(mode => <span key={mode.id} className="tag-chip">{mode.label}</span>)}

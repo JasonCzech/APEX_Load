@@ -13,11 +13,13 @@ const MAX_SELECTION = 2000
  * or a value later steps use in its place. Only text found in the response as
  * it was sent qualifies; a formatted view's added spacing does not.
  */
-export default function ResponseSelection({ body, bodyState = 'whole', status, disabledReason, laterUses, onContains, onSave, onCorrelate, onStatus, children }: {
+export default function ResponseSelection({ body, bodyState = 'whole', status, checkedStatus, disabledReason, laterUses, onContains, onSave, onCorrelate, onStatus, children }: {
   body?: string
   /** How much of the body the replay kept: a partial one may go on past the selection, a redacted one hides text. */
   bodyState?: 'whole' | 'partial' | 'redacted'
   status?: number
+  /** The status the step already checks for, if any. */
+  checkedStatus?: number
   /** Why nothing can be added from this response (the script changed since), or ''. */
   disabledReason: string
   /** How many later requests send the text. */
@@ -63,7 +65,18 @@ export default function ResponseSelection({ body, bodyState = 'whole', status, d
   const preview = selected ? (selected.text.length > 60 ? `${selected.text.slice(0, 60)}…` : selected.text) : ''
   return <div className="response-selection">
     {status ? <div className="response-selection-status">
-      <button type="button" className="btn btn-sm btn-ghost" disabled={Boolean(disabledReason)} onClick={() => setDone(onStatus(status) ? `Added the check “Status is ${status}”.` : `The step already checks that the status is ${status}.`)}>Check that the status is {status}</button>
+      {checkedStatus !== undefined && checkedStatus !== status && checkedStatus >= 400
+        // A step that expects an error is a negative test, as its source
+        // test was; offering to expect another status would undo it.
+        ? <p role="note">This step checks for status {checkedStatus}, an error response. The target answered {status}, so check the target and the inputs before changing the check.</p>
+        : checkedStatus !== undefined && checkedStatus !== status && status >= 400
+          // Nor does an error answer become what a passing step expects.
+          ? <p role="note">This step checks for status {checkedStatus}. The target answered {status}, an error response, so fix the request or the target rather than the check.</p>
+          : <button type="button" className="btn btn-sm btn-ghost" disabled={Boolean(disabledReason)} onClick={() => setDone(onStatus(status)
+          ? checkedStatus !== undefined ? `Changed the status check to “Status is ${status}”.` : `Added the check “Status is ${status}”.`
+          : `The step already checks that the status is ${status}.`)}>
+          {checkedStatus !== undefined && checkedStatus !== status ? `Change the status check from ${checkedStatus} to ${status}` : `Check that the status is ${status}`}
+        </button>}
     </div> : null}
     <div ref={area}>{children}</div>
     {selected && <div className="response-selection-actions" role="group" aria-label="Use the selected text">

@@ -29,6 +29,8 @@ export interface AuthoringImportSurface {
   launcher: string
   visible: boolean
   modes?: AuthoringImportMode[]
+  /** Protocols a collection format carries when its title does not say. */
+  protocols?: string[]
 }
 
 export interface AuthoringCapabilitiesResponse {
