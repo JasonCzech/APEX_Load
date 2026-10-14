@@ -641,6 +641,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	result.RawArchive = nil
 	result.SanitizedArchive = nil
 	result.OriginalUpload = nil
+	responseResult = withBrunoEnvironmentValuesFor(responseResult, sharedValues)
 	_, actor, _ := s.resolveAuditActor(r)
 	session := &brunoImportSession{
 		ID:                      sessionID,
@@ -693,6 +694,42 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		SharedValues:       sharedValues,
 		PreviousInputs:     s.brunoNativePreviousInputs(input.ProjectID, responseResult, sharedValues),
 	})
+}
+
+// withBrunoEnvironmentValuesFor returns result with each environment's values
+// cut to the inputs its requests leave unset (never a credential-shaped one),
+// the only values the review offers. Without native inputs no value crosses.
+// The environments are copied: the session keeps its own.
+func withBrunoEnvironmentValuesFor(result *brunoconvert.Result, shared *sharedvalue.Result) *brunoconvert.Result {
+	if result == nil || len(result.Environments) == 0 {
+		return result
+	}
+	wanted := map[string]bool{}
+	if shared != nil {
+		for _, candidate := range shared.Candidates {
+			if candidate.Kind != sharedvalue.KindSourceVariable || candidate.CredentialShaped {
+				continue
+			}
+			wanted[candidate.SourceVariable] = true
+			wanted[candidate.Name] = true
+		}
+	}
+	projected := *result
+	projected.Environments = make([]brunoconvert.Environment, len(result.Environments))
+	for index, environment := range result.Environments {
+		var values map[string]string
+		for name, value := range environment.Values {
+			if wanted[name] {
+				if values == nil {
+					values = map[string]string{}
+				}
+				values[name] = value
+			}
+		}
+		environment.Values = values
+		projected.Environments[index] = environment
+	}
+	return &projected
 }
 
 // brunoNativePreviousInputs reads, from the scripts a re-import updates, how

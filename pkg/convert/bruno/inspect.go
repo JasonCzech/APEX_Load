@@ -483,7 +483,7 @@ func inspectCollection(files []sourceFile, root string) (Collection, []Environme
 		}
 		if role == "environment" {
 			name := strings.TrimSuffix(path.Base(file.Path), path.Ext(file.Path))
-			environments = append(environments, Environment{Name: name, Path: relative, Type: strings.TrimPrefix(path.Ext(file.Path), ".")})
+			environments = append(environments, Environment{Name: name, Path: relative, Type: strings.TrimPrefix(path.Ext(file.Path), "."), Values: environmentVariableValues(file.Data, path.Ext(lower))})
 			for _, name := range environmentVariableNames(file.Data, path.Ext(lower)) {
 				definedVariables[name] = struct{}{}
 			}

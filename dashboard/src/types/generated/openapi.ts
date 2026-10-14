@@ -111,6 +111,7 @@ export interface components {
       "name": string;
       "path": string;
       "type": string;
+      "values"?: Record<string, string>;
     };
     "BrunoExecutionPreflight": components["schemas"]["BrunoNativeExecutionPreflight"];
     "BrunoFidelityReport": {

@@ -928,6 +928,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"name": {Type: "string"},
 				"path": {Type: "string"},
 				"type": {Type: "string"},
+				"values": openAPIStringMap("The environment's plain values for the variables the requests leave unset, offered to fill those inputs. Secret, disabled and scrubbed variables are never included, nor are .env values."),
 			},
 			Required: []string{"name", "path", "type"},
 		},

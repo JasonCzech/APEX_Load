@@ -25,6 +25,8 @@ interface Props {
   previous?: Record<string, PreviousInput>
   /** The project's data pools, offered to fill an alias and column. */
   loadDataPools?: () => Promise<SharedDataPool[]>
+  /** The collection's environments, with values for the inputs they define. */
+  environments?: Array<{ name: string; path: string; values?: Record<string, string> }>
   onInspect: (id: string) => void
   onCredentials: () => void
   disabled: boolean
@@ -34,7 +36,7 @@ type SupplyMode = 'value' | 'data' | 'generated'
 
 const DEFAULT_DIGITS = 10
 
-export default function BrunoDataReview({ candidates, shared, values, onChange, bindings = {}, onBindingsChange, previous = {}, loadDataPools, onInspect, onCredentials, disabled }: Props) {
+export default function BrunoDataReview({ candidates, shared, values, onChange, bindings = {}, onBindingsChange, previous = {}, loadDataPools, environments = [], onInspect, onCredentials, disabled }: Props) {
   const [search, setSearch] = useState('')
   const [unresolvedOnly, setUnresolvedOnly] = useState(false)
   const [pools, setPools] = useState<SharedDataPool[]>([])
@@ -74,6 +76,30 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
     setBinding(id, mode === 'data' ? { mode: 'data', alias: '', column: '' } : { mode: 'generated', generator: 'uuid' })
   }
   const supplied = (id: string) => Boolean(values[id]?.trim()) || brunoInputBindingComplete(bindings[id])
+  // What each environment can supply: the inputs it defines a value for.
+  const environmentFills = environments.map(environment => ({
+    environment,
+    inputs: variables.flatMap(variable => {
+      const item = brunoVariableCandidate(shared, variable)
+      const value = environment.values?.[variable]
+      return item && value ? [{ id: item.id, value }] : []
+    }),
+  })).filter(fill => fill.inputs.length > 0)
+  const [filledFrom, setFilledFrom] = useState<{ path: string; count: number } | null>(null)
+  const unsuppliedFillable = environmentFills.some(fill => fill.inputs.some(input => !supplied(input.id)))
+  const fillFrom = (path: string) => {
+    const fill = environmentFills.find(item => item.environment.path === path)
+    if (!fill) return
+    const nextValues = { ...values }
+    const nextBindings = { ...bindings }
+    for (const input of fill.inputs) {
+      nextValues[input.id] = input.value
+      delete nextBindings[input.id]
+    }
+    onChange(nextValues)
+    if (onBindingsChange && Object.keys(nextBindings).length !== Object.keys(bindings).length) onBindingsChange(nextBindings)
+    setFilledFrom({ path, count: fill.inputs.length })
+  }
   return <section className="bruno-card bruno-data-review">
     <h3>Required runtime inputs</h3>
     <p>Supply each input the collection leaves unset: one value for every virtual user, a column of a data pool so each virtual user reads its own row, or a value generated each iteration. Inputs are applied when drafts are saved. Conversion review gates remain separate.</p>
@@ -81,6 +107,18 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
       <label>Find input<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <label><input type="checkbox" checked={unresolvedOnly} onChange={event => setUnresolvedOnly(event.target.checked)} /> Unresolved only</label>
     </div>
+    {environmentFills.length > 0 && <div className="bruno-environment-fill">
+      <p>{unsuppliedFillable
+        ? `The collection's ${environmentFills.length === 1 ? 'environment defines' : 'environments define'} some of these inputs. Choose one to fill them with its values.`
+        : 'Fill these inputs again from one of the collection’s environments.'}</p>
+      <label>Fill inputs from
+        <select disabled={disabled} value={filledFrom?.path || ''} onChange={event => fillFrom(event.target.value)}>
+          <option value="">Choose an environment</option>
+          {environmentFills.map(fill => <option key={fill.environment.path} value={fill.environment.path}>{fill.environment.name} ({fill.inputs.length} input{fill.inputs.length === 1 ? '' : 's'})</option>)}
+        </select>
+      </label>
+      {filledFrom && <small role="status">Filled {filledFrom.count} input{filledFrom.count === 1 ? '' : 's'} with one value for every user.</small>}
+    </div>}
     {variables.length === 0 && <p role="status">No runtime inputs are required for the selected APIs.</p>}
     <ul className="bruno-input-list">
       {variables.filter(variable => variable.toLowerCase().includes(search.toLowerCase())).filter(variable => {

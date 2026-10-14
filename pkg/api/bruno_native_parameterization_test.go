@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -374,5 +375,31 @@ func TestBrunoNativePreviousInputsSkipCredentialShapedInputs(t *testing.T) {
 	}
 	if other := server.brunoNativePreviousInputs("another-project", result, shared); len(other) != 0 {
 		t.Errorf("another project's script supplied inputs: %+v", other)
+	}
+}
+
+// An environment in the bundle offers its values for the inputs the requests
+// leave unset, and nothing else.
+func TestBrunoNativeInspectOffersEnvironmentValuesForUnsetInputs(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	files := append(brunoInputFiles(), brunoInspectJSONFile{
+		Path: "inputs/environments/dev.yml",
+		Content: `name: dev
+variables:
+  - name: subscriberNumber
+    value: "5551234"
+  - name: unrelatedHost
+    value: other.example.test
+  - name: apiKey
+    value: hidden
+    secret: true
+`,
+	})
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, files)
+	if len(inspection.Result.Environments) != 1 {
+		t.Fatalf("environments = %+v", inspection.Result.Environments)
+	}
+	if got := inspection.Result.Environments[0].Values; !reflect.DeepEqual(got, map[string]string{"subscriberNumber": "5551234"}) {
+		t.Errorf("environment values = %v, want only the unset input", got)
 	}
 }

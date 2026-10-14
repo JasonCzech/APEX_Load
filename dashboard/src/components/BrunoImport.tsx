@@ -1890,7 +1890,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
               </section>
 
               <section className="bruno-tab-panel" id="bruno-inspection-panel-data" hidden={activeInspectionTab !== 'data'}>
-                  {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} bindings={inputBindings} onBindingsChange={setInputBindings} previous={inspection.previous_inputs} loadDataPools={loadDataPools} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
+                  {!committed && <BrunoDataReview key={inspection.import_session_id} candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} bindings={inputBindings} onBindingsChange={setInputBindings} previous={inspection.previous_inputs} loadDataPools={loadDataPools} environments={inspection.result.environments} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
                   {!committed && <BrunoGeneratedValues groups={generatedValueGroups} choices={generatedValueChoices} onChange={setGeneratedValueChoices} disabled={loading || protectedSessionExpired}/>}
               </section>
               {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" id={`bruno-inspection-panel-${section}`} hidden={activeInspectionTab !== section}>

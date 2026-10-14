@@ -155,6 +155,10 @@ type Environment struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Type string `json:"type"`
+	// Values are the environment's plain variable values (never a secret,
+	// disabled or scrubbed one). An import offers them for the variables
+	// its requests leave unset.
+	Values map[string]string `json:"values,omitempty"`
 }
 
 type Capabilities struct {

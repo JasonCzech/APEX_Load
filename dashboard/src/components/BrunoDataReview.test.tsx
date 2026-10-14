@@ -83,3 +83,34 @@ it('reads an input from a data pool column or generates it, and says when a re-i
   choose(select('Supply env'), 'value')
   expect(bindingsChanged).toHaveBeenLastCalledWith({})
 })
+
+it('fills inputs from a chosen environment as one value for every user', () => {
+  const changed = vi.fn()
+  const bindingsChanged = vi.fn()
+  const environments = [
+    { name: 'dev', path: 'CTA/environments/dev.yml', values: { env: 'dev.example.test' } },
+    { name: 'empty', path: 'CTA/environments/empty.yml', values: { unrelated: 'x' } },
+  ]
+  act(() => root.render(<BrunoDataReview candidates={[candidates[1]]} shared={shared} values={{}} onChange={changed}
+    bindings={{ 'env-id': { mode: 'generated', generator: 'uuid' } }} onBindingsChange={bindingsChanged} environments={environments}
+    onInspect={() => {}} onCredentials={() => {}} disabled={false} />))
+  const fill = container.querySelector('.bruno-environment-fill')!
+  expect(fill.textContent).toContain('Fill these inputs again')
+  const select = fill.querySelector('select')!
+  // Only an environment that defines one of the inputs is offered.
+  expect(Array.from(select.options).map(option => option.textContent)).toEqual(['Choose an environment', 'dev (1 input)'])
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'CTA/environments/dev.yml')
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(changed).toHaveBeenLastCalledWith({ 'env-id': 'dev.example.test' })
+  expect(bindingsChanged).toHaveBeenLastCalledWith({})
+  expect(fill.textContent).toContain('Filled 1 input with one value for every user.')
+})
+
+it('asks for an environment while the inputs it defines are unset', () => {
+  act(() => root.render(<BrunoDataReview candidates={[candidates[1]]} shared={shared} values={{}} onChange={() => {}}
+    environments={[{ name: 'dev', path: 'dev.yml', values: { env: 'dev.example.test' } }]}
+    onInspect={() => {}} onCredentials={() => {}} disabled={false} />))
+  expect(container.querySelector('.bruno-environment-fill')?.textContent).toContain('The collection\'s environment defines some of these inputs. Choose one to fill them with its values.')
+})
