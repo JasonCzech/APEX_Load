@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -212,5 +215,164 @@ http:
 		if !strings.Contains(body, requirement.Replacement) {
 			t.Errorf("credential %q lost its reference: %s", requirement.Replacement, body)
 		}
+	}
+}
+
+func brunoInputFiles() []brunoInspectJSONFile {
+	return []brunoInspectJSONFile{
+		{Path: "inputs/opencollection.yml", Content: "opencollection: 1.0.0\ninfo: {name: Inputs, uid: inputs-collection}\n"},
+		{Path: "inputs/inquire.yml", Content: `info: {name: Inquire, uid: inquire-inputs-uid, type: http}
+http:
+  method: POST
+  url: https://example.test/soap
+  body: {type: xml, data: "<Envelope><subscriber>{{subscriberNumber}}</subscriber><ban>{{billingAccountNumber}}</ban></Envelope>"}
+`},
+	}
+}
+
+func brunoInputCandidateIDs(t *testing.T, inspection brunoInspectResponse) (string, string) {
+	t.Helper()
+	var subscriber, ban string
+	if inspection.SharedValues == nil {
+		t.Fatal("no shared values")
+	}
+	for _, candidate := range inspection.SharedValues.Candidates {
+		switch candidate.Name {
+		case "subscriberNumber":
+			subscriber = candidate.ID
+		case "billingAccountNumber":
+			ban = candidate.ID
+		}
+	}
+	if subscriber == "" || ban == "" {
+		t.Fatalf("shared values = %+v", inspection.SharedValues.Candidates)
+	}
+	return subscriber, ban
+}
+
+// An input can read a data pool column per virtual user; a value typed for
+// every user is kept too, and a re-import offers both choices again.
+func TestBrunoNativeInputBindingsSurviveReimport(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoInputFiles())
+	subscriber, ban := brunoInputCandidateIDs(t, inspection)
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-inputs")
+	base := brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create_native_batch",
+		FolderID:        &folderID,
+	}
+
+	both := base
+	both.SharedValues = map[string]string{subscriber: "5551234"}
+	both.InputBindings = map[string]sharedvalue.Binding{subscriber: {Mode: "data", Alias: "subscribers", Column: "number"}}
+	if response := commitBrunoImportWithStatus(t, server, both); response.Code != http.StatusBadRequest ||
+		!strings.Contains(response.Body.String(), "both a value for every user and a binding") {
+		t.Fatalf("value and binding status = %d body=%s", response.Code, response.Body.String())
+	}
+	stale := base
+	stale.InputBindings = map[string]sharedvalue.Binding{"sv_missing": {Mode: "generated", Generator: "uuid"}}
+	if response := commitBrunoImportWithStatus(t, server, stale); response.Code != http.StatusConflict {
+		t.Fatalf("stale binding status = %d body=%s", response.Code, response.Body.String())
+	}
+
+	commit := base
+	commit.SharedValues = map[string]string{ban: "BAN-0042"}
+	commit.InputBindings = map[string]sharedvalue.Binding{subscriber: {Mode: "data", Alias: "subscribers", Column: "number"}}
+	created := commitBrunoImportWithStatus(t, server, commit)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("commit status = %d body=%s", created.Code, created.Body.String())
+	}
+	saved := decodeBrunoNativeBatchTestResponse(t, created).Scripts[0]
+	stored, err := store.GetScript(saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := stored.Actions[0].Body; !strings.Contains(body, "<subscriber>{{data.subscribers.number}}</subscriber>") {
+		t.Errorf("body = %s, want the data column", body)
+	}
+	if _, gated := stored.Actions[0].Metadata["missing_variables"]; gated {
+		t.Errorf("the missing-variable gate stayed: %+v", stored.Actions[0].Metadata)
+	}
+	inputs := stored.Metadata.Import.Inputs
+	if inputs["subscriberNumber"].Mode != "data" || inputs["subscriberNumber"].Alias != "subscribers" || inputs["billingAccountNumber"].Mode != "value" {
+		t.Errorf("recorded inputs = %+v", inputs)
+	}
+
+	again := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoInputFiles())
+	subscriber, ban = brunoInputCandidateIDs(t, again)
+	if got := again.PreviousInputs[subscriber]; got.Mode != "data" || got.Alias != "subscribers" || got.Column != "number" {
+		t.Errorf("previous subscriber input = %+v", got)
+	}
+	if got := again.PreviousInputs[ban]; got.Mode != "value" || got.Value != "BAN-0042" {
+		t.Errorf("previous billing account input = %+v", got)
+	}
+}
+
+// A generated input defines a parameter generated each iteration.
+func TestBrunoNativeGeneratedInputBinding(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoInputFiles())
+	subscriber, ban := brunoInputCandidateIDs(t, inspection)
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-generated-input")
+	created := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create_native_batch",
+		FolderID:        &folderID,
+		InputBindings: map[string]sharedvalue.Binding{
+			subscriber: {Mode: "generated", Generator: "digits", Digits: 10},
+			ban:        {Mode: "generated", Generator: "uuid"},
+		},
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("commit status = %d body=%s", created.Code, created.Body.String())
+	}
+	stored, err := store.GetScript(decodeBrunoNativeBatchTestResponse(t, created).Scripts[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	types := map[string]string{}
+	for _, param := range stored.Parameters {
+		types[param.Name] = param.Type
+	}
+	if types["subscriberNumber"] != "random_string" || types["billingAccountNumber"] != "uuid" {
+		t.Errorf("parameters = %+v", stored.Parameters)
+	}
+}
+
+// A re-import offers back how an input was supplied, but never the value of
+// a credential-shaped input, which only a person could have put there.
+func TestBrunoNativePreviousInputsSkipCredentialShapedInputs(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	existing := &dsl.Script{
+		ID: "existing-script", Name: "Inquire", Version: "1.0", Protocol: "http", ProjectID: brunoImportTestProject,
+		Parameters: []dsl.Parameter{
+			{Name: "env", Type: "list", Update: "once", Values: []string{"qa"}},
+			{Name: "apiPassword", Type: "list", Update: "once", Values: []string{"hunter2"}},
+		},
+		Actions: []dsl.Action{{Name: "inquire", Type: "http_request", Method: "GET", Target: "https://example.test"}},
+	}
+	if err := store.SaveScript(existing); err != nil {
+		t.Fatal(err)
+	}
+	result := &brunoconvert.Result{Scripts: []brunoconvert.NativeScriptCandidate{{
+		CandidateID:    "candidate-1",
+		ExistingScript: &brunoconvert.NativeExistingScript{ScriptID: "existing-script"},
+	}}}
+	shared := &sharedvalue.Result{Candidates: []sharedvalue.Candidate{
+		{ID: "env-id", Kind: sharedvalue.KindSourceVariable, Name: "env", ScriptIndexes: []int{0}},
+		{ID: "password-id", Kind: sharedvalue.KindSourceVariable, Name: "apiPassword", ScriptIndexes: []int{0}, CredentialShaped: true},
+	}}
+	previous := server.brunoNativePreviousInputs(brunoImportTestProject, result, shared)
+	if got := previous["env-id"]; got.Mode != "value" || got.Value != "qa" {
+		t.Errorf("env = %+v", got)
+	}
+	if got, offered := previous["password-id"]; offered {
+		t.Errorf("a credential-shaped input was offered back: %+v", got)
+	}
+	if other := server.brunoNativePreviousInputs("another-project", result, shared); len(other) != 0 {
+		t.Errorf("another project's script supplied inputs: %+v", other)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -275,6 +276,13 @@ func TestBrunoNativeCommitV4DigestCoversParameterizationSelections(t *testing.T)
 	}
 	if digest(empty, v4) != digest(base, v4) {
 		t.Fatal("an empty selection should hash like no selection")
+	}
+	bound := base
+	bound.InputBindings = map[string]sharedvalue.Binding{"sv_subscriber": {Mode: "data", Alias: "subscribers", Column: "number"}}
+	otherColumn := base
+	otherColumn.InputBindings = map[string]sharedvalue.Binding{"sv_subscriber": {Mode: "data", Alias: "subscribers", Column: "msisdn"}}
+	if digest(bound, v4) == digest(base, v4) || digest(bound, v4) == digest(otherColumn, v4) {
+		t.Fatal("v4 digest ignores input bindings")
 	}
 	v3 := storage.ImportBatchDigestBrunoNativeCommitV3
 	if digest(selected, v3) != digest(base, v3) {

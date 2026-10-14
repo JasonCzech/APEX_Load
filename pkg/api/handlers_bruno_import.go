@@ -119,6 +119,20 @@ type brunoInspectResponse struct {
 	// SharedValues describes native request variables that can be reviewed
 	// together before committing the per-request script batch.
 	SharedValues *sharedvalue.Result `json:"shared_values,omitempty"`
+	// PreviousInputs maps a shared-value candidate ID to how the scripts this
+	// re-import updates supplied that input, to offer it again.
+	PreviousInputs map[string]brunoPreviousInput `json:"previous_inputs,omitempty"`
+}
+
+// brunoPreviousInput is one input as the existing scripts supply it: a value
+// for every user (Value), a data pool column, or a generated value.
+type brunoPreviousInput struct {
+	Mode      string `json:"mode"`
+	Value     string `json:"value,omitempty"`
+	Alias     string `json:"alias,omitempty"`
+	Column    string `json:"column,omitempty"`
+	Generator string `json:"generator,omitempty"`
+	Digits    int    `json:"digits,omitempty"`
 }
 
 type brunoCommitRequest struct {
@@ -142,10 +156,14 @@ type brunoCommitRequest struct {
 	// suggestions (generated values, data parameters) from that candidate's
 	// inspection to apply. IDs repeat across candidates, so they are scoped.
 	ParameterizationSelections map[string][]string `json:"parameterization_selections,omitempty"`
-	ConflictResolutions        map[string]string   `json:"conflict_resolutions,omitempty"`
-	CandidateIDs               []string            `json:"candidate_ids,omitempty"`
-	NameOverrides              map[string]string   `json:"name_overrides,omitempty"`
-	AcknowledgedFindingIDs     []string            `json:"acknowledged_finding_ids,omitempty"`
+	// InputBindings maps a shared-value candidate ID (a variable the source
+	// left unset) to a data pool column or a generated value, for an input
+	// that should not be one value for every virtual user.
+	InputBindings          map[string]sharedvalue.Binding `json:"input_bindings,omitempty"`
+	ConflictResolutions    map[string]string              `json:"conflict_resolutions,omitempty"`
+	CandidateIDs           []string                       `json:"candidate_ids,omitempty"`
+	NameOverrides          map[string]string              `json:"name_overrides,omitempty"`
+	AcknowledgedFindingIDs []string                       `json:"acknowledged_finding_ids,omitempty"`
 	// UpdateTargets maps a native candidate ID to the script an earlier import
 	// created from the same request. That script is updated as a new version
 	// instead of creating a duplicate.
@@ -673,7 +691,74 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		},
 		ExecutionPreflight: executionPreflight,
 		SharedValues:       sharedValues,
+		PreviousInputs:     s.brunoNativePreviousInputs(input.ProjectID, responseResult, sharedValues),
 	})
+}
+
+// brunoNativePreviousInputs reads, from the scripts a re-import updates, how
+// each input the source leaves unset was supplied last time: the choice an
+// earlier import recorded, or a value-for-every-user parameter of the same
+// name. The first script that supplies an input decides it.
+func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconvert.Result, shared *sharedvalue.Result) map[string]brunoPreviousInput {
+	if result == nil || shared == nil {
+		return nil
+	}
+	existing := map[string]*dsl.Script{}
+	load := func(scriptID string) *dsl.Script {
+		if script, loaded := existing[scriptID]; loaded {
+			return script
+		}
+		stored, err := s.store.GetScript(scriptID)
+		if err != nil || stored == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(projectID) {
+			stored = nil
+		}
+		existing[scriptID] = stored
+		return stored
+	}
+	previous := map[string]brunoPreviousInput{}
+	for _, candidate := range shared.Candidates {
+		// A credential-shaped input never becomes a parameter at import, so a
+		// value under its name was put there by hand and stays out of the response.
+		if candidate.Kind != sharedvalue.KindSourceVariable || candidate.CredentialShaped {
+			continue
+		}
+		for _, index := range candidate.ScriptIndexes {
+			if index < 0 || index >= len(result.Scripts) || result.Scripts[index].ExistingScript == nil {
+				continue
+			}
+			script := load(result.Scripts[index].ExistingScript.ScriptID)
+			if script == nil {
+				continue
+			}
+			if input, ok := brunoPreviousInputFrom(script, candidate.Name); ok {
+				previous[candidate.ID] = input
+				break
+			}
+		}
+	}
+	if len(previous) == 0 {
+		return nil
+	}
+	return previous
+}
+
+func brunoPreviousInputFrom(script *dsl.Script, name string) (brunoPreviousInput, bool) {
+	var recorded dsl.ImportInput
+	if script.Metadata != nil && script.Metadata.Import != nil {
+		recorded = script.Metadata.Import.Inputs[name]
+	}
+	switch recorded.Mode {
+	case sharedvalue.BindingData, sharedvalue.BindingGenerated:
+		return brunoPreviousInput{Mode: recorded.Mode, Alias: recorded.Alias, Column: recorded.Column, Generator: recorded.Generator, Digits: recorded.Digits}, true
+	}
+	// A value for every user lives in the parameter, which the script's
+	// author may have edited since.
+	for _, param := range script.Parameters {
+		if param.Name == name && dsl.CanonicalParameterType(param.Type) == "list" && len(param.Values) == 1 && strings.TrimSpace(param.Values[0]) != "" {
+			return brunoPreviousInput{Mode: "value", Value: param.Values[0]}, true
+		}
+	}
+	return brunoPreviousInput{}, false
 }
 
 // brunoImportedScriptLister is the storage needed to match a re-import with
@@ -883,6 +968,51 @@ func brunoNativeCandidateParameterization(script *dsl.Script) *paramize.Result {
 		return nil
 	}
 	return result
+}
+
+// applyBrunoNativeInputBindings binds this script's inputs that are not one
+// value for every user, then records how each of its inputs was supplied so
+// a later import of the same requests can offer the same choices.
+func applyBrunoNativeInputBindings(
+	script *dsl.Script,
+	scriptIndex int,
+	candidates []sharedvalue.Candidate,
+	values map[string]string,
+	bindings map[string]sharedvalue.Binding,
+) error {
+	if script == nil || (len(values) == 0 && len(bindings) == 0) {
+		return nil
+	}
+	inputs := map[string]dsl.ImportInput{}
+	for _, candidate := range candidates {
+		if candidate.Kind != sharedvalue.KindSourceVariable || !slices.Contains(candidate.ScriptIndexes, scriptIndex) {
+			continue
+		}
+		if binding, bound := bindings[candidate.ID]; bound {
+			if _, err := sharedvalue.Bind(script, candidate, binding); err != nil {
+				return err
+			}
+			inputs[candidate.Name] = dsl.ImportInput{Mode: binding.Mode, Alias: binding.Alias, Column: binding.Column, Generator: binding.Generator, Digits: binding.Digits}
+			continue
+		}
+		if value := strings.TrimSpace(values[candidate.ID]); value != "" {
+			inputs[candidate.Name] = dsl.ImportInput{Mode: "value"}
+		}
+	}
+	if len(inputs) == 0 {
+		return nil
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	script.Metadata.Import.Inputs = inputs
+	if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
+		return fmt.Errorf("the script is not valid with these inputs: %s", strings.Join(issues, "; "))
+	}
+	return nil
 }
 
 var errBrunoNativeParameterizationStale = errors.New("native Bruno parameter suggestions are stale")
@@ -1097,7 +1227,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		"project_id": {}, "import_session_id": {}, "mode": {}, "folder_id": {},
 		"candidate_ids": {}, "name_overrides": {}, "secret_bindings": {},
 		"migrate_secrets": {}, "acknowledged_finding_ids": {}, "shared_values": {},
-		"update_targets": {}, "header_repairs": {}, "parameterization_selections": {},
+		"update_targets": {}, "header_repairs": {}, "parameterization_selections": {}, "input_bindings": {},
 	}
 	var incompatible []string
 	for field := range fields {
@@ -1449,7 +1579,8 @@ func (s *Server) handleCommitBrunoNativeImport(
 	// Collection-wide values are applied across the whole selected batch before
 	// anything is canonicalized or persisted: one value can touch every script,
 	// so a per-script pass would leave the batch inconsistent.
-	if len(request.SharedValues) > 0 {
+	var trustedShared []sharedvalue.Candidate
+	if len(request.SharedValues) > 0 || len(request.InputBindings) > 0 {
 		// Bind the submitted IDs to the immutable inspection, then rebase its
 		// server-owned locations onto the selected batch. Re-detecting only the
 		// subset changes location-based IDs and can discard repeated literals
@@ -1470,17 +1601,33 @@ func (s *Server) handleCommitBrunoNativeImport(
 			}
 		}
 		trusted := rebaseBrunoSharedValues(trustedSharedValueCandidates(brunoNativeCandidateScripts(projection)), selectedIndexes)
-		known := make(map[string]bool, len(trusted))
+		trustedShared = trusted
+		known := make(map[string]sharedvalue.Kind, len(trusted))
 		for _, candidate := range trusted {
-			known[candidate.ID] = true
+			known[candidate.ID] = candidate.Kind
 		}
 		for id := range request.SharedValues {
-			if !known[id] {
+			if _, ok := known[id]; !ok {
 				writeError(w, http.StatusConflict,
 					"selected Bruno shared values are stale or unavailable; inspect the source again")
 				return
 			}
 		}
+		for id := range request.InputBindings {
+			kind, ok := known[id]
+			if !ok {
+				writeError(w, http.StatusConflict,
+					"selected Bruno input bindings are stale or unavailable; inspect the source again")
+				return
+			}
+			if kind != sharedvalue.KindSourceVariable {
+				writeError(w, http.StatusBadRequest, "input_bindings can only bind a variable the source left unset")
+				return
+			}
+		}
+	}
+	if len(request.SharedValues) > 0 {
+		trusted := trustedShared
 		if _, applyErr := sharedvalue.Apply(scripts, trusted, request.SharedValues); applyErr != nil {
 			if errors.Is(applyErr, sharedvalue.ErrCredentialShaped) {
 				writeError(w, http.StatusUnprocessableEntity,
@@ -1594,6 +1741,16 @@ func (s *Server) handleCommitBrunoNativeImport(
 				})
 				return
 			}
+		}
+		// Like parameter selections, a data binding rewrites fields a
+		// credential target pins, so it waits until credentials are bound.
+		if bindErr := applyBrunoNativeInputBindings(bound, index, trustedShared, request.SharedValues, request.InputBindings); bindErr != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error":        "native Bruno input binding failed: " + bindErr.Error(),
+				"code":         "bruno_native_input_binding_failed",
+				"candidate_id": candidateIDs[index],
+			})
+			return
 		}
 		if plan, planned := parameterizationPlans[index]; planned {
 			applied, _, applyErr := paramize.ApplySuggestions(bound, plan.suggestions, plan.selected)
@@ -2681,6 +2838,37 @@ func normalizeBrunoNativeCommitRequest(request *brunoCommitRequest) error {
 		}
 	}
 	request.ParameterizationSelections = selections
+	bindings := make(map[string]sharedvalue.Binding, len(request.InputBindings))
+	for rawID, binding := range request.InputBindings {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			return errors.New("input_bindings cannot contain an empty id")
+		}
+		if _, duplicate := bindings[id]; duplicate {
+			return fmt.Errorf("input_bindings contains keys that normalize to the same value %q", id)
+		}
+		binding.Mode = strings.ToLower(strings.TrimSpace(binding.Mode))
+		binding.Alias = strings.TrimSpace(binding.Alias)
+		binding.Column = strings.TrimSpace(binding.Column)
+		binding.Generator = strings.ToLower(strings.TrimSpace(binding.Generator))
+		if binding.Mode != sharedvalue.BindingGenerated || binding.Generator != sharedvalue.GeneratorDigits {
+			binding.Digits = 0
+		}
+		if binding.Mode != sharedvalue.BindingData {
+			binding.Alias, binding.Column = "", ""
+		}
+		if binding.Mode != sharedvalue.BindingGenerated {
+			binding.Generator = ""
+		}
+		if err := binding.Validate(); err != nil {
+			return fmt.Errorf("input binding for %q: %w", id, err)
+		}
+		if _, valued := request.SharedValues[id]; valued {
+			return fmt.Errorf("input %q has both a value for every user and a binding", id)
+		}
+		bindings[id] = binding
+	}
+	request.InputBindings = bindings
 	return nil
 }
 
@@ -3138,13 +3326,15 @@ func brunoNativeCommitRequestSHAV4(request brunoCommitRequest) (string, error) {
 		selections[strings.TrimSpace(candidateID)] = sorted
 	}
 	payload, err := json.Marshal(struct {
-		Profile                    string              `json:"profile"`
-		V3RequestSHA256            string              `json:"v3_request_sha256"`
-		ParameterizationSelections map[string][]string `json:"parameterization_selections"`
+		Profile                    string                         `json:"profile"`
+		V3RequestSHA256            string                         `json:"v3_request_sha256"`
+		ParameterizationSelections map[string][]string            `json:"parameterization_selections"`
+		InputBindings              map[string]sharedvalue.Binding `json:"input_bindings,omitempty"`
 	}{
 		Profile:                    storage.ImportBatchDigestBrunoNativeCommitV4,
 		V3RequestSHA256:            v3,
 		ParameterizationSelections: selections,
+		InputBindings:              request.InputBindings,
 	})
 	if err != nil {
 		return "", err

@@ -19,7 +19,7 @@ import { getErrorMessage } from '../utils/errorUtils';
 import SourceCodeViewer from './SourceCodeViewer';
 import SecretBindingReview, { type PreparedSecretBindings, type RequirementDestinationState, type SecretBindingReviewHandle, } from './SecretBindingReview';
 import BrunoDataReview from './BrunoDataReview';
-import { brunoMissingVariables, brunoCandidateNeedsSecrets } from './brunoReviewState';
+import { brunoMissingVariables, brunoCandidateNeedsSecrets, brunoInputBindingComplete, type BrunoInputBinding } from './brunoReviewState';
 import { formatBytes } from './settingsPageFormatters';
 import { countLabel } from '../utils/numberFormat';
 import { type ImportedSaveResult } from './useScriptsAuthoringState';
@@ -602,6 +602,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const [sharedValueSelections, setSharedValueSelections] = useState<Record<string, string>>({});
     // Generated-value rows the operator changed from their suggested state.
     const [generatedValueChoices, setGeneratedValueChoices] = useState<Record<string, boolean>>({});
+    // Inputs read from a data pool or generated, by shared-value candidate ID.
+    const [inputBindings, setInputBindings] = useState<Record<string, BrunoInputBinding>>({});
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
@@ -784,14 +786,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         return nativeCandidates.filter(candidate => {
             const text = `${candidate.source_path} ${candidate.script.name} ${nativeCandidateMethod(candidate)} ${nativeCandidateTarget(candidate)}`.toLowerCase();
             const review = nativeCandidateReviewFindings(candidate).length > 0;
-            const blocked = review || brunoMissingVariables([candidate], inspection?.shared_values, sharedValueSelections).length > 0 || brunoCandidateNeedsSecrets(candidate, selectedIDs.has(candidate.candidate_id) ? credentialDestinationState : {});
+            const blocked = review || brunoMissingVariables([candidate], inspection?.shared_values, sharedValueSelections, inputBindings).length > 0 || brunoCandidateNeedsSecrets(candidate, selectedIDs.has(candidate.candidate_id) ? credentialDestinationState : {});
             return text.includes(apiSearch.toLowerCase()) && (apiFilter === 'all' || (apiFilter === 'review' ? review : apiFilter === 'blocked' ? blocked : !blocked));
         }).sort((left, right) => {
             const comparison = nativeCandidateSortValue(left, nativeCandidateSort.key)
                 .localeCompare(nativeCandidateSortValue(right, nativeCandidateSort.key), undefined, { numeric: true, sensitivity: 'base' });
             return comparison === 0 ? left.candidate_id.localeCompare(right.candidate_id) : comparison * direction;
         });
-    }, [nativeCandidateSort, nativeCandidates, apiSearch, apiFilter, inspection?.shared_values, sharedValueSelections, selectedCandidateIds, credentialDestinationState]);
+    }, [nativeCandidateSort, nativeCandidates, apiSearch, apiFilter, inspection?.shared_values, sharedValueSelections, inputBindings, selectedCandidateIds, credentialDestinationState]);
     const selectedCandidateIdSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
     const nativeCandidatePageCount = Math.max(1, Math.ceil(sortedNativeCandidates.length / NATIVE_CANDIDATE_PAGE_SIZE));
     const safeNativeCandidatePage = Math.min(nativeCandidatePage, nativeCandidatePageCount - 1);
@@ -892,8 +894,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const visibleNativeReviewFindings = useMemo(() => nativeReviewFindings.slice(nativeFindingPageStart, nativeFindingPageStart + NATIVE_FINDING_PAGE_SIZE), [nativeFindingPageStart, nativeReviewFindings]);
     const selectedNativeFinding = visibleNativeReviewFindings.find(finding => finding.id === selectedNativeFindingId) || visibleNativeReviewFindings[0];
     const nextNativeFinding = visibleNativeReviewFindings.find(finding => !acknowledgedFindingIdSet.has(finding.id) && !selectedHeaderRepairs[finding.id] && finding.id !== selectedNativeFinding?.id);
-    const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections);
+    const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections, inputBindings);
     const generatedValueGroups = useMemo(() => brunoGeneratedValueGroups(selectedNativeCandidates), [selectedNativeCandidates]);
+    const loadDataPools = useCallback(async () => projectId ? (await api.listDataPools(projectId)).data_pools || [] : [], [api, projectId]);
     // A match from the same collection updates by default. A match on the
     // request path alone may belong to another collection, so it defaults to a copy.
     const nativeSaveMode = (candidate: BrunoNativeScriptCandidate): NativeSaveMode => nativeSaveModes[candidate.candidate_id]
@@ -1047,9 +1050,16 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     useEffect(() => {
         // Candidate IDs are derived from one specific inspection. Carrying a
         // selection into a new session would send IDs the server cannot re-derive.
-        setSharedValueSelections({});
+        // A re-import starts from how the scripts it updates supplied each input.
+        const previous = Object.entries(inspection?.previous_inputs || {});
+        setSharedValueSelections(Object.fromEntries(previous
+            .filter(([, input]) => input.mode === 'value' && input.value)
+            .map(([id, input]) => [id, input.value!])));
+        setInputBindings(Object.fromEntries(previous
+            .filter(([, input]) => input.mode === 'data' || input.mode === 'generated')
+            .map(([id, input]) => [id, { mode: input.mode as BrunoInputBinding['mode'], alias: input.alias, column: input.column, generator: input.generator, digits: input.digits }])));
         setGeneratedValueChoices({});
-    }, [inspection?.import_session_id]);
+    }, [inspection?.import_session_id, inspection?.previous_inputs]);
     useEffect(() => {
         setProtectedSessionNow(Date.now());
         if (!Number.isFinite(protectedSessionExpiry))
@@ -1213,6 +1223,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 return;
             }
             const parameterizationSelections = brunoGeneratedValueSelections(generatedValueGroups, generatedValueChoices);
+            // An unfinished binding leaves its input unsupplied, as a blank value does.
+            const completeInputBindings = Object.fromEntries(Object.entries(inputBindings)
+                .filter(([id, binding]) => brunoInputBindingComplete(binding) && !sharedValueSelections[id]?.trim()));
             const response = await api.commitBrunoImport({
                 project_id: projectId,
                 import_session_id: inspection.import_session_id,
@@ -1242,6 +1255,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     : {}),
                 ...(Object.keys(parameterizationSelections).length > 0
                     ? { parameterization_selections: parameterizationSelections }
+                    : {}),
+                ...(Object.keys(completeInputBindings).length > 0
+                    ? { input_bindings: completeInputBindings }
                     : {}),
             });
             const importedScripts = validatedNativeCommitScripts(response, selectedNativeCandidates, Object.fromEntries(selectedNativeUpdates.map(candidate => [candidate.candidate_id, candidate.existing_script!.script_id])));
@@ -1553,7 +1569,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     const selected = selectedCandidateIdSet.has(candidate.candidate_id);
                     const reviewFindings = nativeCandidateReviewFindings(candidate);
                     const diagnosticCount = (candidate.diagnostics || []).length;
-                    const missingVariableCount = brunoMissingVariables([candidate], inspection.shared_values, sharedValueSelections).length;
+                    const missingVariableCount = brunoMissingVariables([candidate], inspection.shared_values, sharedValueSelections, inputBindings).length;
                     const secretCount = (candidate.secret_requirements || []).filter(requirement => selected && credentialDestinationState[requirement.id]?.readyForExecution !== undefined ? !credentialDestinationState[requirement.id].readyForExecution : requirement.destination_value_preserved !== true).length;
                     const status = reviewFindings.length > 0
                         ? 'review'
@@ -1874,7 +1890,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
               </section>
 
               <section className="bruno-tab-panel" id="bruno-inspection-panel-data" hidden={activeInspectionTab !== 'data'}>
-                  {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
+                  {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} bindings={inputBindings} onBindingsChange={setInputBindings} previous={inspection.previous_inputs} loadDataPools={loadDataPools} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
                   {!committed && <BrunoGeneratedValues groups={generatedValueGroups} choices={generatedValueChoices} onChange={setGeneratedValueChoices} disabled={loading || protectedSessionExpired}/>}
               </section>
               {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" id={`bruno-inspection-panel-${section}`} hidden={activeInspectionTab !== section}>
@@ -1892,7 +1908,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
               </ImportReviewTabs>
             </>)}
 
-          {nativeReviewCandidate && (<BrunoNativeReviewDialog candidate={{ ...nativeReviewCandidate, missing_variables: brunoMissingVariables([nativeReviewCandidate], inspection.shared_values, selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id) ? sharedValueSelections : {}) }} candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)} requirementDestinationState={credentialDestinationState} onSource={() => { setNativeReviewCandidateId(null); setNativeSourceCandidateId(nativeReviewCandidate.candidate_id); }} onRepair={tab => { setNativeReviewCandidateId(null); goToReviewTab(tab); }} onClose={() => setNativeReviewCandidateId(null)}/>)}
+          {nativeReviewCandidate && (<BrunoNativeReviewDialog candidate={{ ...nativeReviewCandidate, missing_variables: brunoMissingVariables([nativeReviewCandidate], inspection.shared_values, selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id) ? sharedValueSelections : {}, selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id) ? inputBindings : {}) }} candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)} requirementDestinationState={credentialDestinationState} onSource={() => { setNativeReviewCandidateId(null); setNativeSourceCandidateId(nativeReviewCandidate.candidate_id); }} onRepair={tab => { setNativeReviewCandidateId(null); goToReviewTab(tab); }} onClose={() => setNativeReviewCandidateId(null)}/>)}
           {nativeSourceCandidate && (<BrunoNativeSourceDialog candidate={nativeSourceCandidate} importSessionId={inspection.import_session_id || ''} projectId={projectId || ''} loadSource={api.getBrunoImportSessionSource} onClose={() => setNativeSourceCandidateId(null)}/>)}
         </>)}
 

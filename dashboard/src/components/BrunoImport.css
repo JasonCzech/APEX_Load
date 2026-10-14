@@ -1089,3 +1089,7 @@
 .bruno-generated-list label { display: flex; gap: 10px; align-items: flex-start; }
 .bruno-generated-list input { margin-top: 3px; flex: none; }
 .bruno-generated-list small { padding-left: 26px; color: var(--text-muted); }
+.bruno-input-supply { display: grid; gap: 10px; }
+.bruno-input-supply label { display: flex; flex-direction: column; gap: 4px; }
+.bruno-input-supply select { width: min(100%, 36rem); }
+.bruno-input-supply small { color: var(--text-muted); }

@@ -793,6 +793,16 @@ export interface ScriptImportMetadata {
   source?: string
   source_script_name?: string
   preserved?: Record<string, unknown>
+  /** How the import supplied each variable the source left unset, by parameter name. */
+  inputs?: Record<string, ScriptImportInput>
+}
+
+export interface ScriptImportInput {
+  mode: 'value' | 'data' | 'generated'
+  alias?: string
+  column?: string
+  generator?: 'uuid' | 'timestamp' | 'digits'
+  digits?: number
 }
 
 export interface JavaVuserSourceManifestFile {

@@ -1196,6 +1196,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Description:          "Collection-wide values the operator supplies once; present for native request inspection only.",
 					AdditionalProperties: boolPointer(true),
 				},
+				"previous_inputs": {
+					Type:                 "object",
+					Description:          "Shared-value candidate ID to how the scripts a re-import updates supplied that input: a value for every user, a data pool column or a generated value.",
+					AdditionalProperties: &oasSchema{Ref: "#/components/schemas/BrunoPreviousInput"},
+				},
 			},
 			Required: []string{
 				"import_session_id", "expires_at", "result", "artifacts",
@@ -1257,6 +1262,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Description:          "bruno_invalid_header_value finding ID to the fix to apply. A repaired finding needs no acknowledgement.",
 					AdditionalProperties: &oasSchema{Type: "string", Enum: []string{"trim", "remove"}},
 				},
+				"input_bindings": {
+					Type:                 "object",
+					Description:          "Shared-value candidate ID of a variable the source left unset to a data pool column ({{data.alias.column}}, read per virtual user) or a value generated each iteration. A candidate takes a binding or a shared_values value, not both.",
+					AdditionalProperties: &oasSchema{Ref: "#/components/schemas/BrunoInputBinding"},
+				},
 				"parameterization_selections": {
 					Type:                 "object",
 					Description:          "Native candidate ID to the IDs of that candidate's parameterization suggestions to apply, such as a trace or message ID generated each iteration.",
@@ -1266,6 +1276,30 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			Required: []string{"project_id", "import_session_id", "mode"},
 		},
 		"BrunoCommitRequest": {Ref: "#/components/schemas/BrunoNativeBatchCommitRequest"},
+		"BrunoInputBinding": {
+			Type:                 "object",
+			AdditionalProperties: boolPointer(false),
+			Properties: map[string]oasSchema{
+				"mode":      {Type: "string", Enum: []string{"data", "generated"}},
+				"alias":     {Type: "string", Description: "Data binding alias the scenario binds to a pool."},
+				"column":    {Type: "string"},
+				"generator": {Type: "string", Enum: []string{"uuid", "timestamp", "digits"}},
+				"digits":    {Type: "integer", Description: "Length of a generated digits value, 1 to 64."},
+			},
+			Required: []string{"mode"},
+		},
+		"BrunoPreviousInput": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"mode":      {Type: "string", Enum: []string{"value", "data", "generated"}},
+				"value":     {Type: "string"},
+				"alias":     {Type: "string"},
+				"column":    {Type: "string"},
+				"generator": {Type: "string", Enum: []string{"uuid", "timestamp", "digits"}},
+				"digits":    {Type: "integer"},
+			},
+			Required: []string{"mode"},
+		},
 		"ImportSourceRevision": {
 			Type: "object",
 			Properties: map[string]oasSchema{

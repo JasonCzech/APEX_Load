@@ -397,6 +397,31 @@ components:
         - field
         - summary
         - required_resolution
+    BrunoInputBinding:
+      type: object
+      properties:
+        alias:
+          type: string
+          description: Data binding alias the scenario binds to a pool.
+        column:
+          type: string
+        digits:
+          type: integer
+          description: Length of a generated digits value, 1 to 64.
+        generator:
+          type: string
+          enum:
+            - uuid
+            - timestamp
+            - digits
+        mode:
+          type: string
+          enum:
+            - data
+            - generated
+      additionalProperties: false
+      required:
+        - mode
     BrunoInspectFile:
       type: object
       description: One file in a directory-style Bruno inspection upload.
@@ -460,6 +485,11 @@ components:
           description: Retained response field; null for native request inspection.
           additionalProperties: true
           nullable: true
+        previous_inputs:
+          type: object
+          description: 'Shared-value candidate ID to how the scripts a re-import updates supplied that input: a value for every user, a data pool column or a generated value.'
+          additionalProperties:
+            $ref: '#/components/schemas/BrunoPreviousInput'
         result:
           $ref: '#/components/schemas/BrunoInspectResult'
         shared_values:
@@ -546,6 +576,11 @@ components:
               - remove
         import_session_id:
           type: string
+        input_bindings:
+          type: object
+          description: Shared-value candidate ID of a variable the source left unset to a data pool column ({{data.alias.column}}, read per virtual user) or a value generated each iteration. A candidate takes a binding or a shared_values value, not both.
+          additionalProperties:
+            $ref: '#/components/schemas/BrunoInputBinding'
         migrate_secrets:
           type: boolean
         mode:
@@ -917,6 +952,31 @@ components:
       required:
         - script_id
         - expected_updated_at
+    BrunoPreviousInput:
+      type: object
+      properties:
+        alias:
+          type: string
+        column:
+          type: string
+        digits:
+          type: integer
+        generator:
+          type: string
+          enum:
+            - uuid
+            - timestamp
+            - digits
+        mode:
+          type: string
+          enum:
+            - value
+            - data
+            - generated
+        value:
+          type: string
+      required:
+        - mode
     BrunoSecretRequirement:
       type: object
       properties:
@@ -3347,6 +3407,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -16378,6 +16444,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -18520,6 +18592,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -20503,6 +20581,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -205005,6 +205089,11 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -207951,6 +208040,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -211068,6 +211163,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -213024,6 +213125,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -215320,6 +215427,11 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -218264,6 +218376,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -221309,6 +221427,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -223476,6 +223600,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -227822,6 +227952,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -232840,6 +232976,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -235038,6 +235180,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -240141,6 +240289,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -243947,6 +244101,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -245922,6 +246082,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -247988,6 +248154,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -249940,6 +250112,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -251882,6 +252060,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -255882,6 +256066,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -258233,6 +258423,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -262241,6 +262437,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -264195,6 +264397,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -266368,6 +266576,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -268577,6 +268791,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -272636,6 +272856,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -275359,6 +275585,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -277312,6 +277544,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -279402,6 +279640,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -281180,6 +281424,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -283537,6 +283787,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -286608,6 +286864,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -289030,6 +289292,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -292617,6 +292885,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -294563,6 +294837,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -296280,6 +296560,12 @@ paths:
                                 import:
                                   type: object
                                   properties:
+                                    inputs:
+                                      type: object
+                                      additionalProperties:
+                                        type: object
+                                        description: 'Go type: ImportInput'
+                                        additionalProperties: true
                                     preserved:
                                       type: object
                                       additionalProperties: {}
@@ -297892,6 +298178,12 @@ paths:
                                 import:
                                   type: object
                                   properties:
+                                    inputs:
+                                      type: object
+                                      additionalProperties:
+                                        type: object
+                                        description: 'Go type: ImportInput'
+                                        additionalProperties: true
                                     preserved:
                                       type: object
                                       additionalProperties: {}
@@ -300103,6 +300395,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -302049,6 +302347,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -303766,6 +304070,12 @@ paths:
                                 import:
                                   type: object
                                   properties:
+                                    inputs:
+                                      type: object
+                                      additionalProperties:
+                                        type: object
+                                        description: 'Go type: ImportInput'
+                                        additionalProperties: true
                                     preserved:
                                       type: object
                                       additionalProperties: {}
@@ -305378,6 +305688,12 @@ paths:
                                 import:
                                   type: object
                                   properties:
+                                    inputs:
+                                      type: object
+                                      additionalProperties:
+                                        type: object
+                                        description: 'Go type: ImportInput'
+                                        additionalProperties: true
                                     preserved:
                                       type: object
                                       additionalProperties: {}
@@ -307603,6 +307919,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -309532,6 +309854,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -311537,6 +311865,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -313132,6 +313466,12 @@ paths:
                           import:
                             type: object
                             properties:
+                              inputs:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ImportInput'
+                                  additionalProperties: true
                               preserved:
                                 type: object
                                 additionalProperties: {}
@@ -314940,6 +315280,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -316995,6 +317341,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -319175,6 +319527,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -323238,6 +323596,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -325167,6 +325531,12 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ImportInput'
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}
@@ -327087,6 +327457,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -329028,6 +329404,12 @@ paths:
                               import:
                                 type: object
                                 properties:
+                                  inputs:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: ImportInput'
+                                      additionalProperties: true
                                   preserved:
                                     type: object
                                     additionalProperties: {}
@@ -331356,6 +331738,11 @@ paths:
                         import:
                           type: object
                           properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
                             preserved:
                               type: object
                               additionalProperties: {}

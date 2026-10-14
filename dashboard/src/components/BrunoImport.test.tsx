@@ -2324,6 +2324,39 @@ describe('BrunoImport', () => {
     })
   })
 
+  it('starts a re-import from how the updated scripts supplied each input, and saves the bindings', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts[1].diagnostics = []
+    const withInputs = {
+      ...inspection,
+      shared_values: {
+        candidates: [
+          { id: 'env-id', name: 'env', source_variable: 'env', kind: 'source_variable', occurrence_count: 1 },
+          { id: 'ban-id', name: 'ban', source_variable: 'ban', kind: 'source_variable', occurrence_count: 1 },
+        ],
+        summary: {},
+      },
+      previous_inputs: {
+        'env-id': { mode: 'data', alias: 'environments', column: 'host' },
+        'ban-id': { mode: 'value', value: 'BAN-0042' },
+      },
+    }
+    withInputs.result.scripts[0].missing_variables = ['env', 'ban']
+    await renderAndInspect(withInputs as never, 'folder-1')
+
+    const review = container.querySelector('.bruno-data-review')!
+    expect(review.textContent).toContain('{{data.environments.host}}')
+    expect(review.querySelectorAll('.bruno-input-previous')).toHaveLength(2)
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const payload = apiMock.commitBrunoImport.mock.calls[0][0]
+    expect(payload.input_bindings).toEqual({ 'env-id': { mode: 'data', alias: 'environments', column: 'host' } })
+    expect(payload.shared_values).toEqual({ 'ban-id': 'BAN-0042' })
+  })
+
   it('puts a left-out header back or leaves it out without an acknowledgement', async () => {
     const inspection = nativeInspectionFixture()
     inspection.result.scripts[1].diagnostics = [{
