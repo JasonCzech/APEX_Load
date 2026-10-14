@@ -48,6 +48,10 @@ type ConvertOptions struct {
 	// HTML-mode steps (params.html_step) that resolve against the replayed
 	// page. The browser recorder supplies them for an HTML-level HTTP script.
 	HTMLSteps map[int]map[string]any `json:"-"`
+	// Transactions (HAR input) tags each request with the transaction open
+	// when it started (metadata.source_transaction). The browser recorder
+	// supplies the transactions marked while recording.
+	Transactions []TransactionWindow `json:"-"`
 	// AsyncScan (HAR input; default on) collapses requests a page repeated in
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
@@ -409,6 +413,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Body:         body,
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
+		}
+		if name := transactionAt(req.Options.Transactions, ex); name != "" && action.Metadata[harSourceTransactionMeta] == nil {
+			if action.Metadata == nil {
+				action.Metadata = map[string]any{}
+			}
+			action.Metadata[harSourceTransactionMeta] = name
 		}
 		if htmlStep := req.Options.HTMLSteps[ex.SourceEntryID]; htmlStep != nil && format == "har" {
 			// The page decides the URL, body and encoding at replay.

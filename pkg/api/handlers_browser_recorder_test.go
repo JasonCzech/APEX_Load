@@ -701,6 +701,54 @@ func TestHandlePreviewBrowserRecordingConversionReportsHTTPCorrelations(t *testi
 	}
 }
 
+// The HTTP output measures the transactions marked while recording, as the
+// browser script does.
+func TestHandlePreviewBrowserRecordingConversionTagsHTTPTransactions(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	recorded := time.Date(2026, 5, 12, 20, 0, 0, 0, time.UTC)
+	artifact.Markers = []recbrowser.Marker{
+		{Kind: recbrowser.MarkerTransactionStart, Name: "Cart", Timestamp: recorded.Add(500 * time.Millisecond)},
+		{Kind: recbrowser.MarkerTransactionEnd, Name: "Cart", Timestamp: recorded.Add(1500 * time.Millisecond)},
+	}
+	entry := func(started, path string) string {
+		return `{"startedDateTime":"` + started + `","time":12,"request":{"method":"GET","url":"https://shop.example` + path + `","httpVersion":"HTTP/1.1","headers":[],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}`
+	}
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[` + entry("2026-05-12T20:00:00Z", "/api/home") + `,` + entry("2026-05-12T20:00:01Z", "/api/cart") + `]}}`)
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(artifact))
+	id := startBrowserRecordingViaAPI(t, server)
+
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert/preview",
+		bytes.NewBufferString(`{"name":"Checkout Preview","also_create_http_script":true}`)))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Scripts []struct {
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Target   string         `json:"target"`
+				Metadata map[string]any `json:"metadata"`
+			} `json:"actions"`
+		} `json:"scripts"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	tagged := map[string]any{}
+	for _, script := range payload.Scripts {
+		if script.Protocol != "http" {
+			continue
+		}
+		for _, action := range script.Actions {
+			tagged[action.Target] = action.Metadata["source_transaction"]
+		}
+	}
+	if len(tagged) != 2 || tagged["/api/home"] != nil || tagged["/api/cart"] != "Cart" {
+		t.Fatalf("HTTP transactions = %v, want only /api/cart in Cart", tagged)
+	}
+}
+
 func TestHandlePreviewBrowserRecordingConversionRejectsSaveOnlySecretBindings(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)

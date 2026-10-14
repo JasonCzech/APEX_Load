@@ -685,6 +685,36 @@ func (s *Session) AddMarker(marker Marker) (Marker, error) {
 	return marker, nil
 }
 
+// TransactionWindow is one transaction marked while recording, from its start
+// marker to its end marker. End is zero when the recording ended with it open.
+type TransactionWindow struct {
+	Name  string
+	Start time.Time
+	End   time.Time
+}
+
+// TransactionWindows pairs the session's transaction markers in recorded
+// order: an end closes the latest open transaction of its name.
+func (s *Session) TransactionWindows() []TransactionWindow {
+	markers := slices.Clone(s.Markers)
+	slices.SortStableFunc(markers, func(a, b Marker) int { return a.Timestamp.Compare(b.Timestamp) })
+	var windows []TransactionWindow
+	open := map[string][]int{}
+	for _, marker := range markers {
+		switch marker.Kind {
+		case MarkerTransactionStart:
+			open[marker.Name] = append(open[marker.Name], len(windows))
+			windows = append(windows, TransactionWindow{Name: marker.Name, Start: marker.Timestamp})
+		case MarkerTransactionEnd:
+			if stack := open[marker.Name]; len(stack) > 0 {
+				windows[stack[len(stack)-1]].End = marker.Timestamp
+				open[marker.Name] = stack[:len(stack)-1]
+			}
+		}
+	}
+	return windows
+}
+
 func sameElement(a, b *selector.ElementMetadata) bool {
 	if a == nil || b == nil {
 		return false

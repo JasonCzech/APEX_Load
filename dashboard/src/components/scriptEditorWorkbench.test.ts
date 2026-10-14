@@ -467,6 +467,8 @@ describe('filterScriptPhaseActionRows', () => {
     it('derives a unique default transaction name', () => {
       expect(uniqueTransactionName([])).toBe('Transaction 1')
       expect(uniqueTransactionName([tagged, { metadata: { source_transaction: 'Transaction 1' } } as unknown as ScriptActionDefinition])).toBe('Transaction 2')
+      // A marker pair from an earlier wrap claims its name too.
+      expect(uniqueTransactionName(wrapActionsInTransactionMarkers([tagged], 0, 0, 'Transaction 1'))).toBe('Transaction 2')
     })
   })
 
@@ -480,13 +482,13 @@ describe('filterScriptPhaseActionRows', () => {
     it('wraps a contiguous span in a balanced lr_start/end marker pair', () => {
       const next = wrapActionsInTransactionMarkers(acts(), 0, 1, 'Checkout')
       expect(next.map(a => a.type)).toEqual(['source_transaction', 'GET', 'POST', 'source_transaction', 'GET'])
-      expect(next[0]).toEqual({ name: 'Checkout', type: 'source_transaction', params: { function: 'lr_start_transaction' } })
-      expect(next[3]).toEqual({ name: 'Checkout', type: 'source_transaction', params: { function: 'lr_end_transaction' } })
+      expect(next[0]).toEqual({ name: 'Start Checkout transaction', type: 'source_transaction', params: { function: 'lr_start_transaction', args: ['Checkout'] } })
+      expect(next[3]).toEqual({ name: 'End Checkout transaction', type: 'source_transaction', params: { function: 'lr_end_transaction', args: ['Checkout', 'LR_AUTO'] } })
     })
 
     it('wraps a single action (lo === hi)', () => {
       const next = wrapActionsInTransactionMarkers(acts(), 1, 1, 'One')
-      expect(next.map(a => a.name)).toEqual(['a', 'One', 'b', 'One', 'c'])
+      expect(next.map(a => a.name)).toEqual(['a', 'Start One transaction', 'b', 'End One transaction', 'c'])
       expect(actionTransactionMarker(next[1])).toEqual({ role: 'start', name: 'One' })
       expect(actionTransactionMarker(next[3])).toEqual({ role: 'end', name: 'One' })
     })

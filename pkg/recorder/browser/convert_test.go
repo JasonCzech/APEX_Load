@@ -2,11 +2,13 @@ package browser
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
@@ -398,14 +400,14 @@ func TestConvertTransactionsAndNotes(t *testing.T) {
 	}
 
 	start := result.Script.Actions[1]
-	if start.Name != "Checkout" || start.Params["function"] != "lr_start_transaction" {
+	if start.Name != "Start Checkout transaction" || start.Params["function"] != "lr_start_transaction" || !reflect.DeepEqual(start.Params["args"], []any{"Checkout"}) {
 		t.Errorf("start action = %+v", start)
 	}
 	if start.Metadata["note"] != "login first" {
 		t.Errorf("note metadata = %+v, want queued note on next action", start.Metadata)
 	}
 	end := result.Script.Actions[7]
-	if end.Name != "Checkout" || end.Params["function"] != "lr_end_transaction" {
+	if end.Name != "End Checkout transaction" || end.Params["function"] != "lr_end_transaction" || !reflect.DeepEqual(end.Params["args"], []any{"Checkout", "LR_AUTO"}) {
 		t.Errorf("end action = %+v", end)
 	}
 
@@ -460,7 +462,7 @@ func TestConvertTransactionStartAnchoredAtStepIncludesThatStep(t *testing.T) {
 		}
 	}
 	start := result.Script.Actions[2]
-	if start.Name != "Checkout" || start.Params["function"] != "lr_start_transaction" {
+	if transactionMarkerName(start) != "Checkout" || start.Params["function"] != "lr_start_transaction" {
 		t.Fatalf("action[2] = %+v, want Checkout start", start)
 	}
 	// The anchor step (action[3]) must be tagged inside the transaction.
@@ -666,8 +668,39 @@ func TestConvertSplitAtTransactions(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(result.Scripts[0].Name, "Login") || !strings.Contains(result.Scripts[1].Name, "Checkout") {
+	if !strings.HasSuffix(result.Scripts[0].Name, " — Login") || !strings.HasSuffix(result.Scripts[1].Name, " — Checkout") {
 		t.Errorf("split names = %q, %q", result.Scripts[0].Name, result.Scripts[1].Name)
+	}
+}
+
+// A recorded transaction is closed by name, so its start and end once shared
+// one step name; import de-duplication then renamed the end "Checkout_2" and
+// the end no longer closed the start (a recorded Tableau Public walk failed
+// every transaction in debug).
+func TestConvertTransactionMarkersSurviveNameDeduplication(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "buy", CSSPath: "#buy"}
+	session := &Session{ID: "rec_dedupe", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(1500)},
+	)
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn, Candidates: selector.Candidates(*btn)})
+
+	result := Convert(session, ConvertOptions{})
+	if renames := uniquify.DeduplicateActionNames(result.Script); len(renames) != 0 {
+		t.Fatalf("de-duplication renamed %+v", renames)
+	}
+	var markers []dsl.Action
+	for _, action := range result.Script.Actions {
+		if action.Type == "source_transaction" {
+			markers = append(markers, action)
+		}
+	}
+	if len(markers) != 2 {
+		t.Fatalf("markers = %+v", markers)
+	}
+	if !reflect.DeepEqual(markers[0].Params["args"], []any{"Checkout"}) || !reflect.DeepEqual(markers[1].Params["args"], []any{"Checkout", "LR_AUTO"}) {
+		t.Fatalf("marker args = %v / %v", markers[0].Params["args"], markers[1].Params["args"])
 	}
 }
 

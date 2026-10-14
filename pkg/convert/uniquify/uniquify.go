@@ -107,7 +107,11 @@ func uniqueScriptName(name string, seen map[string]int) string {
 // per-container registry.
 func dedupeActionList(actions []dsl.Action, seen map[string]int, renames *[]Rename) {
 	for i := range actions {
+		original := actions[i].Name
 		applyRename(&actions[i].Name, seen, renames)
+		if actions[i].Name != original {
+			pinTransactionMarkerName(&actions[i], original)
+		}
 
 		if actions[i].Control != nil {
 			// Every branch in one control container shares a scope.
@@ -117,6 +121,44 @@ func dedupeActionList(actions []dsl.Action, seen map[string]int, renames *[]Rena
 			}
 		}
 		dedupeSequenceRequests(actions[i], renames)
+	}
+}
+
+// pinTransactionMarkerName keeps a renamed transaction marker paired. A start
+// or end marker without arguments names its transaction by its step name (the
+// engine's hand-authored shorthand), so renaming the step would change which
+// transaction it opens or closes; the original name moves into the call's
+// argument instead.
+func pinTransactionMarkerName(action *dsl.Action, name string) {
+	if dsl.CanonicalActionType(action.Type) != "source_transaction" {
+		return
+	}
+	if args, ok := action.Params["args"]; ok && !emptyArgs(args) {
+		return
+	}
+	function, _ := action.Params["function"].(string)
+	if strings.TrimSpace(function) == "" {
+		function, _ = action.Metadata["source_function"].(string)
+	}
+	switch strings.ToLower(strings.TrimSpace(function)) {
+	case "lr_start_transaction", "lr_end_transaction", "lr_end_sub_transaction", "lr_end_sub_trans":
+		if action.Params == nil {
+			action.Params = map[string]any{}
+		}
+		action.Params["args"] = []any{strings.TrimSpace(name)}
+	}
+}
+
+func emptyArgs(args any) bool {
+	switch list := args.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(list) == 0
+	case []string:
+		return len(list) == 0
+	default:
+		return false
 	}
 }
 

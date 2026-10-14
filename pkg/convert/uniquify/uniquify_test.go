@@ -1,6 +1,7 @@
 package uniquify
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -181,6 +182,35 @@ func TestDeduplicateActionNamesIdempotent(t *testing.T) {
 		if first[i] != second[i] {
 			t.Fatalf("idempotency broken: %v then %v", first, second)
 		}
+	}
+}
+
+// A transaction marker without arguments is named by its step name, so a
+// renamed start or end must keep naming the transaction it opened or closed.
+func TestDeduplicateActionNamesKeepsTransactionMarkersPaired(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Name: "Checkout", Type: "request"},
+		{Name: "Checkout", Type: "source_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
+		{Name: "Pay", Type: "request"},
+		{Name: "Checkout", Type: "source_transaction", Metadata: map[string]any{"source_function": "lr_end_transaction"}},
+		{Name: "Checkout", Type: "source_transaction", Params: map[string]any{"function": "lr_end_transaction", "args": []any{"Other", "LR_AUTO"}}},
+		{Name: "Checkout", Type: "source_transaction", Params: map[string]any{"function": "lr_think_time"}},
+	}}
+	DeduplicateActionNames(script)
+	if got := script.Actions[1].Params["args"]; !reflect.DeepEqual(got, []any{"Checkout"}) {
+		t.Fatalf("renamed start args = %v, want [Checkout]", got)
+	}
+	if got := script.Actions[3].Params["args"]; !reflect.DeepEqual(got, []any{"Checkout"}) {
+		t.Fatalf("renamed end args = %v, want [Checkout]", got)
+	}
+	if got := script.Actions[4].Params["args"]; !reflect.DeepEqual(got, []any{"Other", "LR_AUTO"}) {
+		t.Fatalf("explicit end args = %v, want them kept", got)
+	}
+	if _, ok := script.Actions[5].Params["args"]; ok {
+		t.Fatalf("a non-boundary source call gained args: %v", script.Actions[5].Params)
+	}
+	if _, ok := script.Actions[0].Params["args"]; ok {
+		t.Fatalf("a request gained args: %v", script.Actions[0].Params)
 	}
 }
 

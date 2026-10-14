@@ -363,3 +363,31 @@ func TestAppendStepPreservesRepeatedValueFromDistinctEdits(t *testing.T) {
 		t.Fatal("distinct edits with the same value were collapsed")
 	}
 }
+
+// An end closes the latest open transaction of its name; a transaction still
+// open when the recording stopped keeps a zero End.
+func TestSessionTransactionWindows(t *testing.T) {
+	session := &Session{Markers: []Marker{
+		{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(100)},
+		{Kind: MarkerNote, Text: "pay next", Timestamp: ts(150)},
+		{Kind: MarkerTransactionStart, Name: "Pay", Timestamp: ts(200)},
+		{Kind: MarkerTransactionEnd, Name: "Pay", Timestamp: ts(300)},
+		{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(400)},
+		{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(500)},
+		{Kind: MarkerTransactionEnd, Name: "Missing", Timestamp: ts(550)},
+	}}
+	got := session.TransactionWindows()
+	want := []TransactionWindow{
+		{Name: "Checkout", Start: ts(100), End: ts(400)},
+		{Name: "Pay", Start: ts(200), End: ts(300)},
+		{Name: "Checkout", Start: ts(500)},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("windows = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i].Name != want[i].Name || !got[i].Start.Equal(want[i].Start) || !got[i].End.Equal(want[i].End) {
+			t.Fatalf("window %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

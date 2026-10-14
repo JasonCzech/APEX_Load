@@ -548,6 +548,26 @@ func (vu *VUser) activeSourceTransactionOwnsHTTPSequence(action dsl.Action) bool
 	return open && state != nil
 }
 
+// renamedTransactionEndHint explains an end marker that import
+// de-duplication renamed. Recorded transactions used to name their start and
+// end markers alike without arguments, so a save renamed the end "<name>_2"
+// and it closed nothing; such a script needs the transaction in the end's
+// first argument.
+func (vu *VUser) renamedTransactionEndHint(action dsl.Action, endName string) string {
+	if len(sourceActionArgs(action)) > 0 {
+		return ""
+	}
+	cut := strings.LastIndexByte(endName, '_')
+	if cut <= 0 || strings.Trim(endName[cut+1:], "0123456789") != "" || cut == len(endName)-1 {
+		return ""
+	}
+	state := vu.sourceTransactions[strings.ToLower(strings.TrimSpace(endName[:cut]))]
+	if state == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (an import renamed this step from %q: set its first argument to %q, or record the script again)", state.name, state.name)
+}
+
 func sourceTransactionActionName(action dsl.Action) string {
 	return firstEngineValue(action.Name, sourceActionArgs(action)...)
 }
@@ -875,7 +895,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		key = strings.ToLower(strings.TrimSpace(endName))
 		state := vu.sourceTransactions[key]
 		if state == nil {
-			return fmt.Errorf("%s references transaction %q with no matching open transaction", function, endName)
+			return fmt.Errorf("%s references transaction %q with no matching open transaction%s", function, endName, vu.renamedTransactionEndHint(action, endName))
 		}
 		if !vu.sourceTransactionEndWillClose(action) {
 			return fmt.Errorf("%s cannot close transaction %q while its parent/child transaction relationship is incomplete or mismatched", function, endName)

@@ -81,6 +81,9 @@ type Conversation struct {
 	Occurrences int
 	IntervalMs  int
 	URL         string
+	// Transaction is the recorded transaction its first request was tagged
+	// with; the conversation outlives it and no longer belongs to it.
+	Transaction string
 }
 
 // Result reports how the script was shaped.
@@ -502,7 +505,7 @@ func collapseConversations(items []item, result *Result) []item {
 			}
 		}
 		stops = append(stops, stop{before: stopAt, action: dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}}})
-		result.Conversations = append(result.Conversations, Conversation{ID: id, Pattern: pattern, Occurrences: len(occurrences), IntervalMs: int(interval / time.Millisecond), URL: items[first].step.URL})
+		result.Conversations = append(result.Conversations, Conversation{ID: id, Pattern: pattern, Occurrences: len(occurrences), IntervalMs: int(interval / time.Millisecond), URL: items[first].step.URL, Transaction: recordedTransaction(request.Metadata)})
 	}
 	if len(result.Conversations) == 0 {
 		return items
@@ -532,7 +535,11 @@ func collapseConversations(items []item, result *Result) []item {
 		}
 	}
 	for _, conversation := range result.Conversations {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%d recorded %s requests to %s became background conversation %s", conversation.Occurrences, conversation.Pattern, conversation.URL, conversation.ID))
+		warning := fmt.Sprintf("%d recorded %s requests to %s became background conversation %s", conversation.Occurrences, conversation.Pattern, conversation.URL, conversation.ID)
+		if conversation.Transaction != "" {
+			warning += fmt.Sprintf(", which is no longer part of transaction %q because it outlives it", conversation.Transaction)
+		}
+		result.Warnings = append(result.Warnings, warning)
 	}
 	return shaped
 }
@@ -662,6 +669,15 @@ func startAction(id, pattern string, interval time.Duration, request dsl.Action,
 	for key, value := range request.Metadata {
 		metadata[key] = value
 	}
+	// A background conversation keeps running after the transaction its first
+	// request started in has ended, so neither it nor its requests belong to
+	// that transaction.
+	for _, key := range transactionKeys {
+		delete(metadata, key)
+		if requestMetadata, ok := encoded["metadata"].(map[string]any); ok {
+			delete(requestMetadata, key)
+		}
+	}
 	metadata["recorded_async"] = map[string]any{"pattern": pattern, "occurrences": occurrences, "evidence": evidence}
 	start := dsl.Action{Name: "Async " + request.Name, Type: "http_async_start", Params: params, Metadata: metadata, ThinkTimeAfter: thinkAfter, ThinkTime: think, Attribution: request.Attribution}
 	importreview.ApplyToAction(&start, []importreview.Finding{{
@@ -670,6 +686,20 @@ func startAction(id, pattern string, interval time.Duration, request dsl.Action,
 		Detail: fmt.Sprintf("Recorded %s became background conversation %s (%s): %s. Re-convert with the async scan off to keep the requests inline.", request.Name, id, pattern, evidence),
 	}})
 	return start, nil
+}
+
+// transactionKeys are the metadata keys naming a step's transaction (the
+// engine still reads the legacy one).
+var transactionKeys = []string{"source_transaction", "loadrunner_transaction"}
+
+// recordedTransaction is the transaction a recorded step was tagged with.
+func recordedTransaction(metadata map[string]any) string {
+	for _, key := range transactionKeys {
+		if name, _ := metadata[key].(string); strings.TrimSpace(name) != "" {
+			return strings.TrimSpace(name)
+		}
+	}
+	return ""
 }
 
 // extendThinkTime adds a folded request's time and think time to the step

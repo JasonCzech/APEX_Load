@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
@@ -2135,6 +2136,12 @@ func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, in
 	}
 	httpName += " (HTTP)"
 	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile, HTTPVersionMode: scriptOptions.HTTPVersionMode}
+	// Each request of the HTTP script carries the transaction marked while
+	// recording that was open when it started (a grouping, not a timer: only
+	// the browser script has the start and end markers).
+	for _, window := range artifact.TransactionWindows() {
+		options.Transactions = append(options.Transactions, sample.TransactionWindow(window))
+	}
 	var levelNotes []string
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "", recbrowser.HTTPScriptLevelURL:

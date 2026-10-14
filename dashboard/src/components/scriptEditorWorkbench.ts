@@ -439,19 +439,24 @@ export function tagActionsTransaction(
 
 /** A default transaction name not already in use ("Transaction 1", "Transaction 2", ...). */
 export function uniqueTransactionName(actions: ScriptActionDefinition[]): string {
-  const existing = new Set(actions.map(actionTransactionName).filter(Boolean))
+  const existing = new Set(actions.map(action => actionTransactionMarker(action)?.name || actionTransactionName(action)).filter(Boolean))
   let n = 1
   while (existing.has(`Transaction ${n}`)) n += 1
   return `Transaction ${n}`
 }
 
+// A marker names its transaction in the call's argument, as an imported
+// LoadRunner script does, so renaming the step never unpairs it; the end takes
+// LR_AUTO, so a failed step inside fails the transaction.
 function transactionMarker(name: string, fn: 'lr_start_transaction' | 'lr_end_transaction'): ScriptActionDefinition {
-  return { name, type: 'source_transaction', params: { function: fn } } as unknown as ScriptActionDefinition
+  return fn === 'lr_start_transaction'
+    ? { name: `Start ${name} transaction`, type: 'source_transaction', params: { function: fn, args: [name] } } as unknown as ScriptActionDefinition
+    : { name: `End ${name} transaction`, type: 'source_transaction', params: { function: fn, args: [name, 'LR_AUTO'] } } as unknown as ScriptActionDefinition
 }
 
 /**
  * Wrap the contiguous span [startIndex..endIndex] in a balanced
- * lr_start_transaction / lr_end_transaction marker pair (both named `name`).
+ * lr_start_transaction / lr_end_transaction marker pair for transaction `name`.
  * Unlike tagging, this measures the wall-clock SPAN of the region at runtime —
  * including think time and any non-selected actions that fall between the
  * endpoints — which is the classic LoadRunner transaction semantic. Returns the

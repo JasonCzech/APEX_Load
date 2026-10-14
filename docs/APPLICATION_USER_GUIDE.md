@@ -342,6 +342,14 @@ Review the converted boundaries and reported measurements before comparing them
 with the source run. For a new script, choose automatic transaction wrapping to
 match the measurement scope you need.
 
+Transactions you mark while recording, and spans you wrap in a transaction in the
+editor, use the same marker pair: the call's first argument names the transaction
+and the end takes `LR_AUTO`, so a failed step inside fails the transaction. The
+HTTP script generated from a browser recording does not get the markers: each
+request is tagged with the transaction that was open when it started, which
+groups its results by transaction in debug and analysis but does not time the
+transaction.
+
 ### Control Flow
 
 The engine has real control flow, valid in every protocol:

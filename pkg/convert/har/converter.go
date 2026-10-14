@@ -42,6 +42,9 @@ type ConvertOptions struct {
 	// HTMLSteps (set by the browser recorder) turns the requests of the given
 	// 1-based HAR entries into HTML-mode steps.
 	HTMLSteps map[int]map[string]any `json:"-"`
+	// Transactions (set by the browser recorder) tags each request with the
+	// recorded transaction open when it started.
+	Transactions []sample.TransactionWindow `json:"-"`
 	// SalvageTruncated imports the complete entries of a HAR file that was cut
 	// off partway through (see SalvageTruncated); the import warns what is lost.
 	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
@@ -128,6 +131,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			PageTitleChecks:     opts.PageTitleChecks,
 			ResourceMode:        opts.ResourceMode,
 			HTMLSteps:           opts.HTMLSteps,
+			Transactions:        opts.Transactions,
 			AsyncScan:           opts.AsyncScan,
 			Profile:             opts.Profile,
 			HTTPVersionMode:     opts.HTTPVersionMode,

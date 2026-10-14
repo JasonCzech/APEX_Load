@@ -47,6 +47,9 @@ func TestShapeCollapsesAPollAndStopsItAtThePageChange(t *testing.T) {
 		{url: "/next", contentType: "text/html", page: true, at: 5000, dur: 50},
 	})
 	script.Actions[2].Extractors = []dsl.Extractor{{Name: "later", Source: "body", Type: "jsonpath", Expression: "$.x"}}
+	// The first poll started inside a recorded transaction; the conversation
+	// outlives it.
+	script.Actions[1].Metadata = map[string]any{"source_transaction": "Home", "note": "kept"}
 	result := Shape(script, steps, nil, Options{AsyncScan: true})
 	if got := types(script); got != "request,http_async_start,request,http_async_stop,request" {
 		t.Fatalf("actions = %s", got)
@@ -62,6 +65,13 @@ func TestShapeCollapsesAPollAndStopsItAtThePageChange(t *testing.T) {
 	raw, _ := json.Marshal(start.Metadata)
 	if !strings.Contains(string(raw), AsyncConversationReasonCode) {
 		t.Fatalf("the conversation needs its promotion finding: %s", raw)
+	}
+	requestMetadata, _ := request["metadata"].(map[string]any)
+	if start.Metadata["source_transaction"] != nil || requestMetadata["source_transaction"] != nil || start.Metadata["note"] != "kept" || requestMetadata["note"] != "kept" {
+		t.Fatalf("conversation metadata = %v, request metadata = %v: want the transaction dropped and the rest kept", start.Metadata, requestMetadata)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], `no longer part of transaction "Home"`) {
+		t.Fatalf("warnings = %q, want the conversation to say it left its transaction", result.Warnings)
 	}
 	if len(result.Conversations) != 1 || result.Conversations[0].Occurrences != 3 {
 		t.Fatalf("conversations = %+v", result.Conversations)
