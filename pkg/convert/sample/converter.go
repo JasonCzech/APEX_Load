@@ -601,7 +601,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		var shapeWarnings []string
 		var newIndex []int
 		var startedAt []time.Time
-		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
+		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
 		if len(req.Options.Transactions) > 0 {
 			if newIndex == nil {

@@ -75,7 +75,8 @@ classification are kept.
 | General | `resource_mode` | `runtime` (default: resources are not recorded and are discovered at replay), `in_step` (attached to their page), or `separate` (their own steps) |
 | General | `think_time_threshold_ms` | The smallest recorded pause kept as think time (default 500 ms) |
 | Code generation | `page_title_checks` | A `<title>` check on each recorded HTML page (default on) |
-| Code generation | `async_scan` | Turns repeated background requests into polling, long-polling or push conversations (default on) |
+| Code generation | `async_scan` | Turns repeated background requests into polling, long-polling or push conversations, one for each run of them (default on). A request repeated more than 30 s apart stays as recorded |
+| Code generation | `background_requests` | URL path patterns of the calls an app makes without waiting for them, such as client logging and analytics. A matching request is sent as a background request (`http_async_start` with pattern `once`), outside transaction times. A pattern matches a path that holds its segments, in order and whole, ignoring case. Unset means the defaults: `connect/proxy/app-analytics-logging` (the Salesforce Mobile SDK's analytics upload), `nebulaLogger` and `analyticsEvent`. `[]` keeps every request in line |
 | HTTP properties | `record_headers`, `drop_headers` | Headers always kept, overriding the recorder's default drop list, and headers never recorded |
 | Recording filters | `include_hosts`, `exclude_hosts` | Hosts recorded (`*.domain` matches subdomains); excluded hosts win |
 | Recording filters | `exclude_content_types` | Response media types (`image/*` wildcards allowed) not recorded as steps |

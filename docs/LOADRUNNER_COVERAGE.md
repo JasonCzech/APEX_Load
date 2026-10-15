@@ -51,7 +51,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_link` | web | `executable` | HTTP link step (page context) | Follows the link on the current page whose visible text matches Text= (Ordinal=, /IC). A non-VuGen explicit URL= becomes a GET. Frame-targeted links keep the navigation gate. |
 | `web_load_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_reg_add_cookie` | web | `executable` | Cookie headers | Registered cookie attached downstream. |
-| `web_reg_async_attributes` | web | `executable` | http_async_start | The next step runs as a background Poll/LongPoll/Push conversation; C callbacks are not executed (promotion finding); a URL naming a resource inside the step keeps review. |
+| `web_reg_async_attributes` | web | `executable` | http_async_start | The next step runs as a background Poll/LongPoll/Push conversation, or, when the URL names one of its EXTRARES resources, that resource does; C callbacks are not executed (promotion finding); a URL naming another request inside the step keeps review. |
 | `web_reg_find` | web | `executable` | Assertion / count extractor | Text= + optional SaveCount extractor; SaveCount without Fail is non-failing. |
 | `web_reg_save_param` | web | `executable` | Extractor (boundary/regex) | LB=/RB= + ORD= on the next request. |
 | `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | TagName=+Extract= (or Tag=/Attribute=) → //tag/@attr; element attributes before SEARCH_FILTERS become [@name='value'] predicates. |

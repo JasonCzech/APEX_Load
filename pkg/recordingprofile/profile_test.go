@@ -124,3 +124,54 @@ func TestApplyCorrelation(t *testing.T) {
 		t.Fatalf("a disabled scan keeps no automatic correlations: %+v", got)
 	}
 }
+
+func TestBackgroundRequestPatterns(t *testing.T) {
+	var none *Profile
+	if got := none.BackgroundRequestPatterns(); strings.Join(got, ",") != strings.Join(DefaultBackgroundRequests, ",") {
+		t.Fatalf("no profile = %v, want the defaults", got)
+	}
+	if got := (&Profile{}).BackgroundRequestPatterns(); len(got) != len(DefaultBackgroundRequests) {
+		t.Fatalf("unset = %v, want the defaults", got)
+	}
+	empty := []string{}
+	if got := (&Profile{BackgroundRequests: &empty}).BackgroundRequestPatterns(); len(got) != 0 {
+		t.Fatalf("empty list = %v, want none", got)
+	}
+	own := []string{"telemetry/events"}
+	if got := (&Profile{BackgroundRequests: &own}).BackgroundRequestPatterns(); len(got) != 1 || got[0] != "telemetry/events" {
+		t.Fatalf("own list = %v", got)
+	}
+}
+
+func TestMatchBackgroundRequest(t *testing.T) {
+	for rawURL, want := range map[string]string{
+		"https://acme.my.salesforce.com/services/data/v66.0/connect/proxy/app-analytics-logging": "connect/proxy/app-analytics-logging",
+		"/services/apexrest/mobile/NebulaLogger?x=1":                                             "nebulaLogger",
+		"{{base_url}}/services/apexrest/mobile/analyticsEvent":                                   "analyticsEvent",
+		"/services/apexrest/mobile/analyticsEvents":                                              "",
+		"/services/apexrest/mobile/login":                                                        "",
+		"/proxy/app-analytics-logging":                                                           "",
+		"/services/apexrest/mobile/search?log=nebulaLogger":                                      "",
+	} {
+		if got := MatchBackgroundRequest(DefaultBackgroundRequests, rawURL); got != want {
+			t.Errorf("MatchBackgroundRequest(%q) = %q, want %q", rawURL, got, want)
+		}
+	}
+	if got := MatchBackgroundRequest(nil, "/services/apexrest/mobile/nebulaLogger"); got != "" {
+		t.Fatalf("no patterns matched %q", got)
+	}
+}
+
+func TestValidateBackgroundRequests(t *testing.T) {
+	for _, patterns := range [][]string{{""}, {"/"}, {"logs?x=1"}, {"https://host/log"}, {"a*b"}, {"two words"}} {
+		list := patterns
+		err := Validate([]Profile{{ID: "a", Name: "x", BackgroundRequests: &list}})
+		if err == nil || !strings.Contains(err.Error(), "background_requests") {
+			t.Fatalf("%q: error = %v", patterns, err)
+		}
+	}
+	good := []string{"nebulaLogger", "/connect/proxy/app-analytics-logging/"}
+	if err := Validate([]Profile{{ID: "a", Name: "x", BackgroundRequests: &good}}); err != nil {
+		t.Fatal(err)
+	}
+}

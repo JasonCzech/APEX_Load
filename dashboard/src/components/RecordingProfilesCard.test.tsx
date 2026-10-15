@@ -100,6 +100,32 @@ describe('RecordingProfilesCard', () => {
     expect((container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement).textContent).toContain('Checkout')
   })
 
+  it('sets the background request paths, or keeps every request in line', async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [], rules, updated_at: '2026-10-09T01:00:00Z' })
+    apiMock.saveRecordingProfiles.mockImplementation(async (_project: string, profiles: unknown[]) => ({ profiles, rules, updated_at: '2026-10-09T02:00:00Z' }))
+    await act(async () => root.render(<RecordingProfilesCard projectId="proj-1" selectedId="" onSelect={vi.fn()} />))
+    await flush()
+    await act(async () => button(container, 'Manage profiles').click())
+    await act(async () => button(container, 'New profile').click())
+    await act(async () => setValue(container.querySelector('input[aria-label="Profile name"]')!, 'Mobile'))
+
+    const paths = container.querySelector('input[aria-label="Background request paths"]') as HTMLInputElement
+    expect(paths.placeholder).toContain('nebulaLogger')
+    await act(async () => setValue(paths, 'telemetry/events, nebulaLogger'))
+    await act(async () => button(container, 'Save profiles').click())
+    await flush()
+    expect(apiMock.saveRecordingProfiles.mock.calls[0][1][0].background_requests).toEqual(['telemetry/events', 'nebulaLogger'])
+
+    await act(async () => button(container, 'Manage profiles').click())
+    const toggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('as background requests'))!.querySelector('input') as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    await act(async () => toggle.click())
+    expect(container.querySelector('input[aria-label="Background request paths"]')).toBeNull()
+    await act(async () => button(container, 'Save profiles').click())
+    await flush()
+    expect(apiMock.saveRecordingProfiles.mock.calls[1][1][0].background_requests).toEqual([])
+  })
+
   it('selects a profile and shows a rejected save', async () => {
     const profile = { id: 'default', name: 'Default', http_script_level: 'url' as const }
     apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [profile], rules, updated_at: '2026-10-09T01:00:00Z' })

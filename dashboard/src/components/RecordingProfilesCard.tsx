@@ -190,6 +190,13 @@ function ProfileEditor({ profile, rules, onChange, disabled }: {
           <input type="checkbox" checked={profile.async_scan !== false} disabled={disabled} onChange={event => set({ async_scan: event.target.checked ? undefined : false })} />
           <span>Scan for asynchronous traffic (polling, long-polling, push)</span>
         </label>
+        <label className="rec-checkbox-row">
+          <input type="checkbox" checked={profile.background_requests?.length !== 0} disabled={disabled} onChange={event => set({ background_requests: event.target.checked ? undefined : [] })} />
+          <span>Send app logging and analytics calls as background requests, outside transaction times</span>
+        </label>
+        {profile.background_requests?.length !== 0 && (
+          <ListInput key={`${profile.id}-background`} label="Background request paths" value={profile.background_requests} placeholder="Defaults: connect/proxy/app-analytics-logging, nebulaLogger, analyticsEvent" disabled={disabled} onChange={list => set({ background_requests: list })} />
+        )}
       </fieldset>
 
       <fieldset className="rec-profile-group">

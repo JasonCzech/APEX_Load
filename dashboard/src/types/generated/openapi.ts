@@ -90811,6 +90811,7 @@ export interface operations {
       "query"?: {
         "allow_java_vuser_runner"?: string;
         "archive_member"?: string;
+        "background_requests"?: string;
         "expire_draft"?: string;
         "salesforce_native"?: boolean;
       };
@@ -90820,6 +90821,7 @@ export interface operations {
         "multipart/form-data": {
           "allow_java_vuser_runner"?: string;
           "archive_member"?: string;
+          "background_requests"?: string;
           "base_url"?: string;
           "expire_draft"?: string;
           "file"?: string;
@@ -178144,6 +178146,7 @@ export interface operations {
       "query"?: {
         "allow_java_vuser_runner"?: string;
         "archive_member"?: string;
+        "background_requests"?: string;
         "expire_draft"?: string;
         "salesforce_native"?: boolean;
       };
@@ -178153,6 +178156,7 @@ export interface operations {
         "multipart/form-data": {
           "allow_java_vuser_runner"?: string;
           "archive_member"?: string;
+          "background_requests"?: string;
           "base_url"?: string;
           "expire_draft"?: string;
           "file"?: string;

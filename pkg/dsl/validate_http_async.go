@@ -71,9 +71,9 @@ func validateHTTPAsyncIssues(protocol string, path string, action Action) []stri
 			issues = append(issues, fmt.Sprintf("%s: params.id must not exceed %d bytes", label, maxHTTPAsyncIDBytes))
 		}
 		switch strings.ToLower(text("pattern")) {
-		case "", "poll", "long_poll", "push":
+		case "", "poll", "long_poll", "push", "once":
 		default:
-			issues = append(issues, fmt.Sprintf("%s: params.pattern must be poll, long_poll or push", label))
+			issues = append(issues, fmt.Sprintf("%s: params.pattern must be poll, long_poll, push or once", label))
 		}
 		issues = append(issues, millis("interval_ms")...)
 		issues = append(issues, validateHTTPAsyncRequest(protocol, path, label, action.Params["request"])...)

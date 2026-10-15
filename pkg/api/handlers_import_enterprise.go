@@ -5,6 +5,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -19,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/protocol/aura"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 var enterpriseImportGate = make(chan struct{}, 2)
@@ -357,6 +359,22 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		supplementalManifest = manifest
 	}
 
+	// background_requests (a JSON array of URL path patterns) replaces the
+	// default background request patterns; [] keeps every step in line.
+	var backgroundRequests *[]string
+	if raw := strings.TrimSpace(firstNonEmpty(r.FormValue("background_requests"), r.URL.Query().Get("background_requests"))); raw != "" {
+		var patterns []string
+		if err := json.Unmarshal([]byte(raw), &patterns); err != nil {
+			writeError(w, http.StatusBadRequest, "background_requests must be a JSON array of URL path patterns")
+			return nil, false
+		}
+		if err := recordingprofile.ValidateBackgroundRequests(patterns); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		backgroundRequests = &patterns
+	}
+
 	return &enterpriseArchiveImportRequest{
 		Data:                 data,
 		ArchiveMember:        archiveMember,
@@ -373,6 +391,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			BaseURL:              r.FormValue("base_url"),
 			IncludeAssertions:    r.FormValue("include_assertions") == "true",
 			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
+			BackgroundRequests:   backgroundRequests,
 		},
 		ReadinessPolicy: enterprisearchive.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true

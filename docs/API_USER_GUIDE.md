@@ -282,7 +282,7 @@ Import endpoints (per-importer `support-matrix` GET routes and further importers
 - `POST /api/v1/scripts/import/jmeter` — JMeter test plan (also `/validate`, `/save`)
 - `POST /api/v1/scripts/import/k6` — k6 script
 - `POST /api/v1/scripts/import/cloudtest` — Akamai CloudTest export
-- `POST /api/v1/scripts/import/enterprise-script-archive` — LoadRunner-style script archive (also `/validate`, `/save`)
+- `POST /api/v1/scripts/import/enterprise-script-archive` — LoadRunner-style script archive (also `/validate`, `/save`). Steps whose URL path matches a background request pattern (by default the Salesforce Mobile SDK's `connect/proxy/app-analytics-logging`, `nebulaLogger` and `analyticsEvent`) are sent as background requests, outside transaction times; the form field `background_requests` (a JSON array of URL path patterns, `[]` for none) replaces the defaults
 - `POST /api/v1/scripts/import/recorder` — Recorder export
 - `POST /api/v1/scripts/import/github` — Import a script from GitHub
 

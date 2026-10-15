@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 const trailingRequestContributorsMetadataKey = "trailing_request_contributors"
@@ -115,6 +116,12 @@ type ConvertOptions struct {
 	// always produce a governed java_vuser draft, so this option is deprecated
 	// and has no effect.
 	AllowJavaVuserRunner bool
+	// BackgroundRequests are the URL path patterns of steps sent as background
+	// requests (http_async_start pattern once), outside transaction times: an
+	// app's logging and analytics calls that it does not wait for. Nil means
+	// recordingprofile.DefaultBackgroundRequests; an empty list keeps every
+	// step in line.
+	BackgroundRequests *[]string
 
 	// HTTP runtime settings mapped from source runtime config.
 	HTTPConfig      *dsl.HTTPConfig   // Pre-built HTTP config to embed in script
@@ -251,6 +258,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	// startedAsync holds the conversation IDs that became http_async_start.
 	var pendingAsync *sourceAsync
 	startedAsync := map[string]bool{}
+	// Steps matching a background request pattern, counted by pattern; a step
+	// inside web_concurrent_start/end stays in its group.
+	backgroundPatterns := (&recordingprofile.Profile{BackgroundRequests: opts.BackgroundRequests}).BackgroundRequestPatterns()
+	backgroundCounts := map[string]int{}
+	var backgroundOrder []string
+	backgroundSteps := 0
+	inConcurrentGroup := false
 	var webSockets sourceWebSockets
 	trackLastExecutable := func(fn ParsedFunction) {
 		lastExecutablePhase = fn.Phase
@@ -776,6 +790,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
 
 		case "web_concurrent_start", "web_concurrent_end":
+			inConcurrentGroup = fn.Name == "web_concurrent_start"
 			appendSourceConcurrentMarker(result, fn, functionIndex, concurrentPlan)
 
 		case "web_convert_param":
@@ -893,28 +908,51 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					action.Name = fmt.Sprintf("%s_%d", action.Name, actionNameCounts[action.Name])
 				}
 
-				var asyncWrap *sourceAsync
+				stepGated := argumentGated || metadataBool(action.Metadata, "masked_body") || metadataString(action.Metadata, "source_itemdata_encoding") == "review_required"
+				var asyncWrap, asyncResource *sourceAsync
+				var asyncResourceRequest dsl.Action
 				if pendingAsync != nil && fn.Name != "web_image_check" {
 					async := pendingAsync
 					pendingAsync = nil
+					appliesToStep := async.appliesTo(fn, action)
+					var resourceRequest dsl.Action
+					resource := false
+					if !appliesToStep {
+						resourceRequest, resource = async.resourceConversation(action, baseURL, autoHeaders)
+					}
 					switch {
-					case argumentGated || metadataBool(action.Metadata, "masked_body") || metadataString(action.Metadata, "source_itemdata_encoding") == "review_required":
+					case resource:
+						// The conversation is the step's resource, which runs
+						// apart from the step whether or not the step is gated.
+						asyncResource, asyncResourceRequest = async, resourceRequest
+					case stepGated:
 						reviewAsync(async, "the step it applies to is gated for review")
-					case !async.appliesTo(fn, action):
+					case !appliesToStep:
 						reviewAsync(async, "its URL names a request inside the step, which cannot run apart from the step")
 					default:
 						asyncWrap = async
 					}
 				}
+				// A step the app did not wait for (its logging or analytics)
+				// becomes a background request, unless it is gated, in a
+				// concurrent group, or extracts a value later steps may need.
+				background := ""
+				if asyncWrap == nil && !stepGated && !inConcurrentGroup && len(action.Extractors) == 0 && fn.Name != "web_image_check" && !isHTMLStepFunction(fn) {
+					originalURL, _ := action.Metadata["original_url"].(string)
+					background = recordingprofile.MatchBackgroundRequest(backgroundPatterns, convertutil.FirstNonEmpty(originalURL, action.Target))
+				}
 
 				actionIndex := actionCountForPhase(result.Script, fn.Phase)
 				targetPath := sourceReviewActionPath(fn.Phase, actionIndex)
 				contributorPath := targetPath
-				if asyncWrap != nil {
+				if asyncWrap != nil || background != "" {
 					contributorPath = targetPath + ".params.request"
 				}
 				mappingStatus := "converted"
 				mappingNotes := "Converted to a generated APEX Load action."
+				if background != "" {
+					mappingNotes = fmt.Sprintf("Converted to a background request (http_async_start pattern once), sent without waiting and outside transaction times: its URL path matches background request pattern %q.", background)
+				}
 				mappingMode := SourceFunctionSupportExecutable
 				if argumentGated {
 					mappingStatus = "review_only"
@@ -973,10 +1011,36 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					result.Stats.ContributorFunctions++
 					recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 				}
+				if background != "" {
+					backgroundSteps++
+					wrapped, err := wrapBackgroundRequest(fmt.Sprintf("background_%d", backgroundSteps), background, fn, *action)
+					if err != nil {
+						return nil, fmt.Errorf("wrap background request %q: %w", action.Name, err)
+					}
+					*action = wrapped
+					if backgroundCounts[background] == 0 {
+						backgroundOrder = append(backgroundOrder, background)
+					}
+					backgroundCounts[background]++
+				}
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				if fn.Name != "web_image_check" {
 					lastRequestPhase = fn.Phase
 					lastRequestIndex = actionCountForPhase(result.Script, fn.Phase) - 1
+				}
+				if asyncResource != nil {
+					callbacks := translateAsyncCallbacks(asyncResource, opts.archiveFiles)
+					start, err := wrapAsyncConversation(asyncResource, asyncResourceRequest, callbacks)
+					if err != nil {
+						return nil, fmt.Errorf("wrap async conversation %q: %w", asyncResource.id, err)
+					}
+					result.Warnings = append(result.Warnings, droppedCallbackLogsWarnings(asyncResource.fn, callbacks)...)
+					startedAsync[asyncResource.id] = true
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(asyncResource.fn, sourceReviewActionPath(fn.Phase, actionCountForPhase(result.Script, fn.Phase)), start.Name, "action", "converted",
+						"Runs the step's resource it names as a background conversation (http_async_start) until web_stop_async or the end of the iteration; the step no longer fetches it as a resource.", SourceFunctionSupportExecutable))
+					appendActionForPhase(result.Script, fn.Phase, start)
+					result.Stats.ConvertedActions++
+					recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 				}
 				trackLastExecutable(fn)
 				result.Stats.ConvertedActions++
@@ -1043,6 +1107,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this source function yet."))
 		}
+	}
+	for _, pattern := range backgroundOrder {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d step(s) matching background request pattern %q are sent as background requests, outside transaction times", backgroundCounts[pattern], pattern))
 	}
 	if pendingAsync != nil {
 		notes := "The async conversation is preserved and not executed: no step follows it."

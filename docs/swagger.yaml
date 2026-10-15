@@ -279927,6 +279927,8 @@ paths:
                 archive_member:
                   type: string
                   description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
+                background_requests:
+                  type: string
                 base_url:
                   type: string
                 expire_draft:
@@ -279993,6 +279995,12 @@ paths:
         - name: archive_member
           in: query
           description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
+          required: false
+          schema:
+            type: string
+        - name: background_requests
+          in: query
+          description: Handler-defined query parameter.
           required: false
           schema:
             type: string
@@ -281595,6 +281603,8 @@ paths:
                 archive_member:
                   type: string
                   description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
+                background_requests:
+                  type: string
                 base_url:
                   type: string
                 expire_draft:
@@ -281661,6 +281671,12 @@ paths:
         - name: archive_member
           in: query
           description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
+          required: false
+          schema:
+            type: string
+        - name: background_requests
+          in: query
+          description: Handler-defined query parameter.
           required: false
           schema:
             type: string

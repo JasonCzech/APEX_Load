@@ -96,7 +96,7 @@ var webFunctionCoverageDetail = map[string]webCoverageDetail{
 	"web_util_set_request_body":      {"Import review", "Next-request body overrides are preserved for review; no APEX runtime equivalent yet."},
 	"web_util_set_request_url":       {"Import review", "Next-request URL overrides are preserved for review; no APEX runtime equivalent yet."},
 	"web_report_data_point":          {"source_metric action", "Custom data point, like lr_user_data_point."},
-	"web_reg_async_attributes":       {"http_async_start", "The next step runs as a background Poll/LongPoll/Push conversation; C callbacks are not executed (promotion finding); a URL naming a resource inside the step keeps review."},
+	"web_reg_async_attributes":       {"http_async_start", "The next step runs as a background Poll/LongPoll/Push conversation, or, when the URL names one of its EXTRARES resources, that resource does; C callbacks are not executed (promotion finding); a URL naming another request inside the step keeps review."},
 	"web_stop_async":                 {"http_async_stop", "Ends a converted conversation; an ID that was not converted keeps review."},
 	"web_js_run":                     {"Import review", "TruClient JavaScript step is not executed."},
 	"web_js_reset":                   {"Import review", "TruClient JavaScript step is not executed."},

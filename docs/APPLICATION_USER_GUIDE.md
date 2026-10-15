@@ -608,6 +608,16 @@ name, **End transaction** when the step is done, and **Add note** for anything t
 remember. A transaction still open when you stop the recording ends there, and the
 stop message names it.
 
+A converted recording models the traffic an app keeps up in the background. A
+request it repeats on a timer becomes a background conversation: a poll for each run
+of a request repeated at a steady interval (no more than 30 seconds apart), and a
+long-poll for one re-issued as soon as its held response returns. Calls the app makes
+without waiting for them, such as its logging and analytics, are sent as background
+requests, outside transaction times. The recording profile's **Background request
+paths** name them; by default they are the Salesforce Mobile SDK's analytics upload
+and the `nebulaLogger` and `analyticsEvent` calls. LoadRunner script imports apply
+the same default paths.
+
 Finished recordings of both methods are listed under **Recent recordings**, newest
 first, with a **Browser** or **HTTP proxy** badge. Recording Studio reopens with the
 method you used last.

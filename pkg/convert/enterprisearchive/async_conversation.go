@@ -110,6 +110,93 @@ func (a *sourceAsync) appliesTo(fn ParsedFunction, action *dsl.Action) bool {
 	return path == action.Target
 }
 
+// resourceConversation handles a registration whose URL names one of the
+// step's EXTRARES resources, as VuGen's async scan records a request the app
+// fired while the step loaded: replay sends the resource as the
+// conversation's request instead, with the auto headers in effect, so it
+// leaves the step's resources. It reports false when no resource matches.
+func (a *sourceAsync) resourceConversation(action *dsl.Action, baseURL string, autoHeaders map[string]string) (dsl.Action, bool) {
+	want := convertParamReferences(a.url)
+	resources, _ := action.Params["resources"].([]any)
+	if want == "" || len(resources) == 0 {
+		return dsl.Action{}, false
+	}
+	stepURL, _ := action.Metadata["original_url"].(string)
+	for index, raw := range resources {
+		resource, _ := raw.(map[string]any)
+		ref, _ := resource["url"].(string)
+		if ref == "" || resolveSourceResourceURL(stepURL, ref) != want {
+			continue
+		}
+		remaining := append(append([]any(nil), resources[:index]...), resources[index+1:]...)
+		if len(remaining) == 0 {
+			delete(action.Params, "resources")
+		} else {
+			action.Params["resources"] = remaining
+		}
+		request := dsl.Action{Name: sanitizeName(a.id), Type: "GET", Method: "GET", Target: convertParamReferences(makeRelative(a.url, baseURL)), Metadata: sourceFunctionMetadata(a.fn)}
+		request.Metadata["original_url"] = want
+		for _, key := range []string{"source_transaction", "source_subtransaction"} {
+			if value, ok := action.Metadata[key]; ok {
+				request.Metadata[key] = value
+			}
+		}
+		if len(autoHeaders) > 0 {
+			request.Headers = make(map[string]string, len(autoHeaders)+1)
+			for name, value := range autoHeaders {
+				request.Headers[name] = value
+			}
+		}
+		if referer, _ := resource["referer"].(string); referer != "" {
+			if request.Headers == nil {
+				request.Headers = map[string]string{}
+			}
+			request.Headers["Referer"] = referer
+		}
+		return request, true
+	}
+	return dsl.Action{}, false
+}
+
+// resolveSourceResourceURL resolves an EXTRARES URL against the step's URL:
+// absolute, host-relative ("/path") or relative to the step's directory.
+// Templates are kept as written, so neither URL is parsed.
+func resolveSourceResourceURL(stepURL, ref string) string {
+	if strings.Contains(ref, "://") {
+		return ref
+	}
+	scheme, rest, ok := strings.Cut(stepURL, "://")
+	if !ok {
+		return ref
+	}
+	if strings.HasPrefix(ref, "//") {
+		return scheme + ":" + ref
+	}
+	origin, path := rest, "/"
+	if slash := strings.Index(rest, "/"); slash >= 0 {
+		origin, path = rest[:slash], rest[slash:]
+	}
+	if strings.HasPrefix(ref, "/") {
+		return scheme + "://" + origin + ref
+	}
+	if cut := strings.IndexAny(path, "?#"); cut >= 0 {
+		path = path[:cut]
+	}
+	return scheme + "://" + origin + path[:strings.LastIndex(path, "/")+1] + ref
+}
+
+// wrapBackgroundRequest sends a converted step as a background request
+// (http_async_start pattern once): the app did not wait for it, so replay
+// does not either, and it is not part of the transaction around it.
+func wrapBackgroundRequest(id, pattern string, fn ParsedFunction, action dsl.Action) (dsl.Action, error) {
+	wrapped, err := wrapAsyncConversation(&sourceAsync{fn: fn, id: id, pattern: "once"}, action, nil)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	wrapped.Metadata["source_background_request"] = pattern
+	return wrapped, nil
+}
+
 // wrapAsyncConversation turns the converted step into the http_async_start
 // that runs it in the background, with each translated callback as a branch.
 func wrapAsyncConversation(async *sourceAsync, action dsl.Action, callbacks []sourceCallbackTranslation) (dsl.Action, error) {

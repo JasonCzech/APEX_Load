@@ -39,6 +39,9 @@ export type RecordingProfile = {
   think_time_threshold_ms?: number
   page_title_checks?: boolean
   async_scan?: boolean
+  // URL path patterns sent as background requests (logging, analytics).
+  // Unset uses the server's defaults; [] keeps every request in line.
+  background_requests?: string[]
   body_capture_limit_bytes?: number
   capture_cookies?: boolean
   correlation?: RecordingProfileCorrelation

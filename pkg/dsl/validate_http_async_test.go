@@ -26,6 +26,12 @@ func TestValidateHTTPAsyncActions(t *testing.T) {
 	if issues := ValidateScriptIssues(ok); len(issues) != 0 {
 		t.Fatalf("valid async script: %v", issues)
 	}
+	background := validAsyncStart()
+	background.Params = map[string]any{"id": "log_1", "pattern": "once", "request": map[string]any{"name": "log", "type": "POST", "method": "POST", "target": "/log"}}
+	background.Control = nil
+	if issues := ValidateScriptIssues(asyncTestScript("http", background)); len(issues) != 0 {
+		t.Fatalf("background request (pattern once): %v", issues)
+	}
 	cases := map[string]struct {
 		script *Script
 		want   string
@@ -45,7 +51,7 @@ func TestValidateHTTPAsyncActions(t *testing.T) {
 			a := validAsyncStart()
 			a.Params["pattern"] = "stream"
 			return a
-		}()), "poll, long_poll or push"},
+		}()), "poll, long_poll, push or once"},
 		"bad branch": {asyncTestScript("http", func() Action {
 			a := validAsyncStart()
 			a.Control.Branches[0].Name = "on_error"

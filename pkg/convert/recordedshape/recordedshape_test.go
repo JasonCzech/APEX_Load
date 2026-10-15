@@ -239,3 +239,91 @@ func TestShapeNamesFrameVariablesUniquely(t *testing.T) {
 		t.Fatalf("targets = %v", targets)
 	}
 }
+
+// An app polls a status endpoint in separate bursts while the user works (no
+// page loads, as in a native app): each burst is its own conversation, as
+// VuGen records it, and stops where the burst did.
+func TestShapeMakesAConversationOfEachBurst(t *testing.T) {
+	var entries []recorded
+	for burst, start := range []int{0, 60000, 120000} {
+		for poll := range 4 {
+			entries = append(entries, recorded{url: "/api/requests?manager=" + string(rune('a'+burst)), contentType: "application/json", at: start + poll*5500, dur: 40})
+		}
+		// The user's own step, about a minute apart: not a poll.
+		entries = append(entries, recorded{url: "/api/search", contentType: "application/json", at: start + 30000, dur: 40})
+	}
+	script, steps := build(entries)
+	result := Shape(script, steps, nil, Options{AsyncScan: true})
+	if len(result.Conversations) != 3 {
+		t.Fatalf("conversations = %+v, want one per burst", result.Conversations)
+	}
+	for _, conversation := range result.Conversations {
+		if conversation.Pattern != "poll" || conversation.Occurrences != 4 || conversation.IntervalMs != 5500 {
+			t.Fatalf("conversation = %+v, want 4 polls every 5.5 s", conversation)
+		}
+	}
+	want := strings.Repeat("http_async_start,http_async_stop,request,", 3)
+	if got := types(script) + ","; got != want {
+		t.Fatalf("actions = %s, want each conversation stopped before the step recorded after its last poll", got)
+	}
+}
+
+// A request repeated at irregular times stays as recorded; a steady run
+// inside it still becomes a conversation.
+func TestShapeKeepsIrregularRepeatsInline(t *testing.T) {
+	script, steps := build([]recorded{
+		{url: "/api/flag", contentType: "application/json", at: 0, dur: 20},
+		{url: "/api/flag", contentType: "application/json", at: 4000, dur: 20},
+		{url: "/api/flag", contentType: "application/json", at: 4600, dur: 20},
+		{url: "/api/flag", contentType: "application/json", at: 5200, dur: 20},
+		{url: "/api/flag", contentType: "application/json", at: 5800, dur: 20},
+		{url: "/api/flag", contentType: "application/json", at: 20000, dur: 20},
+	})
+	result := Shape(script, steps, nil, Options{AsyncScan: true})
+	if len(result.Conversations) != 1 || result.Conversations[0].Occurrences != 4 || result.Conversations[0].IntervalMs != 600 {
+		t.Fatalf("conversations = %+v, want the 600 ms run only", result.Conversations)
+	}
+	if got := types(script); got != "request,http_async_start,http_async_stop,request" {
+		t.Fatalf("actions = %s", got)
+	}
+}
+
+// Requests matching a background request pattern are sent as background
+// requests (pattern once), outside transactions; others stay as they are.
+func TestShapeSendsMatchingRequestsInTheBackground(t *testing.T) {
+	script, steps := build([]recorded{
+		{url: "/api/search", contentType: "application/json", at: 0, dur: 300},
+		{url: "/services/apexrest/mobile/nebulaLogger", contentType: "application/json", at: 310, dur: 200},
+		{url: "/api/submit", contentType: "application/json", at: 320, dur: 300},
+		{url: "/services/apexrest/mobile/nebulaLogger", contentType: "application/json", at: 700, dur: 200},
+	})
+	script.Actions[1].Metadata = map[string]any{"source_transaction": "Search"}
+	script.Actions[1].ThinkTimeAfter, script.Actions[1].ThinkTime = true, dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 900}
+	match := func(rawURL string) string {
+		if strings.Contains(rawURL, "/nebulaLogger") {
+			return "nebulaLogger"
+		}
+		return ""
+	}
+	result := Shape(script, steps, nil, Options{Background: match})
+	if got := types(script); got != "request,http_async_start,request,http_async_start" {
+		t.Fatalf("actions = %s", got)
+	}
+	if !result.Changed() || result.BackgroundRequests != 2 || len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], `2 recorded request(s) matching background request pattern "nebulaLogger"`) {
+		t.Fatalf("result = %+v", result)
+	}
+	start := script.Actions[1]
+	request, _ := start.Params["request"].(map[string]any)
+	if start.Params["pattern"] != "once" || start.Params["id"] != "background_1" || request["target"] != "/services/apexrest/mobile/nebulaLogger" {
+		t.Fatalf("background start = %+v", start.Params)
+	}
+	if start.Metadata["source_transaction"] != nil || start.Metadata["import_review"] != nil {
+		t.Fatalf("metadata = %v: a background request is not part of a transaction and needs no review", start.Metadata)
+	}
+	if !start.ThinkTimeAfter || start.ThinkTime.MeanMs != 900 {
+		t.Fatalf("the recorded pause after the request stays on its step: %+v", start)
+	}
+	if path, ok := result.RemapPath("actions[1].body"); !ok || path != "actions[1].params.request.body" {
+		t.Fatalf("remapped path = %q, %v", path, ok)
+	}
+}

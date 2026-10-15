@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ const (
 	MaxProfilesPerProject  = 32
 	MaxListEntries         = 128
 	MaxUserRules           = 64
+	maxBackgroundPattern   = 512
 	DefaultThinkTimeMs     = 500
 	DefaultMinValueLength  = 4
 	DefaultMaxValueLength  = 400
@@ -56,6 +58,14 @@ type Profile struct {
 	// async scan. Nil means on.
 	PageTitleChecks *bool `json:"page_title_checks,omitempty"`
 	AsyncScan       *bool `json:"async_scan,omitempty"`
+
+	// BackgroundRequests are the request paths an app calls without waiting
+	// for them (client logging, analytics), which the generated script sends
+	// as background requests, outside transaction times. A pattern matches a
+	// request whose path holds its segments in order ("nebulaLogger",
+	// "connect/proxy/app-analytics-logging"), ignoring case. Nil means
+	// DefaultBackgroundRequests; an empty list keeps every request in line.
+	BackgroundRequests *[]string `json:"background_requests,omitempty"`
 
 	// Capture: the per-request body capture limit and whether recorded
 	// Cookie headers are kept (the cookie jar sends them otherwise).
@@ -158,6 +168,11 @@ func (p Profile) validate(label string) error {
 			}
 		}
 	}
+	if p.BackgroundRequests != nil {
+		if err := ValidateBackgroundRequests(*p.BackgroundRequests); err != nil {
+			return fmt.Errorf("%s.%w", label, err)
+		}
+	}
 	if p.ThinkTimeThresholdMs < 0 || p.ThinkTimeThresholdMs > maxThinkTimeThreshold {
 		return fmt.Errorf("%s.think_time_threshold_ms must be 0..%d", label, maxThinkTimeThreshold)
 	}
@@ -209,6 +224,84 @@ func (p Profile) validate(label string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateBackgroundRequests checks a list of background request patterns.
+func ValidateBackgroundRequests(patterns []string) error {
+	if len(patterns) > MaxListEntries {
+		return fmt.Errorf("background_requests holds at most %d entries", MaxListEntries)
+	}
+	for _, pattern := range patterns {
+		if len(backgroundSegments(pattern)) == 0 || len(pattern) > maxBackgroundPattern || strings.ContainsAny(pattern, "?#*: \t") {
+			return fmt.Errorf("background_requests entries must be URL path segments such as nebulaLogger or connect/proxy/app-analytics-logging, at most %d characters", maxBackgroundPattern)
+		}
+	}
+	return nil
+}
+
+// DefaultBackgroundRequests are the background request patterns of a
+// profile that names none: the Salesforce Mobile SDK's analytics upload, and
+// the logging (Nebula Logger) and analytics-event calls Mobile SDK apps make
+// through Apex REST.
+var DefaultBackgroundRequests = []string{"connect/proxy/app-analytics-logging", "nebulaLogger", "analyticsEvent"}
+
+// BackgroundRequestPatterns returns the patterns of the requests a
+// conversion sends in the background: the profile's, or the defaults when
+// there is no profile or it names none. The caller owns the list.
+func (p *Profile) BackgroundRequestPatterns() []string {
+	if p == nil || p.BackgroundRequests == nil {
+		return slices.Clone(DefaultBackgroundRequests)
+	}
+	return slices.Clone(*p.BackgroundRequests)
+}
+
+// MatchBackgroundRequest returns the first pattern whose segments appear, in
+// order and whole, in the URL's path, ignoring case; "" when none does. The
+// URL may be absolute, relative or templated; its query is ignored.
+func MatchBackgroundRequest(patterns []string, rawURL string) string {
+	if len(patterns) == 0 {
+		return ""
+	}
+	path := rawURL
+	if _, rest, ok := strings.Cut(path, "://"); ok {
+		path = "/"
+		if slash := strings.Index(rest, "/"); slash >= 0 {
+			path = rest[slash:]
+		}
+	}
+	if cut := strings.IndexAny(path, "?#"); cut >= 0 {
+		path = path[:cut]
+	}
+	segments := backgroundSegments(path)
+	for _, pattern := range patterns {
+		want := backgroundSegments(pattern)
+		if len(want) == 0 || len(want) > len(segments) {
+			continue
+		}
+		for start := 0; start+len(want) <= len(segments); start++ {
+			matched := true
+			for offset, segment := range want {
+				if !strings.EqualFold(segments[start+offset], segment) {
+					matched = false
+					break
+				}
+			}
+			if matched {
+				return pattern
+			}
+		}
+	}
+	return ""
+}
+
+func backgroundSegments(path string) []string {
+	var segments []string
+	for _, segment := range strings.Split(strings.TrimSpace(path), "/") {
+		if segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	return segments
 }
 
 // Find returns the profile with the given ID.

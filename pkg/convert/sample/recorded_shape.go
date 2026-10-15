@@ -24,12 +24,12 @@ import (
 // It also returns where each original action went (nil when the script was
 // not reshaped; -1 for an action folded into a conversation) and when each
 // action of the reshaped script started in the recording.
-func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []time.Time, []string) {
+func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, background []string, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []time.Time, []string) {
 	if script == nil || len(script.Actions) != len(exchanges) {
 		return mappings, nil, nil, nil
 	}
 	sockets := harWebSockets(content)
-	if !asyncScan && len(sockets) == 0 {
+	if !asyncScan && len(sockets) == 0 && len(background) == 0 {
 		return mappings, nil, nil, nil
 	}
 	steps := make([]recordedshape.Step, len(exchanges))
@@ -49,7 +49,11 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 	}
 	var warnings []string
 	original := cloneScriptActions(script.Actions)
-	shaped := recordedshape.Shape(script, steps, sockets, recordedshape.Options{AsyncScan: asyncScan})
+	options := recordedshape.Options{AsyncScan: asyncScan}
+	if len(background) > 0 {
+		options.Background = func(rawURL string) string { return recordingprofile.MatchBackgroundRequest(background, rawURL) }
+	}
+	shaped := recordedshape.Shape(script, steps, sockets, options)
 	if !shaped.Changed() {
 		return mappings, nil, nil, append(warnings, shaped.Warnings...)
 	}

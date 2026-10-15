@@ -1,9 +1,10 @@
 // Package recordedshape gives an HTTP script converted from recorded traffic
 // the shape a VuGen recording has: requests a page repeats in the background
-// (poll, long-poll and push) collapse into one background conversation, and
-// the WebSocket traffic recorded alongside the HTTP steps becomes WebSocket
-// steps in the same script, in recorded order. The HAR pipeline and the
-// proxy recorder share it.
+// (poll, long-poll and push) collapse into one background conversation for
+// each run of them, requests an app sends without waiting (its logging and
+// analytics calls) become background requests, and the WebSocket traffic
+// recorded alongside the HTTP steps becomes WebSocket steps in the same
+// script, in recorded order. The HAR pipeline and the proxy recorder share it.
 package recordedshape
 
 import (
@@ -27,8 +28,11 @@ import (
 const AsyncConversationReasonCode = "recorded_async_conversation"
 
 const (
-	minPollOccurrences  = 3
-	minPollInterval     = 200 * time.Millisecond
+	minPollOccurrences = 3
+	minPollInterval    = 200 * time.Millisecond
+	// maxPollInterval bounds what counts as a poll: a request repeated
+	// further apart is more likely the user's own step than a timer's.
+	maxPollInterval     = 30 * time.Second
 	maxLongPollIdle     = 300 * time.Millisecond
 	minLongPollDuration = time.Second
 	thinkTimeThreshold  = 500 * time.Millisecond
@@ -72,6 +76,10 @@ type Socket struct {
 type Options struct {
 	// AsyncScan collapses recorded background requests into conversations.
 	AsyncScan bool
+	// Background returns the background request pattern a recorded URL
+	// matches, or "": a matching request is sent as a background request
+	// (http_async_start pattern once), outside transaction times.
+	Background func(rawURL string) string
 }
 
 // Conversation is a background conversation the async scan made.
@@ -103,12 +111,14 @@ type Result struct {
 	// SkippedSockets the ones that overlapped an earlier connection.
 	Sockets        int
 	SkippedSockets int
-	Warnings       []string
+	// BackgroundRequests counts the requests sent as background requests.
+	BackgroundRequests int
+	Warnings           []string
 }
 
 // Changed reports whether Shape changed the script.
 func (r Result) Changed() bool {
-	return len(r.Conversations) > 0 || r.Sockets > 0
+	return len(r.Conversations) > 0 || r.Sockets > 0 || r.BackgroundRequests > 0
 }
 
 type item struct {
@@ -132,7 +142,7 @@ func Shape(script *dsl.Script, steps []Step, sockets []Socket, opts Options) Res
 		result.NewIndex[i] = i
 	}
 	if len(steps) != len(script.Actions) {
-		if len(sockets) > 0 || opts.AsyncScan {
+		if len(sockets) > 0 || opts.AsyncScan || opts.Background != nil {
 			result.Warnings = append(result.Warnings, "recorded timing does not line up with the generated steps; background requests and WebSocket traffic were left as recorded")
 		}
 		return result
@@ -145,6 +155,9 @@ func Shape(script *dsl.Script, steps []Step, sockets []Socket, opts Options) Res
 	items = placeSockets(items, sockets, &result)
 	if opts.AsyncScan {
 		items = collapseConversations(items, &result)
+	}
+	if opts.Background != nil {
+		sendInBackground(items, opts.Background, &result)
 	}
 	for i := range result.NewIndex {
 		result.NewIndex[i] = -1
@@ -475,43 +488,49 @@ func collapseConversations(items []item, result *Result) []item {
 		}
 		groups[key] = append(groups[key], i)
 	}
+	// A request repeated in separate bursts is a conversation for each burst,
+	// as VuGen records it: each starts and stops where its burst did.
+	var runs []conversationRun
+	for _, key := range order {
+		runs = append(runs, conversationRuns(items, groups[key])...)
+	}
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].occurrences[0] < runs[j].occurrences[0] })
 	removed := map[int]bool{}
+	for _, run := range runs {
+		for _, other := range run.occurrences[1:] {
+			removed[other] = true
+		}
+	}
 	type stop struct {
 		before int
 		action dsl.Action
 	}
 	var stops []stop
-	for _, key := range order {
-		occurrences := groups[key]
-		pattern, interval, evidence := classify(items, occurrences)
-		if pattern == "" {
-			continue
-		}
+	var started []conversationRun
+	for _, run := range runs {
+		occurrences := run.occurrences
 		id := fmt.Sprintf("async_%d", len(result.Conversations)+1)
 		first := occurrences[0]
 		request := items[first].action
 		for _, other := range occurrences[1:] {
 			request.Extractors = mergeExtractors(request.Extractors, items[other].action.Extractors)
 		}
-		start, err := startAction(id, pattern, interval, request, len(occurrences), evidence)
+		start, err := startAction(id, run.pattern, run.interval, request, len(occurrences), run.evidence)
 		if err != nil {
+			for _, other := range occurrences[1:] {
+				delete(removed, other)
+			}
 			continue
 		}
 		items[first].action = start
 		result.Wrapped[items[first].orig] = true
-		for _, other := range occurrences[1:] {
-			removed[other] = true
-		}
-		last := occurrences[len(occurrences)-1]
-		stopAt := len(items)
-		for i := last + 1; i < len(items); i++ {
-			if items[i].step != nil && items[i].step.Page && !removed[i] {
-				stopAt = i
-				break
-			}
-		}
-		stops = append(stops, stop{before: stopAt, action: dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}}})
-		result.Conversations = append(result.Conversations, Conversation{ID: id, Pattern: pattern, Occurrences: len(occurrences), IntervalMs: int(interval / time.Millisecond), URL: items[first].step.URL, Transaction: recordedTransaction(request.Metadata)})
+		started = append(started, run)
+		result.Conversations = append(result.Conversations, Conversation{ID: id, Pattern: run.pattern, Occurrences: len(occurrences), IntervalMs: int(run.interval / time.Millisecond), URL: items[first].step.URL, Transaction: recordedTransaction(request.Metadata)})
+	}
+	// Stops are placed once every folded request is known.
+	for index, run := range started {
+		id := result.Conversations[index].ID
+		stops = append(stops, stop{before: conversationStop(items, run, removed), action: dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}}})
 	}
 	if len(result.Conversations) == 0 {
 		return items
@@ -550,6 +569,66 @@ func collapseConversations(items []item, result *Result) []item {
 	return shaped
 }
 
+// conversationStop is where a conversation's http_async_stop goes: before
+// the first step recorded after the request would have been sent again (a
+// poll's next interval, a long-poll's re-issue), or before the next page,
+// whichever comes first; at the end when the recording ended with it running.
+func conversationStop(items []item, run conversationRun, removed map[int]bool) int {
+	last := items[run.occurrences[len(run.occurrences)-1]]
+	var next time.Time
+	switch run.pattern {
+	case "poll":
+		next = last.at.Add(run.interval + pollTolerance(run.interval))
+	case "long_poll":
+		next = last.at.Add(last.dur + maxLongPollIdle)
+	}
+	for i := run.occurrences[len(run.occurrences)-1] + 1; i < len(items); i++ {
+		if removed[i] {
+			continue
+		}
+		if items[i].step != nil && items[i].step.Page {
+			return i
+		}
+		if !next.IsZero() && !items[i].at.IsZero() && !items[i].at.Before(next) {
+			return i
+		}
+	}
+	return len(items)
+}
+
+// sendInBackground turns each recorded request whose URL matches a
+// background request pattern into a background request: it is sent without
+// holding up the steps after it and is not part of any transaction, as the
+// app sent it.
+func sendInBackground(items []item, match func(string) string, result *Result) {
+	counts := map[string]int{}
+	var patterns []string
+	for i := range items {
+		it := &items[i]
+		if it.orig < 0 || it.step == nil || !isPlainRequest(it.action) {
+			continue
+		}
+		pattern := match(it.step.URL)
+		if pattern == "" {
+			continue
+		}
+		start, err := backgroundStart(fmt.Sprintf("background_%d", result.BackgroundRequests+1), it.action, pattern)
+		if err != nil {
+			continue
+		}
+		it.action = start
+		result.Wrapped[it.orig] = true
+		result.BackgroundRequests++
+		if counts[pattern] == 0 {
+			patterns = append(patterns, pattern)
+		}
+		counts[pattern]++
+	}
+	for _, pattern := range patterns {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d recorded request(s) matching background request pattern %q are sent as background requests, outside transaction times", counts[pattern], pattern))
+	}
+}
+
 func isPlainRequest(action dsl.Action) bool {
 	if action.Type != "request" || action.Control != nil {
 		return false
@@ -583,53 +662,101 @@ func isEventStream(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
 }
 
-// classify decides whether a group of recorded requests is a background
-// conversation: push (a server-sent event stream), long_poll (each request
-// re-issued as soon as its held response returns), or poll (a near-constant
-// interval).
-func classify(items []item, occurrences []int) (string, time.Duration, string) {
+// conversationRun is one run of a recorded request that became a background
+// conversation.
+type conversationRun struct {
+	occurrences []int
+	pattern     string
+	interval    time.Duration
+	evidence    string
+}
+
+// conversationRuns finds the runs of one request that are background
+// conversations: push (a server-sent event stream), long_poll (each request
+// re-issued as soon as its held response returns) or poll (a near-constant
+// interval). Occurrences outside every run stay as recorded steps.
+func conversationRuns(items []item, occurrences []int) []conversationRun {
 	for _, index := range occurrences {
 		if isEventStream(items[index].step.ContentType) {
-			return "push", 0, fmt.Sprintf("%d response(s) were text/event-stream", len(occurrences))
+			return []conversationRun{{occurrences: occurrences, pattern: "push", evidence: fmt.Sprintf("%d response(s) were text/event-stream", len(occurrences))}}
 		}
 	}
-	if len(occurrences) < minPollOccurrences {
-		return "", 0, ""
-	}
-	gaps := make([]time.Duration, 0, len(occurrences)-1)
-	idleShort := true
-	var durations []time.Duration
-	for i := 0; i < len(occurrences); i++ {
-		current := items[occurrences[i]]
-		if current.at.IsZero() {
-			return "", 0, ""
-		}
-		durations = append(durations, current.dur)
-		if i+1 < len(occurrences) {
-			next := items[occurrences[i+1]]
-			gaps = append(gaps, next.at.Sub(current.at))
-			if next.at.Sub(current.at.Add(current.dur)) > maxLongPollIdle {
-				idleShort = false
-			}
+	for _, index := range occurrences {
+		if items[index].at.IsZero() {
+			return nil
 		}
 	}
-	if idleShort && median(durations) >= minLongPollDuration {
-		return "long_poll", 0, fmt.Sprintf("%d requests, each re-issued within %s of its held response (median hold %s)", len(occurrences), maxLongPollIdle, median(durations).Round(time.Millisecond))
+	var runs []conversationRun
+	for start := 0; start+minPollOccurrences <= len(occurrences); {
+		if end, hold := longPollRun(items, occurrences, start); end >= 0 {
+			runs = append(runs, conversationRun{occurrences: occurrences[start : end+1], pattern: "long_poll",
+				evidence: fmt.Sprintf("%d requests, each re-issued within %s of its held response (median hold %s)", end-start+1, maxLongPollIdle, hold.Round(time.Millisecond))})
+			start = end + 1
+			continue
+		}
+		if end, interval := pollRun(items, occurrences, start); end >= 0 {
+			runs = append(runs, conversationRun{occurrences: occurrences[start : end+1], pattern: "poll", interval: interval,
+				evidence: fmt.Sprintf("%d requests about every %s", end-start+1, interval.Round(time.Millisecond))})
+			start = end + 1
+			continue
+		}
+		start++
+	}
+	return runs
+}
+
+// longPollRun returns the last occurrence of the long-poll run beginning at
+// start, and its median hold, or -1 when none begins there.
+func longPollRun(items []item, occurrences []int, start int) (int, time.Duration) {
+	end := start
+	for end+1 < len(occurrences) {
+		current, next := items[occurrences[end]], items[occurrences[end+1]]
+		if next.at.Sub(current.at.Add(current.dur)) > maxLongPollIdle {
+			break
+		}
+		end++
+	}
+	if end-start+1 < minPollOccurrences {
+		return -1, 0
+	}
+	durations := make([]time.Duration, 0, end-start+1)
+	for _, index := range occurrences[start : end+1] {
+		durations = append(durations, items[index].dur)
+	}
+	if hold := median(durations); hold >= minLongPollDuration {
+		return end, hold
+	}
+	return -1, 0
+}
+
+// pollRun returns the last occurrence of the poll run beginning at start
+// (each gap within the tolerance of the run's median gap so far) and its
+// interval, or -1 when none begins there.
+func pollRun(items []item, occurrences []int, start int) (int, time.Duration) {
+	gap := func(i int) time.Duration { return items[occurrences[i+1]].at.Sub(items[occurrences[i]].at) }
+	if start+1 >= len(occurrences) || gap(start) < minPollInterval || gap(start) > maxPollInterval {
+		return -1, 0
+	}
+	gaps := []time.Duration{gap(start)}
+	end := start + 1
+	for end+1 < len(occurrences) {
+		interval, next := median(gaps), gap(end)
+		if diff := next - interval; diff > pollTolerance(interval) || -diff > pollTolerance(interval) {
+			break
+		}
+		gaps = append(gaps, next)
+		end++
 	}
 	interval := median(gaps)
-	if interval < minPollInterval {
-		return "", 0, ""
+	if end-start+1 < minPollOccurrences || interval < minPollInterval || interval > maxPollInterval {
+		return -1, 0
 	}
-	tolerance := interval / 4
-	if tolerance < 250*time.Millisecond {
-		tolerance = 250 * time.Millisecond
-	}
-	for _, gap := range gaps {
-		if diff := gap - interval; diff > tolerance || -diff > tolerance {
-			return "", 0, ""
-		}
-	}
-	return "poll", interval, fmt.Sprintf("%d requests about every %s", len(occurrences), interval.Round(time.Millisecond))
+	return end, interval
+}
+
+// pollTolerance is how far a poll's gap may stray from its interval.
+func pollTolerance(interval time.Duration) time.Duration {
+	return max(interval/4, 250*time.Millisecond)
 }
 
 func median(values []time.Duration) time.Duration {
@@ -657,6 +784,35 @@ func mergeExtractors(into, from []dsl.Extractor) []dsl.Extractor {
 }
 
 func startAction(id, pattern string, interval time.Duration, request dsl.Action, occurrences int, evidence string) (dsl.Action, error) {
+	start, err := asyncStart(id, pattern, interval, request)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	start.Name = "Async " + request.Name
+	start.Metadata["recorded_async"] = map[string]any{"pattern": pattern, "occurrences": occurrences, "evidence": evidence}
+	importreview.ApplyToAction(&start, []importreview.Finding{{
+		Code: AsyncConversationReasonCode, ReasonCode: AsyncConversationReasonCode, Severity: diag.Warning, Gate: importreview.GatePromotion,
+		Source: "recording", Resolution: "review_async_conversation",
+		Detail: fmt.Sprintf("Recorded %s became background conversation %s (%s): %s. Re-convert with the async scan off to keep the requests inline.", request.Name, id, pattern, evidence),
+	}})
+	return start, nil
+}
+
+// backgroundStart sends a recorded request as a background request. The
+// pattern it matched comes from the recording profile, so it needs no review.
+func backgroundStart(id string, request dsl.Action, pattern string) (dsl.Action, error) {
+	start, err := asyncStart(id, "once", 0, request)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	start.Name = "Background " + request.Name
+	start.Metadata["recorded_background"] = map[string]any{"pattern": pattern}
+	return start, nil
+}
+
+// asyncStart wraps a recorded request in an http_async_start. The request's
+// pause after it stays on the start step.
+func asyncStart(id, pattern string, interval time.Duration, request dsl.Action) (dsl.Action, error) {
 	thinkAfter, think := request.ThinkTimeAfter, request.ThinkTime
 	request.ThinkTimeAfter, request.ThinkTime = false, dsl.ThinkTimeConfig{}
 	payload, err := json.Marshal(request)
@@ -676,22 +832,15 @@ func startAction(id, pattern string, interval time.Duration, request dsl.Action,
 		metadata[key] = value
 	}
 	// A background conversation keeps running after the transaction its first
-	// request started in has ended, so neither it nor its requests belong to
-	// that transaction.
+	// request started in has ended, and a background request is not waited
+	// for, so neither belongs to that transaction.
 	for _, key := range transactionKeys {
 		delete(metadata, key)
 		if requestMetadata, ok := encoded["metadata"].(map[string]any); ok {
 			delete(requestMetadata, key)
 		}
 	}
-	metadata["recorded_async"] = map[string]any{"pattern": pattern, "occurrences": occurrences, "evidence": evidence}
-	start := dsl.Action{Name: "Async " + request.Name, Type: "http_async_start", Params: params, Metadata: metadata, ThinkTimeAfter: thinkAfter, ThinkTime: think, Attribution: request.Attribution}
-	importreview.ApplyToAction(&start, []importreview.Finding{{
-		Code: AsyncConversationReasonCode, ReasonCode: AsyncConversationReasonCode, Severity: diag.Warning, Gate: importreview.GatePromotion,
-		Source: "recording", Resolution: "review_async_conversation",
-		Detail: fmt.Sprintf("Recorded %s became background conversation %s (%s): %s. Re-convert with the async scan off to keep the requests inline.", request.Name, id, pattern, evidence),
-	}})
-	return start, nil
+	return dsl.Action{Type: "http_async_start", Params: params, Metadata: metadata, ThinkTimeAfter: thinkAfter, ThinkTime: think, Attribution: request.Attribution}, nil
 }
 
 // transactionKeys are the metadata keys naming a step's transaction (the

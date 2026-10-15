@@ -378,3 +378,114 @@ func TestHTTPAsyncConversationStopsWhenInitFails(t *testing.T) {
 		}
 	}
 }
+
+// backgroundProtocol holds every /log request for delay and counts how many
+// are in flight at once.
+type backgroundProtocol struct {
+	stubProtocol
+	delay       time.Duration
+	mu          sync.Mutex
+	inFlight    int
+	maxInFlight int
+	logsDone    int
+	nextAt      time.Time
+	logDoneAt   time.Time
+}
+
+func (p *backgroundProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	started := time.Now()
+	if action.Target == "/log" {
+		p.mu.Lock()
+		p.inFlight++
+		p.maxInFlight = max(p.maxInFlight, p.inFlight)
+		p.mu.Unlock()
+		select {
+		case <-time.After(p.delay):
+		case <-ctx.Done():
+		}
+		p.mu.Lock()
+		p.inFlight--
+		p.logsDone++
+		p.logDoneAt = time.Now()
+		p.mu.Unlock()
+	} else if action.Target == "/next" {
+		p.mu.Lock()
+		p.nextAt = started
+		p.mu.Unlock()
+	}
+	return &protocol.Result{ActionName: action.Name, StartTime: started, Duration: time.Since(started), Success: true, StatusCode: 200}, nil
+}
+
+func backgroundRequestStart(id string) dsl.Action {
+	return dsl.Action{Name: "start " + id, Type: "http_async_start", Params: map[string]any{
+		"id": id, "pattern": "once",
+		"request": map[string]any{"name": "POST log", "type": "request", "method": "POST", "target": "/log"},
+	}}
+}
+
+// A background request (pattern once) is sent without holding up the script
+// or the transaction it was started in, and is recorded under its own step
+// name, outside any transaction.
+func TestHTTPAsyncOnceRunsInTheBackgroundOutsideTransactions(t *testing.T) {
+	proto := &backgroundProtocol{delay: 200 * time.Millisecond}
+	sink := &concurrentCaptureSink{}
+	vu := &VUser{ID: 1, Group: "g", Proto: proto, Metrics: NewMetricsCollector(64), ResultSink: sink, Script: &dsl.Script{
+		Name: "background", Protocol: "http",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{
+			dsl.TransactionMarker("Login", true),
+			backgroundRequestStart("background_1"),
+			dsl.TransactionMarker("Login", false),
+			// Sent once the transaction has ended: before the log returns.
+			{Name: "next", Type: "request", Method: "GET", Target: "/next"},
+		},
+	}}
+	vu.Run(context.Background())
+
+	proto.mu.Lock()
+	nextAt, logDoneAt, logs := proto.nextAt, proto.logDoneAt, proto.logsDone
+	proto.mu.Unlock()
+	if logs != 1 || !nextAt.Before(logDoneAt) {
+		t.Fatalf("logs=%d, next at %v, log done at %v: neither the transaction nor the script may wait for the background request", logs, nextAt, logDoneAt)
+	}
+	var background *protocol.Result
+	for _, result := range sink.results {
+		if result.ActionName == "POST log" {
+			background = result
+		}
+	}
+	if background == nil || !background.Success || background.BusinessTransaction || background.ProtocolEvidence["background_request"] != true {
+		t.Fatalf("background result = %+v; want it recorded under its step name, outside transactions", background)
+	}
+	if vu.Metrics.TotalErrors() != 0 {
+		t.Fatalf("errors = %d", vu.Metrics.TotalErrors())
+	}
+	if vu.async != nil && len(vu.async.byID) != 0 {
+		t.Fatalf("background requests left registered: %v", vu.async.order)
+	}
+}
+
+// More background requests than may be in flight wait for the oldest instead
+// of failing, and do not use the repeating conversations' slots.
+func TestHTTPAsyncOnceWaitsForASlotPastTheLimit(t *testing.T) {
+	proto := &backgroundProtocol{delay: 60 * time.Millisecond}
+	actions := []dsl.Action{asyncPollStart(nil)}
+	for i := range MaxBackgroundRequests + 4 {
+		actions = append(actions, backgroundRequestStart(fmt.Sprintf("background_%d", i+1)))
+	}
+	actions = append(actions, dsl.Action{Name: "stop poll", Type: "http_async_stop", Params: map[string]any{"id": "poll"}})
+	vu := &VUser{ID: 1, Group: "g", Proto: proto, Metrics: NewMetricsCollector(64), Script: &dsl.Script{
+		Name: "burst", Protocol: "http",
+		Config:  dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: actions,
+	}}
+	vu.Run(context.Background())
+	proto.mu.Lock()
+	defer proto.mu.Unlock()
+	if proto.logsDone != MaxBackgroundRequests+4 || proto.maxInFlight > MaxBackgroundRequests {
+		t.Fatalf("sent %d background requests, at most %d at once; want %d sent, never more than %d in flight", proto.logsDone, proto.maxInFlight, MaxBackgroundRequests+4, MaxBackgroundRequests)
+	}
+	if vu.Metrics.TotalErrors() != 0 {
+		t.Fatalf("errors = %d", vu.Metrics.TotalErrors())
+	}
+}

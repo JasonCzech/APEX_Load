@@ -17,14 +17,21 @@ import (
 // http_async_start runs a request repeatedly in the background while the
 // script continues (poll on an interval, long_poll re-issuing as soon as a
 // response arrives, push re-opening a streaming response when it ends), and
-// http_async_stop ends it. Workers only send requests and queue what arrives.
-// The virtual user applies the queue (metrics, extractions, then the
-// conversation's callback branches) on its own goroutine before each action,
-// as WebSocket callbacks are dispatched, so variables are never written
-// concurrently.
+// http_async_stop ends it. A once conversation is a background request: it
+// is sent one time, as a native app sends its logging and analytics calls
+// without waiting for them, and ends with its response. Workers only send
+// requests and queue what arrives. The virtual user applies the queue
+// (metrics, extractions, then the conversation's callback branches) on its
+// own goroutine before each action, as WebSocket callbacks are dispatched, so
+// variables are never written concurrently.
 const (
-	// MaxAsyncConversations caps the conversations one virtual user runs.
+	// MaxAsyncConversations caps the repeating conversations one virtual
+	// user runs.
 	MaxAsyncConversations = 8
+	// MaxBackgroundRequests caps the once conversations one virtual user has
+	// in flight; starting another first waits for the oldest to finish, as a
+	// client's connection limit holds back its next call.
+	MaxBackgroundRequests = 16
 	// MinAsyncInterval is the floor between two requests of a conversation.
 	MinAsyncInterval = 100 * time.Millisecond
 	// maxAsyncPendingItems bounds the responses and chunks a conversation
@@ -34,7 +41,10 @@ const (
 )
 
 // AsyncPatterns are the conversation patterns.
-var AsyncPatterns = map[string]bool{"poll": true, "long_poll": true, "push": true}
+var AsyncPatterns = map[string]bool{"poll": true, "long_poll": true, "push": true, "once": true}
+
+// asyncOnce is the pattern of a background request, sent one time.
+const asyncOnce = "once"
 
 // Callback branch names of http_async_start (control.branches).
 const (
@@ -151,7 +161,7 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 		pattern = "poll"
 	}
 	if !AsyncPatterns[pattern] {
-		return fmt.Errorf("http_async_start pattern %q is not poll, long_poll or push", pattern)
+		return fmt.Errorf("http_async_start pattern %q is not poll, long_poll, push or once", pattern)
 	}
 	interval := asyncParamDuration(action, "interval_ms")
 	if interval < MinAsyncInterval {
@@ -167,10 +177,15 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 	if vu.async == nil {
 		vu.async = &asyncConversations{byID: map[string]*asyncConversation{}}
 	}
+	if pattern == asyncOnce {
+		if err := vu.awaitBackgroundRequestSlot(ctx); err != nil {
+			return err
+		}
+	}
 	if _, running := vu.async.byID[id]; running {
 		return fmt.Errorf("async conversation %q is already running", id)
 	}
-	if len(vu.async.byID) >= MaxAsyncConversations {
+	if pattern != asyncOnce && vu.async.running(false) >= MaxAsyncConversations {
 		return fmt.Errorf("a virtual user runs at most %d async conversations", MaxAsyncConversations)
 	}
 	conversation := &asyncConversation{id: id, pattern: pattern, interval: interval, request: request, done: make(chan struct{})}
@@ -269,6 +284,9 @@ func (vu *VUser) runAsyncConversation(ctx context.Context, conversation *asyncCo
 			conversation.push(asyncItem{chunk: result.ResponseBody})
 		}
 		conversation.push(asyncItem{result: result})
+		if conversation.pattern == asyncOnce {
+			return
+		}
 		wait := MinAsyncInterval - time.Since(started)
 		if conversation.pattern == "poll" {
 			wait = conversation.interval - time.Since(started)
@@ -317,8 +335,64 @@ func (vu *VUser) dispatchAsyncResults(ctx context.Context) error {
 		if conversation == nil {
 			continue
 		}
+		// A background request whose worker has finished has queued its
+		// response; it is applied now and the conversation ends.
+		finished := conversation.pattern == asyncOnce && asyncWorkerFinished(conversation)
 		err := vu.applyAsyncResults(ctx, conversation)
+		if finished && vu.async.byID[id] == conversation {
+			vu.forgetAsyncConversation(id)
+		}
 		vu.finishRequestedAsyncStops()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// running counts the conversations in flight: background requests (once)
+// or the repeating ones.
+func (a *asyncConversations) running(once bool) int {
+	count := 0
+	for _, conversation := range a.byID {
+		if (conversation.pattern == asyncOnce) == once {
+			count++
+		}
+	}
+	return count
+}
+
+func asyncWorkerFinished(conversation *asyncConversation) bool {
+	select {
+	case <-conversation.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// awaitBackgroundRequestSlot makes room for one more background request:
+// while MaxBackgroundRequests are in flight, it waits for the oldest to
+// finish and applies its response.
+func (vu *VUser) awaitBackgroundRequestSlot(ctx context.Context) error {
+	for vu.async.running(true) >= MaxBackgroundRequests {
+		var oldest *asyncConversation
+		for _, id := range vu.async.order {
+			if conversation := vu.async.byID[id]; conversation != nil && conversation.pattern == asyncOnce {
+				oldest = conversation
+				break
+			}
+		}
+		if oldest == nil {
+			return nil
+		}
+		select {
+		case <-oldest.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		err := vu.applyAsyncResults(ctx, oldest)
+		vu.forgetAsyncConversation(oldest.id)
 		if err != nil {
 			return err
 		}
@@ -352,11 +426,17 @@ func (vu *VUser) applyAsyncResults(ctx context.Context, conversation *asyncConve
 			continue
 		}
 		result := item.result
-		result.ActionName = "async " + conversation.id
 		if result.ProtocolEvidence == nil {
 			result.ProtocolEvidence = map[string]any{}
 		}
 		result.ProtocolEvidence["async_conversation"] = conversation.id
+		if conversation.pattern == asyncOnce {
+			// A background request keeps its step's name; like every
+			// conversation response it is not part of any transaction.
+			result.ProtocolEvidence["background_request"] = true
+		} else {
+			result.ActionName = "async " + conversation.id
+		}
 		status := strconv.Itoa(result.StatusCode)
 		success := result.Success
 		body := result.ResponseBody
@@ -467,9 +547,29 @@ func (vu *VUser) finishRequestedAsyncStops() {
 
 // stopAllAsyncConversations stops every conversation, at iteration end or
 // when the virtual user finishes, and warns about each one still running.
+// Background requests still in flight are let finish (within the stop
+// timeout) and applied: they were sent, and the app would not cancel them.
 func (vu *VUser) stopAllAsyncConversations(ctx context.Context, why string) {
 	if vu.async == nil {
 		return
+	}
+	deadline := time.NewTimer(asyncStopTimeout)
+	defer deadline.Stop()
+	for _, id := range append([]string(nil), vu.async.order...) {
+		conversation := vu.asyncConversation(id)
+		if conversation == nil || conversation.pattern != asyncOnce {
+			continue
+		}
+		select {
+		case <-conversation.done:
+		case <-deadline.C:
+			// Past the shared deadline: what has not finished is cut off.
+			deadline.Reset(0)
+		}
+		conversation.cancel()
+		waitAsyncWorker(conversation)
+		_ = vu.applyAsyncResults(ctx, conversation)
+		vu.forgetAsyncConversation(id)
 	}
 	for _, id := range append([]string(nil), vu.async.order...) {
 		if vu.asyncConversation(id) == nil {

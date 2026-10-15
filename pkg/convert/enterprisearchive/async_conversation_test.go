@@ -221,3 +221,114 @@ func TestAsyncRegistrationAppliesToItsOwnURL(t *testing.T) {
 		}
 	}
 }
+
+// VuGen's async scan can name a request the app fired while a step loaded,
+// left in that step's EXTRARES: the resource becomes the conversation's
+// request, sent with the auto headers, and leaves the step — even when the
+// step itself is gated for review.
+func TestConvertAsyncConversationOfAStepResource(t *testing.T) {
+	for name, encoding := range map[string]string{"executable step": "", "gated step": `"ContentEncoding=gzip", `} {
+		t.Run(name, func(t *testing.T) {
+			result := convertAsyncSource(t, `
+	web_add_auto_header("Authorization", "Bearer {Token}");
+	web_reg_async_attributes("ID=Poll_0", "Pattern=Poll", "URL=https://example.test/services/apexrest/mobile/managerOverride/requests?manager=ab1",
+		"PollIntervalMs=5500", LAST);
+	web_custom_request("search", "URL=https://example.test/services/apexrest/mobile/search", "Method=POST", `+encoding+`"Body={}",
+		EXTRARES, "Url=managerOverride/requests?manager=ab1", "Referer=", ENDITEM, "Url=/img/logo.png", ENDITEM, LAST);
+	web_stop_async("ID=Poll_0", LAST);`)
+			actions := result.Script.Actions
+			if len(actions) != 3 || actions[1].Type != "http_async_start" || actions[2].Type != "http_async_stop" {
+				t.Fatalf("actions = %+v", actions)
+			}
+			resources, _ := actions[0].Params["resources"].([]any)
+			if len(resources) != 1 || resources[0].(map[string]any)["url"] != "/img/logo.png" {
+				t.Fatalf("step resources = %+v; the conversation's request must leave the step", actions[0].Params["resources"])
+			}
+			start := actions[1]
+			request, _ := start.Params["request"].(map[string]any)
+			encoded, _ := json.Marshal(request["headers"])
+			if start.Params["id"] != "Poll_0" || start.Params["pattern"] != "poll" || start.Params["interval_ms"] != 5500 ||
+				request["method"] != "GET" || request["target"] != "/services/apexrest/mobile/managerOverride/requests?manager=ab1" ||
+				string(encoded) != `{"Authorization":"Bearer {{var.token}}"}` {
+				t.Fatalf("start = %+v, request = %+v", start.Params, request)
+			}
+			if stop := actions[2]; stop.Params["id"] != "Poll_0" {
+				t.Fatalf("stop = %+v", stop)
+			}
+			for _, mapping := range result.SourceReview.Mappings {
+				if mapping.Function == "web_reg_async_attributes" && (mapping.Status != "converted" || mapping.TargetPath != "actions[1]") {
+					t.Fatalf("registration mapping = %+v", mapping)
+				}
+			}
+			if encoding == "" {
+				if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+					t.Fatalf("the converted script must validate: %v", issues)
+				}
+			}
+		})
+	}
+}
+
+// A step whose URL matches a background request pattern (an app's logging and
+// analytics calls) is sent as a background request, outside transaction
+// times; a gated step, one with an extractor, or one in a concurrent group
+// stays in line, and an empty pattern list keeps every step in line.
+func TestConvertBackgroundRequestSteps(t *testing.T) {
+	source := `
+	lr_start_transaction("Search");
+	web_custom_request("search", "URL=https://example.test/services/apexrest/mobile/search", "Method=POST", "Body={}", LAST);
+	web_custom_request("nebulaLogger_1", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "Body={}", LAST);
+	web_reg_save_param_json("ParamName=EventId", "QueryString=$.id", SEARCH_FILTERS, "Scope=BODY", LAST);
+	web_custom_request("analyticsEvent_1", "URL=https://example.test/services/apexrest/mobile/analyticsEvent", "Method=POST", "Body={}", LAST);
+	web_custom_request("nebulaLogger_2", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "ContentEncoding=gzip", "Body={}", LAST);
+	web_concurrent_start(NULL);
+	web_custom_request("nebulaLogger_3", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "Body={}", LAST);
+	web_custom_request("other", "URL=https://example.test/services/apexrest/mobile/other", "Method=POST", "Body={}", LAST);
+	web_concurrent_end(NULL);
+	lr_end_transaction("Search", LR_AUTO);`
+	backgroundNames := func(result *ConvertResult) []string {
+		var names []string
+		var walk func([]dsl.Action)
+		walk = func(actions []dsl.Action) {
+			for _, action := range actions {
+				if action.Type == "http_async_start" && action.Params["pattern"] == "once" {
+					request, _ := action.Params["request"].(map[string]any)
+					names = append(names, request["name"].(string))
+				}
+				if action.Control != nil {
+					walk(action.Control.Steps)
+				}
+			}
+		}
+		walk(result.Script.Actions)
+		return names
+	}
+
+	result := convertAsyncSource(t, source)
+	if names := backgroundNames(result); strings.Join(names, ",") != "nebulaLogger_1" {
+		t.Fatalf("background requests = %v, want only the executable logger call outside a concurrent group", names)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), `1 step(s) matching background request pattern "nebulaLogger" are sent as background requests`) {
+		t.Fatalf("warnings = %q", result.Warnings)
+	}
+	for _, action := range result.Script.Actions {
+		if action.Type == "http_async_start" {
+			if action.Params["id"] != "background_1" || action.Metadata["source_background_request"] != "nebulaLogger" {
+				t.Fatalf("background start = %+v", action)
+			}
+		}
+	}
+
+	parsed, err := ParseActionFile("Action.c", "Action()\n{\n"+source+"\n\treturn 0;\n}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	none := []string{}
+	inline, err := Convert([]*ParsedAction{parsed}, ConvertOptions{BackgroundRequests: &none})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := backgroundNames(inline); len(names) != 0 {
+		t.Fatalf("an empty pattern list must keep every step in line: %v", names)
+	}
+}
