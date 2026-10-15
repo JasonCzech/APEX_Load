@@ -34,6 +34,7 @@ import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsFor
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import './EnterpriseArchiveImport.css'
+import { useSuggestImportFolderName } from './importDestinationContext'
 
 interface Props {
   initialFile?: File | null
@@ -78,6 +79,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const fileRef = useRef<HTMLInputElement>(null)
   const dropzoneRef = useRef<HTMLDivElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  useSuggestImportFolderName(file?.name)
   const [dragOver, setDragOver] = useState(false)
   // Destructured for stable callback identity — the native drop handler is a
   // useDesktopFileDrop dependency and must not change every render.

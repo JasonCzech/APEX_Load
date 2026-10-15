@@ -61,7 +61,7 @@ Open [Scripts](#/scripts), choose **Script builder** › **Create** › **Blank 
 }
 ```
 
-Choose **Validate Script(s)** and resolve every reported issue. Validation checks the script contract; launch still checks permissions, capacity and deployment capabilities. Then choose **Debug one iteration** and inspect the response. Expect HTTP 200, a body containing `ok`, and successful checks. If replay cannot reach the endpoint, fix connectivity before increasing load. See [Validate & replay](APPLICATION_USER_GUIDE.md#validating-and-replaying).
+Choose **Validate** and resolve every reported issue. Validation checks the script contract; launch still checks permissions, capacity and deployment capabilities. Then choose **Debug one iteration** and inspect the response. Expect HTTP 200, a body containing `ok`, and successful checks. If replay cannot reach the endpoint, fix connectivity before increasing load. See [Validate & replay](APPLICATION_USER_GUIDE.md#validating-and-replaying).
 
 ### Run a small scenario
 

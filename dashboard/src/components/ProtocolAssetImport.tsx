@@ -46,6 +46,8 @@ import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import { HTTPVersionModeField } from './HTTPVersionModeField'
 import type { HTTPVersionImportMode } from './httpVersionModel'
 import './SampleScriptImport.css'
+import { countLabel } from '../utils/numberFormat'
+import { useSuggestImportFolderName } from './importDestinationContext'
 
 export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi' | 'k6' | 'cloudtest' | 'eventhubs-capture' | 'broker-config'
 
@@ -650,7 +652,7 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
     <div className="sample-import-review-block recorder-step-mapping">
       <h4>Recorder Step Mapping</h4>
       <p>
-        {mappings.length} source step(s) reviewed · {degraded} degraded · {unsupported} unsupported
+        {countLabel(mappings.length, 'source step')} reviewed · {degraded} degraded · {unsupported} unsupported
       </p>
       <div className="recorder-step-mapping-table-wrap">
         <table className="recorder-step-mapping-table">
@@ -820,6 +822,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     setInternalReviewBusy(busy)
   }, [])
   const [file, setFile] = useState<File | null>(null)
+  useSuggestImportFolderName(file?.name)
   const sourceFileRef = useRef<File | null>(file)
   sourceFileRef.current = file
   const [postmanEnvironmentFile, setPostmanEnvironmentFile] = useState<File | null>(null)
@@ -2463,7 +2466,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             )} </>}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
-            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${countLabel(actionCount, 'action')} generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
             saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to script library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
             script={reviewedScript}
             warnings={result.warnings}

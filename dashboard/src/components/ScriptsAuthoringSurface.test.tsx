@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, Suspense } from 'react'
+import { act, Suspense, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,11 +13,12 @@ import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 const destinationBusy = vi.hoisted(() => ({ change: null as ((busy: boolean) => void) | null }))
 
 vi.mock('./ImportDestinationFolder', () => ({
-  default: ({ disabled, onOperationBusyChange }: { disabled?: boolean; onOperationBusyChange?: (busy: boolean) => void }) => {
+  default: ({ disabled, onOperationBusyChange, suggestedName }: { disabled?: boolean; onOperationBusyChange?: (busy: boolean) => void; suggestedName?: string }) => {
     destinationBusy.change = onOperationBusyChange || null
     return (
       <div data-testid="outer-destination-folder">
         <select aria-label="Mock destination folder" disabled={disabled}><option>Outer destination</option></select>
+        <span data-testid="suggested-folder">{suggestedName || ''}</span>
       </div>
     )
   },
@@ -35,10 +36,11 @@ vi.mock('./BrunoImport', () => ({
 // Like the real importer, the mock offers the surface's destination at its
 // save step.
 vi.mock('./JMeterImport', async () => {
-  const { useImportDestination } = await import('./importDestinationContext')
+  const { useImportDestination, useSuggestImportFolderName } = await import('./importDestinationContext')
   return {
     default: function MockJMeterImport(props: { onOperationBusyChange?: (busy: boolean) => void }) {
       const destination = useImportDestination()
+      useSuggestImportFolderName('checkout_plan.jmx')
       return (
         <div data-testid="jmeter-import">
           {destination}
@@ -51,8 +53,9 @@ vi.mock('./JMeterImport', async () => {
 })
 
 vi.mock('./RecordingStudio', () => ({
-  default: (props: { onEdit?: (script: { name: string }) => void; onImported?: (result: { scripts: { id: string }[] }) => void }) => (
+  default: (props: { destinationControl?: ReactNode; onEdit?: (script: { name: string }) => void; onImported?: (result: { scripts: { id: string }[] }) => void }) => (
     <>
+      {props.destinationControl}
       <button onClick={() => props.onEdit?.({ name: 'Recorded checkout' })}>Open recording in editor</button>
       <button onClick={() => props.onImported?.({ scripts: [{ id: 'saved-recording' }] })}>Save recording</button>
     </>
@@ -111,6 +114,47 @@ describe('ScriptsAuthoringSurface Bruno destination integration', () => {
       .find(button => button.textContent === 'Choose Bruno folder')
     await act(async () => chooseFolder?.click())
     expect(container.querySelector('[data-testid="bruno-folder-value"]')?.textContent).toBe('folder-from-bruno')
+  })
+
+  it('offers the active importer\'s source name for a new folder, and none on the recorder', async () => {
+    await import('./JMeterImport')
+    await import('./RecordingStudio')
+    const surface = (subView: 'jmeter-import' | 'recorder') => (
+      <Suspense fallback={<div>Loading importer</div>}>
+        <ScriptsAuthoringSurface
+          subView={subView}
+          draftScript={null}
+          draftInitiallyDirty={false}
+          draftEditorFocus={null}
+          draftReturnTarget={null}
+          authoringNotice={null}
+          editingId={null}
+          editingScript={null}
+          projectId="project-1"
+          folderId={null}
+          activeProject={null}
+          onSaved={vi.fn()}
+          onOpenLibrary={vi.fn()}
+          onOpenCreateOptions={vi.fn()}
+          onImported={vi.fn()}
+          onEditDraft={vi.fn()}
+          onReturnToDraftSource={vi.fn()}
+        />
+      </Suspense>
+    )
+    await act(async () => {
+      root.render(surface('jmeter-import'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-testid="suggested-folder"]')?.textContent).toBe('checkout plan')
+
+    await act(async () => {
+      root.render(surface('recorder'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-testid="suggested-folder"]')?.textContent).toBe('')
   })
 
   it('locks the visible shared destination for the lifetime of a child save', async () => {

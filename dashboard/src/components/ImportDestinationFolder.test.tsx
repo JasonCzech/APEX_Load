@@ -171,6 +171,30 @@ describe('ImportDestinationFolder', () => {
     expect(container.querySelector('[data-testid="controlled-folder"]')?.textContent).toBe('project-root')
   })
 
+  it('offers the import source\'s name for a new folder until one is typed or exists', async () => {
+    apiMock.listFolders.mockResolvedValue({ folders: [{ id: 'folder-a', name: 'Alpha', parent_id: null }], count: 1 })
+    const onChange = vi.fn()
+    await render({ suggestedName: 'checkout plan', onChange })
+    const input = () => container.querySelector<HTMLInputElement>('.import-destination-folder-create input')!
+    expect(input().value).toBe('checkout plan')
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input(), 'Payments')
+      input().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(input().value).toBe('Payments')
+
+    await render({ suggestedName: 'Orders', onChange })
+    expect(input().value).toBe('Payments')
+  })
+
+  it('does not offer a source name the project already has a folder for', async () => {
+    apiMock.listFolders.mockResolvedValue({ folders: [{ id: 'folder-a', name: 'Alpha', parent_id: null }], count: 1 })
+    await render({ suggestedName: 'alpha' })
+    expect(container.querySelector<HTMLInputElement>('.import-destination-folder-create input')!.value).toBe('')
+  })
+
   it('locks every destination mutation while an import operation is in progress', async () => {
     apiMock.listFolders.mockResolvedValue({
       folders: [{ id: 'folder-a', name: 'Alpha', parent_id: null }],

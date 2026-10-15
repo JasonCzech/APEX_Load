@@ -46,7 +46,7 @@ describe('sampleImportUtils', () => {
   })
 
   it('describes merged files with richer summary text', () => {
-    expect(describeMergedFiles('rest_json', 'primary', ['a.json', 'b.json'], 3)).toBe('2 file(s) merged into 3 request sample(s)')
+    expect(describeMergedFiles('rest_json', 'primary', ['a.json', 'b.json'], 3)).toBe('2 files merged into 3 request samples')
     expect(describeMergedFiles('raw_http', 'secondary', ['a.http', 'b.http'], 2)).toBe('2 response files will be paired by order')
   })
 })

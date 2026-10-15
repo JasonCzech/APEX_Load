@@ -45,6 +45,8 @@ import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import { HTTPVersionModeField } from './HTTPVersionModeField'
 import type { HTTPVersionImportMode } from './httpVersionModel'
 import './SampleScriptImport.css'
+import { countLabel } from '../utils/numberFormat'
+import { useSuggestImportFolderName } from './importDestinationContext'
 
 type AuthType = 'none' | 'basic' | 'bearer'
 type PacingType = 'none' | 'fixed_delay'
@@ -456,6 +458,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const [primaryContent, setPrimaryContent] = useState(defaultTemplate.primary)
   const [secondaryContent, setSecondaryContent] = useState(defaultTemplate.secondary || '')
   const [primaryFileName, setPrimaryFileName] = useState('')
+  useSuggestImportFolderName(primaryFileName)
   const [secondaryFileName, setSecondaryFileName] = useState('')
   const [primaryFileNames, setPrimaryFileNames] = useState<string[]>([])
   const [secondaryFileNames, setSecondaryFileNames] = useState<string[]>([])
@@ -1380,7 +1383,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
 
             title="3. Review Generated Script"
             reviewGeneration={reviewScope}
-            subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
+            subtitle={`${countLabel(result.stats.converted_actions, 'action')} derived from ${countLabel(result.stats.total_requests, 'request sample')}.`}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}

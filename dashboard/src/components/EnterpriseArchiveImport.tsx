@@ -33,6 +33,7 @@ import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRe
 import { getImportSummary } from './scriptEditorImportModel'
 import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
+import { countLabel } from '../utils/numberFormat'
 import { buildImportSaveChoices, importMatchesIdentity, type ImportSaveChoice } from './importReimport'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
@@ -58,6 +59,7 @@ import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuth
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { importJunkReason } from '../utils/importJunkFiles'
 import './EnterpriseArchiveImport.css'
+import { useSuggestImportFolderName } from './importDestinationContext'
 
 interface ImportMetadata {
   source?: string
@@ -938,6 +940,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
   const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
+  // One archive names the folder it can be saved into.
+  useSuggestImportFolderName(importItems.length === 1 ? importItems[0].file.name : undefined)
   const [selectedItemId, setSelectedItemId] = useState('')
   const queueItemButtonRefs = useRef(new Map<string, HTMLButtonElement>())
   const pendingQueueItemFocusRef = useRef<string | null>(null)
@@ -1335,7 +1339,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const failedImportMessage = failedFileCount > 0
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
-  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
+  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script'
   const convertButtonLabel = queuedFileCount > 1 ? 'Save reviewed drafts' : 'Save draft'
   const conversionGateMessage = refreshingRemainingDrafts
     ? 'Converting the remaining drafts again. Nothing is saved until you save them.'
@@ -1833,7 +1837,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             ? `Prepare Credentials for Script ${activeResultScriptIndex + 1} of ${resultScripts.length}`
             : 'Review Required Credentials Before Atomic Save')
       : enterpriseCredentialBatchFlow
-        ? `Save remaining ${pendingResultScriptIndices.length} scripts atomically`
+        ? `Save remaining ${countLabel(pendingResultScriptIndices.length, 'script')} atomically`
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
@@ -4515,7 +4519,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                     <span className="lr-file-row-main">
                       <strong>{item.file.name}</strong>
                       <small className="lr-file-row-meta">
-                        {item.folderFiles ? `${item.folderFiles.length} files` : item.sourceSize !== undefined ? `${(item.sourceSize / 1024).toFixed(1)} KB` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
+                        {item.folderFiles ? countLabel(item.folderFiles.length, 'file') : item.sourceSize !== undefined ? `${(item.sourceSize / 1024).toFixed(1)} KB` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
                         {reviewOutcome === 'Blocker'
                           ? <ImportIssueSeverityTag severity="blocker" />
                           : <span className={`lr-file-status-pill ${item.status}`}>
@@ -4689,7 +4693,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             </div>
             <div className="lr-required-files-actions">
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => supplementalFileRef.current?.click()} disabled={!selectedItem || sourceMutationLocked}>
-                Attach Required File(s)
+                Attach Required Files
               </button>
               {selectedSupplementalFiles.length > 0 && (
                 <button type="button" className="btn btn-ghost btn-sm" disabled={sourceMutationLocked} onClick={clearSelectedSupplementalFiles}>

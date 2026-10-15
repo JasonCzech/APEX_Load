@@ -4313,8 +4313,8 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(apiMock.importCloudTest).toHaveBeenCalledWith(file, { project_id: 'project-1' })
-    expect(container.textContent).toContain('1 action(s) generated from CloudTest export elements.')
-    expect(container.textContent).not.toContain('0 action(s) generated from CloudTest export elements.')
+    expect(container.textContent).toContain('1 action generated from CloudTest export elements.')
+    expect(container.textContent).not.toContain('0 actions generated from CloudTest export elements.')
     expect(container.textContent).toContain('CloudTest Fixture-Gated Review')
     expect(container.textContent).toContain('Clip drafts2')
     expect(container.textContent).toContain('Holiday sale')

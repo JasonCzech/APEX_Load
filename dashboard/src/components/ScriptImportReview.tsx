@@ -41,6 +41,7 @@ import './ScriptImportReview.css'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import { formatDateTime } from '../utils/dateTime'
 import { useImportDestination } from './importDestinationContext'
+import { countLabel } from '../utils/numberFormat'
 
 const severityRank: Record<string, number> = {
   blocker: 0,
@@ -393,7 +394,7 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
         for (let index = 0; index < itemCount && state.nodes < maxNodes; index += 1) {
           result.push(visit(candidate[index], depth + 1, sensitiveAncestor, `${path}/${index}`))
         }
-        if (result.length < candidate.length) { state.truncated = true; result.push(`… ${candidate.length - result.length} more item(s) omitted …`) }
+        if (result.length < candidate.length) { state.truncated = true; result.push(`… ${countLabel(candidate.length - result.length, 'more item')} omitted …`) }
         return result
       }
       const keys = Object.keys(candidate)
@@ -436,7 +437,7 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
           result[key] = '[Unable to preview value]'
         }
       }
-      if (Object.keys(result).length < keys.length) { state.truncated = true; result['…'] = `${keys.length - Object.keys(result).length} more field(s) omitted` }
+      if (Object.keys(result).length < keys.length) { state.truncated = true; result['…'] = `${countLabel(keys.length - Object.keys(result).length, 'more field')} omitted` }
       return result
     } finally {
       state.seen.delete(candidate)

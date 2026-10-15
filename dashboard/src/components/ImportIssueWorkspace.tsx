@@ -6,6 +6,7 @@ import type { ImportReviewTab } from './ImportReviewTabs'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { groupImportWorkspaceIssues, type GroupedImportWorkspaceIssue, type ImportWorkspaceIssue } from './importIssueWorkspaceModel'
 import './IssueDetailsDialog.css'
+import { countLabel } from '../utils/numberFormat'
 const evidencePageSize = 100
 
 export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelect, normalizedEvidence = false }: {
@@ -61,13 +62,13 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
   return <section className="shared-import-issue-workspace" aria-label="Resolve import issues">
     <ImportReviewSectionHeader
       title="Resolve import issues"
-      description={`${normalizedEvidence ? `${grouped.length} findings · ${blockers} blocking · ${warnings} warnings · ${notes} notes` : `${grouped.length} findings · ${blockers} blocking · ${warnings} warning${warnings === 1 ? '' : 's'} · ${notes} review note${notes === 1 ? '' : 's'}`}${reviewedCount ? ` · ${reviewedCount} reviewed` : ''}. ${normalizedEvidence ? 'Informational findings do not block replay.' : 'Repeated findings are grouped by the operator decision they require.'}`}
+      description={`${normalizedEvidence ? `${countLabel(grouped.length, 'finding')} · ${blockers} blocking · ${countLabel(warnings, 'warning')} · ${countLabel(notes, 'note')}` : `${countLabel(grouped.length, 'finding')} · ${blockers} blocking · ${countLabel(warnings, 'warning')} · ${countLabel(notes, 'review note')}`}${reviewedCount ? ` · ${reviewedCount} reviewed` : ''}. ${normalizedEvidence ? 'Informational findings do not block replay.' : 'Repeated findings are grouped by the operator decision they require.'}`}
       actions={nextIssue && <button type="button" className="btn btn-secondary" onClick={() => setSelectedId(nextIssue.id)}>Next unresolved issue</button>}
     />
     <div className="import-review-toolbar">
       <label>Find an issue<input type="search" value={search} placeholder="Search evidence or source locations" onChange={event => setSearch(event.target.value)} /></label>
       <label>Show<select value={filter} onChange={event => setFilter(event.target.value as typeof filter)}><option value="all">All findings ({grouped.length})</option><option value="blocker">Blockers</option><option value="error">Errors</option><option value="warning">Warnings</option><option value="info">Review notes</option><option value="reviewed">Reviewed ({reviewedCount})</option></select></label>
-      <span role="status">{visible.length} matching findings</span>
+      <span role="status">{countLabel(visible.length, 'matching finding')}</span>
     </div>
     <div className="shared-import-issue-layout">
       <div className="shared-import-issue-list" aria-label="Import issue queue">

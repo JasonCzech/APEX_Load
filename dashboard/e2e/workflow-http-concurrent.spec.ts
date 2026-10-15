@@ -284,7 +284,7 @@ test('LoadRunner concurrent markers import exact child mappings and replay on th
     const source = `Action() {\nweb_url("Login", "URL=${target.url}/login", LAST);\nweb_concurrent_start(NULL);\nweb_reg_save_param_json("ParamName=first", "QueryString=$.value", LAST);\nweb_url("First sibling", "URL=${target.url}/group/1", LAST);\nweb_reg_save_param_json("ParamName=second", "QueryString=$.value", LAST);\nweb_url("Second sibling", "URL=${target.url}/group/2", LAST);\nweb_concurrent_end(NULL);\nweb_url("Consume joined values", "URL=${target.url}/consume?first={first}&second={second}", LAST);\nreturn 0;\n}`
     await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({ name: 'concurrent-http.zip', mimeType: 'application/zip', buffer: sourceArchive(source) })
     const converted = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
-    await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
+    await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
     const result = await json(await converted)
     const draft = result.script as unknown as ScriptDefinition
     const group = draft.actions.find(action => action.type === 'http_sequence' && action.params?.execution_mode === 'concurrent')

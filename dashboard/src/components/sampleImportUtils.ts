@@ -1,3 +1,5 @@
+import { countLabel } from '../utils/numberFormat'
+
 export type SampleFormat = 'raw_http' | 'curl' | 'rest_json' | 'har'
 
 export const RAW_HTTP_REQUEST_DELIMITER = '\n\n### APEXLOAD REQUEST ###\n\n'
@@ -92,10 +94,10 @@ export function describeMergedFiles(format: SampleFormat, target: 'primary' | 's
   }
   if (target === 'primary') {
     if (format === 'rest_json') {
-      return `${fileNames.length} file(s) merged into ${mergedCount} request sample(s)`
+      return `${countLabel(fileNames.length, 'file')} merged into ${countLabel(mergedCount, 'request sample')}`
     }
     if (format === 'har') {
-      return `${fileNames.length} file(s) merged into ${mergedCount} HAR entr${mergedCount === 1 ? 'y' : 'ies'}`
+      return `${countLabel(fileNames.length, 'file')} merged into ${countLabel(mergedCount, 'HAR entry', 'HAR entries')}`
     }
     if (format === 'raw_http' && fileNames.length > 1) {
       return `${fileNames.length} request files will be paired by order` 

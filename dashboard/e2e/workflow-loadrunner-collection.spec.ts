@@ -12,7 +12,7 @@ test('reviews and saves nested VuGen projects independently, retaining failed an
   await page.getByRole('tab', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
   await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/loadrunner-collection.zip'))
-  await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
   const queue = page.getByLabel('Queued enterprise script archives')
   await expect(queue.locator('.lr-file-row')).toHaveCount(3)
   await expect(queue).toContainText('from loadrunner-collection.zip')

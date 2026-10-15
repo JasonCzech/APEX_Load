@@ -13,7 +13,7 @@ test('transaction names survive archive import without requiring secret bindings
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
   await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/transaction-labels.zip'))
   const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
-  await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
   const result = await json(await validated)
   expect(result.secret_binding_requirements || []).toEqual([])
   const script = result.script as { actions: { type: string; params?: { args?: string[] } }[] }

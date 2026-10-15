@@ -36,7 +36,7 @@ it('applies a finite per-user iteration rule to every imported thread group', ()
       termination_mode: 'iterations',
       groups: [expect.objectContaining({ iterations: 4 }), expect.objectContaining({ iterations: 4 })],
     }))
-    expect(container.textContent).toContain('Applied 4 iteration(s)')
+    expect(container.textContent).toContain('Applied 4 iterations')
   } finally {
     act(() => root.unmount())
     container.remove()

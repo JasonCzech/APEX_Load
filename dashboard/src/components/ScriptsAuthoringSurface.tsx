@@ -1,7 +1,7 @@
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import ObjectHistory from './ObjectHistory'
 import type { ObjectActivitySummary } from '../types/objectActivity'
-import { lazy, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import { type ImportKind } from './ProtocolAssetImport'
@@ -9,7 +9,7 @@ import { RECORDING_STUDIO_RETURN_TARGET, type AuthoringReturnTarget, type DraftE
 import LazyLoadBoundary from './LazyLoadBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID } from './enterpriseArchiveReviewOutcome'
 import ImportDestinationFolder from './ImportDestinationFolder'
-import { ImportDestinationContext } from './importDestinationContext'
+import { ImportDestinationContext, ImportFolderSuggestionContext } from './importDestinationContext'
 
 const ScriptEditor = lazy(() => import('./ScriptEditor'))
 const EnterpriseArchiveImport = lazy(() => import('./EnterpriseArchiveImport'))
@@ -64,6 +64,7 @@ function createOptionsSurface(
   hidden: boolean,
   destination: ReactNode,
   destinationOperationBusy = false,
+  suggestFolderName: ((name: string) => void) | null = null,
 ) {
   return (
     <div className="page" hidden={hidden}>
@@ -75,7 +76,9 @@ function createOptionsSurface(
       >
         {/* The importer's review shows the destination at its Save step. */}
         <ImportDestinationContext.Provider value={destination}>
-          {content}
+          <ImportFolderSuggestionContext.Provider value={suggestFolderName}>
+            {content}
+          </ImportFolderSuggestionContext.Provider>
         </ImportDestinationContext.Provider>
       </fieldset>
     </div>
@@ -154,6 +157,11 @@ function ScriptsAuthoringContent({
   const [destinationFolderId, setDestinationFolderId] = useState(folderId ?? '')
   const [importOperationBusy, setImportOperationBusy] = useState(false)
   const [destinationOperationBusy, setDestinationOperationBusy] = useState(false)
+  // The source name the importer of this view offers for a new destination
+  // folder; a view without one (the recorder) offers none.
+  const [folderSuggestion, setFolderSuggestion] = useState({ view: '', name: '' })
+  const setSuggestedFolderName = useCallback((name: string) => setFolderSuggestion({ view: subView, name }), [subView])
+  const suggestedFolderName = folderSuggestion.view === subView ? folderSuggestion.name : ''
   useEffect(() => {
     setDestinationFolderId(folderId ?? '')
   }, [folderId, projectId])
@@ -164,6 +172,7 @@ function ScriptsAuthoringContent({
       onChange={setDestinationFolderId}
       disabled={importOperationBusy}
       onOperationBusyChange={setDestinationOperationBusy}
+      suggestedName={suggestedFolderName}
     />
   )
   // Empty string is "project root"; the save APIs expect null rather than "".
@@ -176,7 +185,7 @@ function ScriptsAuthoringContent({
     ? []
     : libraryScripts.filter(script => script.id !== editingId && (script.folder_id || null) === (nameFolder || null)).map(script => script.name)
   const renderCreateOptionsSurface = (content: ReactNode, hidden = false) =>
-    createOptionsSurface(content, hidden, destinationFolderControl, destinationOperationBusy)
+    createOptionsSurface(content, hidden, destinationFolderControl, destinationOperationBusy, setSuggestedFolderName)
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
     importLauncher: 'enterprise_archive',
@@ -212,6 +221,7 @@ function ScriptsAuthoringContent({
     hidden,
     destinationFolderControl,
     destinationOperationBusy,
+    setSuggestedFolderName,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
 

@@ -2890,7 +2890,7 @@ describe('EnterpriseArchiveImport', () => {
     await attachDependencyJar()
     const save = findButton(container, 'Save combined Java draft for approval')!
     expect(save.disabled).toBe(true)
-    expect(findButton(container, 'Attach Required File(s)')?.disabled).toBe(true)
+    expect(findButton(container, 'Attach Required Files')?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')?.disabled).toBe(true)
     expect(onBusy).toHaveBeenLastCalledWith(true)
     await clickButton(save)
@@ -5545,7 +5545,7 @@ describe('EnterpriseArchiveImport', () => {
       checkboxes[3].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
     expect(validateButton).toBeTruthy()
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).not.toBeNull()
     if (!validateButton) {
@@ -5749,7 +5749,7 @@ describe('EnterpriseArchiveImport', () => {
       checkboxes[2]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
     expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
@@ -7549,7 +7549,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
     expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
@@ -7674,7 +7674,7 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
       expect(validateButton).toBeTruthy()
       if (!validateButton) {
         return
@@ -7831,7 +7831,7 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
       expect(validateButton).toBeTruthy()
       if (!validateButton) {
         return

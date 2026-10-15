@@ -54,7 +54,7 @@ ready-to-load script. In outline:
 
 1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
    scripts, scenarios, and results are all filtered by it.
-2. Create or import a script, add at least one assertion, then **Validate Script(s)**
+2. Create or import a script, add at least one assertion, then **Validate**
    and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
 3. Build a one-group scenario, launch it from **New run**, and watch it in
    **Command Center**.
@@ -542,7 +542,7 @@ into application or project secrets when you want them genuinely protected.
 
 Before you run a script at scale, prove it works for a single user.
 
-1. **Validate Script(s)** checks the script's structure, action fields, assertions, and settings
+1. **Validate** checks the script's structure, action fields, assertions, and settings
    without executing anything. It runs the same validation the runtime applies at
    admission. Launch separately checks current permissions, capacity, secrets, runner capabilities and governance; validation does not guarantee admission.
 2. **Debug one iteration** replays the script once, interactively, through the
@@ -688,7 +688,9 @@ script creates no new scenario: the scenarios that use those scripts run the new
 After a save, every importer offers **Debug** on the first saved script
 and **Create a scenario** from the saved scripts (a project scenario draft with a group
 per script, named after the source), or **Open scenario** when the import already made
-one, as JMeter does from its thread groups. A JMeter plan whose scripts still need review
+one, as JMeter does from its thread groups. A new folder for the saved scripts starts
+named after the source file (a JMeter plan, a specification, a sample or one LoadRunner
+archive) unless the project already has that folder. A JMeter plan whose scripts still need review
 before they can run cannot save that scenario yet: the review offers **Save the scripts
 without the scenario**, and you create the scenario from them once they are resolved.
 
