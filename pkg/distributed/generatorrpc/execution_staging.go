@@ -1364,6 +1364,18 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			}
 		}
 	}
+	if !request.GetPrepareOnly() && engine.HasBrowserSessionPreflight(&script) {
+		// Open the observers' sessions inside the staging deadline: the
+		// commit's start lead is too short to open browsers. Traffic-free
+		// preparation leaves them unchecked. A failure rejects the assignment
+		// with the observers it names.
+		if err := mge.PreflightBrowserSessions(ctx); err != nil {
+			if ctx != nil && ctx.Err() != nil {
+				return nil, status.FromContextError(ctx.Err()).Err()
+			}
+			return nil, errors.New(redactionConfig.ScrubText(err.Error()))
+		}
+	}
 	if ctx != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, status.FromContextError(ctxErr).Err()

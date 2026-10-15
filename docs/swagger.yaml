@@ -13272,6 +13272,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true
@@ -52375,6 +52380,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -152770,6 +152780,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true
@@ -154861,6 +154876,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -158164,6 +158184,11 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserIdentity'
                                       additionalProperties: true
+                                  preflight_url:
+                                    type: string
+                                  start_gap_ms:
+                                    type: integer
+                                    format: int64
                                   strategy:
                                     type: string
                                 nullable: true
@@ -162549,6 +162574,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true
@@ -164640,6 +164670,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -167841,6 +167876,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -171906,6 +171946,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -188412,6 +188457,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true
@@ -205013,6 +205063,11 @@ paths:
                                     type: object
                                     description: 'Go type: BrowserIdentity'
                                     additionalProperties: true
+                                preflight_url:
+                                  type: string
+                                start_gap_ms:
+                                  type: integer
+                                  format: int64
                                 strategy:
                                   type: string
                               nullable: true
@@ -215465,6 +215520,11 @@ paths:
                                     type: object
                                     description: 'Go type: BrowserIdentity'
                                     additionalProperties: true
+                                preflight_url:
+                                  type: string
+                                start_gap_ms:
+                                  type: integer
+                                  format: int64
                                 strategy:
                                   type: string
                               nullable: true
@@ -223570,6 +223630,11 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        preflight_url:
+                          type: string
+                        start_gap_ms:
+                          type: integer
+                          format: int64
                         strategy:
                           type: string
                       nullable: true
@@ -227947,6 +228012,11 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        preflight_url:
+                          type: string
+                        start_gap_ms:
+                          type: integer
+                          format: int64
                         strategy:
                           type: string
                       nullable: true
@@ -235251,6 +235321,11 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        preflight_url:
+                          type: string
+                        start_gap_ms:
+                          type: integer
+                          format: int64
                         strategy:
                           type: string
                       nullable: true
@@ -258755,6 +258830,11 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        preflight_url:
+                          type: string
+                        start_gap_ms:
+                          type: integer
+                          format: int64
                         strategy:
                           type: string
                       nullable: true
@@ -269234,6 +269314,11 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        preflight_url:
+                          type: string
+                        start_gap_ms:
+                          type: integer
+                          format: int64
                         strategy:
                           type: string
                       nullable: true
@@ -320660,6 +320745,11 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        preflight_url:
+                          type: string
+                        start_gap_ms:
+                          type: integer
+                          format: int64
                         strategy:
                           type: string
                       nullable: true
@@ -333205,6 +333295,11 @@ paths:
                                     type: object
                                     description: 'Go type: BrowserIdentity'
                                     additionalProperties: true
+                                preflight_url:
+                                  type: string
+                                start_gap_ms:
+                                  type: integer
+                                  format: int64
                                 strategy:
                                   type: string
                               nullable: true
@@ -345661,6 +345756,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true
@@ -359086,6 +359186,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -372948,6 +373053,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -418605,6 +418715,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -432411,6 +432526,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -434809,6 +434929,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -435658,6 +435783,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -436465,6 +436595,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -437272,6 +437407,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -438141,6 +438281,11 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true
@@ -438938,6 +439083,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -452199,6 +452349,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              preflight_url:
+                                type: string
+                              start_gap_ms:
+                                type: integer
+                                format: int64
                               strategy:
                                 type: string
                             nullable: true
@@ -476233,6 +476388,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            preflight_url:
+                              type: string
+                            start_gap_ms:
+                              type: integer
+                              format: int64
                             strategy:
                               type: string
                           nullable: true

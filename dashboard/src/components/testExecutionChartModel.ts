@@ -326,6 +326,7 @@ export const chartConfigs: ChartConfig[] = [
       { k: 'errHttp5xx', n: 'HTTP 5xx', c: 'var(--chart-4)' },
       { k: 'errAssertion', n: 'Assertion', c: 'var(--chart-6)' },
       { k: 'errResourceLimit', n: 'Generator resource limit', c: 'var(--chart-7)' },
+      { k: 'errSessionLost', n: 'Observer session lost', c: 'var(--chart-2)' },
       { k: 'errOther', n: 'Other', c: 'var(--chart-8)' },
     ],
     domain: [0, 'auto'],

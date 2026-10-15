@@ -168,9 +168,11 @@ type VUser struct {
 	// iterationTemperature is the running iteration's browser temperature
 	// (protocol.IterationTemperatureReporter), "" outside iterations.
 	iterationTemperature string
-	// browserIdentity is the observer's session identity (browser_session.go).
-	browserIdentity *browserIdentityBinding
-	resultSequence  uint64
+	// browserIdentity is the observer's session identity, and
+	// sessionStartNotBefore when it may start (browser_session.go).
+	browserIdentity       *browserIdentityBinding
+	sessionStartNotBefore time.Time
+	resultSequence        uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
 	async           *asyncConversations
@@ -347,6 +349,11 @@ func (vu *VUser) Run(ctx context.Context) {
 		vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker")
 		vu.abandoning, vu.endingIteration = previousAbandoning, previousEnding
 	}()
+
+	// Observers start no closer together than their session's start gap.
+	if !vu.waitForSessionStart(ctx) {
+		return
+	}
 
 	// --- Init phase ---
 	if !vu.SkipInit {
@@ -1180,6 +1187,8 @@ func (vu *VUser) Run(ctx context.Context) {
 				releaseReservedActionTransaction()
 				restoreIterationBoundary()
 			}
+			// An observer sent to sign in mid-iteration has lost its session.
+			vu.markBrowserSessionLost(result)
 			vu.recordResult(result, cfg.ErrorHandling, logCfg)
 			if result != nil && result.BusinessTransaction {
 				restoreIterationBoundary()

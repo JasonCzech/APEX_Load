@@ -5881,7 +5881,12 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	// Local runtime preflight must complete while the durable state is still
 	// INITIALIZING. MultiGroupEngine caches the successful result, so its
 	// defensive Run-time check is a no-op and cannot allocate a VUser twice.
-	if err := mge.PreflightRuntime(ctx); err != nil {
+	// Observer sessions are checked here too, before ramp-up.
+	err := mge.PreflightRuntime(ctx)
+	if err == nil {
+		err = mge.PreflightBrowserSessions(ctx)
+	}
+	if err != nil {
 		if previousExecutionCtx == nil || previousCancel == nil {
 			tr.mu.Lock()
 			if test.executionCtx == ctx && test.Status == "INITIALIZING" {

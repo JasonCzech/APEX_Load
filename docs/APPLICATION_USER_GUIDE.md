@@ -1144,7 +1144,12 @@ browser observer its own user, list one identity per observer in the script's
 in with its identity's exported storage state; with login steps the script's sign-in uses
 `{{identity.username}}` and `{{identity.password}}`. The secrets are project secrets
 named in the script, and a run with more observers than identities fails before it
-starts. Page timings and Web
+starts. Give a storage-state pool a `preflight_url` to have every observer open that
+page before the run starts: observers whose sessions have expired fail the run before
+ramp-up, named, so you can export their storage state again. `start_gap_ms` spaces the
+observers' starts to stay under the target's sign-in limits. An observer sent back to
+sign in during the run fails that iteration as **Observer session lost** in the error
+charts. Page timings and Web
 Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's

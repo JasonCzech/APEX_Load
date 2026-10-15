@@ -467,6 +467,8 @@ export interface BrowserConfig {
   session?: {
     strategy?: 'storage_state_pool' | 'login_steps'
     identities?: { username: string, storage_state?: string, password?: string }[]
+    preflight_url?: string
+    start_gap_ms?: number
   }
 }
 

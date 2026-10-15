@@ -3,6 +3,7 @@ package dsl
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -17,6 +18,14 @@ type BrowserSessionConfig struct {
 	// script signs in with {{identity.username}} and {{identity.password}}).
 	Strategy   string            `json:"strategy,omitempty"`
 	Identities []BrowserIdentity `json:"identities,omitempty"`
+	// PreflightURL is a light page (a path starting with /, which the base
+	// URL prefixes, or an absolute http(s) URL) each storage_state_pool
+	// observer opens before the run starts; one sent to sign in fails the
+	// run, naming the identities whose sessions are missing or expired.
+	PreflightURL string `json:"preflight_url,omitempty"`
+	// StartGapMs spaces the observers' starts, by logical ordinal across
+	// all generators, to stay clear of the target's sign-in limits.
+	StartGapMs int `json:"start_gap_ms,omitempty" jsonschema:"minimum=0,maximum=600000"`
 }
 
 // BrowserIdentity is one observer's user. Its secrets are whole project-secret
@@ -34,6 +43,7 @@ const (
 	// MaxBrowserSessionIdentities bounds the identities a script lists.
 	MaxBrowserSessionIdentities = 1000
 	maxBrowserIdentityUsername  = 256
+	maxBrowserSessionStartGapMs = 600000
 )
 
 // browserIdentityTemplate matches {{identity.username}} and
@@ -47,6 +57,17 @@ func BrowserSessionIdentities(script *Script) []BrowserIdentity {
 		return nil
 	}
 	return script.Config.Browser.Session.Identities
+}
+
+// BrowserSessionSignsInPerIteration reports whether the script's iteration
+// signs in itself (its actions spell {{identity.*}}), so a sign-in page there
+// is expected rather than a lost session.
+func BrowserSessionSignsInPerIteration(script *Script) bool {
+	if script == nil || len(script.Actions) == 0 {
+		return false
+	}
+	encoded, err := json.Marshal(script.Actions)
+	return err == nil && browserIdentityTemplate.Match(encoded)
 }
 
 // WithBrowserIdentity is the script as the observer with identity runs it:
@@ -88,6 +109,19 @@ func (s *Script) WithBrowserIdentity(identity BrowserIdentity) (*Script, error) 
 	return &out, nil
 }
 
+// validBrowserSessionPreflightURL accepts a literal path, which navigation
+// prefixes with the base URL, or an absolute http(s) URL.
+func validBrowserSessionPreflightURL(preflight string) bool {
+	if strings.TrimSpace(preflight) != preflight || len(preflight) > 2048 || strings.ContainsAny(preflight, "\r\n\x00") || strings.Contains(preflight, "{{") {
+		return false
+	}
+	if strings.HasPrefix(preflight, "/") {
+		return !strings.HasPrefix(preflight, "//")
+	}
+	parsed, err := url.Parse(preflight)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
+}
+
 func validateBrowserSessionIssues(script *Script) []string {
 	session := script.Config.Browser.Session
 	encoded, _ := json.Marshal(script)
@@ -116,6 +150,16 @@ func validateBrowserSessionIssues(script *Script) []string {
 	}
 	if len(session.Identities) == 0 || len(session.Identities) > MaxBrowserSessionIdentities {
 		issues = append(issues, fmt.Sprintf("config.browser.session.identities must list 1 to %d identities", MaxBrowserSessionIdentities))
+	}
+	if session.StartGapMs < 0 || session.StartGapMs > maxBrowserSessionStartGapMs {
+		issues = append(issues, fmt.Sprintf("config.browser.session.start_gap_ms must be 0 to %d", maxBrowserSessionStartGapMs))
+	}
+	if preflight := session.PreflightURL; preflight != "" {
+		if session.Strategy != BrowserSessionStorageStatePool {
+			issues = append(issues, "config.browser.session.preflight_url applies to a storage_state_pool session; a login_steps session signs in during init")
+		} else if !validBrowserSessionPreflightURL(preflight) {
+			issues = append(issues, "config.browser.session.preflight_url must be a literal path starting with / or an absolute http(s) URL, on one line and at most 2048 bytes")
+		}
 	}
 	if session.Strategy == BrowserSessionStorageStatePool && script.Config.Browser.StorageState != "" {
 		issues = append(issues, "config.browser.storage_state and a storage_state_pool session cannot both seed the browser; give each identity its storage_state instead")

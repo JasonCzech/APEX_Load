@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 // A browser recording of a Salesforce journey usually starts by signing in:
@@ -12,27 +14,6 @@ import (
 // iteration, and they are tagged metadata.salesforce_auth for the session
 // strategies that replace a recorded login. A one-time verification code is
 // masked like a password: it cannot replay.
-
-// salesforceAuthURL reports a Salesforce login or identity-verification page.
-func salesforceAuthURL(raw string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Host == "" {
-		return false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	path := parsed.Path
-	salesforce := strings.HasSuffix(host, ".salesforce.com") || strings.HasSuffix(host, ".force.com")
-	switch {
-	case salesforce && strings.HasPrefix(path, "/_ui/identity/verification/"):
-		return true
-	case host == "login.salesforce.com" || host == "test.salesforce.com":
-		return true
-	case strings.HasSuffix(host, ".my.salesforce.com"):
-		// A My Domain's login form is at its root.
-		return path == "" || path == "/" || path == "/login" || strings.HasPrefix(path, "/secur/")
-	}
-	return false
-}
 
 // salesforceOneTimeCode reports a fill of a one-time verification code.
 func salesforceOneTimeCode(step Step) bool {
@@ -56,7 +37,7 @@ func salesforceSignInSteps(steps []Step, stepRange StepRange) map[int]bool {
 		if step.skipForConvert() || !stepRange.contains(step.Seq) {
 			continue
 		}
-		if !salesforceAuthURL(step.URL) {
+		if !browserprotocol.SalesforceSignInURL(step.URL) {
 			if len(signIn) == 0 {
 				return nil
 			}

@@ -55,7 +55,9 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 		"a whole project secret the login steps fill into a page; registered bare, no composite spelling"),
 	"config.browser.session.identities.username": excluded(
 		"an observer's username, typed as is and named in evidence; never half of a synthesized credential"),
-	"config.http.proxy.pac_url":    excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
+	"config.http.proxy.pac_url": excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
+	"config.browser.session.preflight_url": excluded(
+		"validation rejects templates, so it never carries a project secret; a literal's userinfo is script-sourced"),
 	// --- covered: HTTP Basic composites -------------------------------------
 	"config.http.auth.username":  covered("config.http.auth", "basic only"),
 	"config.http.auth.password":  covered("config.http.auth", "basic only"),

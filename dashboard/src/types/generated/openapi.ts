@@ -4785,6 +4785,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;
@@ -20835,6 +20837,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -21967,6 +21971,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -28608,6 +28614,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -39432,6 +39440,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;
@@ -40199,6 +40209,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -41330,6 +41342,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -43721,6 +43735,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;
@@ -47843,6 +47859,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -55602,6 +55620,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;
@@ -78141,6 +78161,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -86898,6 +86920,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -87539,6 +87563,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -87866,6 +87892,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -88179,6 +88207,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -88492,6 +88522,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -108781,6 +108813,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -138289,6 +138323,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -146472,6 +146508,8 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "preflight_url"?: string;
+              "start_gap_ms"?: number;
               "strategy"?: string;
             }) | null;
             "slow_mo_ms"?: number;
@@ -147976,6 +148014,8 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "preflight_url"?: string;
+              "start_gap_ms"?: number;
               "strategy"?: string;
             }) | null;
             "slow_mo_ms"?: number;
@@ -149599,6 +149639,8 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "preflight_url"?: string;
+              "start_gap_ms"?: number;
               "strategy"?: string;
             }) | null;
             "slow_mo_ms"?: number;
@@ -151202,6 +151244,8 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "preflight_url"?: string;
+              "start_gap_ms"?: number;
               "strategy"?: string;
             }) | null;
             "slow_mo_ms"?: number;
@@ -152806,6 +152850,8 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "preflight_url"?: string;
+              "start_gap_ms"?: number;
               "strategy"?: string;
             }) | null;
             "slow_mo_ms"?: number;
@@ -154409,6 +154455,8 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "preflight_url"?: string;
+              "start_gap_ms"?: number;
               "strategy"?: string;
             }) | null;
             "slow_mo_ms"?: number;
@@ -164318,6 +164366,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -170088,6 +170138,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;
@@ -170854,6 +170906,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -172133,6 +172187,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -177581,6 +177637,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;
@@ -177903,6 +177961,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -178667,6 +178727,8 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "preflight_url"?: string;
+                  "start_gap_ms"?: number;
                   "strategy"?: string;
                 }) | null;
                 "slow_mo_ms"?: number;
@@ -180160,6 +180222,8 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
                 "strategy"?: string;
               }) | null;
               "slow_mo_ms"?: number;

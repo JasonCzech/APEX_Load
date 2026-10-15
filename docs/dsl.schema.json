@@ -7895,6 +7895,14 @@
           },
           "type": "array"
         },
+        "preflight_url": {
+          "type": "string"
+        },
+        "start_gap_ms": {
+          "maximum": 600000,
+          "minimum": 0,
+          "type": "integer"
+        },
         "strategy": {
           "type": "string"
         }

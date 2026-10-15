@@ -1828,7 +1828,11 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 	// A shared-eligible script makes each generator start its shared JVMs inside
 	// AssignWork; the content is the exact script the generators receive.
 	var parsedScript dsl.Script
-	sharedJVM := json.Unmarshal(script.Content, &parsedScript) == nil && engine.NewJavaVuserCapacityPlan(&parsedScript).SharedJVM()
+	parsed := json.Unmarshal(script.Content, &parsedScript) == nil
+	sharedJVM := parsed && engine.NewJavaVuserCapacityPlan(&parsedScript).SharedJVM()
+	// A script whose observers check their sessions makes each generator open
+	// them inside AssignWork, unless the stage is traffic-free.
+	sessionPreflight := parsed && !template.PrepareOnly && engine.HasBrowserSessionPreflight(&parsedScript)
 	runPlan := func(index int) {
 		plan := plans[index]
 		outcome := distributedTargetAssignmentOutcome{target: plan.target, results: make([]generatorrpc.AssignmentResult, len(plan.shards))}
@@ -1903,6 +1907,9 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			} else if sharedJVM {
 				// The generator starts and stages the shared JVMs inside this call.
 				assignmentTimeout = max(assignmentTimeout, sharedJVMAssignmentTimeout)
+			}
+			if sessionPreflight {
+				assignmentTimeout = max(assignmentTimeout, b.timeout+engine.BrowserSessionPreflightTimeout)
 			}
 			rpcCtx, rpcCancel := context.WithTimeout(ctx, assignmentTimeout)
 			result, assignErr := plan.client.AssignWork(rpcCtx, assignment)

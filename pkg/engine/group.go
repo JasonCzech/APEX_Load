@@ -200,6 +200,10 @@ type MultiGroupEngine struct {
 	javaVuserCapacityLimit int64
 	javaVuserReservation   *javaVuserCapacityReservation
 	javaVuserLegacyRun     *javaVuserLegacyRunReservation
+	// browserSessionPreflight checks observer sessions once
+	// (browser_session_preflight.go).
+	browserSessionPreflightOnce sync.Once
+	browserSessionPreflightErr  error
 }
 
 type GroupResult struct {
@@ -723,6 +727,13 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	}
 	if err := mge.preflightRuntimeAtStart(ctx); err != nil {
 		return nil, err
+	}
+	// A coordinated start's lead is too short to open browsers: staging
+	// checked its observer sessions.
+	if !coordinatedStart {
+		if err := mge.PreflightBrowserSessions(ctx); err != nil {
+			return nil, err
+		}
 	}
 	for _, group := range mge.groups {
 		if group.javaBroker != nil {
@@ -2278,6 +2289,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			Proto:                        prepared.proto,
 			Script:                       prepared.script,
 			browserIdentity:              prepared.browserIdentity,
+			sessionStartNotBefore:        browserSessionStart(mge.runStartedAt, prepared.browserIdentity, prepared.script),
 			Metrics:                      mge.metrics,
 			ResultSink:                   prepared.group.ResultSink,
 			RedactionConfig:              prepared.group.RedactionConfig,

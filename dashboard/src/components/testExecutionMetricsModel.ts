@@ -75,6 +75,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     errHttp5xx: rounded(metric.error_breakdown?.http_5xx),
     errAssertion: rounded(metric.error_breakdown?.assertion),
     errResourceLimit: rounded(metric.error_breakdown?.resource_limit),
+    errSessionLost: rounded(metric.error_breakdown?.session_lost),
     errOther: rounded(metric.error_breakdown?.other),
     ...roundedHistoryValues(resourceImpactHistoryValues(metric.resources)),
   }

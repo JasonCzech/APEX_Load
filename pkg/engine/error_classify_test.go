@@ -26,6 +26,8 @@ func TestClassifyError(t *testing.T) {
 		{name: "status wins over message", statusCode: 502, message: "context deadline exceeded", want: ErrorClassHTTP5xx},
 		{name: "browser resource limit", statusCode: 0, message: "browser resource limit (browser_memory): the browser context was closed to protect the generator", want: ErrorClassResourceLimit},
 		{name: "refused browser context", statusCode: 0, message: "browser resource limit: measured browser and generator memory 900 MiB plus a new context would exceed 1000 MiB", want: ErrorClassResourceLimit},
+		{name: "lost observer session", statusCode: 0, message: "session_lost: observer 2 (perf2@acme.test) was sent to sign in", want: ErrorClassSessionLost},
+		{name: "lost session on a 401 sign-in page", statusCode: 401, message: "session_lost: observer 1 (perf1@acme.test) had its Aura session rejected (invalid_session)", want: ErrorClassSessionLost},
 	}
 
 	for _, tc := range tests {

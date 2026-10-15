@@ -252,7 +252,25 @@ JMS, Kafka, or other high-density protocol groups.
   first identity. Each observer's first step names its identity in
   `protocol_evidence.browser_identity` (position and username, never a secret).
   Session scripts take frozen populations, like unique parameters: closed
-  workload, per-VUser init, no mid-run rescaling.
+  workload, per-VUser init, no mid-run rescaling. A `storage_state_pool`
+  session's `preflight_url` (a literal path starting with `/`, which the base
+  URL prefixes, or an absolute http(s) URL) is opened by every observer before
+  the run starts, eight at a time, each within 30 seconds and all within 60
+  seconds per generator, recording no HAR: a local run checks while it
+  initializes, a distributed one when each generator stages its assignment
+  (the controller allows the time), and traffic-free capacity preparation
+  checks none. Observers sent to Salesforce sign-in, unable to open the page
+  (with the cause), or not checked in time fail the run before ramp-up, named
+  by position and username (at most ten listed). `start_gap_ms` (0 to 600000) starts observer n no earlier than
+  n-1 gaps after the run starts, by logical ordinal across all generators, to
+  stay under the target's sign-in limits. During the run, an observer step
+  that lands on Salesforce sign-in or identity verification, or whose Aura
+  requests come back `aura:invalidSession`, fails as `session_lost: observer N
+  (username) ...` (error class `session_lost`, drawn as **Observer session
+  lost** in the error charts) and ends that iteration whatever its
+  continue-on-error setting. An iteration that signs in itself (its actions
+  spell `{{identity.*}}`) reaches the sign-in page on purpose, so only a
+  rejected Aura session counts as lost there.
 - A browser session that keeps its context across iterations runs its first
   iteration in each context cold and the rest warm; clearing cookies but
   keeping the cache leaves them warm. The engine tags each such iteration's
