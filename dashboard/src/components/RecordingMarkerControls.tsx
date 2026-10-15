@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 interface RecordingMarkerControlsProps {
   openTransactions: string[]
   // Each returns whether the marker was added, which clears its input.
   onStartTransaction: (name: string) => Promise<boolean>
-  onEndTransaction: (name: string) => void
+  onEndTransaction: (name: string) => Promise<unknown> | void
   onAddNote: (text: string) => Promise<boolean>
   // Reports an empty name or note, which is not sent.
   onInvalid: (message: string) => void
@@ -24,23 +24,43 @@ export default function RecordingMarkerControls({
 }: RecordingMarkerControlsProps) {
   const [transactionName, setTransactionName] = useState('')
   const [noteText, setNoteText] = useState('')
+  // A marker request in flight: the buttons wait for it, so a double click
+  // does not send a second start, end or note.
+  const [sending, setSending] = useState(false)
+  const inFlight = useRef(false)
 
-  const startTransaction = async () => {
+  const send = async (request: () => Promise<unknown> | void) => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setSending(true)
+    try {
+      await request()
+    } finally {
+      inFlight.current = false
+      setSending(false)
+    }
+  }
+
+  const startTransaction = () => {
     const name = transactionName.trim()
     if (!name) {
       onInvalid('Enter a transaction name')
       return
     }
-    if (await onStartTransaction(name)) setTransactionName('')
+    return send(async () => {
+      if (await onStartTransaction(name)) setTransactionName('')
+    })
   }
 
-  const addNote = async () => {
+  const addNote = () => {
     const text = noteText.trim()
     if (!text) {
       onInvalid('Enter a note')
       return
     }
-    if (await onAddNote(text)) setNoteText('')
+    return send(async () => {
+      if (await onAddNote(text)) setNoteText('')
+    })
   }
 
   return (
@@ -53,7 +73,7 @@ export default function RecordingMarkerControls({
           onChange={e => setTransactionName(e.target.value)}
           placeholder="Transaction name, e.g. Checkout"
         />
-        <button type="button" className="btn btn-secondary btn-sm" onClick={startTransaction}>Start transaction</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={sending} onClick={startTransaction}>Start transaction</button>
       </div>
       {openTransactions.length > 0 && (
         <div className="brp-open-transactions" aria-label="Open transactions">
@@ -64,7 +84,8 @@ export default function RecordingMarkerControls({
               <button
                 type="button"
                 className="btn btn-secondary btn-sm brp-txn-end"
-                onClick={() => onEndTransaction(name)}
+                disabled={sending}
+                onClick={() => send(() => onEndTransaction(name))}
                 aria-label={`End transaction ${name}`}
               >
                 End transaction
@@ -81,7 +102,7 @@ export default function RecordingMarkerControls({
           onChange={e => setNoteText(e.target.value)}
           placeholder="Add a note for the next action…"
         />
-        <button type="button" className="btn btn-secondary btn-sm" onClick={addNote}>Add note</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={sending} onClick={addNote}>Add note</button>
       </div>
     </div>
   )

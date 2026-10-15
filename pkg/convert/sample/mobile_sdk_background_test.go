@@ -104,3 +104,21 @@ func TestMobileAppCaptureModelsBackgroundTraffic(t *testing.T) {
 		}
 	}
 }
+
+// A request whose transaction was edited after capture keeps its tag, and
+// the conversion says it disagrees with the transaction marked around it.
+func TestMarkedTransactionReportsAnEditedTag(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	content := recorderHAR(t,
+		recorderEntry("2026-01-01T00:00:01Z", "POST", "https://shop.test/api/login", 200, "application/json", `{}`, map[string]any{"_apexload_transaction": "Checkout"}),
+		recorderEntry("2026-01-01T00:00:02Z", "GET", "https://shop.test/api/home", 200, "application/json", `{}`, nil),
+	)
+	result, err := Convert(ImportRequest{Format: "har", Content: content, Options: ConvertOptions{OmitSourceReview: true,
+		Transactions: []TransactionWindow{{Name: "Login", Start: base, End: base.Add(3 * time.Second), EndOrder: 1}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), `1 recorded request(s) tagged with transaction "Checkout" started while transaction "Login" was marked`) {
+		t.Fatalf("warnings = %q", result.Warnings)
+	}
+}

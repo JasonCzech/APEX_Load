@@ -393,6 +393,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if unplacedNotes > 0 {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("%d note(s) written while recording are not in the script: the recording's requests have no start times to place them by", unplacedNotes))
 	}
+	// Requests tagged with another transaction than the one marked around
+	// them, by pair of names.
+	var retagged []transactionConflict
 
 	for idx, ex := range exchanges {
 		stepVars := correlationVarsAvailableAtStep(correlationVars, correlationVarSources, idx+1)
@@ -425,11 +428,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
 		}
-		if name := transactionAt(req.Options.Transactions, ex); name != "" && action.Metadata[harSourceTransactionMeta] == nil {
-			if action.Metadata == nil {
-				action.Metadata = map[string]any{}
+		if name := transactionAt(req.Options.Transactions, ex); name != "" {
+			tagged, _ := action.Metadata[harSourceTransactionMeta].(string)
+			switch {
+			case tagged == "":
+				if action.Metadata == nil {
+					action.Metadata = map[string]any{}
+				}
+				action.Metadata[harSourceTransactionMeta] = name
+			case tagged != name:
+				retagged = noteTransactionConflict(retagged, tagged, name)
 			}
-			action.Metadata[harSourceTransactionMeta] = name
 		}
 		if note := notesAt[idx]; note != "" {
 			if action.Metadata == nil {
@@ -592,6 +601,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
+	}
+	for _, conflict := range retagged {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d recorded request(s) tagged with transaction %q started while transaction %q was marked; the script tags them %q but times them inside %q", conflict.count, conflict.tagged, conflict.marked, conflict.tagged, conflict.marked))
 	}
 	var timestampsNote string
 	if format == "har" {

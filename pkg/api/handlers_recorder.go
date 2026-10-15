@@ -271,6 +271,16 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 		active = sanitizeRecorderSessionForResponse(active)
 	}
+	// A listing keeps each session's open transactions; its markers come
+	// with the session itself (GET /api/v1/recorder/{id}).
+	for _, session := range sessions {
+		if session != nil {
+			session.Markers = nil
+		}
+	}
+	if active != nil {
+		active.Markers = nil
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sessions": sessions,
 		"count":    len(sessions),

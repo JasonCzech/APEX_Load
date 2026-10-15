@@ -1142,6 +1142,22 @@ func TestHandleRecordingMarkersNameTransactionsWhileRecording(t *testing.T) {
 		t.Fatalf("end = %#v", ended)
 	}
 
+	// A listing keeps open transactions; markers come with the session.
+	if started := decode(post("/api/v1/recorder/rec-markers/transactions/start", `{"name":"Search"}`)); len(started.Session.OpenTransactions) != 1 {
+		t.Fatalf("start = %#v", started)
+	}
+	listing := httptest.NewRecorder()
+	server.mux.ServeHTTP(listing, httptest.NewRequest(http.MethodGet, "/api/v1/recorder", nil))
+	var list struct {
+		Sessions []struct {
+			Markers          []json.RawMessage `json:"markers"`
+			OpenTransactions []string          `json:"open_transactions"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal(listing.Body.Bytes(), &list); err != nil || len(list.Sessions) != 1 || len(list.Sessions[0].Markers) != 0 || len(list.Sessions[0].OpenTransactions) != 1 {
+		t.Fatalf("listing = %s (err %v); want open transactions without markers", listing.Body.String(), err)
+	}
+
 	if resp := post("/api/v1/recorder/rec-markers/stop", ""); resp.Code != http.StatusOK {
 		t.Fatalf("stop status = %d body=%s", resp.Code, resp.Body.String())
 	}
@@ -1151,7 +1167,7 @@ func TestHandleRecordingMarkersNameTransactionsWhileRecording(t *testing.T) {
 	summary := httptest.NewRecorder()
 	server.mux.ServeHTTP(summary, httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-markers", nil))
 	var session recorder.Session
-	if err := json.Unmarshal(summary.Body.Bytes(), &session); err != nil || len(session.Markers) != 3 {
+	if err := json.Unmarshal(summary.Body.Bytes(), &session); err != nil || len(session.Markers) != 5 {
 		t.Fatalf("summary markers = %#v, err %v body=%s", session.Markers, err, summary.Body.String())
 	}
 }

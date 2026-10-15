@@ -130,3 +130,18 @@ func TestWindowsPairsMarkersInRecordedOrder(t *testing.T) {
 		t.Fatalf("windows = %#v\nwant %#v", windows, want)
 	}
 }
+
+func TestBookAddKeepsOnlyEachKindsField(t *testing.T) {
+	var book Book
+	start, err := book.Add(Marker{Kind: KindTransactionStart, Name: "Login", Text: "ignored"}, DefaultLimits)
+	if err != nil || start.Text != "" {
+		t.Fatalf("start = %+v, %v; a transaction marker keeps no text", start, err)
+	}
+	note, err := book.Add(Marker{Kind: KindNote, Name: "ignored", Text: "approve"}, DefaultLimits)
+	if err != nil || note.Name != "" {
+		t.Fatalf("note = %+v, %v; a note keeps no name", note, err)
+	}
+	if want := len("transaction_start") + len("Login") + len("note") + len("approve"); book.RetainedBytes != want {
+		t.Fatalf("retained bytes = %d, want %d", book.RetainedBytes, want)
+	}
+}

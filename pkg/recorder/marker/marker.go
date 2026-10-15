@@ -65,6 +65,13 @@ func (b *Book) Add(marker Marker, limits Limits) (Marker, error) {
 	marker.Kind = strings.TrimSpace(marker.Kind)
 	marker.Name = strings.TrimSpace(marker.Name)
 	marker.Text = strings.TrimSpace(marker.Text)
+	// A transaction marker is its name and a note its text; neither keeps
+	// the other field.
+	if marker.Kind == KindNote {
+		marker.Name = ""
+	} else {
+		marker.Text = ""
+	}
 	if marker.Kind == KindTransactionEnd && marker.Name == "" && len(b.OpenTransactions) > 0 {
 		// The innermost open transaction, named before its bytes are counted.
 		marker.Name = b.OpenTransactions[len(b.OpenTransactions)-1]

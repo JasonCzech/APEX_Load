@@ -327,3 +327,26 @@ func TestShapeSendsMatchingRequestsInTheBackground(t *testing.T) {
 		t.Fatalf("remapped path = %q, %v", path, ok)
 	}
 }
+
+// A note written just before a request the async scan folds into a
+// conversation moves to the next step that stays.
+func TestShapeKeepsTheNoteOfAFoldedRepeat(t *testing.T) {
+	script, steps := build([]recorded{
+		{url: "/api/status", contentType: "application/json", at: 0, dur: 20},
+		{url: "/api/status", contentType: "application/json", at: 1000, dur: 20},
+		{url: "/api/status", contentType: "application/json", at: 2000, dur: 20},
+		{url: "/api/next", contentType: "application/json", at: 2500, dur: 20},
+	})
+	script.Actions[1].Metadata = map[string]any{"note": "watch the badge"}
+	script.Actions[3].Metadata = map[string]any{"note": "submit"}
+	Shape(script, steps, nil, Options{AsyncScan: true})
+	for _, action := range script.Actions {
+		if action.Target == "/api/next" {
+			if action.Metadata["note"] != "watch the badge; submit" {
+				t.Fatalf("note = %v; want the folded repeat's note on the next step", action.Metadata["note"])
+			}
+			return
+		}
+	}
+	t.Fatalf("no /api/next step in %s", types(script))
+}

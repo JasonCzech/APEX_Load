@@ -81,6 +81,23 @@ func placeNotes(notes []TimedNote, exchanges []exchange) (map[int]string, int) {
 	return placed, 0
 }
 
+// transactionConflict counts requests whose own transaction tag differs from
+// the transaction marked around them while recording.
+type transactionConflict struct {
+	tagged, marked string
+	count          int
+}
+
+func noteTransactionConflict(conflicts []transactionConflict, tagged, marked string) []transactionConflict {
+	for index := range conflicts {
+		if conflicts[index].tagged == tagged && conflicts[index].marked == marked {
+			conflicts[index].count++
+			return conflicts
+		}
+	}
+	return append(conflicts, transactionConflict{tagged: tagged, marked: marked, count: 1})
+}
+
 // insertTransactionMarkers gives a converted recording the start and end
 // markers of the transactions marked while recording, shaped as the browser
 // script carries them (dsl.TransactionMarker), so replay times each one as a

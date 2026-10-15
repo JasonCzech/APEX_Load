@@ -537,6 +537,8 @@ func collapseConversations(items []item, result *Result) []item {
 	}
 	shaped := make([]item, 0, len(items)+len(stops))
 	lastKept := -1
+	// A note written before a folded repeat goes to the next step kept.
+	var notes []string
 	for i, it := range items {
 		for _, s := range stops {
 			if s.before == i {
@@ -549,10 +551,21 @@ func collapseConversations(items []item, result *Result) []item {
 			if lastKept >= 0 {
 				extendThinkTime(&shaped[lastKept].action, it)
 			}
+			if note, _ := it.action.Metadata["note"].(string); note != "" {
+				notes = append(notes, note)
+			}
 			continue
+		}
+		if len(notes) > 0 {
+			// Written before this step's own note.
+			it.action = withNotes(it.action, notes, true)
+			notes = nil
 		}
 		shaped = append(shaped, it)
 		lastKept = len(shaped) - 1
+	}
+	if len(notes) > 0 && lastKept >= 0 {
+		shaped[lastKept].action = withNotes(shaped[lastKept].action, notes, false)
 	}
 	for _, s := range stops {
 		if s.before == len(items) {
@@ -855,6 +868,25 @@ func recordedTransaction(metadata map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// withNotes adds notes to an action's own note, on a copy of its metadata,
+// in recorded order: before it when they were written first.
+func withNotes(action dsl.Action, notes []string, first bool) dsl.Action {
+	metadata := make(map[string]any, len(action.Metadata)+1)
+	for key, value := range action.Metadata {
+		metadata[key] = value
+	}
+	if existing, _ := metadata["note"].(string); existing != "" {
+		if first {
+			notes = append(append([]string(nil), notes...), existing)
+		} else {
+			notes = append([]string{existing}, notes...)
+		}
+	}
+	metadata["note"] = strings.Join(notes, "; ")
+	action.Metadata = metadata
+	return action
 }
 
 // extendThinkTime adds a folded request's time and think time to the step
