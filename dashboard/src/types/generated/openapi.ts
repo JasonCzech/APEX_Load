@@ -1507,6 +1507,18 @@ export interface operations {
               "total_ms"?: number;
               "transaction"?: string;
             }>;
+            "aura_parity"?: Array<{
+              "actions"?: Array<Record<string, unknown>>;
+              "browser_actions_per_request"?: number;
+              "browser_bytes_per_request"?: number;
+              "browser_instances"?: number;
+              "browser_requests"?: number;
+              "http_actions_per_request"?: number;
+              "http_bytes_per_request"?: number;
+              "http_instances"?: number;
+              "http_requests"?: number;
+              "transaction"?: string;
+            }>;
             "baseline_comparison"?: ({
               "baselines"?: Array<{
                 "archive_available"?: boolean;
@@ -3475,6 +3487,7 @@ export interface operations {
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
+                "aura_http_requests"?: Array<Record<string, unknown>>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
                 "business_keys"?: (Record<string, unknown>) | null;
@@ -3660,6 +3673,7 @@ export interface operations {
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
+                "aura_http_requests"?: Array<Record<string, unknown>>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
                 "business_keys"?: (Record<string, unknown>) | null;
@@ -70849,6 +70863,11 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "aura_http_requests"?: Array<{
+                "action": string;
+                "actions": Array<string>;
+                "group": string;
+              }>;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
               "business_keys"?: ({
@@ -71855,6 +71874,11 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "aura_http_requests"?: Array<{
+                "action": string;
+                "actions": Array<string>;
+                "group": string;
+              }>;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
               "business_keys"?: ({
@@ -72893,6 +72917,23 @@ export interface operations {
               "errors"?: number;
               "name": string;
               "total_ms": number;
+              "transaction": string;
+            }>;
+            "aura_parity"?: Array<{
+              "actions": Array<{
+                "browser": number;
+                "flagged"?: boolean;
+                "http": number;
+                "name": string;
+              }>;
+              "browser_actions_per_request": number;
+              "browser_bytes_per_request": number;
+              "browser_instances": number;
+              "browser_requests": number;
+              "http_actions_per_request": number;
+              "http_bytes_per_request": number;
+              "http_instances": number;
+              "http_requests": number;
               "transaction": string;
             }>;
             "baseline_comparison"?: ({
@@ -75493,6 +75534,11 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "aura_http_requests"?: Array<{
+                  "action": string;
+                  "actions": Array<string>;
+                  "group": string;
+                }>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
                 "business_keys"?: ({
@@ -75999,6 +76045,11 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "aura_http_requests"?: Array<{
+                  "action": string;
+                  "actions": Array<string>;
+                  "group": string;
+                }>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
                 "business_keys"?: ({

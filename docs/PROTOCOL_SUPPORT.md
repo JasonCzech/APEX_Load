@@ -234,7 +234,19 @@ JMS, Kafka, or other high-density protocol groups.
   `document_loads`. A step that sends Salesforce Aura requests records their
   actions in `protocol_evidence.aura_actions` (names, the request's time, batch
   size, bytes and response state; never parameters or results), and the run
-  report rolls them up by transaction.
+  report rolls them up by transaction. When a run has both browser observers
+  and HTTP groups, it freezes each HTTP group's Aura requests (POSTs to an
+  `/aura` endpoint, the actions their bodies name, keyed by action name) at
+  start, and the run report's **Aura parity** section compares, per LR-style
+  transaction, the median calls per transaction instance (one VUser's pass in
+  one iteration) of each Aura action in the browsers and in the HTTP scripts,
+  with each side's requests, actions per request and response bytes per
+  request (HTML, PDF, CSV, the dashboard and the archive report's
+  `aura_parity`). An action whose counts differ by more than one call is
+  flagged; calibrate that threshold on a real journey. Two HTTP requests with
+  the same name and different actions cannot be told apart and are left out,
+  as is a request whose body is not a readable Aura message (for example a
+  template outside a JSON string).
 - `config.browser.session` gives each browser observer its own user for its
   whole life. `identities` lists one entry per observer
   (`{"username": ..., "storage_state": "{{secret.NAME}}", "password":

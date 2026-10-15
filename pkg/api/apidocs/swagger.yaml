@@ -4324,6 +4324,42 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    aura_parity:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          actions:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          browser_actions_per_request:
+                            type: number
+                            format: double
+                          browser_bytes_per_request:
+                            type: number
+                            format: double
+                          browser_instances:
+                            type: integer
+                            format: int64
+                          browser_requests:
+                            type: number
+                            format: double
+                          http_actions_per_request:
+                            type: number
+                            format: double
+                          http_bytes_per_request:
+                            type: number
+                            format: double
+                          http_instances:
+                            type: integer
+                            format: int64
+                          http_requests:
+                            type: number
+                            format: double
+                          transaction:
+                            type: string
                     baseline_comparison:
                       type: object
                       properties:
@@ -9750,6 +9786,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            aura_http_requests:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveAuraHTTPRequest'
+                                additionalProperties: true
                             baseline_pinned:
                               type: boolean
                             baseline_pinned_at:
@@ -10256,6 +10298,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            aura_http_requests:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveAuraHTTPRequest'
+                                additionalProperties: true
                             baseline_pinned:
                               type: boolean
                             baseline_pinned_at:
@@ -378285,6 +378333,23 @@ paths:
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
+                      aura_http_requests:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            actions:
+                              type: array
+                              items:
+                                type: string
+                            group:
+                              type: string
+                          required:
+                            - action
+                            - actions
+                            - group
                       baseline_pinned:
                         type: boolean
                       baseline_pinned_at:
@@ -381318,6 +381383,23 @@ paths:
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
+                      aura_http_requests:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            actions:
+                              type: array
+                              items:
+                                type: string
+                            group:
+                              type: string
+                          required:
+                            - action
+                            - actions
+                            - group
                       baseline_pinned:
                         type: boolean
                       baseline_pinned_at:
@@ -384680,6 +384762,67 @@ paths:
                         - count
                         - name
                         - total_ms
+                        - transaction
+                  aura_parity:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              browser:
+                                type: number
+                                format: double
+                              flagged:
+                                type: boolean
+                              http:
+                                type: number
+                                format: double
+                              name:
+                                type: string
+                            required:
+                              - browser
+                              - http
+                              - name
+                        browser_actions_per_request:
+                          type: number
+                          format: double
+                        browser_bytes_per_request:
+                          type: number
+                          format: double
+                        browser_instances:
+                          type: integer
+                          format: int64
+                        browser_requests:
+                          type: number
+                          format: double
+                        http_actions_per_request:
+                          type: number
+                          format: double
+                        http_bytes_per_request:
+                          type: number
+                          format: double
+                        http_instances:
+                          type: integer
+                          format: int64
+                        http_requests:
+                          type: number
+                          format: double
+                        transaction:
+                          type: string
+                      required:
+                        - actions
+                        - browser_actions_per_request
+                        - browser_bytes_per_request
+                        - browser_instances
+                        - browser_requests
+                        - http_actions_per_request
+                        - http_bytes_per_request
+                        - http_instances
+                        - http_requests
                         - transaction
                   baseline_comparison:
                     type: object
@@ -393675,6 +393818,23 @@ paths:
                               tolerate_generator_loss:
                                 type: boolean
                             nullable: true
+                          aura_http_requests:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                action:
+                                  type: string
+                                actions:
+                                  type: array
+                                  items:
+                                    type: string
+                                group:
+                                  type: string
+                              required:
+                                - action
+                                - actions
+                                - group
                           baseline_pinned:
                             type: boolean
                           baseline_pinned_at:
@@ -395280,6 +395440,23 @@ paths:
                               tolerate_generator_loss:
                                 type: boolean
                             nullable: true
+                          aura_http_requests:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                action:
+                                  type: string
+                                actions:
+                                  type: array
+                                  items:
+                                    type: string
+                                group:
+                                  type: string
+                              required:
+                                - action
+                                - actions
+                                - group
                           baseline_pinned:
                             type: boolean
                           baseline_pinned_at:

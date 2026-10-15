@@ -301,6 +301,10 @@ type RunArchiveProvenance struct {
 
 	// BusinessKeys is the run's business-key archive policy (G16).
 	BusinessKeys *RunArchiveBusinessKeys `json:"business_keys,omitempty"`
+
+	// AuraHTTPRequests are the HTTP groups' Aura requests, frozen at Start
+	// for the Aura parity report when the run also has browser observers.
+	AuraHTTPRequests []RunArchiveAuraHTTPRequest `json:"aura_http_requests,omitempty"`
 }
 
 type RunArchiveGovernanceSnapshot struct {
@@ -639,6 +643,7 @@ type RunArchiveReport struct {
 	BrowserVersionSkews               []BrowserVersionSkew                   `json:"browser_version_skews,omitempty"`
 	BrowserIterations                 []BrowserIterationTransaction          `json:"browser_iterations,omitempty"`
 	SalesforceEPT                     []SalesforceEPTCalibration             `json:"salesforce_ept,omitempty"`
+	AuraParity                        []AuraParityTransaction                `json:"aura_parity,omitempty"`
 	Web2Migration                     *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
 	OracleDB                          *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
 	ResourcePeaks                     RunArchiveResourcePeaks                `json:"resource_peaks"`

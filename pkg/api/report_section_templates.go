@@ -823,6 +823,22 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   </tbody>
 </table>
 {{end}}
+{{if .Report.AuraParity}}
+<h3>Aura parity</h3>
+<p class="muted">Per transaction, the Aura calls real browsers sent beside those the HTTP scripts send: median calls per transaction instance (one virtual user's pass through it in one iteration). Lightning caches some actions in the browser and re-batches calls, so the two can differ; a difference of more than one call is flagged.</p>
+{{range .Report.AuraParity}}
+<h4>{{.Transaction}}</h4>
+<p class="muted">Browsers: {{formatFloat .BrowserRequests}} requests per instance ({{.BrowserInstances}} instances), {{formatFloat .BrowserActionsPerRequest}} actions and {{formatFloat .BrowserBytesPerRequest}} response bytes per request. HTTP scripts: {{formatFloat .HTTPRequests}} requests per instance ({{.HTTPInstances}} instances), {{formatFloat .HTTPActionsPerRequest}} actions and {{formatFloat .HTTPBytesPerRequest}} response bytes per request.</p>
+<table>
+  <thead><tr><th>Action</th><th class="num">Browser calls</th><th class="num">HTTP calls</th><th>Differs</th></tr></thead>
+  <tbody>
+    {{range .Actions}}
+    <tr><td>{{.Name}}</td><td class="num">{{formatFloat .Browser}}</td><td class="num">{{formatFloat .HTTP}}</td><td>{{if .Flagged}}yes{{end}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}
 {{if .Report.SalesforceEPT}}
 <h3>Salesforce EPT calibration</h3>
 <p class="muted">Salesforce's Experienced Page Time counter (eptVisible=1), read after each step whose counter changed, beside the same steps' own times.</p>

@@ -567,7 +567,7 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 	},
 	"browser": func(d *runArchiveHTMLReportData) bool {
 		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0 || len(d.Report.BrowserVersionSkews) > 0 || len(d.Report.BrowserIterations) > 0 ||
-			len(d.Report.SalesforceEPT) > 0
+			len(d.Report.SalesforceEPT) > 0 || len(d.Report.AuraParity) > 0
 	},
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
 	"soap": func(d *runArchiveHTMLReportData) bool {
@@ -1248,6 +1248,18 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				}
 				*lines = append(*lines, "")
 			}
+			if len(d.Report.AuraParity) > 0 {
+				*lines = append(*lines, "Aura parity (median calls per transaction instance, browsers vs HTTP scripts):")
+				for _, row := range d.Report.AuraParity {
+					*lines = append(*lines, "  "+auraParityTransactionText(row))
+					for _, action := range row.Actions {
+						if action.Flagged {
+							*lines = append(*lines, fmt.Sprintf("    differs: %s browser %.1f, HTTP %.1f", action.Name, action.Browser, action.HTTP))
+						}
+					}
+				}
+				*lines = append(*lines, "")
+			}
 			if len(d.Report.SalesforceEPT) > 0 {
 				*lines = append(*lines, "Salesforce EPT calibration (each step's EPT readings beside its own time):")
 				for _, row := range d.Report.SalesforceEPT {
@@ -1301,6 +1313,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					}
 					value := fmt.Sprintf("count=%s;errors=%s;avg_ms=%s;p90_ms=%s", formatCSVInt(kind.times.Count), formatCSVInt(kind.times.Errors), formatCSVFloat(kind.times.AvgMs), formatCSVFloat(kind.times.P90Ms))
 					if err := write("browser", "browser_iteration:"+kind.name, row.Transaction, value); err != nil {
+						return err
+					}
+				}
+			}
+			for _, row := range d.Report.AuraParity {
+				for _, action := range row.Actions {
+					value := fmt.Sprintf("browser=%s;http=%s;flagged=%t", formatCSVFloat(action.Browser), formatCSVFloat(action.HTTP), action.Flagged)
+					if err := write("browser", "aura_parity:"+row.Transaction, action.Name, value); err != nil {
 						return err
 					}
 				}
