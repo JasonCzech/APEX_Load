@@ -71,9 +71,8 @@ ARG PLAYWRIGHT_DRIVER_VERSION
 # DuckDB's pinned Linux libraries require glibc and libstdc++; generators
 # retain the independent CGO-free Alpine build in Dockerfile.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 chromium fonts-liberation \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/chromium /usr/bin/google-chrome
+    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 # Reuse the pinned glibc Node runtime; Debian's nodejs package is older.
 COPY --from=dashboard-builder /usr/local/bin/node /usr/bin/node
 COPY --from=dashboard-builder /src/dashboard/node_modules/playwright-core-go/ /opt/playwright-driver/package/
@@ -82,14 +81,24 @@ RUN if [ "$BINARY" = "generator" ] || [ "$BINARY" = "controller" ]; then \
 		test "${actual}" = "Version ${PLAYWRIGHT_DRIVER_VERSION}" \
 		|| { echo "runtime Playwright driver ${actual} does not match Version ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }; \
 	fi
+# Recording and Verify run the Chromium builds the Playwright driver pins
+# (browsers.json), the same as browser generators (Dockerfile.browser-generator),
+# installed with their system libraries into a path any uid can read.
+# PLAYWRIGHT_DOWNLOAD_HOST names a mirror of Playwright's browser CDN for
+# builders that cannot reach it.
+ARG PLAYWRIGHT_DOWNLOAD_HOST
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN if [ -z "${PLAYWRIGHT_DOWNLOAD_HOST:-}" ]; then unset PLAYWRIGHT_DOWNLOAD_HOST; fi \
+	&& node /opt/playwright-driver/package/cli.js install --with-deps chromium \
+	&& chmod -R a+rX /ms-playwright \
+	&& rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /usr/local/bin/app
 # Browser runtime wiring (controller and generator images; inert elsewhere):
 # - the driver lives at a fixed path readable by any uid (readOnlyRootFilesystem-safe)
-# - Playwright drives the image's installed Chromium (APEXLOAD_BROWSER_EXECUTABLE override)
+# - Playwright launches its own Chromium: APEXLOAD_BROWSER_EXECUTABLE stays unset
 # - HOME gives uid 65532 (no passwd entry) a writable scratch root under /tmp
 ENV PLAYWRIGHT_DRIVER_PATH=/opt/playwright-driver \
 	PLAYWRIGHT_NODEJS_PATH=/usr/bin/node \
-	APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
 	APEXLOAD_ADDR=0.0.0.0:8080 \
 	HOME=/tmp
 RUN mkdir -p /data /tmp /opt/playwright-driver /var/lib/apexload-bruno \

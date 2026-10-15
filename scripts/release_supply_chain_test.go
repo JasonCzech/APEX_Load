@@ -713,6 +713,7 @@ func TestReleaseArtifactNormalizationSupportsActualGitHubArtifactLayouts(t *test
 				"release-image-generator-standard",
 				"release-image-generator-enterprise",
 				"release-image-java-vuser-runner-standard",
+				"release-image-browser-generator-standard",
 			} {
 				if err := os.MkdirAll(filepath.Join(workingDir, "staging", artifact), 0o755); err != nil {
 					t.Fatal(err)
@@ -768,6 +769,7 @@ func TestReleaseInputDownloaderKeepsExactArtifactsSeparated(t *testing.T) {
 		"release-image-generator-standard",
 		"release-image-generator-enterprise",
 		"release-image-java-vuser-runner-standard",
+		"release-image-browser-generator-standard",
 	} {
 		if got := strings.Count(action, "name: "+name); got != 2 {
 			t.Errorf("exact release input %s is downloaded %d times, want once per platform path", name, got)
@@ -792,6 +794,7 @@ func TestReleaseArtifactNormalizationRejectsDuplicateBasenames(t *testing.T) {
 		"release-image-generator-standard",
 		"release-image-generator-enterprise",
 		"release-image-java-vuser-runner-standard",
+		"release-image-browser-generator-standard",
 	} {
 		if err := os.MkdirAll(filepath.Join(workingDir, "staging", artifact), 0o755); err != nil {
 			t.Fatal(err)

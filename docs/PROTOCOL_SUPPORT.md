@@ -330,7 +330,10 @@ JMS, Kafka, or other high-density protocol groups.
   `browser_version_skew` or `browser_recording_version_skew`, and the run
   report's Browser Metrics section lists each mismatch.
   `APEXLOAD_BROWSER_VERSION_SKEW=fail` fails a session whose browser does not
-  match the driver's instead.
+  match the driver's instead. The controller image and the
+  `apexload-browser-generator` image for observer pools run Playwright's own
+  Chromium and so match; the default Alpine generator image drives Alpine's
+  Chromium, which can differ (see the deployments guide).
 - Chromium runs with client metrics enabled also capture browser-process CPU
   and RSS memory through CDP process information plus OS lookup. WebKit process
   attribution remains limited to metrics Playwright exposes reliably.

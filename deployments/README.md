@@ -21,6 +21,7 @@ READMEs own the details; this page is the router.
 | AKS Azure Monitor overlay | [k8s/aks/README.md](k8s/aks/README.md#azure-monitor-managed-prometheus-overlay) |
 | Kubernetes monitoring examples | [Kubernetes monitoring stack](#kubernetes-monitoring-stack) |
 | Java Vuser runner component | [Java Vuser runner component](#java-vuser-runner-component) |
+| Browser generator for observer pools | [Browser generator for observer pools](#browser-generator-for-observer-pools) |
 | Local AI provider secrets | [AI provider setup for local Kubernetes](#ai-provider-setup-for-local-kubernetes) |
 
 ## Validation Baseline
@@ -139,6 +140,23 @@ The controller metrics endpoint should preserve bounded labels suitable for rete
 - generator identity is intentionally kept out of controller `/metrics`; use Kubernetes pod labels, cAdvisor, and kube-state-metrics for per-generator host telemetry.
 
 High-cardinality raw transaction details stay in APEX Load archive bundles instead of Prometheus.
+
+## Browser generator for observer pools
+
+Browser observers measure what a user sees, so they run the Chromium build the
+Playwright driver was tested with. Each release publishes
+`apexload-browser-generator` (standard profile only, tag `<release>-standard`):
+the generator on Debian with Playwright's own Chromium, built from
+`Dockerfile.browser-generator`. The controller image carries the same build for
+recording and Verify. The default `apexload-generator` image stays the lean
+Alpine build with Alpine's Chromium; use it for protocol-only pools.
+
+Deploy an observer pool as a second generator from the Helm chart with
+`image.generatorRepository=apexload-browser-generator` and the `-standard` tag,
+pinned to the release digest, and register its generators in their own fleet
+pool. The AKS deployment workflow deploys the protocol generator only. Image
+builds download Chromium from Playwright's CDN; set the
+`PLAYWRIGHT_DOWNLOAD_HOST` build argument to use a mirror.
 
 ## Java Vuser runner component
 

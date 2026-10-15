@@ -175,12 +175,14 @@ def main() -> int:
         required = {"component", "profile", "repository", "digest", "platforms"}
         if set(row) != required:
             fail(f"{path.name} does not contain exactly {sorted(required)}")
-        if row["component"] not in {"controller", "generator", "java-vuser-runner"}:
+        if row["component"] not in {"controller", "generator", "java-vuser-runner", "browser-generator"}:
             fail(f"{path.name} contains an invalid component")
         if row["profile"] not in {"standard", "enterprise"}:
             fail(f"{path.name} contains an invalid protocol profile")
         if row["component"] == "java-vuser-runner" and row["profile"] != "standard":
             fail(f"{path.name} contains an unsupported Java Vuser runner profile")
+        if row["component"] == "browser-generator" and row["profile"] != "standard":
+            fail(f"{path.name} contains an unsupported browser generator profile")
         if not DIGEST.fullmatch(row["digest"]):
             fail(f"{path.name} contains a non-immutable image digest")
         platforms = row["platforms"]
@@ -211,6 +213,7 @@ def main() -> int:
         ("generator", "standard"),
         ("generator", "enterprise"),
         ("java-vuser-runner", "standard"),
+        ("browser-generator", "standard"),
     }
     actual_images = {(row["component"], row["profile"]) for row in image_rows}
     if actual_images != expected_images:

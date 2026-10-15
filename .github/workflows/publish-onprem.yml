@@ -78,6 +78,8 @@ jobs:
             profile: enterprise
           - component: java-vuser-runner
             profile: standard
+          - component: browser-generator
+            profile: standard
     steps:
       - name: Initialize isolated registry credential paths
         run: |
@@ -430,7 +432,7 @@ jobs:
           set -euo pipefail
           public_key="$RUNNER_TEMP/onprem-cosign.pub"
           printf '%s' "$ONPREM_COSIGN_PUBLIC_KEY" > "$public_key"
-          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard; do
+          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard browser-generator:standard; do
               component="${coordinate%%:*}"
               profile="${coordinate#*:}"
               repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
@@ -460,7 +462,7 @@ jobs:
                 [[ "$tag_state" == absent ]]
               fi
           done
-          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard; do
+          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard browser-generator:standard; do
               component="${coordinate%%:*}"
               profile="${coordinate#*:}"
               repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"

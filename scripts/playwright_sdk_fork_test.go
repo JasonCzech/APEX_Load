@@ -65,7 +65,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			t.Fatalf("local SDK README missing reviewed documentation link %s", link)
 		}
 	}
-	for _, rel := range []string{"Dockerfile", "Dockerfile.controller", "runners/java_vuser/Dockerfile", "runners/java_vuser/Dockerfile.supervisor", "runners/java_vuser/Dockerfile.broker", "runners/java_vuser/Dockerfile.facade"} {
+	for _, rel := range []string{"Dockerfile", "Dockerfile.controller", "Dockerfile.browser-generator", "runners/java_vuser/Dockerfile", "runners/java_vuser/Dockerfile.supervisor", "runners/java_vuser/Dockerfile.broker", "runners/java_vuser/Dockerfile.facade"} {
 		data, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			t.Fatal(err)

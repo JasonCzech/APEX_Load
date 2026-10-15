@@ -78,7 +78,7 @@ fi
 jq -e '
   . as $root |
   (.commit | test("^[0-9a-f]{40}$")) and
-  ((.images | length) == 4 or (.images | length) == 5) and
+  ((.images | length) >= 4 and (.images | length) <= 6) and
   (all(.images[]; .digest | test("^sha256:[0-9a-f]{64}$"))) and
   (all(.images[]; . as $image |
     (.platforms | length == 2) and
@@ -96,7 +96,8 @@ jq -e '
   )) and
   (([.images[] | [.component, .profile]] | sort) as $image_set |
     ($image_set == [["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"]]) or
-    ($image_set == [["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"], ["java-vuser-runner", "standard"]])) and
+    ($image_set == [["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"], ["java-vuser-runner", "standard"]]) or
+    ($image_set == [["browser-generator", "standard"], ["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"], ["java-vuser-runner", "standard"]])) and
   (.binaries | length == 5) and
   ([.binaries[] | [.os, .architecture]] | unique | length == 5) and
   (.desktop_clients | length == 5) and
