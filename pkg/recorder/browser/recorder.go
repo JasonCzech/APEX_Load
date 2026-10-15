@@ -132,6 +132,9 @@ type Recorder struct {
 	activePage     playwright.Page
 	controlPages   map[playwright.Page]struct{}
 	openingControl bool
+	// pendingSameDocument holds DevTools' reports of in-page URL changes
+	// whose navigation event is not recorded yet (same_document.go).
+	pendingSameDocument []sameDocumentReport
 
 	// controlNonce is a per-session secret baked into the capture script's
 	// closure. Destructive in-page control events (stop/delete/exclude/mark)
@@ -633,6 +636,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		if !paused {
 			if len(r.session.NavEvents) < maxBrowserNetworkEvents {
 				nav.URL = r.retainNativeStringLocked(rawURL, maxBrowserNativeURLBytes)
+				nav.SameDocument, nav.NavigationType = r.takeSameDocumentReportLocked(nav.URL, nav.Timestamp)
 				r.session.NavEvents = append(r.session.NavEvents, nav)
 				retained = true
 				if switchStepSeq > 0 {
@@ -667,6 +671,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		}
 		r.emit(Event{Type: EventNavigation, Nav: &nav})
 	})
+	go r.watchSameDocumentNavigations(page)
 	page.OnRequest(func(playwright.Request) {
 		r.mu.Lock()
 		retained := false

@@ -702,6 +702,12 @@ method you used last.
 - A selected **recording profile** shows the host filters it adds: on an HTTP proxy
   recording they are added to the hosts you type; on a browser recording they filter
   the HTTP script converted from it.
+- A browser recording loads a page only where you did: a URL you typed, or a link
+  that opened a new page. A single-page app such as Salesforce Lightning changes its
+  URL inside the page as you move through it; those changes are not loaded again,
+  since the replayed clicks make the app change them, and loading the URL would
+  reload the app. Validation warns about a step that loads a Lightning page in the
+  middle of a browser script, as older recordings and hand edits can.
 - A browser recording keeps a HAR of its traffic of up to 100 MB. Excluded hosts are
   removed before response bodies count toward that limit. Past it, the HAR still
   keeps every request and leaves out response bodies, images and media first, and

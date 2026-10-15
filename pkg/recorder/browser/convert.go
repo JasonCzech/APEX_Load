@@ -515,6 +515,10 @@ func finalizeConvertWarnings(session *Session, result *ConvertResult) {
 	if len(session.NetworkEvents) > 0 || len(session.NavEvents) > 0 {
 		result.Warnings = append(result.Warnings, "Recorded element readiness is a hint; add business-result assertions for asynchronous updates and the final action. Background traffic is not used as a network-idle gate.")
 	}
+	if inPage := unattributedSameDocumentNavigations(session.Steps, session.NavEvents); inPage > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%d route change(s) the app made in the page without a recorded step (a single-page app such as Salesforce Lightning) were not turned into navigations: loading the URL would reload the app, and the replayed steps make the app change it again.", inPage))
+	}
 	if len(session.StorageState) > 0 {
 		result.Warnings = append(result.Warnings, "Recorded browser state is not embedded in the script. Replay a login in init, or explicitly configure config.browser.storage_state with a project secret containing a pre-transaction session snapshot. End-of-recording state may already contain completed transaction state.")
 	}

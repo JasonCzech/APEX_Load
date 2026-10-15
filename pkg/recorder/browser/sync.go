@@ -52,11 +52,12 @@ func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.B
 			break
 		}
 	}
-	for _, nav := range navs {
+	for index, nav := range navs {
 		if nav.Timestamp.After(step.Timestamp) && !nav.Timestamp.After(next.Timestamp) {
 			// Such a navigation is emitted separately by explicitNavigations.
 			// Waiting for its destination before that action would deadlock.
-			if nav.Timestamp.Sub(step.Timestamp) > syncObservationWindow {
+			// An app's route change never is: the app makes it again on replay.
+			if !appRouteChange(navs, index) && nav.Timestamp.Sub(step.Timestamp) > syncObservationWindow {
 				return nil
 			}
 			active = true
@@ -74,8 +75,42 @@ func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.B
 // the converter always emits from the session start URL. Before the first
 // captured interaction, only the final distinct URL is kept so redirect chains
 // collapse without losing a real user-initiated sidebar/bookmark navigation.
+// An app's route change never becomes one: loading its URL would reload a
+// single-page app (Salesforce Lightning) that the replayed steps drive.
 func explicitNavigations(steps []Step, navs []NavEvent) []int {
+	explicit, _ := classifyNavigations(steps, navs)
+	return explicit
+}
+
+// unattributedSameDocumentNavigations counts the app route changes that no
+// recorded step made, which explicitNavigations leaves out.
+func unattributedSameDocumentNavigations(steps []Step, navs []NavEvent) int {
+	_, inPage := classifyNavigations(steps, navs)
+	return inPage
+}
+
+// appRouteChange reports whether navs[index] is an app's in-page route change
+// (history.pushState or replaceState). A fragment change loads nothing either
+// way, so like a document load it can still be a navigation of the user's (a
+// typed hash route).
+func appRouteChange(navs []NavEvent, index int) bool {
+	nav := navs[index]
+	if !nav.SameDocument {
+		return false
+	}
+	switch nav.NavigationType {
+	case "historyApi":
+		return true
+	case "fragment":
+		return false
+	}
+	// Chromium did not name it: more than the fragment changed.
+	return index == 0 || !sameDocumentURL(navs[index-1].URL, nav.URL)
+}
+
+func classifyNavigations(steps []Step, navs []NavEvent) ([]int, int) {
 	out := make([]int, 0)
+	inPage := 0
 	firstStepAt, haveFirstStep := firstConvertibleStepTimestamp(steps)
 	lastPreFirst := lastPreFirstNavigationIndex(navs, firstStepAt, haveFirstStep)
 	initialURL := ""
@@ -110,11 +145,15 @@ func explicitNavigations(steps []Step, navs []NavEvent) []int {
 				break
 			}
 		}
-		if !attributed {
+		switch {
+		case attributed:
+		case appRouteChange(navs, i):
+			inPage++
+		default:
 			out = append(out, i)
 		}
 	}
-	return out
+	return out, inPage
 }
 
 // convertibleStepBetween reports whether a step that becomes an action was
@@ -134,7 +173,9 @@ func lastPreFirstNavigationIndex(navs []NavEvent, firstStepAt time.Time, haveFir
 	}
 	last := -1
 	for i := 1; i < len(navs); i++ {
-		if navs[i].Timestamp.Before(firstStepAt) {
+		// The app's own route changes after its load are not where the user
+		// went.
+		if navs[i].Timestamp.Before(firstStepAt) && !appRouteChange(navs, i) {
 			last = i
 		}
 	}

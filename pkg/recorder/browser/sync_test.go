@@ -117,6 +117,38 @@ func TestExplicitNavigationsSkipsRepeatedURLs(t *testing.T) {
 	}
 }
 
+// An app's in-page route change (Lightning moving between its pages) is never
+// loaded as a navigation, even long after the click that made it; a fragment
+// change, which loads nothing, still can be. Before the first step, the last
+// document load counts, not the app's route change after it.
+func TestExplicitNavigationsLeaveAppRouteChangesOut(t *testing.T) {
+	steps := []Step{
+		{Seq: 1, Kind: StepClick, Timestamp: ts(1000), URL: "https://x/lightning/page/home", Candidates: []selector.Candidate{{Kind: "css", Value: "#account", Confidence: 90}}},
+		{Seq: 2, Kind: StepClick, Timestamp: ts(20000), URL: "https://x/lightning/r/Account/001/view", Candidates: []selector.Candidate{{Kind: "css", Value: "#related", Confidence: 90}}},
+	}
+	navs := []NavEvent{
+		{Timestamp: ts(100), URL: "https://x/"},
+		{Timestamp: ts(400), URL: "https://x/lightning/page/home"},                                                        // typed, a document load
+		{Timestamp: ts(600), URL: "https://x/lightning/page/home?ws=1", SameDocument: true, NavigationType: "historyApi"}, // the app restates it
+		{Timestamp: ts(4000), URL: "https://x/lightning/r/Account/001/view", SameDocument: true, NavigationType: "historyApi"},
+		{Timestamp: ts(9000), URL: "https://x/lightning/r/Account/001/related", SameDocument: true},      // unnamed, path changed
+		{Timestamp: ts(12000), URL: "https://x/lightning/r/Account/001/related#tab", SameDocument: true}, // unnamed, fragment only
+		{Timestamp: ts(15000), URL: "https://x/lightning/r/Account/001/related#notes", SameDocument: true, NavigationType: "fragment"},
+	}
+	got := explicitNavigations(steps, navs)
+	if len(got) != 3 || got[0] != 1 || got[1] != 5 || got[2] != 6 {
+		t.Fatalf("explicitNavigations() = %v, want [1 5 6]", got)
+	}
+	if n := unattributedSameDocumentNavigations(steps, navs); n != 2 {
+		t.Fatalf("route changes left out = %d, want 2", n)
+	}
+	// A route change long after the click still lets the next element sync.
+	sync := inferSync(steps, 0, navs[3:5], nil)
+	if sync == nil || sync.Type != "element_visible" {
+		t.Fatalf("sync = %+v", sync)
+	}
+}
+
 func TestSameDocumentURL(t *testing.T) {
 	if !sameDocumentURL("https://x/app?q=1#before", "https://x/app?q=1#after") {
 		t.Fatal("sameDocumentURL should ignore fragments")
