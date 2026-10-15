@@ -13,11 +13,11 @@ import (
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
-// Before a run starts, each storage_state_pool observer opens its session on
-// the session's preflight page. One sent to sign in has a missing or expired
-// session: the run fails before ramp-up and names those observers (their
-// position and username, never a secret), rather than letting them fail every
-// iteration.
+// Before a run starts, each storage_state_pool or salesforce_jwt observer
+// opens its session on the session's preflight page. One sent to sign in, or
+// unable to sign in, has no usable session: the run fails before ramp-up and
+// names those observers (their position and username, never a secret),
+// rather than letting them fail every iteration.
 
 const (
 	// BrowserSessionPreflightTimeout bounds a generator's whole preflight. A
@@ -44,7 +44,7 @@ func HasBrowserSessionPreflight(script *dsl.Script) bool {
 		return false
 	}
 	session := script.Config.Browser.Session
-	return session.Strategy == dsl.BrowserSessionStorageStatePool && session.PreflightURL != ""
+	return dsl.BrowserSessionSeedsContext(session.Strategy) && session.PreflightURL != ""
 }
 
 // PreflightBrowserSessions checks every group's observer sessions on this
@@ -187,7 +187,11 @@ func preflightBrowserSession(ctx context.Context, group GroupConfig, base map[st
 		if parsed, err := url.Parse(result.PageURL); err == nil {
 			host = " at " + parsed.Hostname()
 		}
-		return label + " was sent to sign in" + host + ": export its storage state again"
+		hint := ""
+		if group.Script.Config.Browser.Session.Strategy == dsl.BrowserSessionStorageStatePool {
+			hint = ": export its storage state again"
+		}
+		return label + " was sent to sign in" + host + hint
 	}
 	if !result.Success {
 		return label + " could not open the preflight page" + cause(fmt.Errorf("%s", result.ErrorMessage))

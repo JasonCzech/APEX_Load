@@ -7895,6 +7895,9 @@
           },
           "type": "array"
         },
+        "jwt": {
+          "$ref": "#/$defs/BrowserSessionJWT"
+        },
         "preflight_url": {
           "type": "string"
         },
@@ -7904,6 +7907,27 @@
           "type": "integer"
         },
         "strategy": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserSessionJWT": {
+      "additionalProperties": false,
+      "properties": {
+        "audience": {
+          "type": "string"
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "login_url": {
+          "type": "string"
+        },
+        "private_key": {
+          "type": "string"
+        },
+        "start_url": {
           "type": "string"
         }
       },

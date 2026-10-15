@@ -1743,12 +1743,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 			}
 		}
 		if normalized == "browser" {
-			if _, ok := instance.(protocol.BrowserDocumentEvidenceProvider); ok {
-				features = append(features, FeatureBrowserDocumentEvidenceV2)
-			}
-			if _, ok := instance.(protocol.BrowserInteractionEvidenceProvider); ok {
-				features = append(features, FeatureBrowserInteractionEvidenceV1)
-			}
+			features = append(features, browserRuntimeFeatures(instance)...)
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)

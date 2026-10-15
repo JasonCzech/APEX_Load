@@ -13272,6 +13272,10 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:
@@ -52380,6 +52384,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -152780,6 +152788,10 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:
@@ -154876,6 +154888,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -158184,6 +158200,10 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserIdentity'
                                       additionalProperties: true
+                                  jwt:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   preflight_url:
                                     type: string
                                   start_gap_ms:
@@ -162574,6 +162594,10 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:
@@ -164670,6 +164694,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -167876,6 +167904,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -171946,6 +171978,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -188457,6 +188493,10 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:
@@ -205063,6 +205103,11 @@ paths:
                                     type: object
                                     description: 'Go type: BrowserIdentity'
                                     additionalProperties: true
+                                jwt:
+                                  type: object
+                                  description: 'Go type: BrowserSessionJWT'
+                                  additionalProperties: true
+                                  nullable: true
                                 preflight_url:
                                   type: string
                                 start_gap_ms:
@@ -215520,6 +215565,11 @@ paths:
                                     type: object
                                     description: 'Go type: BrowserIdentity'
                                     additionalProperties: true
+                                jwt:
+                                  type: object
+                                  description: 'Go type: BrowserSessionJWT'
+                                  additionalProperties: true
+                                  nullable: true
                                 preflight_url:
                                   type: string
                                 start_gap_ms:
@@ -223630,6 +223680,20 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        jwt:
+                          type: object
+                          properties:
+                            audience:
+                              type: string
+                            client_id:
+                              type: string
+                            login_url:
+                              type: string
+                            private_key:
+                              type: string
+                            start_url:
+                              type: string
+                          nullable: true
                         preflight_url:
                           type: string
                         start_gap_ms:
@@ -228012,6 +228076,20 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        jwt:
+                          type: object
+                          properties:
+                            audience:
+                              type: string
+                            client_id:
+                              type: string
+                            login_url:
+                              type: string
+                            private_key:
+                              type: string
+                            start_url:
+                              type: string
+                          nullable: true
                         preflight_url:
                           type: string
                         start_gap_ms:
@@ -235321,6 +235399,20 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        jwt:
+                          type: object
+                          properties:
+                            audience:
+                              type: string
+                            client_id:
+                              type: string
+                            login_url:
+                              type: string
+                            private_key:
+                              type: string
+                            start_url:
+                              type: string
+                          nullable: true
                         preflight_url:
                           type: string
                         start_gap_ms:
@@ -258830,6 +258922,20 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        jwt:
+                          type: object
+                          properties:
+                            audience:
+                              type: string
+                            client_id:
+                              type: string
+                            login_url:
+                              type: string
+                            private_key:
+                              type: string
+                            start_url:
+                              type: string
+                          nullable: true
                         preflight_url:
                           type: string
                         start_gap_ms:
@@ -269314,6 +269420,20 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        jwt:
+                          type: object
+                          properties:
+                            audience:
+                              type: string
+                            client_id:
+                              type: string
+                            login_url:
+                              type: string
+                            private_key:
+                              type: string
+                            start_url:
+                              type: string
+                          nullable: true
                         preflight_url:
                           type: string
                         start_gap_ms:
@@ -320745,6 +320865,20 @@ paths:
                                 type: string
                               username:
                                 type: string
+                        jwt:
+                          type: object
+                          properties:
+                            audience:
+                              type: string
+                            client_id:
+                              type: string
+                            login_url:
+                              type: string
+                            private_key:
+                              type: string
+                            start_url:
+                              type: string
+                          nullable: true
                         preflight_url:
                           type: string
                         start_gap_ms:
@@ -333295,6 +333429,11 @@ paths:
                                     type: object
                                     description: 'Go type: BrowserIdentity'
                                     additionalProperties: true
+                                jwt:
+                                  type: object
+                                  description: 'Go type: BrowserSessionJWT'
+                                  additionalProperties: true
+                                  nullable: true
                                 preflight_url:
                                   type: string
                                 start_gap_ms:
@@ -345756,6 +345895,10 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:
@@ -359186,6 +359329,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -373053,6 +373200,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -418715,6 +418866,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -432526,6 +432681,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -434929,6 +435088,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -435783,6 +435946,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -436595,6 +436762,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -437407,6 +437578,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -438281,6 +438456,20 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              properties:
+                                audience:
+                                  type: string
+                                client_id:
+                                  type: string
+                                login_url:
+                                  type: string
+                                private_key:
+                                  type: string
+                                start_url:
+                                  type: string
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:
@@ -439083,6 +439272,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -452349,6 +452542,10 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserIdentity'
                                   additionalProperties: true
+                              jwt:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               preflight_url:
                                 type: string
                               start_gap_ms:
@@ -476388,6 +476585,10 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserIdentity'
                                 additionalProperties: true
+                            jwt:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             preflight_url:
                               type: string
                             start_gap_ms:

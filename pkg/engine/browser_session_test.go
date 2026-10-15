@@ -438,3 +438,53 @@ func TestPerIterationSignInIsNotASessionLoss(t *testing.T) {
 		t.Fatalf("iteration steps = %v", names)
 	}
 }
+
+// A salesforce_jwt observer gets the session's resolved signing settings and
+// signs in as its own username; the key's secret travels with the script's
+// other referenced secrets.
+func TestSalesforceJWTObserversSignInAsTheirOwnUsers(t *testing.T) {
+	script := sessionGroupScript(dsl.BrowserSessionSalesforceJWT, 2)
+	script.Init = nil
+	for i := range script.Config.Browser.Session.Identities {
+		script.Config.Browser.Session.Identities[i].StorageState, script.Config.Browser.Session.Identities[i].Password = "", ""
+	}
+	script.Config.Browser.Session.JWT = &dsl.BrowserSessionJWT{LoginURL: "https://login.salesforce.com", ClientID: "{{secret.sf_client}}", PrivateKey: "{{secret.sf_jwt_key}}"}
+	names, err := ReferencedSecretNames(script)
+	if err != nil || strings.Join(names, ",") != "sf_client,sf_jwt_key" {
+		t.Fatalf("referenced secrets = %v %v", names, err)
+	}
+	useSessionFake()
+	sessionFake.mu.Lock()
+	sessionFake.configs, sessionFake.signedOut, sessionFake.refused = nil, nil, nil
+	sessionFake.mu.Unlock()
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		switch name {
+		case "sf_client":
+			return "consumer-key", true
+		case "sf_jwt_key":
+			return "-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----", true
+		}
+		return "", false
+	})
+	mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "observers", Script: script, VUsers: 2, SecretResolver: resolver}}, Duration: 30 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mge.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sessionFake.mu.Lock()
+	defer sessionFake.mu.Unlock()
+	var seen []string
+	for _, config := range sessionFake.configs {
+		if config["browser_session_jwt_client_id"] != "consumer-key" || !strings.HasPrefix(fmt.Sprint(config["browser_session_jwt_private_key"]), "-----BEGIN RSA PRIVATE KEY-----") ||
+			config["browser_session_jwt_login_url"] != "https://login.salesforce.com" || config["browser_session_jwt_start_url"] != "/lightning/page/home" || config["browser_storage_state"] != nil {
+			t.Fatalf("observer config = %v", config)
+		}
+		seen = append(seen, fmt.Sprint(config["browser_identity_username"]))
+	}
+	sort.Strings(seen)
+	if strings.Join(seen, ",") != "perf1@acme.test,perf2@acme.test" {
+		t.Fatalf("observers signed in as %v", seen)
+	}
+}

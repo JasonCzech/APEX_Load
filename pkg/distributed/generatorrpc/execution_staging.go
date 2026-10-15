@@ -1129,14 +1129,16 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			if capabilityErr != nil {
 				return nil, status.Error(codes.FailedPrecondition, capabilityErr.Error())
 			}
-			if hasCapabilities {
-				if !capabilities.Available {
-					return nil, status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
-				}
-				if required := requiredProtocolRuntimeFeature(&script); required != "" && !protocol.RuntimeFeaturesSatisfy(capabilities.Features, required) {
-					return nil, status.Errorf(codes.FailedPrecondition, "%s runtime does not advertise required capability %s", script.Protocol, required)
-				}
-			} else if required := requiredProtocolRuntimeFeature(&script); required != "" {
+			// The browser runtime's features are advertised from its instance,
+			// not its capabilities (browserRuntimeFeatures).
+			advertised := capabilities.Features
+			if strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
+				advertised = append(append([]string(nil), advertised...), browserRuntimeFeatures(instance)...)
+			}
+			if hasCapabilities && !capabilities.Available {
+				return nil, status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
+			}
+			if required := requiredProtocolRuntimeFeature(&script); required != "" && !protocol.RuntimeFeaturesSatisfy(advertised, required) {
 				return nil, status.Errorf(codes.FailedPrecondition, "%s runtime does not advertise required capability %s", script.Protocol, required)
 			}
 		}

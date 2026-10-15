@@ -14,18 +14,49 @@ import (
 // observers than identities fails before it starts.
 type BrowserSessionConfig struct {
 	// Strategy is storage_state_pool (each identity's storage state, exported
-	// from the Recording Agent, seeds its browser context) or login_steps (the
-	// script signs in with {{identity.username}} and {{identity.password}}).
+	// from the Recording Agent, seeds its browser context), salesforce_jwt
+	// (each identity's browser is signed in with the OAuth 2.0 JWT bearer flow
+	// and Salesforce's UI bridge, per jwt) or login_steps (the script signs in
+	// with {{identity.username}} and {{identity.password}}).
 	Strategy   string            `json:"strategy,omitempty"`
 	Identities []BrowserIdentity `json:"identities,omitempty"`
 	// PreflightURL is a light page (a path starting with /, which the base
-	// URL prefixes, or an absolute http(s) URL) each storage_state_pool
-	// observer opens before the run starts; one sent to sign in fails the
-	// run, naming the identities whose sessions are missing or expired.
+	// URL prefixes, or an absolute http(s) URL) each storage_state_pool or
+	// salesforce_jwt observer opens before the run starts; one sent to sign
+	// in, or unable to sign in, fails the run, naming the identities whose
+	// sessions are missing or expired.
 	PreflightURL string `json:"preflight_url,omitempty"`
 	// StartGapMs spaces the observers' starts, by logical ordinal across
 	// all generators, to stay clear of the target's sign-in limits.
 	StartGapMs int `json:"start_gap_ms,omitempty" jsonschema:"minimum=0,maximum=600000"`
+	// JWT configures a salesforce_jwt session.
+	JWT *BrowserSessionJWT `json:"jwt,omitempty"`
+}
+
+// BrowserSessionJWT signs each salesforce_jwt observer in as its identity's
+// username: the generator mints an access token with the OAuth 2.0 JWT bearer
+// flow (a connected app with a certificate, its users pre-authorized), asks
+// Salesforce's single-access UI bridge for a one-time frontdoor URL, opens it
+// in a throwaway browser context and seeds the observer's context with the
+// resulting cookies. Neither the token nor the frontdoor URL reaches the
+// observer's evidence.
+type BrowserSessionJWT struct {
+	// LoginURL is the token endpoint's origin: https://login.salesforce.com,
+	// https://test.salesforce.com or the org's My Domain URL.
+	LoginURL string `json:"login_url"`
+	// ClientID is the connected app's consumer key, literal or a whole
+	// {{secret.NAME}} reference.
+	ClientID string `json:"client_id"`
+	// PrivateKey is a whole {{secret.NAME}} reference to the PEM RSA private
+	// key whose certificate the connected app holds.
+	PrivateKey string `json:"private_key"`
+	// Audience is the assertion's audience when it differs from LoginURL
+	// (https://login.salesforce.com, or https://test.salesforce.com for a
+	// sandbox, when LoginURL is a My Domain URL).
+	Audience string `json:"audience,omitempty"`
+	// StartURL is the path the UI bridge lands on, /lightning/page/home by
+	// default.
+	StartURL string `json:"start_url,omitempty"`
 }
 
 // BrowserIdentity is one observer's user. Its secrets are whole project-secret
@@ -39,6 +70,7 @@ type BrowserIdentity struct {
 
 const (
 	BrowserSessionStorageStatePool = "storage_state_pool"
+	BrowserSessionSalesforceJWT    = "salesforce_jwt"
 	BrowserSessionLoginSteps       = "login_steps"
 	// MaxBrowserSessionIdentities bounds the identities a script lists.
 	MaxBrowserSessionIdentities = 1000
@@ -109,6 +141,69 @@ func (s *Script) WithBrowserIdentity(identity BrowserIdentity) (*Script, error) 
 	return &out, nil
 }
 
+// BrowserSessionSeedsContext reports a strategy that signs each observer's
+// browser context in before its first step (storage_state_pool,
+// salesforce_jwt), rather than with the script's own steps.
+func BrowserSessionSeedsContext(strategy string) bool {
+	return strategy == BrowserSessionStorageStatePool || strategy == BrowserSessionSalesforceJWT
+}
+
+const (
+	maxBrowserSessionJWTClientID  = 256
+	defaultBrowserSessionJWTStart = "/lightning/page/home"
+)
+
+// BrowserSessionJWTStartURL is the path a salesforce_jwt session's UI bridge
+// lands on.
+func BrowserSessionJWTStartURL(jwt *BrowserSessionJWT) string {
+	if jwt == nil || jwt.StartURL == "" {
+		return defaultBrowserSessionJWTStart
+	}
+	return jwt.StartURL
+}
+
+func validateBrowserSessionJWTIssues(session *BrowserSessionConfig) []string {
+	jwt := session.JWT
+	if session.Strategy != BrowserSessionSalesforceJWT {
+		if jwt != nil {
+			return []string{"config.browser.session.jwt applies to a salesforce_jwt session"}
+		}
+		return nil
+	}
+	if jwt == nil {
+		return []string{"config.browser.session.jwt is required by a salesforce_jwt session"}
+	}
+	var issues []string
+	for _, origin := range [...]struct{ name, value string }{{"login_url", jwt.LoginURL}, {"audience", jwt.Audience}} {
+		if origin.value == "" && origin.name == "audience" {
+			continue
+		}
+		if !validBrowserSessionJWTOrigin(origin.value) {
+			issues = append(issues, fmt.Sprintf("config.browser.session.jwt.%s must be an https origin such as https://login.salesforce.com", origin.name))
+		}
+	}
+	clientID := jwt.ClientID
+	if strings.TrimSpace(clientID) == "" || strings.TrimSpace(clientID) != clientID || len(clientID) > maxBrowserSessionJWTClientID || strings.ContainsAny(clientID, "\r\n\x00") ||
+		(strings.Contains(clientID, "{{") && !browserStorageStateSecretPattern.MatchString(clientID)) {
+		issues = append(issues, fmt.Sprintf("config.browser.session.jwt.client_id must be the consumer key (at most %d bytes) or a whole {{secret.NAME}} reference", maxBrowserSessionJWTClientID))
+	}
+	if !browserStorageStateSecretPattern.MatchString(jwt.PrivateKey) {
+		issues = append(issues, "config.browser.session.jwt.private_key must be a whole {{secret.NAME}} reference")
+	}
+	if start := jwt.StartURL; start != "" && (!strings.HasPrefix(start, "/") || !validBrowserSessionPreflightURL(start)) {
+		issues = append(issues, "config.browser.session.jwt.start_url must be a literal path starting with /, on one line and at most 2048 bytes")
+	}
+	return issues
+}
+
+// validBrowserSessionJWTOrigin accepts an https origin with no path, query
+// or credentials.
+func validBrowserSessionJWTOrigin(raw string) bool {
+	parsed, err := url.Parse(raw)
+	return err == nil && raw == strings.TrimSpace(raw) && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
+		(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && !strings.Contains(raw, "{{")
+}
+
 // validBrowserSessionPreflightURL accepts a literal path, which navigation
 // prefixes with the base URL, or an absolute http(s) URL.
 func validBrowserSessionPreflightURL(preflight string) bool {
@@ -144,10 +239,11 @@ func validateBrowserSessionIssues(script *Script) []string {
 		return append(issues, "config.browser.session applies to browser scripts only")
 	}
 	switch session.Strategy {
-	case BrowserSessionStorageStatePool, BrowserSessionLoginSteps:
+	case BrowserSessionStorageStatePool, BrowserSessionSalesforceJWT, BrowserSessionLoginSteps:
 	default:
-		issues = append(issues, "config.browser.session.strategy must be storage_state_pool or login_steps")
+		issues = append(issues, "config.browser.session.strategy must be storage_state_pool, salesforce_jwt or login_steps")
 	}
+	issues = append(issues, validateBrowserSessionJWTIssues(session)...)
 	if len(session.Identities) == 0 || len(session.Identities) > MaxBrowserSessionIdentities {
 		issues = append(issues, fmt.Sprintf("config.browser.session.identities must list 1 to %d identities", MaxBrowserSessionIdentities))
 	}
@@ -155,14 +251,14 @@ func validateBrowserSessionIssues(script *Script) []string {
 		issues = append(issues, fmt.Sprintf("config.browser.session.start_gap_ms must be 0 to %d", maxBrowserSessionStartGapMs))
 	}
 	if preflight := session.PreflightURL; preflight != "" {
-		if session.Strategy != BrowserSessionStorageStatePool {
-			issues = append(issues, "config.browser.session.preflight_url applies to a storage_state_pool session; a login_steps session signs in during init")
+		if !BrowserSessionSeedsContext(session.Strategy) {
+			issues = append(issues, "config.browser.session.preflight_url applies to a storage_state_pool or salesforce_jwt session; a login_steps session signs in during init")
 		} else if !validBrowserSessionPreflightURL(preflight) {
 			issues = append(issues, "config.browser.session.preflight_url must be a literal path starting with / or an absolute http(s) URL, on one line and at most 2048 bytes")
 		}
 	}
-	if session.Strategy == BrowserSessionStorageStatePool && script.Config.Browser.StorageState != "" {
-		issues = append(issues, "config.browser.storage_state and a storage_state_pool session cannot both seed the browser; give each identity its storage_state instead")
+	if BrowserSessionSeedsContext(session.Strategy) && script.Config.Browser.StorageState != "" {
+		issues = append(issues, fmt.Sprintf("config.browser.storage_state and a %s session cannot both seed the browser", session.Strategy))
 	}
 	seen := map[string]bool{}
 	for index, identity := range session.Identities {
@@ -184,6 +280,9 @@ func validateBrowserSessionIssues(script *Script) []string {
 		}
 		if session.Strategy == BrowserSessionStorageStatePool && identity.StorageState == "" {
 			issues = append(issues, path+".storage_state is required by a storage_state_pool session")
+		}
+		if session.Strategy != BrowserSessionStorageStatePool && identity.StorageState != "" {
+			issues = append(issues, path+".storage_state applies to a storage_state_pool session")
 		}
 		if (session.Strategy == BrowserSessionLoginSteps || uses["password"]) && identity.Password == "" {
 			issues = append(issues, path+".password is required where the script signs in with {{identity.password}}")

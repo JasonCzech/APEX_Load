@@ -200,6 +200,18 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 	}
 }
 
+// ForgetOAuth2Token drops req's cached token, so the next FetchOAuth2Token
+// mints a new one: for a token its resource server rejected before it expired.
+func ForgetOAuth2Token(req OAuthTokenRequest) {
+	req.GrantType = normalizeOAuthGrant(req.GrantType)
+	if req.ClientAuthentication == "" {
+		req.ClientAuthentication = "client_secret_post"
+	}
+	if oauthTokenCache != nil {
+		oauthTokenCache.forget(oauthTokenCacheKey(req))
+	}
+}
+
 func loadOAuthToken(key string) (OAuthToken, bool) {
 	if oauthTokenCache == nil {
 		return OAuthToken{}, false
@@ -233,6 +245,14 @@ func (c *boundedOAuthTokenCache) load(key string, now time.Time) (OAuthToken, bo
 	}
 	c.order.MoveToBack(element)
 	return entry.token, true
+}
+
+func (c *boundedOAuthTokenCache) forget(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element := c.entries[key]; element != nil {
+		c.remove(element)
+	}
 }
 
 func (c *boundedOAuthTokenCache) store(key string, token OAuthToken) {
@@ -405,6 +425,22 @@ func validateOAuthTokenRequest(req OAuthTokenRequest) error {
 		return fmt.Errorf("unsupported OAuth2 grant_type %q", req.GrantType)
 	}
 	return nil
+}
+
+// OAuthEndpointURLAllowed reports an absolute https URL, or http on a
+// loopback host for development endpoints: the rule token_url follows.
+func OAuthEndpointURLAllowed(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return isOAuthLoopbackHost(parsed.Hostname())
+	}
+	return false
 }
 
 func isOAuthLoopbackHost(host string) bool {

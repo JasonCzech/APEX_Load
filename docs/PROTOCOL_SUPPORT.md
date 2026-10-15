@@ -243,7 +243,27 @@ JMS, Kafka, or other high-density protocol groups.
   identity n, and a run with more observers than identities fails before it
   starts. `strategy: storage_state_pool` seeds each observer's browser with its
   identity's storage state (exported from the Recording Agent; replaces
-  `config.browser.storage_state`). `strategy: login_steps` signs in with the
+  `config.browser.storage_state`). `strategy: salesforce_jwt` signs each
+  observer's browser in as its identity's username with no password or MFA
+  prompt: `jwt` names the connected app's https `login_url`
+  (https://login.salesforce.com, https://test.salesforce.com or the My
+  Domain URL), its consumer key `client_id` (literal or a whole
+  `{{secret.NAME}}`), the `{{secret.NAME}}` holding the PEM RSA
+  `private_key` whose certificate the app holds, an optional `audience`
+  (https://login.salesforce.com, or test.salesforce.com for a sandbox, when
+  `login_url` is a My Domain URL) and the `start_url` path the bridge lands on
+  (default `/lightning/page/home`). For each new browser context the
+  generator mints an access token with the OAuth 2.0 JWT bearer flow (reused
+  for up to five minutes, and minted again when the bridge rejects it), asks
+  the token's instance for a one-time frontdoor URL
+  (`POST /services/oauth2/singleaccess` with `redirect_uri` set to
+  `start_url`; confirm the endpoint and the scopes it needs in the org, D2),
+  opens it in a throwaway context (no evidence capture; images, media, fonts
+  and stylesheets skipped) until its document loads, and seeds the
+  observer's context with the cookies it leaves. The token and frontdoor
+  requests use the generator's own network path (`HTTPS_PROXY`), not
+  `config.browser.proxy`. The app needs its users pre-authorized; neither
+  the token nor the frontdoor URL reaches run evidence or errors. `strategy: login_steps` signs in with the
   script's own steps: each observer's copy of the script spells
   `{{identity.username}}` as its username and `{{identity.password}}` as its
   identity's own `{{secret.NAME}}` reference. Identity secrets are named in the
@@ -252,14 +272,18 @@ JMS, Kafka, or other high-density protocol groups.
   first identity. Each observer's first step names its identity in
   `protocol_evidence.browser_identity` (position and username, never a secret).
   Session scripts take frozen populations, like unique parameters: closed
-  workload, per-VUser init, no mid-run rescaling. A `storage_state_pool`
-  session's `preflight_url` (a literal path starting with `/`, which the base
+  workload, per-VUser init, no mid-run rescaling. They run only on generators
+  that advertise `browser_session_identities_v1` (and
+  `browser_salesforce_jwt_v1` for `salesforce_jwt`), so an older generator
+  is never chosen to run observers as nobody. A `storage_state_pool` or
+  `salesforce_jwt` session's `preflight_url` (a literal path starting with `/`, which the base
   URL prefixes, or an absolute http(s) URL) is opened by every observer before
   the run starts, eight at a time, each within 30 seconds and all within 60
   seconds per generator, recording no HAR: a local run checks while it
   initializes, a distributed one when each generator stages its assignment
   (the controller allows the time), and traffic-free capacity preparation
-  checks none. Observers sent to Salesforce sign-in, unable to open the page
+  checks none. Observers sent to Salesforce sign-in, unable to sign in or open
+  the page
   (with the cause), or not checked in time fail the run before ramp-up, named
   by position and username (at most ten listed). `start_gap_ms` (0 to 600000) starts observer n no earlier than
   n-1 gaps after the run starts, by logical ordinal across all generators, to

@@ -4785,6 +4785,7 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;
@@ -20837,6 +20838,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -21971,6 +21973,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -28614,6 +28617,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -39440,6 +39444,7 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;
@@ -40209,6 +40214,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -41342,6 +41348,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -43735,6 +43742,7 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;
@@ -47859,6 +47867,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -55620,6 +55629,7 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;
@@ -78161,6 +78171,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -86920,6 +86931,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -87563,6 +87575,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -87892,6 +87905,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -88207,6 +88221,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -88522,6 +88537,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -108813,6 +108829,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -138323,6 +138340,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -146508,6 +146526,13 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "jwt"?: ({
+                "audience"?: string;
+                "client_id"?: string;
+                "login_url"?: string;
+                "private_key"?: string;
+                "start_url"?: string;
+              }) | null;
               "preflight_url"?: string;
               "start_gap_ms"?: number;
               "strategy"?: string;
@@ -148014,6 +148039,13 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "jwt"?: ({
+                "audience"?: string;
+                "client_id"?: string;
+                "login_url"?: string;
+                "private_key"?: string;
+                "start_url"?: string;
+              }) | null;
               "preflight_url"?: string;
               "start_gap_ms"?: number;
               "strategy"?: string;
@@ -149639,6 +149671,13 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "jwt"?: ({
+                "audience"?: string;
+                "client_id"?: string;
+                "login_url"?: string;
+                "private_key"?: string;
+                "start_url"?: string;
+              }) | null;
               "preflight_url"?: string;
               "start_gap_ms"?: number;
               "strategy"?: string;
@@ -151244,6 +151283,13 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "jwt"?: ({
+                "audience"?: string;
+                "client_id"?: string;
+                "login_url"?: string;
+                "private_key"?: string;
+                "start_url"?: string;
+              }) | null;
               "preflight_url"?: string;
               "start_gap_ms"?: number;
               "strategy"?: string;
@@ -152850,6 +152896,13 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "jwt"?: ({
+                "audience"?: string;
+                "client_id"?: string;
+                "login_url"?: string;
+                "private_key"?: string;
+                "start_url"?: string;
+              }) | null;
               "preflight_url"?: string;
               "start_gap_ms"?: number;
               "strategy"?: string;
@@ -154455,6 +154508,13 @@ export interface operations {
                 "storage_state"?: string;
                 "username"?: string;
               }>;
+              "jwt"?: ({
+                "audience"?: string;
+                "client_id"?: string;
+                "login_url"?: string;
+                "private_key"?: string;
+                "start_url"?: string;
+              }) | null;
               "preflight_url"?: string;
               "start_gap_ms"?: number;
               "strategy"?: string;
@@ -164366,6 +164426,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -170138,6 +170199,7 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;
@@ -170906,6 +170968,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -172187,6 +172250,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -177637,6 +177701,13 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: ({
+                  "audience"?: string;
+                  "client_id"?: string;
+                  "login_url"?: string;
+                  "private_key"?: string;
+                  "start_url"?: string;
+                }) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;
@@ -177961,6 +178032,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -178727,6 +178799,7 @@ export interface operations {
                 };
                 "session"?: ({
                   "identities"?: Array<Record<string, unknown>>;
+                  "jwt"?: (Record<string, unknown>) | null;
                   "preflight_url"?: string;
                   "start_gap_ms"?: number;
                   "strategy"?: string;
@@ -180222,6 +180295,7 @@ export interface operations {
               };
               "session"?: ({
                 "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
                 "preflight_url"?: string;
                 "start_gap_ms"?: number;
                 "strategy"?: string;

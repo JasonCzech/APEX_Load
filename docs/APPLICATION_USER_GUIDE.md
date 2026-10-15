@@ -1141,12 +1141,16 @@ transaction's cold and warm times side by side. A group that simulates a new use
 iteration starts every iteration cold, and its SLAs judge every iteration. To give each
 browser observer its own user, list one identity per observer in the script's
 `config.browser.session`: with a storage-state pool each observer's browser starts signed
-in with its identity's exported storage state; with login steps the script's sign-in uses
+in with its identity's exported storage state; with `salesforce_jwt` each observer is
+signed in as its username through a Salesforce connected app with a certificate (its
+`jwt` settings name the app's login URL, consumer key and private-key secret), with no
+password or MFA prompt; with login steps the script's sign-in uses
 `{{identity.username}}` and `{{identity.password}}`. The secrets are project secrets
 named in the script, and a run with more observers than identities fails before it
-starts. Give a storage-state pool a `preflight_url` to have every observer open that
-page before the run starts: observers whose sessions have expired fail the run before
-ramp-up, named, so you can export their storage state again. `start_gap_ms` spaces the
+starts. Give a storage-state pool or a `salesforce_jwt` session a `preflight_url` to
+have every observer open that page before the run starts: observers whose sessions have
+expired, or who cannot sign in, fail the run before ramp-up, named, so you can export
+their storage state again or fix the connected app. `start_gap_ms` spaces the
 observers' starts to stay under the target's sign-in limits. An observer sent back to
 sign in during the run fails that iteration as **Observer session lost** in the error
 charts. Page timings and Web

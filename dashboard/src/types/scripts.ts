@@ -465,10 +465,11 @@ export interface BrowserConfig {
   }
   // Each browser observer's own user and signed-in session.
   session?: {
-    strategy?: 'storage_state_pool' | 'login_steps'
+    strategy?: 'storage_state_pool' | 'salesforce_jwt' | 'login_steps'
     identities?: { username: string, storage_state?: string, password?: string }[]
     preflight_url?: string
     start_gap_ms?: number
+    jwt?: { login_url: string, client_id: string, private_key: string, audience?: string, start_url?: string }
   }
 }
 

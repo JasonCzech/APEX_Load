@@ -10,11 +10,15 @@ import (
 	"testing"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // Staging opens each observer's session on its preflight page before the
 // commit, whose start lead is too short for browsers; an observer that cannot
 // open it rejects the assignment, named. Traffic-free preparation opens none.
+// The browser features the script requires (observer sessions, document
+// evidence) are the ones this generator's browser runtime advertises.
 func TestAssignmentStagingChecksObserverSessions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("launches browsers")
@@ -35,7 +39,7 @@ func TestAssignmentStagingChecksObserverSessions(t *testing.T) {
 	closed.Close()
 	state := `{"cookies":[{"name":"sid","value":"session-cookie-value","domain":"127.0.0.1","path":"/","expires":-1,"httpOnly":true,"secure":false,"sameSite":"Lax"}],"origins":[]}`
 	assignment := func(testID, baseURL string, prepareOnly bool) *pb.WorkAssignment {
-		script := fmt.Sprintf(`{"name":"observer","protocol":"browser","config":{"base_url":%q,"browser":{"session":{"strategy":"storage_state_pool","preflight_url":"/lightning/page/home","identities":[{"username":"perf1@acme.test","storage_state":"{{secret.STATE_1}}"},{"username":"perf2@acme.test","storage_state":"{{secret.STATE_2}}"}]}}},"actions":[{"name":"Open","type":"browser_navigate","target":"/"}]}`, baseURL)
+		script := fmt.Sprintf(`{"name":"observer","protocol":"browser","config":{"base_url":%q,"browser":{"capture_document_metrics":true,"session":{"strategy":"storage_state_pool","preflight_url":"/lightning/page/home","identities":[{"username":"perf1@acme.test","storage_state":"{{secret.STATE_1}}"},{"username":"perf2@acme.test","storage_state":"{{secret.STATE_2}}"}]}}},"actions":[{"name":"Open","type":"browser_navigate","target":"/"}]}`, baseURL)
 		return &pb.WorkAssignment{TestId: testID, GroupName: "observers", ScriptId: "observer-script-" + testID, ScriptContent: []byte(script), VuserCount: 2,
 			ParameterPopulation: 2, PrepareOnly: prepareOnly,
 			SecretBundle: map[string]string{"STATE_1": state, "STATE_2": state}, SecretBundleId: "observer-secrets-" + testID}
@@ -67,5 +71,32 @@ func TestAssignmentStagingChecksObserverSessions(t *testing.T) {
 	service.mu.RUnlock()
 	if committed {
 		t.Fatal("a rejected observer assignment was committed")
+	}
+}
+
+// The generator advertises the browser features staging admits: observer
+// sessions and salesforce_jwt with this engine, document and interaction
+// evidence with the browser runtime. A session script requires them.
+func TestBrowserRuntimeFeaturesCoverSessionScripts(t *testing.T) {
+	instance, err := protocol.Get("browser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	advertised := browserRuntimeFeatures(instance)
+	on := true
+	script := &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{CaptureDocumentMetrics: &on, CaptureInteractions: &on,
+		Session: &dsl.BrowserSessionConfig{Strategy: dsl.BrowserSessionSalesforceJWT}}}}
+	required := requiredProtocolRuntimeFeature(script)
+	for _, feature := range []string{dsl.FeatureBrowserSessionIdentitiesV1, dsl.FeatureBrowserSalesforceJWTV1, dsl.FeatureBrowserDocumentEvidenceV2, dsl.FeatureBrowserInteractionEvidenceV1} {
+		if !strings.Contains(required, feature) {
+			t.Fatalf("required %q lacks %s", required, feature)
+		}
+	}
+	if !protocol.RuntimeFeaturesSatisfy(advertised, required) {
+		t.Fatalf("advertised %v does not satisfy %q", advertised, required)
+	}
+	script.Config.Browser.Session.Strategy = dsl.BrowserSessionStorageStatePool
+	if strings.Contains(requiredProtocolRuntimeFeature(script), dsl.FeatureBrowserSalesforceJWTV1) {
+		t.Fatal("a storage_state_pool session required salesforce_jwt")
 	}
 }

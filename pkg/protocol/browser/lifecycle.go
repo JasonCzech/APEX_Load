@@ -118,6 +118,7 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 	b.runtimeSecretsActive = nil
 	b.mu.Unlock()
 	b.storageState = nil
+	b.salesforceJWT = nil
 	b.currentURL = ""
 	b.slowMo = 0
 	b.userAgent = ""

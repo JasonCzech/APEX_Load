@@ -200,6 +200,9 @@ type Browser struct {
 	admissionRetryAt            time.Time
 	admissionRefusalLogged      bool
 	networkTasksDroppedReported int64
+
+	// salesforceJWT signs each new context in (session_jwt.go), or is nil.
+	salesforceJWT *salesforceJWTSession
 }
 
 // SetRuntimeTextRedactor installs a memory-only projection owned by the VUser.

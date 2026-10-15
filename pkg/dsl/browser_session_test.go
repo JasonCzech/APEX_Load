@@ -70,7 +70,7 @@ func TestBrowserSessionValidation(t *testing.T) {
 	}{
 		"negative gap":              {BrowserSessionStorageStatePool, "", -1, "start_gap_ms must be 0 to 600000"},
 		"gap over ten minutes":      {BrowserSessionStorageStatePool, "", 600001, "start_gap_ms must be 0 to 600000"},
-		"preflight with login":      {BrowserSessionLoginSteps, "/lightning/page/home", 0, "preflight_url applies to a storage_state_pool session"},
+		"preflight with login":      {BrowserSessionLoginSteps, "/lightning/page/home", 0, "preflight_url applies to a storage_state_pool or salesforce_jwt session"},
 		"templated preflight":       {BrowserSessionStorageStatePool, "{{home}}/lightning", 0, "preflight_url must be a literal path"},
 		"multi-line preflight":      {BrowserSessionStorageStatePool, "/home\n/other", 0, "preflight_url must be a literal path"},
 		"padded preflight":          {BrowserSessionStorageStatePool, " /home", 0, "preflight_url must be a literal path"},
@@ -129,5 +129,59 @@ func TestBrowserSessionSignsInPerIteration(t *testing.T) {
 	script.Actions = append(script.Actions, Action{Name: "Password", Type: "browser_fill", Selector: "#password", Value: "{{ identity.password }}"})
 	if !BrowserSessionSignsInPerIteration(script) || BrowserSessionSignsInPerIteration(nil) {
 		t.Fatal("an iteration that signs in was not recognized")
+	}
+}
+
+// A salesforce_jwt session needs its connected app's https login origin,
+// consumer key and private-key secret; its identities need only usernames.
+func TestBrowserSessionJWTValidation(t *testing.T) {
+	jwtScript := func(mutate func(*BrowserSessionConfig)) *Script {
+		script := sessionScript(BrowserSessionSalesforceJWT, BrowserIdentity{Username: "perf1@acme.test"}, BrowserIdentity{Username: "perf2@acme.test"})
+		script.Config.Browser.Session.JWT = &BrowserSessionJWT{LoginURL: "https://login.salesforce.com", ClientID: "3MVG9consumerkey", PrivateKey: "{{secret.sf_jwt_key}}"}
+		if mutate != nil {
+			mutate(script.Config.Browser.Session)
+		}
+		return script
+	}
+	if issues := sessionIssues(jwtScript(nil)); issues != "" {
+		t.Fatalf("a valid salesforce_jwt session: %s", issues)
+	}
+	valid := jwtScript(func(session *BrowserSessionConfig) {
+		session.JWT.LoginURL, session.JWT.Audience = "https://acme.my.salesforce.com/", "https://login.salesforce.com"
+		session.JWT.ClientID, session.JWT.StartURL = "{{secret.sf_client}}", "/lightning/o/Account/list"
+		session.PreflightURL = "/lightning/page/home"
+	})
+	if issues := sessionIssues(valid); issues != "" {
+		t.Fatalf("a My Domain salesforce_jwt session with a preflight: %s", issues)
+	}
+	if got := BrowserSessionJWTStartURL(jwtScript(nil).Config.Browser.Session.JWT); got != "/lightning/page/home" {
+		t.Fatalf("default start_url = %q", got)
+	}
+	for name, tc := range map[string]struct {
+		mutate func(*BrowserSessionConfig)
+		want   string
+	}{
+		"no jwt":              {func(s *BrowserSessionConfig) { s.JWT = nil }, "jwt is required by a salesforce_jwt session"},
+		"jwt for a pool":      {func(s *BrowserSessionConfig) { s.Strategy = BrowserSessionStorageStatePool }, "jwt applies to a salesforce_jwt session"},
+		"plain-http login":    {func(s *BrowserSessionConfig) { s.JWT.LoginURL = "http://login.salesforce.com" }, "login_url must be an https origin"},
+		"login with a path":   {func(s *BrowserSessionConfig) { s.JWT.LoginURL = "https://login.salesforce.com/services/oauth2/token" }, "login_url must be an https origin"},
+		"login with userinfo": {func(s *BrowserSessionConfig) { s.JWT.LoginURL = "https://u:p@login.salesforce.com" }, "login_url must be an https origin"},
+		"bad audience":        {func(s *BrowserSessionConfig) { s.JWT.Audience = "login.salesforce.com" }, "audience must be an https origin"},
+		"no client id":        {func(s *BrowserSessionConfig) { s.JWT.ClientID = "" }, "client_id must be the consumer key"},
+		"partial client ref":  {func(s *BrowserSessionConfig) { s.JWT.ClientID = "key-{{secret.x}}" }, "client_id must be the consumer key"},
+		"inline private key":  {func(s *BrowserSessionConfig) { s.JWT.PrivateKey = "-----BEGIN RSA PRIVATE KEY-----" }, "private_key must be a whole {{secret.NAME}} reference"},
+		"relative start":      {func(s *BrowserSessionConfig) { s.JWT.StartURL = "lightning/page/home" }, "start_url must be a literal path"},
+		"absolute start":      {func(s *BrowserSessionConfig) { s.JWT.StartURL = "https://acme.lightning.force.com/" }, "start_url must be a literal path"},
+		"identity state": {func(s *BrowserSessionConfig) { s.Identities[0].StorageState = "{{secret.state}}" },
+			"identities[0].storage_state applies to a storage_state_pool session"},
+	} {
+		if issues := sessionIssues(jwtScript(tc.mutate)); !strings.Contains(issues, tc.want) {
+			t.Errorf("%s: issues %q, want %q", name, issues, tc.want)
+		}
+	}
+	shared := jwtScript(nil)
+	shared.Config.Browser.StorageState = "{{secret.shared}}"
+	if issues := sessionIssues(shared); !strings.Contains(issues, "a salesforce_jwt session cannot both seed the browser") {
+		t.Errorf("a shared storage state with a salesforce_jwt session: %q", issues)
 	}
 }

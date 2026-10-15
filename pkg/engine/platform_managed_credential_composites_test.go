@@ -58,6 +58,10 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 	"config.http.proxy.pac_url": excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
 	"config.browser.session.preflight_url": excluded(
 		"validation rejects templates, so it never carries a project secret; a literal's userinfo is script-sourced"),
+	"config.browser.session.jwt.login_url": excluded(
+		"validation requires an https origin without userinfo or templates; it never carries a project secret"),
+	"config.browser.session.jwt.start_url": excluded(
+		"validation requires a literal path; it has no host, userinfo or template to carry a project secret"),
 	// --- covered: HTTP Basic composites -------------------------------------
 	"config.http.auth.username":  covered("config.http.auth", "basic only"),
 	"config.http.auth.password":  covered("config.http.auth", "basic only"),

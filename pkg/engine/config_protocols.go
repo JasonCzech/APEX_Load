@@ -504,6 +504,14 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 		}
 		cfg[browserSessionStorageStatesKey] = states
 	}
+	if session := browserCfg.Session; session != nil && session.Strategy == dsl.BrowserSessionSalesforceJWT && session.JWT != nil {
+		// Each observer signs in as its own username (browser_identity_username).
+		cfg["browser_session_jwt_login_url"] = session.JWT.LoginURL
+		cfg["browser_session_jwt_client_id"] = session.JWT.ClientID
+		cfg["browser_session_jwt_private_key"] = session.JWT.PrivateKey
+		cfg["browser_session_jwt_audience"] = session.JWT.Audience
+		cfg["browser_session_jwt_start_url"] = dsl.BrowserSessionJWTStartURL(session.JWT)
+	}
 	cfg["browser_system_language"] = browserCfg.SystemLanguage
 	cfg["browser_available_screen_width"] = browserCfg.AvailableScreenWidth
 	cfg["browser_available_screen_height"] = browserCfg.AvailableScreenHeight

@@ -693,3 +693,55 @@ func TestCancelledOAuthCallerCannotReceiveCachedToken(t *testing.T) {
 		t.Fatalf("cancelled caller received token: %v", err)
 	}
 }
+
+// ForgetOAuth2Token drops one request's cached token, so a token its resource
+// server rejected is minted again while other requests keep theirs.
+func TestForgetOAuth2TokenMintsAgain(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "token-" + strconv.Itoa(int(n)), "expires_in": 3600})
+	}))
+	defer server.Close()
+	request := func(clientID string) OAuthTokenRequest {
+		return OAuthTokenRequest{TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientID: clientID, ClientSecret: "secret"}
+	}
+	first, err := FetchOAuth2Token(context.Background(), request("a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := FetchOAuth2Token(context.Background(), request("b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ForgetOAuth2Token(request("a"))
+	again, err := FetchOAuth2Token(context.Background(), request("a"))
+	if err != nil || again.AccessToken == first.AccessToken {
+		t.Fatalf("after forgetting: %q (was %q) %v", again.AccessToken, first.AccessToken, err)
+	}
+	kept, err := FetchOAuth2Token(context.Background(), request("b"))
+	if err != nil || kept.AccessToken != other.AccessToken || atomic.LoadInt32(&calls) != 3 {
+		t.Fatalf("other request's token = %q (was %q), %d mints, %v", kept.AccessToken, other.AccessToken, calls, err)
+	}
+}
+
+// OAuth endpoints are https, or http on loopback for development.
+func TestOAuthEndpointURLAllowed(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"https://login.salesforce.com":           true,
+		"https://acme.my.salesforce.com/path":    true,
+		"http://127.0.0.1:8080/token":            true,
+		"http://localhost:9000":                  true,
+		"http://[::1]:9000":                      true,
+		"http://login.salesforce.com":            false,
+		"ftp://login.salesforce.com":             false,
+		"/services/oauth2/token":                 false,
+		"https://":                               false,
+		"http://127.0.0.1.attacker.example:8080": false,
+	} {
+		if got := OAuthEndpointURLAllowed(raw); got != want {
+			t.Errorf("OAuthEndpointURLAllowed(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}

@@ -147,6 +147,14 @@ func (b *Browser) openAdmittedBrowserContext() error {
 	if err := b.checkBrowserVersion(pwBrowser.Version()); err != nil {
 		return errors.Join(err, b.discardHARWorkingFile())
 	}
+	if b.salesforceJWT != nil {
+		// Each new context of a salesforce_jwt observer signs in afresh.
+		state, err := b.salesforceJWTStorageState(pwBrowser)
+		if err != nil {
+			return errors.Join(err, b.discardHARWorkingFile())
+		}
+		options.StorageState = state
+	}
 	b.mu.Lock()
 	owner := b.harOwner
 	b.mu.Unlock()
