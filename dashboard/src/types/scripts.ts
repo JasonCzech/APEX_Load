@@ -463,6 +463,11 @@ export interface BrowserConfig {
     allow_reviewed_javascript?: boolean
     allow_review_required?: boolean
   }
+  // Each browser observer's own user and signed-in session.
+  session?: {
+    strategy?: 'storage_state_pool' | 'login_steps'
+    identities?: { username: string, storage_state?: string, password?: string }[]
+  }
 }
 
 export interface BrowserGeolocation {

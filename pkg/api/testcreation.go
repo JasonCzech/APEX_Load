@@ -2983,7 +2983,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		}
 	}
 	if stageDriven && engine.HasAllocatedParameters(&scriptCopy) {
-		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: stage-driven rescaling cannot preserve unique parameter cursors; use a fixed population with a planned ramp", index)
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: stage-driven rescaling cannot preserve unique parameter cursors or observer identities; use a fixed population with a planned ramp", index)
 	}
 	if stageDriven && dsl.CanonicalWorkloadModel(scriptCopy.Config.RunLogic.WorkloadModel) == "open" {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf(

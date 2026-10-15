@@ -730,6 +730,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -4780,6 +4781,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -5236,6 +5241,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -5574,6 +5580,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -6418,6 +6425,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -7164,6 +7172,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -12625,6 +12634,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -13531,6 +13541,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -14254,6 +14265,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -14944,6 +14956,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -15516,6 +15529,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -16165,6 +16179,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -16828,6 +16843,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -17480,6 +17496,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -18517,6 +18534,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -19032,6 +19050,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -20782,6 +20801,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -21178,6 +21201,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -21905,6 +21929,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -22301,6 +22329,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -23062,6 +23091,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -24151,6 +24181,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -24991,6 +25022,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -26928,6 +26960,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -27585,6 +27618,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -28522,6 +28556,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -29712,6 +29750,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -30447,6 +30486,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -35611,6 +35651,7 @@ export interface operations {
               "proxy"?: Record<string, unknown>;
               "quic"?: string;
               "review_policy"?: Record<string, unknown>;
+              "session"?: (Record<string, unknown>) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -36014,6 +36055,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -38046,6 +38088,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -39089,6 +39132,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -39315,6 +39359,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -40076,6 +40124,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -40472,6 +40524,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -41198,6 +41251,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -42385,6 +42442,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -43338,6 +43396,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -43577,6 +43636,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -44793,6 +44856,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -47683,6 +47747,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -50740,6 +50808,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -51431,6 +51500,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -52044,6 +52114,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -52735,6 +52806,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -55182,6 +55254,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -55421,6 +55494,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -55975,6 +56052,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -56764,6 +56842,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -58822,6 +58901,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -69027,6 +69107,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -71066,6 +71147,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -72061,6 +72143,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -77912,6 +77995,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -78308,6 +78395,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -78796,6 +78884,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -79593,6 +79682,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -80320,6 +80410,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -83751,6 +83842,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -86641,6 +86733,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -87276,6 +87372,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -87597,6 +87697,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -87904,6 +88008,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -88211,6 +88319,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -88806,6 +88918,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -89321,6 +89434,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -89852,6 +89966,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -92210,6 +92325,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -92937,6 +93053,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -105558,6 +105675,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -108448,6 +108566,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -109461,6 +109583,7 @@ export interface operations {
               "proxy"?: Record<string, unknown>;
               "quic"?: string;
               "review_policy"?: Record<string, unknown>;
+              "session"?: (Record<string, unknown>) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -111473,6 +111596,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -112434,6 +112558,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -113170,6 +113295,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -113975,6 +114101,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -115029,6 +115156,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -115752,6 +115880,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -116442,6 +116571,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -117014,6 +117144,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -119224,6 +119355,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -119951,6 +120083,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -120671,6 +120804,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -123395,6 +123529,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -125510,6 +125645,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -127625,6 +127761,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -129740,6 +129877,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -131855,6 +131993,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -132432,6 +132571,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -133265,6 +133405,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -134958,6 +135099,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -137848,6 +137990,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -140809,6 +140955,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -142558,6 +142705,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -142837,6 +142985,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -143492,6 +143641,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -145567,6 +145717,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -146006,6 +146157,14 @@ export interface operations {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
             };
+            "session"?: ({
+              "identities"?: Array<{
+                "password"?: string;
+                "storage_state"?: string;
+                "username"?: string;
+              }>;
+              "strategy"?: string;
+            }) | null;
             "slow_mo_ms"?: number;
             "storage_state"?: string;
             "system_language"?: string;
@@ -146166,6 +146325,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -147499,6 +147659,14 @@ export interface operations {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
             };
+            "session"?: ({
+              "identities"?: Array<{
+                "password"?: string;
+                "storage_state"?: string;
+                "username"?: string;
+              }>;
+              "strategy"?: string;
+            }) | null;
             "slow_mo_ms"?: number;
             "storage_state"?: string;
             "system_language"?: string;
@@ -147659,6 +147827,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -149111,6 +149280,14 @@ export interface operations {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
             };
+            "session"?: ({
+              "identities"?: Array<{
+                "password"?: string;
+                "storage_state"?: string;
+                "username"?: string;
+              }>;
+              "strategy"?: string;
+            }) | null;
             "slow_mo_ms"?: number;
             "storage_state"?: string;
             "system_language"?: string;
@@ -149284,6 +149461,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -150703,6 +150881,14 @@ export interface operations {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
             };
+            "session"?: ({
+              "identities"?: Array<{
+                "password"?: string;
+                "storage_state"?: string;
+                "username"?: string;
+              }>;
+              "strategy"?: string;
+            }) | null;
             "slow_mo_ms"?: number;
             "storage_state"?: string;
             "system_language"?: string;
@@ -150876,6 +151062,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -152296,6 +152483,14 @@ export interface operations {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
             };
+            "session"?: ({
+              "identities"?: Array<{
+                "password"?: string;
+                "storage_state"?: string;
+                "username"?: string;
+              }>;
+              "strategy"?: string;
+            }) | null;
             "slow_mo_ms"?: number;
             "storage_state"?: string;
             "system_language"?: string;
@@ -152469,6 +152664,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -153888,6 +154084,14 @@ export interface operations {
               "allow_review_required"?: boolean;
               "allow_reviewed_javascript"?: boolean;
             };
+            "session"?: ({
+              "identities"?: Array<{
+                "password"?: string;
+                "storage_state"?: string;
+                "username"?: string;
+              }>;
+              "strategy"?: string;
+            }) | null;
             "slow_mo_ms"?: number;
             "storage_state"?: string;
             "system_language"?: string;
@@ -154061,6 +154265,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -160890,6 +161095,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -163780,6 +163986,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -164605,6 +164815,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -165339,6 +165550,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -169309,6 +169521,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -169535,6 +169748,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -170295,6 +170512,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -170691,6 +170912,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -171565,6 +171787,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -172750,6 +172976,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "quic"?: string;
                   "review_policy"?: Record<string, unknown>;
+                  "session"?: (Record<string, unknown>) | null;
                   "slow_mo_ms"?: number;
                   "storage_state"?: string;
                   "system_language"?: string;
@@ -177004,6 +177231,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;
@@ -177320,6 +177551,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -178078,6 +178313,10 @@ export interface operations {
                   "allow_review_required"?: boolean;
                   "allow_reviewed_javascript"?: boolean;
                 };
+                "session"?: ({
+                  "identities"?: Array<Record<string, unknown>>;
+                  "strategy"?: string;
+                }) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -179336,6 +179575,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "quic"?: string;
                 "review_policy"?: Record<string, unknown>;
+                "session"?: (Record<string, unknown>) | null;
                 "slow_mo_ms"?: number;
                 "storage_state"?: string;
                 "system_language"?: string;
@@ -179562,6 +179802,10 @@ export interface operations {
                 "allow_review_required"?: boolean;
                 "allow_reviewed_javascript"?: boolean;
               };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "strategy"?: string;
+              }) | null;
               "slow_mo_ms"?: number;
               "storage_state"?: string;
               "system_language"?: string;

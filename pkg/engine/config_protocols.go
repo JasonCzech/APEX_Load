@@ -497,6 +497,13 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	if browserCfg.StorageState != "" {
 		cfg["browser_storage_state"] = browserCfg.StorageState
 	}
+	if session := browserCfg.Session; session != nil && session.Strategy == dsl.BrowserSessionStorageStatePool {
+		states := make([]string, len(session.Identities))
+		for i, identity := range session.Identities {
+			states[i] = identity.StorageState
+		}
+		cfg[browserSessionStorageStatesKey] = states
+	}
 	cfg["browser_system_language"] = browserCfg.SystemLanguage
 	cfg["browser_available_screen_width"] = browserCfg.AvailableScreenWidth
 	cfg["browser_available_screen_height"] = browserCfg.AvailableScreenHeight

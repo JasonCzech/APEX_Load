@@ -1138,7 +1138,13 @@ browser session across iterations runs its first iteration cold, starting the ap
 rest warm; SLAs judge the warm iterations (a transaction SLA rule can judge `all` or only
 `cold` ones instead), and the run report's **Browser Metrics** section shows each
 transaction's cold and warm times side by side. A group that simulates a new user each
-iteration starts every iteration cold, and its SLAs judge every iteration. Page timings and Web
+iteration starts every iteration cold, and its SLAs judge every iteration. To give each
+browser observer its own user, list one identity per observer in the script's
+`config.browser.session`: with a storage-state pool each observer's browser starts signed
+in with its identity's exported storage state; with login steps the script's sign-in uses
+`{{identity.username}}` and `{{identity.password}}`. The secrets are project secrets
+named in the script, and a run with more observers than identities fails before it
+starts. Page timings and Web
 Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's

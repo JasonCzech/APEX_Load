@@ -1322,7 +1322,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			allocationUsers[i] += shard.VUsers
 		}
 		if group.stageDriven && engine.HasAllocatedParameters(group.script) {
-			failStartup("stage-driven rescaling cannot preserve unique parameter cursors; use a fixed population with a planned ramp")
+			failStartup("stage-driven rescaling cannot preserve unique parameter cursors or observer identities; use a fixed population with a planned ramp")
 			return
 		}
 	}

@@ -23,9 +23,15 @@ type ParameterAllocationPreview struct {
 	Population int    `json:"population"`
 }
 
+// HasAllocatedParameters reports a script whose VUsers each take dense
+// logical ordinals for the run: unique allocated parameters, or browser
+// session identities (one per observer). Such a population is frozen.
 func HasAllocatedParameters(s *dsl.Script) bool {
 	if s == nil {
 		return false
+	}
+	if len(dsl.BrowserSessionIdentities(s)) > 0 {
+		return true
 	}
 	for _, p := range s.Parameters {
 		if p.Selection == "unique" && (p.AutoAllocate || p.BlockSize > 0) {
@@ -183,7 +189,8 @@ func PlanScenarioParameterAllocations(scripts []*dsl.Script, users []int) ([]Par
 		data, err := json.Marshal(struct {
 			Parameters []dsl.Parameter
 			Sources    []dsl.DataSource
-		}{s.Parameters, s.DataSources})
+			Identities []dsl.BrowserIdentity `json:",omitempty"`
+		}{s.Parameters, s.DataSources, dsl.BrowserSessionIdentities(s)})
 		if err != nil {
 			return nil, fmt.Errorf("cannot inspect allocation contract")
 		}
@@ -211,6 +218,9 @@ func PlanScenarioParameterAllocations(scripts []*dsl.Script, users []int) ([]Par
 			continue
 		}
 		c := cohorts[key]
+		if err := checkBrowserSessionPopulation(scripts[i], c.population); err != nil {
+			return nil, err
+		}
 		out[i] = ParameterAllocation{Population: c.population, Offset: c.next, Iterations: c.iterations}
 		c.next += users[i]
 	}

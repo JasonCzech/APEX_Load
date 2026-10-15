@@ -731,6 +731,8 @@ type BrowserConfig struct {
 	Proxy              BrowserProxyConfig         `json:"proxy,omitempty"`
 	ClientCertificates []BrowserClientCertificate `json:"client_certificates,omitempty"`
 	ReviewPolicy       BrowserReviewPolicy        `json:"review_policy,omitempty"`
+	// Session gives each observer its own user and signed-in session.
+	Session *BrowserSessionConfig `json:"session,omitempty"`
 }
 
 type BrowserGeolocation struct {

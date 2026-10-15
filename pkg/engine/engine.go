@@ -189,7 +189,7 @@ func New(cfg Config) (*Engine, error) {
 		return nil, fmt.Errorf("initialize data sources: %s", scrubSensitiveText(err.Error()))
 	}
 	if HasAllocatedParameters(cfg.Script) && isOpenWorkload(cfg.Script) {
-		return nil, fmt.Errorf("unique parameter allocation requires a closed workload")
+		return nil, fmt.Errorf("unique parameter allocation and browser session identities require a closed workload")
 	}
 	if err := ValidateParameterAllocationTopology(cfg.Script); err != nil {
 		return nil, err

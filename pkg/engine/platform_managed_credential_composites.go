@@ -330,6 +330,18 @@ func scriptCredentialCompositeSurfaces(
 		name: "config.browser.storage_state", authoredPassword: script.Config.Browser.StorageState,
 		resolvedPassword: protocol.ConfigString(config, "browser_storage_state"), storageState: true,
 	})
+	// Each session identity's storage state seeds one observer's browser.
+	if states, _ := config[browserSessionStorageStatesKey].([]string); len(states) > 0 {
+		for i, identity := range dsl.BrowserSessionIdentities(script) {
+			if i >= len(states) {
+				break
+			}
+			surfaces = append(surfaces, platformManagedCredentialSurface{
+				name: "config.browser.session.identities.storage_state", authoredPassword: identity.StorageState,
+				resolvedPassword: states[i], storageState: true,
+			})
+		}
+	}
 	browserCredentials := script.Config.Browser.HTTPCredentials
 	browserProxy := script.Config.Browser.Proxy
 

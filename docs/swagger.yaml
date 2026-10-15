@@ -2222,6 +2222,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -13254,6 +13258,18 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BrowserIdentity'
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -14467,6 +14483,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -15395,6 +15415,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -17559,6 +17583,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -19531,6 +19559,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -52304,6 +52336,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -87283,6 +87327,10 @@ paths:
                         review_policy:
                           type: object
                           additionalProperties: true
+                        session:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -88384,6 +88432,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -94767,6 +94819,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -101357,6 +101413,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -107948,6 +108008,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -114551,6 +114615,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -121154,6 +121222,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -127757,6 +127829,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -134360,6 +134436,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -150666,6 +150746,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -151828,6 +151913,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -152437,6 +152527,18 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BrowserIdentity'
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -154511,6 +154613,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -155583,6 +155697,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -157787,6 +157906,18 @@ paths:
                                     type: boolean
                                   allow_reviewed_javascript:
                                     type: boolean
+                              session:
+                                type: object
+                                properties:
+                                  identities:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: BrowserIdentity'
+                                      additionalProperties: true
+                                  strategy:
+                                    type: string
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -158859,6 +158990,11 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
                                       additionalProperties: true
+                                    session:
+                                      type: object
+                                      description: 'Go type: BrowserSessionConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     slow_mo_ms:
                                       type: integer
                                       format: int64
@@ -160297,6 +160433,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -161517,6 +161657,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -162126,6 +162271,18 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BrowserIdentity'
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -164200,6 +164357,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -165272,6 +165441,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -167374,6 +167548,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -168446,6 +168632,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -171412,6 +171603,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -172484,6 +172687,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -174274,6 +174482,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -177913,6 +178125,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -179840,6 +180056,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -181976,6 +182196,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -183714,6 +183938,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -185641,6 +185869,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -187218,6 +187450,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -187827,6 +188064,18 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BrowserIdentity'
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -204411,6 +204660,18 @@ paths:
                                   type: boolean
                                 allow_reviewed_javascript:
                                   type: boolean
+                            session:
+                              type: object
+                              properties:
+                                identities:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserIdentity'
+                                    additionalProperties: true
+                                strategy:
+                                  type: string
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -207619,6 +207880,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -210761,6 +211026,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -212742,6 +213011,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -214819,6 +215092,18 @@ paths:
                                   type: boolean
                                 allow_reviewed_javascript:
                                   type: boolean
+                            session:
+                              type: object
+                              properties:
+                                identities:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserIdentity'
+                                    additionalProperties: true
+                                strategy:
+                                  type: string
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -218025,6 +218310,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -221095,6 +221384,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -222884,6 +223177,23 @@ paths:
                           type: boolean
                         allow_reviewed_javascript:
                           type: boolean
+                    session:
+                      type: object
+                      properties:
+                        identities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              password:
+                                type: string
+                              storage_state:
+                                type: string
+                              username:
+                                type: string
+                        strategy:
+                          type: string
+                      nullable: true
                     slow_mo_ms:
                       type: integer
                       format: int64
@@ -223317,6 +223627,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -227235,6 +227549,23 @@ paths:
                           type: boolean
                         allow_reviewed_javascript:
                           type: boolean
+                    session:
+                      type: object
+                      properties:
+                        identities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              password:
+                                type: string
+                              storage_state:
+                                type: string
+                              username:
+                                type: string
+                        strategy:
+                          type: string
+                      nullable: true
                     slow_mo_ms:
                       type: integer
                       format: int64
@@ -227694,6 +228025,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -232743,6 +233078,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -234504,6 +234843,23 @@ paths:
                           type: boolean
                         allow_reviewed_javascript:
                           type: boolean
+                    session:
+                      type: object
+                      properties:
+                        identities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              password:
+                                type: string
+                              storage_state:
+                                type: string
+                              username:
+                                type: string
+                        strategy:
+                          type: string
+                      nullable: true
                     slow_mo_ms:
                       type: integer
                       format: int64
@@ -234963,6 +235319,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -240067,6 +240427,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -243895,6 +244259,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -245892,6 +246260,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -247980,6 +248352,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -249987,6 +250363,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -251918,6 +252298,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -255946,6 +256330,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -257919,6 +258307,23 @@ paths:
                           type: boolean
                         allow_reviewed_javascript:
                           type: boolean
+                    session:
+                      type: object
+                      properties:
+                        identities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              password:
+                                type: string
+                              storage_state:
+                                type: string
+                              username:
+                                type: string
+                        strategy:
+                          type: string
+                      nullable: true
                     slow_mo_ms:
                       type: integer
                       format: int64
@@ -258352,6 +258757,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -262402,6 +262811,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -264345,6 +264758,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -266540,6 +266957,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -268345,6 +268766,23 @@ paths:
                           type: boolean
                         allow_reviewed_javascript:
                           type: boolean
+                    session:
+                      type: object
+                      properties:
+                        identities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              password:
+                                type: string
+                              storage_state:
+                                type: string
+                              username:
+                                type: string
+                        strategy:
+                          type: string
+                      nullable: true
                     slow_mo_ms:
                       type: integer
                       format: int64
@@ -268804,6 +269242,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -272894,6 +273336,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -275788,6 +276234,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -277634,6 +278085,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -279888,6 +280343,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -281707,6 +282167,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -283963,6 +284428,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -287076,6 +287545,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -289520,6 +289993,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -293103,6 +293580,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -295071,6 +295552,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -296965,6 +297450,11 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
                                       additionalProperties: true
+                                    session:
+                                      type: object
+                                      description: 'Go type: BrowserSessionConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     slow_mo_ms:
                                       type: integer
                                       format: int64
@@ -298597,6 +299087,11 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
                                       additionalProperties: true
+                                    session:
+                                      type: object
+                                      description: 'Go type: BrowserSessionConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     slow_mo_ms:
                                       type: integer
                                       format: int64
@@ -300673,6 +301168,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -302641,6 +303140,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -304535,6 +305038,11 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
                                       additionalProperties: true
+                                    session:
+                                      type: object
+                                      description: 'Go type: BrowserSessionConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     slow_mo_ms:
                                       type: integer
                                       format: int64
@@ -306167,6 +306675,11 @@ paths:
                                       type: object
                                       description: 'Go type: BrowserReviewPolicy'
                                       additionalProperties: true
+                                    session:
+                                      type: object
+                                      description: 'Go type: BrowserSessionConfig'
+                                      additionalProperties: true
+                                      nullable: true
                                     slow_mo_ms:
                                       type: integer
                                       format: int64
@@ -308290,6 +308803,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -310208,6 +310725,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -312274,6 +312795,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -314033,6 +314558,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -315719,6 +316249,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -317796,6 +318330,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -319539,6 +320077,23 @@ paths:
                           type: boolean
                         allow_reviewed_javascript:
                           type: boolean
+                    session:
+                      type: object
+                      properties:
+                        identities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              password:
+                                type: string
+                              storage_state:
+                                type: string
+                              username:
+                                type: string
+                        strategy:
+                          type: string
+                      nullable: true
                     slow_mo_ms:
                       type: integer
                       format: int64
@@ -319998,6 +320553,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -324092,6 +324651,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -326043,6 +326606,10 @@ paths:
                             review_policy:
                               type: object
                               additionalProperties: true
+                            session:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -327955,6 +328522,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -329915,6 +330486,10 @@ paths:
                                   review_policy:
                                     type: object
                                     additionalProperties: true
+                                  session:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   slow_mo_ms:
                                     type: integer
                                     format: int64
@@ -332027,6 +332602,18 @@ paths:
                                   type: boolean
                                 allow_reviewed_javascript:
                                   type: boolean
+                            session:
+                              type: object
+                              properties:
+                                identities:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserIdentity'
+                                    additionalProperties: true
+                                strategy:
+                                  type: string
+                              nullable: true
                             slow_mo_ms:
                               type: integer
                               format: int64
@@ -343817,6 +344404,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -344456,6 +345048,18 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BrowserIdentity'
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -348136,6 +348740,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -357834,6 +358443,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -361951,6 +362572,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -371649,6 +372275,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -377979,6 +378617,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -380980,6 +381622,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -407493,6 +408139,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -417191,6 +417842,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -421252,6 +421915,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -430950,6 +431618,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -433331,6 +434011,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -434163,6 +434855,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -434953,6 +435657,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -435743,6 +436459,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -436596,6 +437324,17 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -437376,6 +438115,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -440892,6 +441643,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -450590,6 +451346,18 @@ paths:
                                 type: boolean
                               allow_reviewed_javascript:
                                 type: boolean
+                          session:
+                            type: object
+                            properties:
+                              identities:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserIdentity'
+                                  additionalProperties: true
+                              strategy:
+                                type: string
+                            nullable: true
                           slow_mo_ms:
                             type: integer
                             format: int64
@@ -453070,6 +453838,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -454570,6 +455342,10 @@ paths:
                               review_policy:
                                 type: object
                                 additionalProperties: true
+                              session:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -456152,6 +456928,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -473870,6 +474651,11 @@ paths:
                                 type: object
                                 description: 'Go type: BrowserReviewPolicy'
                                 additionalProperties: true
+                              session:
+                                type: object
+                                description: 'Go type: BrowserSessionConfig'
+                                additionalProperties: true
+                                nullable: true
                               slow_mo_ms:
                                 type: integer
                                 format: int64
@@ -474509,6 +475295,18 @@ paths:
                               type: boolean
                             allow_reviewed_javascript:
                               type: boolean
+                        session:
+                          type: object
+                          properties:
+                            identities:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BrowserIdentity'
+                                additionalProperties: true
+                            strategy:
+                              type: string
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64
@@ -475985,6 +476783,11 @@ paths:
                                   type: object
                                   description: 'Go type: BrowserReviewPolicy'
                                   additionalProperties: true
+                                session:
+                                  type: object
+                                  description: 'Go type: BrowserSessionConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 slow_mo_ms:
                                   type: integer
                                   format: int64
@@ -477532,6 +478335,10 @@ paths:
                         review_policy:
                           type: object
                           additionalProperties: true
+                        session:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         slow_mo_ms:
                           type: integer
                           format: int64

@@ -65,7 +65,7 @@ func groupAllowsGeneratorLossReshard(group TestGroup) (bool, string) {
 		return false, "JMeter source state cannot be restarted or replayed after generator loss"
 	}
 	if engine.HasAllocatedParameters(group.script) {
-		return false, "unique parameter block progress cannot be recovered on a replacement generator"
+		return false, "unique parameter block progress and observer identities cannot be recovered on a replacement generator"
 	}
 	protocol := strings.ToLower(strings.TrimSpace(group.Protocol))
 	switch protocol {

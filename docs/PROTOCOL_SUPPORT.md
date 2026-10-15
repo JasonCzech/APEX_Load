@@ -235,6 +235,24 @@ JMS, Kafka, or other high-density protocol groups.
   actions in `protocol_evidence.aura_actions` (names, the request's time, batch
   size, bytes and response state; never parameters or results), and the run
   report rolls them up by transaction.
+- `config.browser.session` gives each browser observer its own user for its
+  whole life. `identities` lists one entry per observer
+  (`{"username": ..., "storage_state": "{{secret.NAME}}", "password":
+  "{{secret.NAME}}"}`); the observer with logical ordinal n (the dense
+  ordinal unique parameters use, disjoint across groups and generators) runs as
+  identity n, and a run with more observers than identities fails before it
+  starts. `strategy: storage_state_pool` seeds each observer's browser with its
+  identity's storage state (exported from the Recording Agent; replaces
+  `config.browser.storage_state`). `strategy: login_steps` signs in with the
+  script's own steps: each observer's copy of the script spells
+  `{{identity.username}}` as its username and `{{identity.password}}` as its
+  identity's own `{{secret.NAME}}` reference. Identity secrets are named in the
+  script, so they are resolved, sent to generators and redacted (storage-state
+  cookie values included) like every other project secret. Verify runs as the
+  first identity. Each observer's first step names its identity in
+  `protocol_evidence.browser_identity` (position and username, never a secret).
+  Session scripts take frozen populations, like unique parameters: closed
+  workload, per-VUser init, no mid-run rescaling.
 - A browser session that keeps its context across iterations runs its first
   iteration in each context cold and the rest warm; clearing cookies but
   keeping the cache leaves them warm. The engine tags each such iteration's

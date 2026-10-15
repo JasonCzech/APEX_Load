@@ -7728,6 +7728,9 @@
         "review_policy": {
           "$ref": "#/$defs/BrowserReviewPolicy"
         },
+        "session": {
+          "$ref": "#/$defs/BrowserSessionConfig"
+        },
         "slow_mo_ms": {
           "maximum": 3600000,
           "minimum": 0,
@@ -7838,6 +7841,21 @@
       },
       "type": "object"
     },
+    "BrowserIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "password": {
+          "type": "string"
+        },
+        "storage_state": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "BrowserProxyConfig": {
       "additionalProperties": false,
       "properties": {
@@ -7864,6 +7882,21 @@
         },
         "allow_reviewed_javascript": {
           "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserSessionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "identities": {
+          "items": {
+            "$ref": "#/$defs/BrowserIdentity"
+          },
+          "type": "array"
+        },
+        "strategy": {
+          "type": "string"
         }
       },
       "type": "object"

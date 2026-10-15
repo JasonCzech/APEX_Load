@@ -168,7 +168,9 @@ type VUser struct {
 	// iterationTemperature is the running iteration's browser temperature
 	// (protocol.IterationTemperatureReporter), "" outside iterations.
 	iterationTemperature string
-	resultSequence       uint64
+	// browserIdentity is the observer's session identity (browser_session.go).
+	browserIdentity *browserIdentityBinding
+	resultSequence  uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
 	async           *asyncConversations
@@ -1897,6 +1899,10 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
 	if vu.sourceSamplers != nil {
 		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
+	}
+	config, err := withBrowserIdentityConfig(config, vu.browserIdentity, vu.Script)
+	if err != nil {
+		return err
 	}
 	if err := callProtocolInit(ctx, vu.Proto, config, vu.RedactionConfig); err != nil {
 		return err

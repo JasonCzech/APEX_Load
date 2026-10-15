@@ -49,6 +49,12 @@ func excluded(reason string) credentialSurfaceDisposition {
 // replaced was a fix applied to one of two sibling surfaces, twice.
 var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 	"config.browser.storage_state": covered("config.browser.storage_state", "cookie/localStorage values extracted from a project secret"),
+	"config.browser.session.identities.storage_state": covered("config.browser.session.identities.storage_state",
+		"each observer identity's cookie/localStorage values extracted from a project secret"),
+	"config.browser.session.identities.password": excluded(
+		"a whole project secret the login steps fill into a page; registered bare, no composite spelling"),
+	"config.browser.session.identities.username": excluded(
+		"an observer's username, typed as is and named in evidence; never half of a synthesized credential"),
 	"config.http.proxy.pac_url":    excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
 	// --- covered: HTTP Basic composites -------------------------------------
 	"config.http.auth.username":  covered("config.http.auth", "basic only"),
@@ -282,6 +288,9 @@ func emittedCredentialSurfaceNames() map[string]struct{} {
 				Proxy: dsl.BrowserProxyConfig{
 					Server: "http://u:{{secret.P}}@bproxy.test:8080", Username: "u", Password: "{{secret.P}}",
 				},
+				Session: &dsl.BrowserSessionConfig{Strategy: dsl.BrowserSessionStorageStatePool, Identities: []dsl.BrowserIdentity{
+					{Username: "u", StorageState: "{{secret.P}}", Password: "{{secret.P}}"},
+				}},
 			},
 			SAPGUI: dsl.SAPGUIConfig{
 				ConnectionString: "/H/sap.test/S/3200", Username: "u", Password: "{{secret.P}}",

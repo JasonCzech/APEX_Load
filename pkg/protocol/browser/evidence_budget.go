@@ -390,9 +390,10 @@ func (b *Browser) resourceLimitReason() string {
 // applyEvidenceOutcome makes a resource-limit close an explicit failure of the
 // affected VUser's action and reports, once per context, evidence that could
 // not be recorded and network tasks dropped before evidence was discarded. It
-// also reports the session's browser version skews, once.
+// also reports the session's browser version skews and identity, once.
 func (b *Browser) applyEvidenceOutcome(result *protocol.Result) {
 	b.applyBrowserVersionSkew(result)
+	b.applyBrowserIdentity(result)
 	b.mu.Lock()
 	reason := b.resourceLimit
 	unavailable := ""

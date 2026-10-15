@@ -255,6 +255,10 @@ type preparedVUser struct {
 	boundaryCtx    context.Context
 	wg             *sync.WaitGroup
 	cleanupOnce    sync.Once
+	// browserIdentity and script are the observer's session identity and its
+	// copy of the script (browser_session.go).
+	browserIdentity *browserIdentityBinding
+	script          *dsl.Script
 }
 
 type preparedClosedGroup struct {
@@ -450,7 +454,10 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			}
 		}
 		if HasAllocatedParameters(g.Script) && (isOpenWorkload(g.Script) || groupLifecycleAtOnce(g)) {
-			return nil, fmt.Errorf("unique parameter allocation requires closed workload and per-VUser init")
+			return nil, fmt.Errorf("unique parameter allocation and browser session identities require closed workload and per-VUser init")
+		}
+		if err := checkBrowserSessionPopulation(g.Script, g.ParameterAllocation.Population); err != nil {
+			return nil, fmt.Errorf("group %q: %w", g.Name, err)
 		}
 		if _, _, err := CompileParameterAllocation(g.Script.Parameters, dataProvider, g.ParameterAllocation); err != nil {
 			return nil, err
@@ -2113,6 +2120,22 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 		return nil, safeErr
 	}
 	prepared.proto = vuProto
+	prepared.script = group.Script
+	vuserConfig := vuserProtoConfig(protoConfig, prepared.runtimeID)
+	if binding, bindErr := browserIdentityForOrdinal(group.Script, group.ParameterAllocation.Offset+identity.local); bindErr != nil {
+		err = bindErr
+	} else if binding != nil {
+		prepared.browserIdentity = binding
+		if prepared.script, err = scriptForBrowserIdentity(group.Script, binding); err == nil {
+			vuserConfig, err = withBrowserIdentityConfig(vuserConfig, binding, group.Script)
+		}
+	}
+	if err != nil {
+		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+		slog.Error("failed to bind observer identity", "group", group.Name, "vuser", prepared.runtimeID, "err", safeErr)
+		mge.abortPreparedVUser(prepared)
+		return nil, safeErr
+	}
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 	initCtx, cancelProtocol, detachInitAdmission := newProtocolLifecycleContext(
 		shedCtx,
@@ -2121,7 +2144,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 		mge.launchCtx,
 	)
 	prepared.cancelProtocol = cancelProtocol
-	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, prepared.runtimeID), group.RedactionConfig)
+	err = callProtocolInit(initCtx, vuProto, vuserConfig, group.RedactionConfig)
 	prepared.progress = mge.metrics.registerMessagingProgressWithRedaction(vuProto, group.Name, mge.runtimeResources, func() *RedactionConfig { return group.RedactionConfig })
 	prepared.progress.publishBrowser(group.ResultSink, group.Region, func() *RedactionConfig { return group.RedactionConfig })
 	detachInitAdmission()
@@ -2189,7 +2212,8 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			Region:                       prepared.group.Region,
 			RunID:                        prepared.group.RunID,
 			Proto:                        prepared.proto,
-			Script:                       prepared.group.Script,
+			Script:                       prepared.script,
+			browserIdentity:              prepared.browserIdentity,
 			Metrics:                      mge.metrics,
 			ResultSink:                   prepared.group.ResultSink,
 			RedactionConfig:              prepared.group.RedactionConfig,
@@ -2835,7 +2859,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		if targetVUsers == snapshotGroup.VUsers {
 			return nil
 		} // no restart or row-cursor reset on an idempotent request
-		return fmt.Errorf("unique parameter blocks are frozen; changing VUser population requires a new run")
+		return fmt.Errorf("unique parameter blocks and browser session identities are frozen; changing VUser population requires a new run")
 	}
 	if isOpenWorkload(snapshotGroup.Script) {
 		mge.mu.Unlock()

@@ -126,6 +126,11 @@ type Browser struct {
 	// contextIterations counts the iterations the current browser context
 	// has run (IterationTemperature), guarded by mu.
 	contextIterations int
+	// identityIndex and identityUsername name the observer's session
+	// identity, reported once in its first step's evidence; guarded by mu.
+	identityIndex    int
+	identityUsername string
+	identityReported bool
 
 	mu sync.Mutex
 	// refusedPage is the page whose document at refusedURL the site refused,

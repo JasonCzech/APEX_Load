@@ -147,9 +147,12 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if recorded = strings.TrimSpace(recorded); !ValidBrowserVersion(recorded) {
 		recorded = ""
 	}
+	identityIndex := protocol.ConfigInt(config, "browser_identity_index")
+	identityUsername := strings.TrimSpace(protocol.ConfigString(config, "browser_identity_username"))
 	b.mu.Lock()
 	b.recordedBrowserVersion = recorded
 	b.browserVersionChecked, b.browserVersionSkews = false, nil
+	b.identityIndex, b.identityUsername, b.identityReported = identityIndex, identityUsername, false
 	b.mu.Unlock()
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless

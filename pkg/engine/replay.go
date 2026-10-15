@@ -430,6 +430,17 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 
 	_, captureCorrelationEvidence := opts.DebugController.(ReplayDebugControllerCorrelationObserver)
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)
+	// A replay runs as the session's first identity.
+	identity, err := browserIdentityForOrdinal(script, 0)
+	if err == nil && identity != nil {
+		protoConfig, err = withBrowserIdentityConfig(protoConfig, identity, script)
+		if err == nil {
+			script, err = scriptForBrowserIdentity(script, identity)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("browser session identity: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+	}
 	requiredFeatures := dsl.RequiredNativeRuntimeFeatures(script)
 	if protocol.RuntimeFeaturesSatisfy(requiredFeatures, protocol.FeatureNativeDataJavaV1) {
 		targets, err := runtimePreflightTargets(ctx, script, secretResolver)
@@ -540,6 +551,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		RunID:                        opts.RunID,
 		Proto:                        proto,
 		Script:                       script,
+		browserIdentity:              identity,
 		Metrics:                      NewMetricsCollector(16),
 		Variables:                    make(map[string]string),
 		DataProvider:                 dataProvider,
