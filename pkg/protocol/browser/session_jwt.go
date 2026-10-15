@@ -126,10 +126,15 @@ func bridgeEndpointURL(raw string) bool {
 }
 
 // salesforceJWTStorageState signs the observer in through a throwaway
-// context and returns the storage state its context starts with.
-func (b *Browser) salesforceJWTStorageState(pwBrowser playwright.Browser) (*playwright.OptionalStorageState, error) {
+// context and returns the storage state its context starts with. The sign-in
+// ends with the caller's context (Init's, or the iteration's), and within
+// salesforceJWTBridgeTimeout in any case.
+func (b *Browser) salesforceJWTStorageState(ctx context.Context, pwBrowser playwright.Browser) (*playwright.OptionalStorageState, error) {
 	session := b.salesforceJWT
-	ctx, cancel := context.WithTimeout(context.Background(), salesforceJWTBridgeTimeout)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, salesforceJWTBridgeTimeout)
 	defer cancel()
 	frontdoor, err := session.frontdoorURL(ctx)
 	if err != nil {
@@ -161,7 +166,7 @@ func (b *Browser) salesforceJWTStorageState(pwBrowser playwright.Browser) (*play
 	deadline, _ := ctx.Deadline()
 	remaining := time.Until(deadline)
 	if remaining < time.Second {
-		return nil, fmt.Errorf("salesforce_jwt sign-in for %s: timed out after %s", session.username, salesforceJWTBridgeTimeout)
+		return nil, fmt.Errorf("salesforce_jwt sign-in for %s: no time left to open the UI bridge", session.username)
 	}
 	if _, err := page.Goto(frontdoor, playwright.PageGotoOptions{
 		WaitUntil: playwright.WaitUntilStateDomcontentloaded,

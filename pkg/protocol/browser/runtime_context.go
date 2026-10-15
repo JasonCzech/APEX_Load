@@ -54,7 +54,7 @@ type browserNetworkTask struct {
 // refusal is not an Init error: the session stays open without a context and
 // every action fails as a resource-limit result, so a refused VUser is
 // reported instead of aborting the run.
-func (b *Browser) openBrowserContext() error {
+func (b *Browser) openBrowserContext(ctx context.Context) error {
 	b.mu.Lock()
 	b.resourceLimit, b.harUnavailableReason, b.harUnavailableReported = "", "", false
 	b.mu.Unlock()
@@ -78,7 +78,7 @@ func (b *Browser) openBrowserContext() error {
 	if err != nil {
 		return err
 	}
-	if err := b.openAdmittedBrowserContext(); err != nil {
+	if err := b.openAdmittedBrowserContext(ctx); err != nil {
 		browserEvidenceBudget.releaseBrowserContext(b)
 		return err
 	}
@@ -125,7 +125,7 @@ func (b *Browser) BeginIteration(ctx context.Context) error {
 			return nil
 		}
 	}
-	if err := b.openBrowserContext(); err != nil {
+	if err := b.openBrowserContext(ctx); err != nil {
 		return err
 	}
 	// Opening reset the evidence state; it keeps the session's lifecycle.
@@ -135,7 +135,7 @@ func (b *Browser) BeginIteration(ctx context.Context) error {
 	return nil
 }
 
-func (b *Browser) openAdmittedBrowserContext() error {
+func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 	options := b.browserContextOptions()
 	if err := b.applyHARCaptureOptions(&options); err != nil {
 		return err
@@ -149,7 +149,7 @@ func (b *Browser) openAdmittedBrowserContext() error {
 	}
 	if b.salesforceJWT != nil {
 		// Each new context of a salesforce_jwt observer signs in afresh.
-		state, err := b.salesforceJWTStorageState(pwBrowser)
+		state, err := b.salesforceJWTStorageState(ctx, pwBrowser)
 		if err != nil {
 			return errors.Join(err, b.discardHARWorkingFile())
 		}

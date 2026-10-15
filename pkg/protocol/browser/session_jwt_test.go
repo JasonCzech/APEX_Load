@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -278,5 +279,20 @@ func TestConfigureSalesforceJWTSession(t *testing.T) {
 	config[salesforceJWTLoginURLKey] = "https://acme.my.salesforce.com"
 	if err := policy.configureSalesforceJWTSession(config); err != nil || len(policy.salesforceJWT.allowedHosts) != 1 {
 		t.Fatalf("login inside the policy = %v", err)
+	}
+}
+
+// The sign-in ends with its caller: a stopped preflight or run does not wait
+// out the sign-in's own budget.
+func TestSalesforceJWTSignInEndsWithItsCaller(t *testing.T) {
+	b := &Browser{salesforceJWT: &salesforceJWTSession{loginURL: "https://login.salesforce.com", clientID: "consumer-key", privateKey: "key", startURL: "/lightning/page/home", username: "perf1@acme.test"}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	started := time.Now()
+	if _, err := b.salesforceJWTStorageState(ctx, nil); err == nil || !strings.Contains(err.Error(), "salesforce_jwt sign-in for perf1@acme.test: mint an access token: context canceled") {
+		t.Fatalf("cancelled sign-in = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("a cancelled sign-in took %s", elapsed)
 	}
 }

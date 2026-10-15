@@ -292,9 +292,12 @@ JMS, Kafka, or other high-density protocol groups.
   requests come back `aura:invalidSession`, fails as `session_lost: observer N
   (username) ...` (error class `session_lost`, drawn as **Observer session
   lost** in the error charts) and ends that iteration whatever its
-  continue-on-error setting. An iteration that signs in itself (its actions
-  spell `{{identity.*}}`) reaches the sign-in page on purpose, so only a
-  rejected Aura session counts as lost there. The launch review warns
+  continue-on-error setting. A `salesforce_jwt` observer then signs in again
+  at its next iteration, in a new browser context (one that cannot stops, as
+  a failed iteration reset does); a `storage_state_pool` observer keeps its
+  context, since its exported state cannot renew. An iteration that signs in
+  itself (its actions spell `{{identity.*}}`) reaches the sign-in page on
+  purpose, so only a rejected Aura session counts as lost there. The launch review warns
   (`observer_identity_overlap`) when an observer's username also appears in
   another group's list parameters or CSV/DAT data sources (the first 8 MiB of
   each; data pools are not read), or in a second observer group: observers

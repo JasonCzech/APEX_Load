@@ -129,7 +129,9 @@ func (vu *VUser) waitForSessionStart(ctx context.Context) bool {
 // sign in, or whose Aura session was rejected, as session_lost, and ends the
 // iteration whatever its continue-on-error setting: its later steps would
 // only measure the sign-in page. An iteration that signs in itself reaches
-// the sign-in page on purpose.
+// the sign-in page on purpose. A salesforce_jwt observer signs in again at
+// its next iteration: a new browser context mints a new session, which a
+// storage_state_pool observer's exported state cannot.
 func (vu *VUser) markBrowserSessionLost(result *protocol.Result) {
 	if vu.browserIdentity == nil || result == nil {
 		return
@@ -141,6 +143,17 @@ func (vu *VUser) markBrowserSessionLost(result *protocol.Result) {
 	result.Success = false
 	result.ErrorMessage = fmt.Sprintf("%s observer %d (%s) %s", sessionLostPrefix, vu.browserIdentity.ordinal+1, vu.browserIdentity.identity.Username, reason)
 	result.LifecycleControl = &protocol.LifecycleControl{EndIteration: true, Failed: true}
+	if vu.Script != nil && vu.Script.Config.Browser.Session != nil && vu.Script.Config.Browser.Session.Strategy == dsl.BrowserSessionSalesforceJWT {
+		vu.browserSessionRenewal = true
+	}
+}
+
+// takeBrowserSessionRenewal reports, once, that the observer's lost
+// salesforce_jwt session needs a new browser context.
+func (vu *VUser) takeBrowserSessionRenewal() bool {
+	renew := vu.browserSessionRenewal
+	vu.browserSessionRenewal = false
+	return renew
 }
 
 func browserSessionLossReason(result *protocol.Result, signsInPerIteration bool) string {

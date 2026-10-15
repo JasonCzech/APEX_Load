@@ -488,3 +488,41 @@ func TestSalesforceJWTObserversSignInAsTheirOwnUsers(t *testing.T) {
 		t.Fatalf("observers signed in as %v", seen)
 	}
 }
+
+// A salesforce_jwt observer whose session is lost signs in again at its next
+// iteration, in a new browser context; a storage_state_pool observer's
+// exported state cannot, so it keeps its context.
+func TestLostSalesforceJWTSessionSignsInAgain(t *testing.T) {
+	for strategy, wantInits := range map[string]int{dsl.BrowserSessionSalesforceJWT: 2, dsl.BrowserSessionStorageStatePool: 1} {
+		script := sessionGroupScript(strategy, 1)
+		script.Init = nil
+		script.Config.RunLogic.Iterations = 2
+		if strategy == dsl.BrowserSessionSalesforceJWT {
+			script.Config.Browser.Session.Identities[0].StorageState, script.Config.Browser.Session.Identities[0].Password = "", ""
+			script.Config.Browser.Session.JWT = &dsl.BrowserSessionJWT{LoginURL: "https://login.salesforce.com", ClientID: "consumer-key", PrivateKey: "{{secret.sf_jwt_key}}"}
+		}
+		resolver := SecretResolverFunc(func(name string) (string, bool) {
+			if name == "sf_jwt_key" {
+				return "-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----", true
+			}
+			return sessionResolver().Resolve(name)
+		})
+		useSessionFake()
+		sessionFake.mu.Lock()
+		sessionFake.configs, sessionFake.signedOut, sessionFake.refused, sessionFake.started, sessionFake.executed = nil, map[string]bool{"perf1@acme.test": true}, nil, map[string]time.Time{}, nil
+		sessionFake.mu.Unlock()
+		mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "observers", Script: script, VUsers: 1, SecretResolver: resolver}}, Duration: 30 * time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := mge.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		sessionFake.mu.Lock()
+		inits := len(sessionFake.configs)
+		sessionFake.mu.Unlock()
+		if inits != wantInits {
+			t.Errorf("%s: %d browser inits after a lost session, want %d", strategy, inits, wantInits)
+		}
+	}
+}

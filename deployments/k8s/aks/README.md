@@ -197,7 +197,10 @@ database dump in the opposite direction if writes happened on AKS.
   only at trusted targets, or isolate browser generators in a dedicated pool
   with a gVisor/Kata RuntimeClass; where unprivileged user namespaces are
   available, `APEXLOAD_BROWSER_SANDBOX=true` re-enables the Chromium sandbox.
-  Also watch generator memory limits (8 Gi default here).
+  Also watch generator memory limits (8 Gi default here). For observer pools,
+  deploy the `apexload-browser-generator` image instead: it runs Playwright's
+  own Chromium, the build the driver was tested with (see
+  [Browser generator for observer pools](../../README.md#browser-generator-for-observer-pools)).
 
 ## Integration readiness
 

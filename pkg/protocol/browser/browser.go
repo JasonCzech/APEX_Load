@@ -296,7 +296,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		// would provide a bypassable security boundary. Fail closed before launch.
 		return fmt.Errorf("browser execution is disabled while the CI target-host policy is active")
 	}
-	if err := b.openBrowserContext(); err != nil {
+	if err := b.openBrowserContext(ctx); err != nil {
 		return err
 	}
 	b.mu.Lock()

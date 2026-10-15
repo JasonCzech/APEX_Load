@@ -172,6 +172,9 @@ type VUser struct {
 	// sessionStartNotBefore when it may start (browser_session.go).
 	browserIdentity       *browserIdentityBinding
 	sessionStartNotBefore time.Time
+	// browserSessionRenewal asks for a new browser context at the next
+	// iteration, for a lost salesforce_jwt session.
+	browserSessionRenewal bool
 	resultSequence        uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
@@ -605,7 +608,9 @@ func (vu *VUser) Run(ctx context.Context) {
 			_ = vu.refreshImportedCredentialRuntimeValues()
 			// A long browser session hands over each iteration's interactions.
 			handOffBrowserInteractions(vu.Proto, vu.ResultSink, vu.RedactionConfig)
-			if vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
+			// Only a browser observer's lost salesforce_jwt session asks for renewal.
+			renewSession := vu.takeBrowserSessionRenewal()
+			if renewSession || vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
 				if err := vu.resetProtocolForIteration(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown

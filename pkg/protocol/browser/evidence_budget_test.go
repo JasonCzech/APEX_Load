@@ -372,7 +372,7 @@ func TestRefusedContextFailsActionsAsResourceLimit(t *testing.T) {
 	useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 2 << 30, nil }, 1<<30)
 	shortenReadmissionBackoff(t, time.Millisecond)
 	b := &Browser{}
-	if err := b.openBrowserContext(); err != nil {
+	if err := b.openBrowserContext(context.Background()); err != nil {
 		t.Fatalf("an admission refusal failed the session: %v", err)
 	}
 	result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
@@ -456,7 +456,7 @@ func TestRefusedContextRetriesAdmissionAtIterationBoundaries(t *testing.T) {
 	shortenReadmissionBackoff(t, 60*time.Millisecond)
 	logs := captureEvidenceLogs(t)
 	b := &Browser{}
-	if err := b.openBrowserContext(); err != nil {
+	if err := b.openBrowserContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	action := &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}
