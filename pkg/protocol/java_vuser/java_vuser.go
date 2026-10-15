@@ -32,6 +32,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// DefaultActionTimeout bounds one Java action call when the script sets none.
+const DefaultActionTimeout = defaultActionTimeout
+
 const (
 	defaultRunnerCommand   = config.DefaultJavaVuserRunnerCommand
 	defaultMaxProcesses    = config.DefaultJavaVuserMaxProcesses

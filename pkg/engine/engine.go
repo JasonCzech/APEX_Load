@@ -343,10 +343,25 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		}
 	}
 	var cancel context.CancelFunc
+	// A Java script's duration end is graceful: at the duration VUsers stop
+	// starting iterations and leave at their next action boundary, so the
+	// action in flight finishes and end() runs; the hard stop comes only after
+	// the drain. Explicit Stop stays immediate.
+	var durationEnd time.Time
+	drain := time.Duration(0)
 	if e.terminationMode == dsl.TerminationIterations {
 		ctx, cancel = context.WithCancel(ctx)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, e.duration)
+		drain = javaDurationDrain(e.script)
+		durationEnd = time.Now().Add(e.duration)
+		ctx, cancel = context.WithTimeout(ctx, e.duration+drain)
+	}
+	startDurationDrain := func(softStop func()) func() {
+		if drain <= 0 {
+			return func() {}
+		}
+		timer := time.AfterFunc(time.Until(durationEnd), softStop)
+		return func() { timer.Stop() }
 	}
 	e.mu.Lock()
 	e.cancel = cancel
@@ -431,6 +446,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		e.mu.Lock()
 		e.softStop = explicitGracefulStop
 		e.mu.Unlock()
+		defer startDurationDrain(explicitGracefulStop)()
 		defer func() {
 			loopCancel()
 			boundaryCancel()
@@ -466,6 +482,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	e.mu.Lock()
 	e.softStop = explicitGracefulStop
 	e.mu.Unlock()
+	defer startDurationDrain(explicitGracefulStop)()
 	defer func() {
 		e.mu.Lock()
 		e.softStop = nil

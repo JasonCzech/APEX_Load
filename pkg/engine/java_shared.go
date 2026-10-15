@@ -347,6 +347,50 @@ func (g *javaSharedGroup) stage(ctx context.Context, secrets SecretResolver) jav
 	return javaSharedStaged{runs: runs, warnings: warnings, adapters: adapters, jvms: len(hosts)}
 }
 
+// javaDurationDrainMargin lets the result of an action that ends right at its
+// timeout reach the engine before a duration drain cancels it.
+const javaDurationDrainMargin = 2 * time.Second
+
+// javaDurationDrain is how long a Java VUser may finish the action in flight
+// when the run's duration ends, before the run cancels it: the longest timeout
+// any init or action call can have (after which it fails anyway) plus a margin.
+// Each Java iteration is one action() call, so this finishes the iteration and
+// lets end() run on a usable session, as LoadRunner does by default. Other
+// scripts, and legacy one-shot Java actions, stop at once (0).
+func javaDurationDrain(script *dsl.Script) time.Duration {
+	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") || !javaVuserScriptUsesPhaseLifecycle(script) {
+		return 0
+	}
+	fallback := time.Duration(script.Config.JavaVuser.ActionTimeoutMs) * time.Millisecond
+	if fallback <= 0 {
+		fallback = javaadapter.DefaultActionTimeout
+	}
+	fallback = min(fallback, dsl.MaxConfiguredProtocolTimeout)
+	return max(javaLongestActionTimeout(script.Init, fallback), javaLongestActionTimeout(script.Actions, fallback)) + javaDurationDrainMargin
+}
+
+// javaLongestActionTimeout is the longest timeout of the java_vuser_run calls
+// in actions, each falling back to the script's action timeout as the
+// protocol does.
+func javaLongestActionTimeout(actions []dsl.Action, fallback time.Duration) time.Duration {
+	longest := fallback
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+			if value, present := action.Params["timeout_ms"]; present {
+				if timeout, err := protocol.BoundedMilliseconds(value, fallback, dsl.MaxConfiguredProtocolTimeout); err == nil {
+					longest = max(longest, timeout)
+				}
+			}
+		}
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				longest = max(longest, javaLongestActionTimeout(branch.Actions, fallback))
+			}
+		}
+	}
+	return longest
+}
+
 // javaSharedRunVUsers is the most VUsers one runner run holds (a variable
 // only so tests can split small groups).
 var javaSharedRunVUsers = javasidecar.MaxPooledRunVUsers

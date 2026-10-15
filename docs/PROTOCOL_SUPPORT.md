@@ -659,6 +659,17 @@ Attached JARs are supported on a local runner only. A distributed run that carri
 
 With `dedicated_class_loader`, the system classpath contains only the harness. The harness creates a child `URLClassLoader` for the effective script-plus-shared classpath, uses it for class loading and the complete requested lifecycle, and sets and restores the thread context class loader (including the startup worker). Local and sidecar execution create one JVM, `Actions` instance, and loader for each VUser session, retain them across `init`, repeated `action` calls, and `end`, and close them during teardown. Java fields, static state inside that isolated loader, and `lr.save_*` parameters therefore survive between lifecycle calls for the same VUser. This is class-loading isolation inside the runner; it is not a security sandbox.
 
+### End of a duration run
+
+When a run's duration ends, Java VUsers with separate `init`, `action` and
+`end` calls stop starting iterations, finish the call already in flight and
+then run `end`, as LoadRunner does by default. Each iteration is one `action`
+call, so this finishes the iteration. The wait is bounded by the longest Java
+call timeout (`timeout_ms` on the action, else `config.java_vuser.action_timeout_ms`,
+30 seconds by default); a call still running after that is cancelled and that
+VUser's `end` does not run. An explicit stop cancels calls at once, and other
+protocols keep stopping at the duration.
+
 ### Shared JVMs
 
 By default each Java VUser gets its own JVM, so a runner holds at most

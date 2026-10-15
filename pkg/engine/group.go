@@ -157,6 +157,7 @@ type MultiGroupEngine struct {
 	totalCtx               context.Context
 	wg                     *sync.WaitGroup
 	vuserCancels           map[int]context.CancelFunc
+	vuserRetires           map[int]context.CancelFunc // end at the next action boundary; the action in flight finishes
 	vuserGroups            map[int]string
 	vuserRunning           map[int]struct{}
 	vuserStopping          map[int]bool
@@ -759,6 +760,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
+	mge.vuserRetires = make(map[int]context.CancelFunc)
 	mge.vuserGroups = make(map[int]string)
 	mge.vuserStopping = make(map[int]bool)
 	mge.resetVUserIDStateLocked()
@@ -919,6 +921,9 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 				launchCancel()
 				arrivalCancel()
 				mge.rampDownVUsers()
+				// Retired Java VUsers finish their action and run end() before
+				// the hard stop, within their action timeout.
+				mge.awaitDurationDrain(baseCtx)
 				baseCancel()
 				return
 			}
@@ -1747,6 +1752,7 @@ func (mge *MultiGroupEngine) signalVUserChangeLocked() {
 
 func (mge *MultiGroupEngine) unregisterVUserLocked(vuserID int) {
 	delete(mge.vuserCancels, vuserID)
+	delete(mge.vuserRetires, vuserID)
 	delete(mge.vuserGroups, vuserID)
 	delete(mge.vuserRunning, vuserID)
 	delete(mge.vuserStopping, vuserID)
@@ -2116,6 +2122,11 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 		shedCancel()
 		vuCancel()
 	}
+	retireVUser := func() {
+		stopGracefulLink()
+		boundaryCancel()
+		vuCancel()
+	}
 	prepared := &preparedVUser{
 		identity:    identity,
 		group:       group,
@@ -2138,6 +2149,10 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 		return nil, nil
 	}
 	mge.vuserCancels[identity.handle] = cancelVUser
+	if mge.vuserRetires == nil {
+		mge.vuserRetires = make(map[int]context.CancelFunc)
+	}
+	mge.vuserRetires[identity.handle] = retireVUser
 	mge.vuserGroups[identity.handle] = group.Name
 	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()
@@ -2341,11 +2356,13 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 	type rampGroup struct {
 		duration time.Duration
 		cancels  []context.CancelFunc
+		// retire lets a Java VUser finish its action and run end().
+		retire bool
 	}
 	mge.mu.Lock()
 	ramps := make(map[string]*rampGroup, len(mge.groups))
 	for _, group := range mge.groups {
-		ramps[group.Name] = &rampGroup{duration: group.RampDown}
+		ramps[group.Name] = &rampGroup{duration: group.RampDown, retire: javaDurationDrain(group.Script) > 0}
 	}
 	ids := make([]int, 0, len(mge.vuserCancels))
 	for id := range mge.vuserCancels {
@@ -2370,7 +2387,11 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 		group := ramps[mge.vuserGroups[id]]
 		if group != nil {
 			mge.vuserStopping[id] = true
-			group.cancels = append(group.cancels, mge.vuserCancels[id])
+			stop := mge.vuserCancels[id]
+			if retire := mge.vuserRetires[id]; group.retire && retire != nil {
+				stop = retire
+			}
+			group.cancels = append(group.cancels, stop)
 		}
 	}
 	mge.mu.Unlock()
@@ -2418,6 +2439,39 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 		}()
 	}
 	rampsWG.Wait()
+}
+
+// awaitDurationDrain waits after a duration ramp-down until every VUser has
+// left or the longest Java drain has passed, so retired Java VUsers finish
+// their action and run end() before the hard stop. Without a Java group it
+// returns at once; a hard stop ends the wait.
+func (mge *MultiGroupEngine) awaitDurationDrain(ctx context.Context) {
+	drain := time.Duration(0)
+	mge.mu.Lock()
+	for i := range mge.groups {
+		drain = max(drain, javaDurationDrain(mge.groups[i].Script))
+	}
+	mge.mu.Unlock()
+	if drain <= 0 {
+		return
+	}
+	deadline := time.NewTimer(drain)
+	defer deadline.Stop()
+	for {
+		mge.mu.Lock()
+		remaining, changed := len(mge.vuserCancels), mge.vuserChanged
+		mge.mu.Unlock()
+		if remaining == 0 {
+			return
+		}
+		select {
+		case <-changed:
+		case <-deadline.C:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func sleepContext(ctx context.Context, delay time.Duration) bool {
@@ -2632,9 +2686,18 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		shedCancel()
 		vuCancel()
 	}
+	retireVUser := func() {
+		stopGracefulLink()
+		boundaryCancel()
+		vuCancel()
+	}
 
 	mge.mu.Lock()
 	mge.vuserCancels[identity.handle] = cancelVUser
+	if mge.vuserRetires == nil {
+		mge.vuserRetires = make(map[int]context.CancelFunc)
+	}
+	mge.vuserRetires[identity.handle] = retireVUser
 	mge.vuserGroups[identity.handle] = group.Name
 	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()

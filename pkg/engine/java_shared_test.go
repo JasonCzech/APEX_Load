@@ -32,11 +32,16 @@ type sharedPeer struct {
 	features   []string
 	refuse     string // claim_shared refusal code
 	refuseFrom int    // when set, claims after this many are refused
-	ambiguous  bool   // claim_shared answers with an unknown error
-	failPrep   bool
-	prepGate   chan struct{} // when set, prepare waits for it to close
-	renewFail  atomic.Bool
-	failCommit bool
+	// actionDelay holds each action() invocation; one the caller abandons
+	// first is counted in cancelledActions.
+	actionDelay      time.Duration
+	cancelledActions atomic.Int64
+	methods          []string
+	ambiguous        bool // claim_shared answers with an unknown error
+	failPrep         bool
+	prepGate         chan struct{} // when set, prepare waits for it to close
+	renewFail        atomic.Bool
+	failCommit       bool
 }
 
 func (p *sharedPeer) record(op string) {
@@ -143,6 +148,17 @@ func newSharedPeer(t *testing.T, mode string) *sharedPeer {
 			p.mu.Unlock()
 			if !committed {
 				t.Error("user code before commit")
+			}
+			p.mu.Lock()
+			p.methods = append(p.methods, q.Method)
+			p.mu.Unlock()
+			if q.Method == "action" && p.actionDelay > 0 {
+				select {
+				case <-time.After(p.actionDelay):
+				case <-r.Context().Done():
+					p.cancelledActions.Add(1)
+					return
+				}
 			}
 			response.ReservationID, response.HostID, response.SlotID = q.ReservationID, q.HostID, q.SlotID
 			response.Invocation = &javasidecar.PooledInvocationResult{Sequence: q.Sequence, Method: q.Method, EventRequestID: strconv.FormatUint(q.Sequence, 10)}
@@ -494,5 +510,120 @@ func TestJavaSharedGroupAbandonsEveryRunWhenALaterClaimFails(t *testing.T) {
 	}
 	if counts["claim_shared"] != 2 || counts["close"] != 1 || counts["prepare"] != 0 {
 		t.Fatalf("operations %v", p.operations())
+	}
+}
+
+func (p *sharedPeer) methodCount(method string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	count := 0
+	for _, m := range p.methods {
+		if m == method {
+			count++
+		}
+	}
+	return count
+}
+
+func durationJavaScript() *dsl.Script {
+	script := sharedTestScript()
+	script.Config.RunLogic.Iterations = 0
+	return script
+}
+
+// A duration end lets each Java VUser finish the action() it is running and
+// then run end(), as LoadRunner does; it does not cut the call and skip end().
+// Actions outlast the duration, so any action that started was in flight then.
+func TestJavaDurationEndFinishesTheActionAndRunsEnd(t *testing.T) {
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	p.actionDelay = 800 * time.Millisecond
+	e, err := New(Config{Script: durationJavaScript(), VUsers: 2, Duration: 500 * time.Millisecond, TerminationMode: dsl.TerminationDuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJavaDurationDrained(t, p, result.CompletedIterations, result.TotalErrors)
+	if result.TeardownErrors != 0 || result.Duration > 5*time.Second {
+		t.Fatalf("result %+v", result)
+	}
+}
+
+// assertJavaDurationDrained checks that every started action completed and
+// both VUsers ran end(); iterations < 0 skips the iteration count.
+func assertJavaDurationDrained(t *testing.T, p *sharedPeer, iterations, errors int64) {
+	t.Helper()
+	actions := p.methodCount("action")
+	if actions < 1 || iterations >= 0 && iterations != int64(actions) || errors != 0 || p.cancelledActions.Load() != 0 || p.methodCount("end") != 2 {
+		t.Fatalf("actions %d, iterations %d, errors %d, cancelled %d, end %d", actions, iterations, errors, p.cancelledActions.Load(), p.methodCount("end"))
+	}
+}
+
+func TestJavaDurationEndDrainsMultiGroupJavaVUsers(t *testing.T) {
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	p.actionDelay = 800 * time.Millisecond
+	mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "java", Script: durationJavaScript(), VUsers: 2}}, Duration: 500 * time.Millisecond, TerminationMode: dsl.TerminationDuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mge.PreflightRuntime(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := mge.Run(context.Background())
+	if err != nil || result == nil {
+		t.Fatalf("run %+v %v", result, err)
+	}
+	assertJavaDurationDrained(t, p, -1, result.TotalErrors)
+}
+
+// Explicit Stop stays immediate: the action in flight is cancelled.
+func TestJavaExplicitStopStillCancelsTheAction(t *testing.T) {
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	p.actionDelay = 5 * time.Second
+	e, err := New(Config{Script: durationJavaScript(), VUsers: 1, Duration: time.Minute, TerminationMode: dsl.TerminationDuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for p.methodCount("action") == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		e.Stop()
+	}()
+	start := time.Now()
+	if _, err := e.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("explicit stop waited for the action: %s", time.Since(start))
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for p.cancelledActions.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if p.cancelledActions.Load() != 1 {
+		t.Fatalf("cancelled actions %d", p.cancelledActions.Load())
+	}
+}
+
+func TestJavaDurationDrainCoversTheLongestActionTimeout(t *testing.T) {
+	script := durationJavaScript()
+	if got := javaDurationDrain(script); got != javaadapter.DefaultActionTimeout+javaDurationDrainMargin {
+		t.Fatalf("default drain %s", got)
+	}
+	script.Config.JavaVuser.ActionTimeoutMs = 5000
+	script.Actions[0].Params["timeout_ms"] = 90000
+	if got := javaDurationDrain(script); got != 90*time.Second+javaDurationDrainMargin {
+		t.Fatalf("per-action timeout ignored: %s", got)
+	}
+	delete(script.Actions[0].Params, "timeout_ms")
+	if got := javaDurationDrain(script); got != 5*time.Second+javaDurationDrainMargin {
+		t.Fatalf("script timeout ignored: %s", got)
+	}
+	http := &dsl.Script{Protocol: "http", Actions: script.Actions}
+	if javaDurationDrain(http) != 0 || javaDurationDrain(nil) != 0 {
+		t.Fatal("non-Java script drained")
 	}
 }
