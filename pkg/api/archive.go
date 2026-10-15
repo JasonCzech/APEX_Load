@@ -636,6 +636,7 @@ type RunArchiveReport struct {
 	BrowserByDevice                   map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources                  []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	AuraActions                       []AuraActionRollup                     `json:"aura_actions,omitempty"`
+	BrowserVersionSkews               []BrowserVersionSkew                   `json:"browser_version_skews,omitempty"`
 	Web2Migration                     *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
 	OracleDB                          *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
 	ResourcePeaks                     RunArchiveResourcePeaks                `json:"resource_peaks"`

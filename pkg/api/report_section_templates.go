@@ -811,6 +811,18 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 {{else}}<p class="muted">No browser metrics were captured for this run.</p>{{end}}
+{{if .Report.BrowserVersionSkews}}
+<h3>Browser version mismatches</h3>
+<p class="muted">Sessions whose browser's major version differs from the one the Playwright driver was tested with, or from the one the script was recorded with. Behavior and timings can differ between major versions.</p>
+<table>
+  <thead><tr><th>Compared with</th><th>Launched</th><th>Expected</th><th class="num">Sessions</th></tr></thead>
+  <tbody>
+    {{range .Report.BrowserVersionSkews}}
+    <tr><td>{{.SourceLabel}}</td><td>{{.Actual}}</td><td>{{.Expected}}</td><td class="num">{{.Sessions}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
 {{if .Report.AuraActions}}
 <h3>Salesforce Aura actions by transaction</h3>
 <p class="muted">The actions each transaction's steps sent, with the most time first. Time is that of the requests that carried the action: a batch's time counts for every action in it.</p>

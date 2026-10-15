@@ -29,6 +29,17 @@ type RecordingEnvironment struct {
 	Emulated                    bool                     `json:"emulated"`
 	AppliedContext              *RecordingAppliedContext `json:"applied_context,omitempty"`
 	PhysicalDeviceQualification string                   `json:"physical_device_qualification"`
+	// BrowserVersion is the launched browser's version, which replay
+	// compares with its own.
+	BrowserVersion string `json:"browser_version,omitempty"`
+}
+
+// RecordedBrowserVersion is the browser version the recording ran in.
+func (environment *RecordingEnvironment) RecordedBrowserVersion() string {
+	if environment == nil {
+		return ""
+	}
+	return environment.BrowserVersion
 }
 
 // RecordingAppliedContext records explicit context options only. Missing
@@ -91,7 +102,7 @@ func NormalizeRecordingEnvironment(value any, sourceOverride string) *RecordingE
 		}
 		source, _ := input["observation_source"].(string)
 		environment = &RecordingEnvironment{Version: version, Engine: engine, Emulated: emulated, ObservationSource: source}
-		for key, target := range map[string]*string{"device_profile": &environment.DeviceProfile, "profile_browser_family": &environment.ProfileBrowserFamily} {
+		for key, target := range map[string]*string{"device_profile": &environment.DeviceProfile, "profile_browser_family": &environment.ProfileBrowserFamily, "browser_version": &environment.BrowserVersion} {
 			if field, exists := input[key]; exists {
 				text, ok := field.(string)
 				if !ok {
@@ -145,6 +156,9 @@ func NormalizeRecordingEnvironment(value any, sourceOverride string) *RecordingE
 		environment.ObservationSource = sourceOverride
 	}
 	if environment.ObservationSource != RecordingObservationLocal && environment.ObservationSource != RecordingObservationAgent {
+		return nil
+	}
+	if environment.BrowserVersion != "" && !browserprotocol.ValidBrowserVersion(environment.BrowserVersion) {
 		return nil
 	}
 	if len(environment.DeviceProfile) > 64 || len(environment.ProfileBrowserFamily) > 32 || (!environment.Emulated && (environment.DeviceProfile != "" || environment.ProfileBrowserFamily != "")) {
@@ -224,8 +238,11 @@ func recordingNumber(value any) (float64, bool) {
 	return 0, false
 }
 
-func recordingEnvironmentForContext(device *DeviceEmulation, options playwright.BrowserNewContextOptions) *RecordingEnvironment {
+func recordingEnvironmentForContext(device *DeviceEmulation, options playwright.BrowserNewContextOptions, browserVersion string) *RecordingEnvironment {
 	environment := &RecordingEnvironment{Version: RecordingEnvironmentVersion, ObservationSource: RecordingObservationLocal, Engine: "chromium", Emulated: device != nil, PhysicalDeviceQualification: RecordingPhysicalUnverified}
+	if browserprotocol.ValidBrowserVersion(browserVersion) {
+		environment.BrowserVersion = browserVersion
+	}
 	if device != nil && len(device.Name) <= 64 {
 		if profile, known := browserprotocol.LookupDevice(device.Name); known {
 			environment.DeviceProfile, environment.ProfileBrowserFamily = profile.Name, profile.BrowserFamily

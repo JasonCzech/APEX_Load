@@ -503,6 +503,9 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	if browserCfg.Engine != "" {
 		cfg["browser_engine"] = browserCfg.Engine
 	}
+	if version := recordedBrowserVersion(script); version != "" {
+		cfg["browser_recorded_version"] = version
+	}
 	if quic := strings.TrimSpace(browserCfg.QUIC); quic != "" {
 		cfg["browser_quic"] = quic
 	}

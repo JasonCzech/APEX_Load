@@ -333,3 +333,20 @@ func recordedResourceURLs(script *dsl.Script) ([]string, bool) {
 		return []string{}, true
 	}
 }
+
+// recordedBrowserVersion is the browser build a recorded script was recorded
+// with (metadata.import.preserved.recording_environment.browser_version); the
+// browser protocol validates it.
+func recordedBrowserVersion(script *dsl.Script) string {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return ""
+	}
+	switch environment := script.Metadata.Import.Preserved["recording_environment"].(type) {
+	case map[string]any:
+		version, _ := environment["browser_version"].(string)
+		return version
+	case interface{ RecordedBrowserVersion() string }:
+		return environment.RecordedBrowserVersion()
+	}
+	return ""
+}

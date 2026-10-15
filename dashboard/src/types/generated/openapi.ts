@@ -1864,6 +1864,12 @@ export interface operations {
               "url"?: string;
             }>;
             "browser_soft_navigation"?: string;
+            "browser_version_skews"?: Array<{
+              "actual"?: string;
+              "expected"?: string;
+              "sessions"?: number;
+              "source"?: string;
+            }>;
             "by_action"?: Record<string, {
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -73414,6 +73420,12 @@ export interface operations {
               "url"?: string;
             }>;
             "browser_soft_navigation"?: string;
+            "browser_version_skews"?: Array<{
+              "actual": string;
+              "expected": string;
+              "sessions": number;
+              "source": string;
+            }>;
             "by_action": Record<string, {
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{

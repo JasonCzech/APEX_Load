@@ -1821,6 +1821,9 @@ export interface RunArchiveReport {
   browser_resources?: BrowserResourceTiming[]
   // The Salesforce Aura actions each transaction's steps sent, most time first.
   aura_actions?: AuraActionRollup[]
+  // Browser sessions whose browser major version differs from the driver's
+  // tested build or from the recording's.
+  browser_version_skews?: BrowserVersionSkew[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
   // root_cause_view is the generated root cause every report format renders:
@@ -2197,6 +2200,16 @@ export interface AuraActionRollup {
   count: number
   total_ms: number
   errors?: number
+}
+
+// One browser version mismatch the run's sessions reported: the launched
+// browser's version and the one expected by the Playwright driver ('driver')
+// or the recording ('recording').
+export interface BrowserVersionSkew {
+  source: 'driver' | 'recording' | string
+  actual: string
+  expected: string
+  sessions: number
 }
 
 export interface BrowserResourceTiming {

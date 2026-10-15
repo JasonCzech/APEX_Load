@@ -143,6 +143,14 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
 		b.engine = strings.ToLower(strings.TrimSpace(engine))
 	}
+	recorded, _ := config["browser_recorded_version"].(string)
+	if recorded = strings.TrimSpace(recorded); !ValidBrowserVersion(recorded) {
+		recorded = ""
+	}
+	b.mu.Lock()
+	b.recordedBrowserVersion = recorded
+	b.browserVersionChecked, b.browserVersionSkews = false, nil
+	b.mu.Unlock()
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
 	}

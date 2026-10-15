@@ -235,6 +235,16 @@ JMS, Kafka, or other high-density protocol groups.
   actions in `protocol_evidence.aura_actions` (names, the request's time, batch
   size, bytes and response state; never parameters or results), and the run
   report rolls them up by transaction.
+- Each browser session compares its browser's major version with the one the
+  bundled Playwright driver was tested with (its `browsers.json`) and, for a
+  recorded script, with the one it was recorded in (the recording keeps it in
+  `metadata.import.preserved.recording_environment.browser_version`). A
+  mismatch is reported once per session, in the first step's
+  `protocol_evidence.browser_version_skew` with warning code
+  `browser_version_skew` or `browser_recording_version_skew`, and the run
+  report's Browser Metrics section lists each mismatch.
+  `APEXLOAD_BROWSER_VERSION_SKEW=fail` fails a session whose browser does not
+  match the driver's instead.
 - Chromium runs with client metrics enabled also capture browser-process CPU
   and RSS memory through CDP process information plus OS lookup. WebKit process
   attribution remains limited to metrics Playwright exposes reliably.

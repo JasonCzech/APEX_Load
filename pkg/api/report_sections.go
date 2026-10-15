@@ -566,7 +566,7 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 		return d.Report.Manifest != nil && d.Report.Manifest.Continuity != nil && len(d.Report.Manifest.Continuity.Failovers) > 0
 	},
 	"browser": func(d *runArchiveHTMLReportData) bool {
-		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0
+		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0 || len(d.Report.BrowserVersionSkews) > 0
 	},
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
 	"soap": func(d *runArchiveHTMLReportData) bool {
@@ -1240,6 +1240,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					fmt.Sprintf("Average INP: %.1f ms", browser.AvgINPMs),
 					"")
 			}
+			if len(d.Report.BrowserVersionSkews) > 0 {
+				*lines = append(*lines, "Browser version mismatches (the launched browser's major version differs):")
+				for _, skew := range d.Report.BrowserVersionSkews {
+					*lines = append(*lines, fmt.Sprintf("  %s: launched %s, expected %s, %s session(s)", skew.SourceLabel(), skew.Actual, skew.Expected, formatPDFInt(skew.Sessions)))
+				}
+				*lines = append(*lines, "")
+			}
 			if len(d.Report.AuraActions) > 0 {
 				*lines = append(*lines, "Salesforce Aura actions by transaction (time of the requests that carried each):")
 				for _, row := range d.Report.AuraActions {
@@ -1267,6 +1274,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					if err := write("browser", "", row[0], row[1]); err != nil {
 						return err
 					}
+				}
+			}
+			for _, skew := range d.Report.BrowserVersionSkews {
+				value := fmt.Sprintf("launched=%s;expected=%s;sessions=%s", skew.Actual, skew.Expected, formatCSVInt(skew.Sessions))
+				if err := write("browser", "browser_version_skew", skew.Source, value); err != nil {
+					return err
 				}
 			}
 			for _, row := range d.Report.AuraActions {

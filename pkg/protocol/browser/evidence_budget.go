@@ -389,8 +389,10 @@ func (b *Browser) resourceLimitReason() string {
 
 // applyEvidenceOutcome makes a resource-limit close an explicit failure of the
 // affected VUser's action and reports, once per context, evidence that could
-// not be recorded and network tasks dropped before evidence was discarded.
+// not be recorded and network tasks dropped before evidence was discarded. It
+// also reports the session's browser version skews, once.
 func (b *Browser) applyEvidenceOutcome(result *protocol.Result) {
+	b.applyBrowserVersionSkew(result)
 	b.mu.Lock()
 	reason := b.resourceLimit
 	unavailable := ""
@@ -414,6 +416,12 @@ func (b *Browser) applyEvidenceOutcome(result *protocol.Result) {
 		}
 		result.ErrorMessage = fmt.Sprintf("%v (%s): %s", errBrowserResourceLimit, reason, effect)
 		result.WarningCodes = append(result.WarningCodes, "browser_resource_limit_"+reason)
+	}
+	// Evidence the browser recorded itself (Aura actions, a version skew)
+	// keeps the step's warnings, which replay builds evidence from only when
+	// a step has none.
+	if len(result.ProtocolEvidence) > 0 && len(result.WarningCodes) > 0 {
+		result.ProtocolEvidence["warnings"] = append([]string(nil), result.WarningCodes...)
 	}
 }
 

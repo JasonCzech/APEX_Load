@@ -718,6 +718,10 @@ method you used last.
   time of the request that carried it and the state its response gave. Only names are
   kept, never what the actions sent or got back. The run report's **Browser Metrics**
   section lists each transaction's actions, most time first.
+- A browser recording keeps the version of the browser it ran in. A browser session whose
+  browser's major version differs from it, or from the one the bundled Playwright driver
+  was tested with, says so in its first step's evidence, and the run report's **Browser
+  Metrics** section lists each mismatch.
 - A browser recording that starts by signing in to Salesforce (the login page and any
   identity verification) puts those steps in init, tagged `salesforce_auth`, so each
   virtual user signs in once. A recording split at transactions keeps them where you

@@ -5281,6 +5281,20 @@ paths:
                             type: string
                     browser_soft_navigation:
                       type: string
+                    browser_version_skews:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          actual:
+                            type: string
+                          expected:
+                            type: string
+                          sessions:
+                            type: integer
+                            format: int64
+                          source:
+                            type: string
                     by_action:
                       type: object
                       additionalProperties:
@@ -385507,6 +385521,25 @@ paths:
                         - timestamp
                   browser_soft_navigation:
                     type: string
+                  browser_version_skews:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actual:
+                          type: string
+                        expected:
+                          type: string
+                        sessions:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - actual
+                        - expected
+                        - sessions
+                        - source
                   by_action:
                     type: object
                     additionalProperties:

@@ -26,11 +26,15 @@ func TestRecordingEnvironmentNormalizationAndDetachedRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	claim["physical_device_qualification"] = "verified"
+	claim["browser_version"] = "149.0.7827.55"
 	claim["user_agent"] = strings.Repeat("private-claim", 1000)
 	claim["unknown"] = claim // Unknown recursive data is never traversed.
 	got := NormalizeRecordingEnvironment(claim, RecordingObservationAgent)
 	if got == nil || got.ObservationSource != RecordingObservationAgent || got.PhysicalDeviceQualification != RecordingPhysicalUnverified || got.Engine != "chromium" || got.ProfileBrowserFamily != "webkit" {
 		t.Fatal("bridge normalization lost actual engine versus preset intent distinction")
+	}
+	if got.BrowserVersion != "149.0.7827.55" || got.RecordedBrowserVersion() != "149.0.7827.55" {
+		t.Fatalf("browser version = %q", got.BrowserVersion)
 	}
 	got.Engine = "firefox"
 	*got.AppliedContext.ViewportWidth = 1
@@ -74,6 +78,7 @@ func TestRecordingEnvironmentRejectsMalformedAndResourceClaims(t *testing.T) {
 			*v.AppliedContext.DeviceScaleFactor = 4
 		}},
 		{"nonfinite scale", func(v *RecordingEnvironment) { *v.AppliedContext.DeviceScaleFactor = math.NaN() }},
+		{"browser version text", func(v *RecordingEnvironment) { v.BrowserVersion = "HeadlessChrome/149.0" }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

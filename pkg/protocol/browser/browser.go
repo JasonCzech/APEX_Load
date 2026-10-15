@@ -117,6 +117,12 @@ type Browser struct {
 	// metricsMark is the document the last page-metrics capture measured
 	// (runtime_metrics.go), guarded by mu.
 	metricsMark pageMetricsMark
+	// recordedBrowserVersion is the browser build the script was recorded
+	// with; browserVersionChecked and browserVersionSkews are the session's
+	// version check and its unreported skews (version_skew.go), guarded by mu.
+	recordedBrowserVersion string
+	browserVersionChecked  bool
+	browserVersionSkews    []browserVersionSkew
 
 	mu sync.Mutex
 	// refusedPage is the page whose document at refusedURL the site refused,

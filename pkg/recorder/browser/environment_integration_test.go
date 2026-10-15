@@ -44,6 +44,9 @@ func TestRecorderEnvironmentDescribesActualLoopbackContext(t *testing.T) {
 			if receipt == nil || receipt.Engine != recorder.browser.BrowserType().Name() || receipt.ObservationSource != RecordingObservationLocal || receipt.PhysicalDeviceQualification != RecordingPhysicalUnverified {
 				t.Fatal("receipt does not describe successful actual browser launch")
 			}
+			if receipt.BrowserVersion == "" || receipt.BrowserVersion != recorder.browser.Version() {
+				t.Fatalf("receipt browser version = %q, launched %q", receipt.BrowserVersion, recorder.browser.Version())
+			}
 			if name == "" {
 				if receipt.Emulated || receipt.AppliedContext != nil {
 					t.Fatal("default context fabricated explicitly applied settings")

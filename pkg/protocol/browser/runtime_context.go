@@ -144,6 +144,9 @@ func (b *Browser) openAdmittedBrowserContext() error {
 	if err != nil {
 		return errors.Join(err, b.discardHARWorkingFile())
 	}
+	if err := b.checkBrowserVersion(pwBrowser.Version()); err != nil {
+		return errors.Join(err, b.discardHARWorkingFile())
+	}
 	b.mu.Lock()
 	owner := b.harOwner
 	b.mu.Unlock()

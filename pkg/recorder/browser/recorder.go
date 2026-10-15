@@ -454,7 +454,7 @@ func (r *Recorder) Start() error {
 		}
 		contextOptions.StorageState = state
 	}
-	observedEnvironment := recordingEnvironmentForContext(r.opts.Device, contextOptions)
+	observedEnvironment := recordingEnvironmentForContext(r.opts.Device, contextOptions, browser.Version())
 	context, err := browser.NewContext(contextOptions)
 	if err != nil {
 		r.cleanup()
