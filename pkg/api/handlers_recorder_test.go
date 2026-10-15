@@ -1085,3 +1085,73 @@ func TestHandleExportRecordingRawRequiresEditorRole(t *testing.T) {
 		t.Fatalf("raw viewer session status = %d, want 403 body=%s", rawSessionResp.Code, rawSessionResp.Body.String())
 	}
 }
+
+func TestHandleRecordingMarkersNameTransactionsWhileRecording(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	if _, err := server.recorder.StartSession("rec-markers", "Device sign-in", recorder.SessionFilters{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	post := func(path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+	type markerResponse struct {
+		Session struct {
+			Markers          []json.RawMessage `json:"markers"`
+			OpenTransactions []string          `json:"open_transactions"`
+		} `json:"session"`
+		Marker struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+			Text string `json:"text"`
+		} `json:"marker"`
+	}
+	decode := func(resp *httptest.ResponseRecorder) markerResponse {
+		t.Helper()
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+		}
+		var payload markerResponse
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	if resp := post("/api/v1/recorder/missing/transactions/start", `{"name":"Login"}`); resp.Code != http.StatusNotFound {
+		t.Fatalf("unknown session status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if resp := post("/api/v1/recorder/rec-markers/transactions/start", `{"name":" "}`); resp.Code != http.StatusBadRequest {
+		t.Fatalf("unnamed start status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	started := decode(post("/api/v1/recorder/rec-markers/transactions/start", `{"name":"Login"}`))
+	if started.Marker.Kind != "transaction_start" || started.Marker.Name != "Login" || len(started.Session.OpenTransactions) != 1 {
+		t.Fatalf("start = %#v", started)
+	}
+	if noted := decode(post("/api/v1/recorder/rec-markers/notes", `{"text":"approve on the device"}`)); noted.Marker.Text != "approve on the device" {
+		t.Fatalf("note = %#v", noted)
+	}
+	ended := decode(post("/api/v1/recorder/rec-markers/transactions/end", ""))
+	if ended.Marker.Kind != "transaction_end" || ended.Marker.Name != "Login" || len(ended.Session.OpenTransactions) != 0 || len(ended.Session.Markers) != 3 {
+		t.Fatalf("end = %#v", ended)
+	}
+
+	if resp := post("/api/v1/recorder/rec-markers/stop", ""); resp.Code != http.StatusOK {
+		t.Fatalf("stop status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if resp := post("/api/v1/recorder/rec-markers/notes", `{"text":"late"}`); resp.Code != http.StatusConflict {
+		t.Fatalf("note after stop status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	summary := httptest.NewRecorder()
+	server.mux.ServeHTTP(summary, httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-markers", nil))
+	var session recorder.Session
+	if err := json.Unmarshal(summary.Body.Bytes(), &session); err != nil || len(session.Markers) != 3 {
+		t.Fatalf("summary markers = %#v, err %v body=%s", session.Markers, err, summary.Body.String())
+	}
+}

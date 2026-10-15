@@ -46,6 +46,10 @@ type RecorderSession = {
   // Requests the proxy refused for a private target, and the latest such host.
   rejected_requests?: number
   last_rejected_host?: string
+  // Transactions and notes the tester marked while recording, and the
+  // transactions still open.
+  markers?: RecorderMarker[]
+  open_transactions?: string[]
   filters: {
     exclude_static: boolean
     exclude_hosts?: string[]
@@ -53,6 +57,20 @@ type RecorderSession = {
     capture_cookies?: boolean
     recording_profile_id?: string
   }
+}
+
+type RecorderMarker = {
+  kind: 'transaction_start' | 'transaction_end' | 'note'
+  name?: string
+  text?: string
+  timestamp: string
+  // Inserted by the recorder: a transaction still open when it stopped.
+  auto?: boolean
+}
+
+type RecorderMarkerResponse = {
+  session: RecorderSession
+  marker: RecorderMarker
 }
 
 type RecorderActiveStatus = {
@@ -133,6 +151,25 @@ export function useRecorderApi() {
 
   const resumeRecording = useCallback((id: string) => request<RecorderSession>(`/recorder/${id}/resume`, { method: 'POST' }), [])
 
+  const startRecordingTransaction = useCallback(
+    (id: string, name: string) =>
+      request<RecorderMarkerResponse>(`/recorder/${id}/transactions/start`, { method: 'POST', body: JSON.stringify({ name }) }),
+    [],
+  )
+
+  // Without a name, ends the innermost open transaction.
+  const endRecordingTransaction = useCallback(
+    (id: string, name?: string) =>
+      request<RecorderMarkerResponse>(`/recorder/${id}/transactions/end`, { method: 'POST', body: JSON.stringify({ name }) }),
+    [],
+  )
+
+  const addRecordingNote = useCallback(
+    (id: string, text: string) =>
+      request<RecorderMarkerResponse>(`/recorder/${id}/notes`, { method: 'POST', body: JSON.stringify({ text }) }),
+    [],
+  )
+
   const getRecording = useCallback(
     (id: string, params?: { includeRequests?: boolean; since?: number; tail?: number }) => {
       const query = new URLSearchParams()
@@ -201,6 +238,9 @@ export function useRecorderApi() {
       stopRecording,
       pauseRecording,
       resumeRecording,
+      startRecordingTransaction,
+      endRecordingTransaction,
+      addRecordingNote,
       getRecording,
       listRecordings,
       deleteRecording,
@@ -216,6 +256,9 @@ export function useRecorderApi() {
       stopRecording,
       pauseRecording,
       resumeRecording,
+      startRecordingTransaction,
+      endRecordingTransaction,
+      addRecordingNote,
       getRecording,
       listRecordings,
       deleteRecording,

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
@@ -195,29 +196,14 @@ type Annotation struct {
 
 // Marker kinds inserted from the control panel (or in-page toolbar).
 const (
-	MarkerTransactionStart     = "transaction_start"
-	MarkerTransactionEnd       = "transaction_end"
-	MarkerNote                 = "note"
-	maxBrowserUserMarkers      = 10_000
-	maxBrowserTotalMarkers     = 20_000
-	maxBrowserMarkerName       = 4 << 10
-	maxBrowserMarkerText       = 16 << 10
-	maxBrowserUserMarkerBytes  = 16 << 20
-	maxBrowserTotalMarkerBytes = 32 << 20
+	MarkerTransactionStart = marker.KindTransactionStart
+	MarkerTransactionEnd   = marker.KindTransactionEnd
+	MarkerNote             = marker.KindNote
 )
 
-// Marker is a user-inserted annotation in the recording timeline: transaction
-// boundaries convert to source_transaction actions, notes attach to the next
-// converted action's metadata.
-type Marker struct {
-	Kind      string    `json:"kind"`
-	Name      string    `json:"name,omitempty"` // transaction name
-	Text      string    `json:"text,omitempty"` // note text
-	Timestamp time.Time `json:"timestamp"`
-	// Auto marks markers the recorder inserted itself (open transactions
-	// closed at stop).
-	Auto bool `json:"auto,omitempty"`
-}
+// Marker is a user-inserted annotation in the recording timeline, shared with
+// the proxy recorder.
+type Marker = marker.Marker
 
 // PauseInterval records one server-side pause window. To is zero while the
 // pause is still open; Stop closes any open interval.
@@ -638,105 +624,29 @@ func promotedSelectorKind(sel string) string {
 // AddMarker validates and appends a marker, maintaining open-transaction
 // state. Not goroutine-safe: the Recorder calls it under its mutex; other
 // callers (test fakes) must synchronize themselves.
-func (s *Session) AddMarker(marker Marker) (Marker, error) {
-	marker.Kind = strings.TrimSpace(marker.Kind)
-	marker.Name = strings.TrimSpace(marker.Name)
-	marker.Text = strings.TrimSpace(marker.Text)
-	entryLimit := maxBrowserUserMarkers
-	byteLimit := maxBrowserUserMarkerBytes
-	if marker.Auto {
-		entryLimit = maxBrowserTotalMarkers
-		byteLimit = maxBrowserTotalMarkerBytes
-	}
-	if len(s.Markers) >= entryLimit {
-		return Marker{}, fmt.Errorf("recording marker limit reached")
-	}
-	if len(marker.Name) > maxBrowserMarkerName {
-		return Marker{}, fmt.Errorf("marker name exceeds %d bytes", maxBrowserMarkerName)
-	}
-	if len(marker.Text) > maxBrowserMarkerText {
-		return Marker{}, fmt.Errorf("marker text exceeds %d bytes", maxBrowserMarkerText)
-	}
-	markerBytes := len(marker.Kind) + len(marker.Name) + len(marker.Text)
-	if markerBytes > byteLimit-s.retainedMarkerBytes {
-		return Marker{}, fmt.Errorf("recording marker byte limit reached")
-	}
-	switch marker.Kind {
-	case MarkerTransactionStart:
-		if marker.Name == "" {
-			return Marker{}, fmt.Errorf("transaction name is required")
-		}
-		for _, open := range s.OpenTransactions {
-			if open == marker.Name {
-				return Marker{}, fmt.Errorf("transaction %q is already open", marker.Name)
-			}
-		}
-		s.OpenTransactions = append(s.OpenTransactions, marker.Name)
-	case MarkerTransactionEnd:
-		if len(s.OpenTransactions) == 0 {
-			return Marker{}, fmt.Errorf("no transaction is open")
-		}
-		if marker.Name == "" {
-			marker.Name = s.OpenTransactions[len(s.OpenTransactions)-1]
-		}
-		index := -1
-		for i, open := range s.OpenTransactions {
-			if open == marker.Name {
-				index = i
-			}
-		}
-		if index < 0 {
-			return Marker{}, fmt.Errorf("transaction %q is not open", marker.Name)
-		}
-		s.OpenTransactions = append(s.OpenTransactions[:index], s.OpenTransactions[index+1:]...)
-	case MarkerNote:
-		if strings.TrimSpace(marker.Text) == "" {
-			return Marker{}, fmt.Errorf("note text is required")
-		}
-	default:
-		return Marker{}, fmt.Errorf("unsupported marker kind %q", marker.Kind)
-	}
-	if marker.Timestamp.IsZero() {
-		marker.Timestamp = time.Now()
-	}
-	s.Markers = append(s.Markers, marker)
-	s.retainedMarkerBytes += markerBytes
-	return marker, nil
+func (s *Session) AddMarker(m Marker) (Marker, error) {
+	book := s.markerBook()
+	added, err := book.Add(m, marker.DefaultLimits)
+	s.setMarkerBook(book)
+	return added, err
+}
+
+func (s *Session) markerBook() marker.Book {
+	return marker.Book{Markers: s.Markers, OpenTransactions: s.OpenTransactions, RetainedBytes: s.retainedMarkerBytes}
+}
+
+func (s *Session) setMarkerBook(book marker.Book) {
+	s.Markers, s.OpenTransactions, s.retainedMarkerBytes = book.Markers, book.OpenTransactions, book.RetainedBytes
 }
 
 // TransactionWindow is one transaction marked while recording, from its start
-// marker to its end marker. End is zero when the recording ended with it open.
-// StartOrder and EndOrder place its markers in the recorded marker sequence,
-// which orders markers that fall between the same two requests.
-type TransactionWindow struct {
-	Name       string
-	Start      time.Time
-	End        time.Time
-	StartOrder int
-	EndOrder   int
-}
+// marker to its end marker (see marker.Window).
+type TransactionWindow = marker.Window
 
 // TransactionWindows pairs the session's transaction markers in recorded
 // order: an end closes the latest open transaction of its name.
 func (s *Session) TransactionWindows() []TransactionWindow {
-	markers := slices.Clone(s.Markers)
-	slices.SortStableFunc(markers, func(a, b Marker) int { return a.Timestamp.Compare(b.Timestamp) })
-	var windows []TransactionWindow
-	open := map[string][]int{}
-	for order, marker := range markers {
-		switch marker.Kind {
-		case MarkerTransactionStart:
-			open[marker.Name] = append(open[marker.Name], len(windows))
-			windows = append(windows, TransactionWindow{Name: marker.Name, Start: marker.Timestamp, StartOrder: order})
-		case MarkerTransactionEnd:
-			if stack := open[marker.Name]; len(stack) > 0 {
-				window := &windows[stack[len(stack)-1]]
-				window.End, window.EndOrder = marker.Timestamp, order
-				open[marker.Name] = stack[:len(stack)-1]
-			}
-		}
-	}
-	return windows
+	return marker.Windows(s.Markers)
 }
 
 func sameElement(a, b *selector.ElementMetadata) bool {

@@ -2,6 +2,7 @@ package sample
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -38,6 +39,46 @@ func transactionAt(windows []TransactionWindow, ex exchange) string {
 		}
 	}
 	return name
+}
+
+// TimedNote is a note written while recording, at the time it was written.
+type TimedNote struct {
+	Text string
+	At   time.Time
+}
+
+// placeNotes assigns each note to the first exchange that started at or after
+// it, or to the last one to start when it was written after every request, as
+// the browser script attaches a note to its next action. It returns the joined
+// notes by exchange index, and how many notes it could not place because no
+// exchange has a start time.
+func placeNotes(notes []TimedNote, exchanges []exchange) (map[int]string, int) {
+	if len(notes) == 0 {
+		return nil, 0
+	}
+	timed := make([]int, 0, len(exchanges))
+	for index, ex := range exchanges {
+		if ex.HasStartedAt {
+			timed = append(timed, index)
+		}
+	}
+	if len(timed) == 0 {
+		return nil, len(notes)
+	}
+	sort.SliceStable(timed, func(i, j int) bool { return exchanges[timed[i]].StartedAt.Before(exchanges[timed[j]].StartedAt) })
+	ordered := slices.Clone(notes)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].At.Before(ordered[j].At) })
+	texts := map[int][]string{}
+	for _, note := range ordered {
+		next := sort.Search(len(timed), func(i int) bool { return !exchanges[timed[i]].StartedAt.Before(note.At) })
+		next = min(next, len(timed)-1)
+		texts[timed[next]] = append(texts[timed[next]], note.Text)
+	}
+	placed := make(map[int]string, len(texts))
+	for index, list := range texts {
+		placed[index] = strings.Join(list, "; ")
+	}
+	return placed, 0
 }
 
 // insertTransactionMarkers gives a converted recording the start and end

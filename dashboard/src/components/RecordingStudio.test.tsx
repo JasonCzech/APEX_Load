@@ -56,6 +56,9 @@ const apiMock = {
   stopRecording: vi.fn(),
   pauseRecording: vi.fn(),
   resumeRecording: vi.fn(),
+  startRecordingTransaction: vi.fn(),
+  endRecordingTransaction: vi.fn(),
+  addRecordingNote: vi.fn(),
   deleteRecording: vi.fn(),
   updateRecordedRequest: vi.fn(),
   startBrowserRecording: vi.fn(),
@@ -5006,6 +5009,98 @@ describe("RecordingStudio", () => {
       (button) => button.textContent?.trim() === "Stop recording",
     );
     expect(stop?.className).toBe("btn btn-secondary rec-stop-btn");
+  });
+
+  it("names transactions and notes on a live proxy recording", async () => {
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    const live = {
+      id: "rec-device",
+      name: "Device sign-in",
+      status: "recording",
+      request_count: 1,
+      started_at: startedAt,
+      filters: { exclude_static: true },
+    };
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: "127.0.0.1:8081",
+      proxy: { available: true, running: true, private_targets_allowed: true },
+      local_client: true,
+      active: { id: live.id, name: live.name, status: "recording", request_count: 1, started_at: startedAt },
+      browser: { availability: { available: true }, active: null },
+    });
+    apiMock.getRecording.mockResolvedValue({
+      ...live,
+      requests: [{ seq: 1, method: "GET", url: "https://login.example.com/authorize", path: "/authorize", host: "login.example.com", status_code: 200, response_time_ms: 12, content_type: "text/html", body: "", think_time_ms: 0, is_static: false, timestamp: startedAt }],
+    });
+    // Marker responses are summaries: no requests, and no open_transactions once none is open.
+    apiMock.startRecordingTransaction.mockResolvedValue({
+      session: { ...live, open_transactions: ["Login"] },
+      marker: { kind: "transaction_start", name: "Login", timestamp: startedAt },
+    });
+    apiMock.endRecordingTransaction.mockResolvedValue({
+      session: live,
+      marker: { kind: "transaction_end", name: "Login", timestamp: startedAt },
+    });
+    apiMock.addRecordingNote.mockResolvedValue({
+      session: live,
+      marker: { kind: "note", text: "approve on the device", timestamp: startedAt },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const typeInto = async (label: string, value: string) => {
+      const input = container.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      return input;
+    };
+    const click = async (text: string) => {
+      await act(async () => {
+        Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === text)!.click();
+      });
+      await flushPromises();
+    };
+
+    await click("Start transaction");
+    expect(apiMock.startRecordingTransaction).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Enter a transaction name");
+
+    const nameInput = await typeInto("Transaction name", " Login ");
+    await click("Start transaction");
+    expect(apiMock.startRecordingTransaction).toHaveBeenCalledWith("rec-device", "Login");
+    expect(nameInput.value).toBe("");
+    expect(container.querySelector('[data-testid="open-transaction"]')?.textContent).toContain("Login");
+    // The live feed keeps its requests across the summary response.
+    expect(container.querySelector(".rec-live-feed")?.textContent).toContain("/authorize");
+
+    await click("End transaction");
+    expect(apiMock.endRecordingTransaction).toHaveBeenCalledWith("rec-device", "Login");
+    expect(container.querySelector('[data-testid="open-transaction"]')).toBeNull();
+
+    await typeInto("Note", "approve on the device");
+    await click("Add note");
+    expect(apiMock.addRecordingNote).toHaveBeenCalledWith("rec-device", "approve on the device");
+    expect(container.textContent).toContain("Note added — it will attach to the next recorded request");
+
+    // A transaction still open at the stop is ended there, and the tester is told.
+    apiMock.stopRecording.mockResolvedValue({
+      ...live,
+      status: "stopped",
+      markers: [
+        { kind: "transaction_start", name: "Search", timestamp: startedAt },
+        { kind: "transaction_end", name: "Search", timestamp: startedAt, auto: true },
+      ],
+    });
+    await click("Stop recording");
+    expect(apiMock.stopRecording).toHaveBeenCalledWith("rec-device");
+    expect(container.textContent).toContain('Ended "Search", still open at the stop');
   });
 
   it("labels the proxy recording fields for assistive technology", async () => {

@@ -8240,6 +8240,61 @@ export interface operations {
       };
     };
   };
+  "handleAddRecordingNote": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          "name"?: string;
+          "text"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleAdjustDuration": {
     parameters: {
       "path": {
@@ -54515,6 +54570,61 @@ export interface operations {
       };
     };
   };
+  "handleEndRecordingTransaction": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          "name"?: string;
+          "text"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleEnterpriseArchiveSupportMatrix": {
     parameters?: never;
     requestBody?: never;
@@ -66467,7 +66577,9 @@ export interface operations {
             "id": string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
+            "markers"?: Array<Record<string, unknown>>;
             "name": string;
+            "open_transactions"?: Array<string>;
             "project_id"?: string;
             "rejected_requests"?: number;
             "request_count"?: number;
@@ -102596,7 +102708,9 @@ export interface operations {
             "id": string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
+            "markers"?: Array<Record<string, unknown>>;
             "name": string;
+            "open_transactions"?: Array<string>;
             "project_id"?: string;
             "rejected_requests"?: number;
             "request_count"?: number;
@@ -138371,7 +138485,9 @@ export interface operations {
             "id": string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
+            "markers"?: Array<Record<string, unknown>>;
             "name": string;
+            "open_transactions"?: Array<string>;
             "project_id"?: string;
             "rejected_requests"?: number;
             "request_count"?: number;
@@ -148215,6 +148331,61 @@ export interface operations {
       };
     };
   };
+  "handleStartRecordingTransaction": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          "name"?: string;
+          "text"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleStartReplaySessionDraftScript": {
     parameters?: never;
     requestBody?: {
@@ -156823,7 +156994,9 @@ export interface operations {
             "id": string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
+            "markers"?: Array<Record<string, unknown>>;
             "name": string;
+            "open_transactions"?: Array<string>;
             "project_id"?: string;
             "rejected_requests"?: number;
             "request_count"?: number;
@@ -181034,6 +181207,9 @@ export interface paths {
   "/api/v1/recorder/{id}/export": {
     "get": operations["handleExportRecording"];
   };
+  "/api/v1/recorder/{id}/notes": {
+    "post": operations["handleAddRecordingNote"];
+  };
   "/api/v1/recorder/{id}/pause": {
     "post": operations["handlePauseRecording"];
   };
@@ -181045,6 +181221,12 @@ export interface paths {
   };
   "/api/v1/recorder/{id}/stop": {
     "post": operations["handleStopRecording"];
+  };
+  "/api/v1/recorder/{id}/transactions/end": {
+    "post": operations["handleEndRecordingTransaction"];
+  };
+  "/api/v1/recorder/{id}/transactions/start": {
+    "post": operations["handleStartRecordingTransaction"];
   };
   "/api/v1/releases/{id}": {
     "get": operations["handleGetRelease"];

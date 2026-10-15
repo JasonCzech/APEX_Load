@@ -27,6 +27,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/internal/hostpattern"
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
@@ -130,8 +131,13 @@ type Session struct {
 	Truncated                bool              `json:"truncated,omitempty"`
 	Warnings                 []string          `json:"warnings,omitempty"`
 	Filters                  SessionFilters    `json:"filters"`
+	// Markers are the transactions and notes the operator marked while
+	// recording; OpenTransactions are those not yet ended.
+	Markers          []marker.Marker `json:"markers,omitempty"`
+	OpenTransactions []string        `json:"open_transactions,omitempty"`
 
 	mu                    sync.Mutex
+	markerBytes           int
 	seq                   int
 	lastReqTime           time.Time
 	lastReqEnd            time.Time
@@ -482,6 +488,9 @@ func (r *Recorder) StopSession(id string) (*Session, error) {
 	now := time.Now()
 	s.Status = "stopped"
 	s.StoppedAt = &now
+	book := s.markerBookLocked()
+	s.Warnings = append(s.Warnings, boundedStopWarnings(book.CloseOpen(now, marker.DefaultLimits))...)
+	s.setMarkerBookLocked(book)
 	reqCount := len(s.Requests)
 	s.mu.Unlock()
 
@@ -538,6 +547,70 @@ func (r *Recorder) ResumeSession(id string) (*Session, error) {
 		s.notify(SessionEvent{Type: "recording_resumed", SessionID: s.ID, Session: s.snapshot()})
 	}
 	return s, nil
+}
+
+// maxStopMarkerWarnings is how many transactions still open at a stop the
+// session's warnings name one by one; the rest are counted in one more.
+const maxStopMarkerWarnings = 20
+
+func boundedStopWarnings(warnings []string) []string {
+	if len(warnings) <= maxStopMarkerWarnings {
+		return warnings
+	}
+	more := len(warnings) - maxStopMarkerWarnings
+	return append(warnings[:maxStopMarkerWarnings:maxStopMarkerWarnings],
+		fmt.Sprintf("%d more transaction(s) were still open and were closed automatically when the recording stopped", more))
+}
+
+// Errors AddMarker returns for a session it cannot mark.
+var (
+	ErrSessionNotFound = errors.New("recording session not found")
+	ErrSessionNotLive  = errors.New("recording session is not recording or paused")
+)
+
+// AddMarker records a transaction start or end, or a note, on a recording or
+// paused session. Requests are later placed in the transaction that was open
+// when they started.
+func (r *Recorder) AddMarker(sessionID string, m marker.Marker) (*Session, marker.Marker, error) {
+	r.mu.RLock()
+	s, ok := r.sessions[sessionID]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, marker.Marker{}, fmt.Errorf("%w: %q", ErrSessionNotFound, sessionID)
+	}
+	s.mu.Lock()
+	if s.Status != "recording" && s.Status != "paused" {
+		status := s.Status
+		s.mu.Unlock()
+		return nil, marker.Marker{}, fmt.Errorf("%w (status: %s)", ErrSessionNotLive, status)
+	}
+	m.Auto = false
+	book := s.markerBookLocked()
+	added, err := book.Add(m, marker.DefaultLimits)
+	s.setMarkerBookLocked(book)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, marker.Marker{}, err
+	}
+	snapshot := s.summarySnapshot()
+	if s.notify != nil {
+		s.notify(SessionEvent{Type: "recording_marker", SessionID: s.ID, Session: snapshot})
+	}
+	return snapshot, added, nil
+}
+
+func (s *Session) markerBookLocked() marker.Book {
+	return marker.Book{Markers: s.Markers, OpenTransactions: s.OpenTransactions, RetainedBytes: s.markerBytes}
+}
+
+func (s *Session) setMarkerBookLocked(book marker.Book) {
+	s.Markers, s.OpenTransactions, s.markerBytes = book.Markers, book.OpenTransactions, book.RetainedBytes
+}
+
+// TransactionWindows pairs the session's transaction markers. Call it on a
+// snapshot, or with the session's lock held.
+func (s *Session) TransactionWindows() []marker.Window {
+	return marker.Windows(s.Markers)
 }
 
 func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate) (*RecordedRequest, error) {
@@ -657,6 +730,8 @@ func (s *Session) snapshotWindow(includeRequests bool, sinceSeq int, tail int) *
 		Truncated:                s.Truncated,
 		Warnings:                 append([]string(nil), s.Warnings...),
 		Filters:                  s.Filters,
+		Markers:                  append([]marker.Marker(nil), s.Markers...),
+		OpenTransactions:         append([]string(nil), s.OpenTransactions...),
 	}
 	if includeRequests && len(s.Requests) > 0 {
 		start := 0

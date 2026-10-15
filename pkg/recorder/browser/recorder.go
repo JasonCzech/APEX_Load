@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/pwshutdown"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -1562,23 +1563,11 @@ func (r *Recorder) Stop() (*Session, error) {
 	if n := len(r.session.PauseIntervals); n > 0 && r.session.PauseIntervals[n-1].To.IsZero() {
 		r.session.PauseIntervals[n-1].To = r.session.StoppedAt
 	}
-	openTransactions := append([]string(nil), r.session.OpenTransactions...)
-	for i := len(openTransactions) - 1; i >= 0; i-- {
-		name := openTransactions[i]
-		_, markerErr := r.session.AddMarker(Marker{
-			Kind:      MarkerTransactionEnd,
-			Name:      name,
-			Timestamp: r.session.StoppedAt,
-			Auto:      true,
-		})
-		if markerErr != nil {
-			r.appendWarningLocked(fmt.Sprintf("transaction %q could not be auto-closed: %v", name, markerErr))
-			continue
-		}
-		r.appendWarningLocked(fmt.Sprintf(
-			"transaction %q was still open and was closed automatically when the recording stopped", name))
+	book := r.session.markerBook()
+	for _, warning := range book.CloseOpen(r.session.StoppedAt, marker.DefaultLimits) {
+		r.appendWarningLocked(warning)
 	}
-	r.session.OpenTransactions = nil
+	r.session.setMarkerBook(book)
 	if r.harCapturePath != "" {
 		if r.harLimitExceeded {
 			_ = os.Remove(r.harCapturePath)

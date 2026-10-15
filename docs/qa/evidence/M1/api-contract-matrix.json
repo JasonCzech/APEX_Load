@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 759,
+    "routes": 762,
     "public": 31,
-    "protected": 728,
-    "rbac": 723,
+    "protected": 731,
+    "rbac": 726,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 759,
+    "green": 762,
     "partial": 0,
     "missing": 0
   },
@@ -9427,6 +9427,31 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/recorder/{id}/notes",
+      "operation_id": "handleAddRecordingNote",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "route is registered with handler-specific auth middleware",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/recorder/{id}/pause",
       "operation_id": "handlePauseRecording",
       "public": false,
@@ -9504,6 +9529,56 @@
       "method": "POST",
       "path": "/api/v1/recorder/{id}/stop",
       "operation_id": "handleStopRecording",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "route is registered with handler-specific auth middleware",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/transactions/end",
+      "operation_id": "handleEndRecordingTransaction",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "route is registered with handler-specific auth middleware",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/transactions/start",
+      "operation_id": "handleStartRecordingTransaction",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

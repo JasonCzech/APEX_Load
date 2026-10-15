@@ -27,6 +27,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -2140,10 +2141,14 @@ func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, in
 	httpName += " (HTTP)"
 	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile, HTTPVersionMode: scriptOptions.HTTPVersionMode}
 	// The HTTP script times the transactions marked while recording with the
-	// browser script's start and end markers, and each request carries the
-	// transaction that was open when it started.
+	// browser script's start and end markers, each request carries the
+	// transaction that was open when it started, and a note attaches to the
+	// request after it, as in the browser script.
 	for _, window := range artifact.TransactionWindows() {
 		options.Transactions = append(options.Transactions, sample.TransactionWindow(window))
+	}
+	for _, note := range marker.Notes(artifact.Markers) {
+		options.Notes = append(options.Notes, sample.TimedNote(note))
 	}
 	var levelNotes []string
 	switch strings.ToLower(strings.TrimSpace(level)) {

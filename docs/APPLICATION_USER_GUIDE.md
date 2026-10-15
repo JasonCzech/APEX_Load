@@ -344,11 +344,11 @@ match the measurement scope you need.
 
 Transactions you mark while recording, and spans you wrap in a transaction in the
 editor, use the same marker pair: the call's first argument names the transaction
-and the end takes `LR_AUTO`, so a failed step inside fails the transaction. The
-HTTP script generated from a browser recording does not get the markers: each
-request is tagged with the transaction that was open when it started, which
-groups its results by transaction in debug and analysis but does not time the
-transaction.
+and the end takes `LR_AUTO`, so a failed step inside fails the transaction. An
+HTTP script from a recording (an HTTP proxy recording, or the HTTP script generated
+from a browser recording) gets the same pair around the requests that started while
+the transaction was open, and each of those requests is tagged with it. A note you
+add while recording is kept on the next recorded request.
 
 ### Control Flow
 
@@ -601,6 +601,12 @@ The agent binds to `127.0.0.1` on a high port and does not normally need admin r
 though locked-down workstations may need IT approval to run a signed binary, launch
 browser automation, or allow private-network access from the dashboard origin to
 loopback.
+
+While an HTTP proxy recording runs, as when you capture a phone app or simulator
+through the proxy, name each step as you perform it: **Start transaction** with a
+name, **End transaction** when the step is done, and **Add note** for anything to
+remember. A transaction still open when you stop the recording ends there, and the
+stop message names it.
 
 Finished recordings of both methods are listed under **Recent recordings**, newest
 first, with a **Browser** or **HTTP proxy** badge. Recording Studio reopens with the

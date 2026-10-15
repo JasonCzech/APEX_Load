@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 )
 
 // A proxy recording converts through the same pipeline as a HAR import and
@@ -53,6 +54,10 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 			// As before convergence, a recording rewrites only
 			// high-confidence correlations.
 			HighConfidenceOnly: true,
+			// Transactions marked while recording time their requests, and
+			// notes attach to the request after them.
+			Transactions: sessionTransactionWindows(session),
+			Notes:        sessionNotes(session),
 		},
 	})
 	if err != nil {
@@ -289,4 +294,28 @@ func jsonNormalizedActions(actions []dsl.Action) ([]dsl.Action, error) {
 		return nil, err
 	}
 	return normalized, nil
+}
+
+func sessionTransactionWindows(session *Session) []sample.TransactionWindow {
+	windows := session.TransactionWindows()
+	if len(windows) == 0 {
+		return nil
+	}
+	out := make([]sample.TransactionWindow, 0, len(windows))
+	for _, window := range windows {
+		out = append(out, sample.TransactionWindow(window))
+	}
+	return out
+}
+
+func sessionNotes(session *Session) []sample.TimedNote {
+	notes := marker.Notes(session.Markers)
+	if len(notes) == 0 {
+		return nil
+	}
+	out := make([]sample.TimedNote, 0, len(notes))
+	for _, note := range notes {
+		out = append(out, sample.TimedNote(note))
+	}
+	return out
 }

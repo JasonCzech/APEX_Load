@@ -132,6 +132,9 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	hasHTTPRequests := hasIncludedHTTPRequests(session.Requests)
 	if len(webSocketRequests) > 0 && !hasHTTPRequests {
 		result.Script = convertWebSocketSession(session, name, webSocketRequests)
+		if len(session.Markers) > 0 {
+			result.Warnings = append(result.Warnings, "The transactions and notes marked while recording attach to HTTP steps; this WebSocket-only recording has none, so its script carries neither.")
+		}
 		return result
 	}
 	if !hasHTTPRequests {

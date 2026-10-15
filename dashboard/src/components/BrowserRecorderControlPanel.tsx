@@ -28,6 +28,7 @@ import {
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import AuraOutcomeReview from './AuraOutcomeReview'
 import RecordingEnvironmentReview from './RecordingEnvironmentReview'
+import RecordingMarkerControls from './RecordingMarkerControls'
 import { recordingEnvironmentFingerprint } from './recordingEnvironmentModel'
 import BrowserReplayProgress, { type BrowserReplayProgressProps, type BrowserReplayProgressSummary } from './BrowserReplayProgress'
 import { withFallbackPersistedScript } from './importSaveUtils'
@@ -290,8 +291,6 @@ export default function BrowserRecorderControlPanel({
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
   const [navigateScheme, setNavigateScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
   const [navigateAddress, setNavigateAddress] = useState('')
-  const [transactionName, setTransactionName] = useState('')
-  const [noteText, setNoteText] = useState('')
   const [splitAtTransactions, setSplitAtTransactions] = useState(false)
   const [alsoCreateHTTP, setAlsoCreateHTTP] = useState(false)
   const [httpScriptLevel, setHTTPScriptLevel] = useState<'url' | 'html'>('url')
@@ -555,8 +554,6 @@ export default function BrowserRecorderControlPanel({
     setFeedback('')
     setNavigateScheme(DEFAULT_HTTP_URL_SCHEME)
     setNavigateAddress('')
-    setTransactionName('')
-    setNoteText('')
     setSplitAtTransactions(false)
     setAlsoCreateHTTP(false)
     setHTTPScriptLevel('url')
@@ -714,20 +711,16 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const handleStartTransaction = async () => {
-    const name = transactionName.trim()
-    if (!name) {
-      showFeedback('Enter a transaction name', 'error')
-      return
-    }
+  const handleStartTransaction = async (name: string) => {
     try {
       const res = await api.startBrowserRecordingTransaction(sessionId, name)
-      if (!isCurrentSession()) return
+      if (!isCurrentSession()) return false
       acceptRecordingSession(res.session)
-      setTransactionName('')
       showFeedback(`Transaction "${name}" started`)
+      return true
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
+      return false
     }
   }
 
@@ -742,20 +735,16 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const handleAddNote = async () => {
-    const text = noteText.trim()
-    if (!text) {
-      showFeedback('Enter a note', 'error')
-      return
-    }
+  const handleAddNote = async (text: string) => {
     try {
       const res = await api.addBrowserRecordingNote(sessionId, text)
-      if (!isCurrentSession()) return
+      if (!isCurrentSession()) return false
       acceptRecordingSession(res.session)
-      setNoteText('')
       showFeedback('Note added — it will attach to the next recorded action')
+      return true
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
+      return false
     }
   }
 
@@ -1932,46 +1921,14 @@ export default function BrowserRecorderControlPanel({
       )}
 
       {controllable && (
-        <div className="brp-markers">
-          <div className="brp-row">
-            <input
-              className="rec-input"
-              aria-label="Transaction name"
-              value={transactionName}
-              onChange={e => setTransactionName(e.target.value)}
-              placeholder="Transaction name, e.g. Checkout"
-            />
-            <button className="btn btn-secondary btn-sm" onClick={handleStartTransaction}>Start transaction</button>
-          </div>
-          {openTransactions.length > 0 && (
-            <div className="brp-open-transactions" aria-label="Open transactions">
-              <div className="brp-open-transactions-title">Open transactions</div>
-              {openTransactions.map(name => (
-                <div key={name} className="brp-txn-row" data-testid="open-transaction">
-                  <span className="brp-txn-name">{name}</span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm brp-txn-end"
-                    onClick={() => handleEndTransaction(name)}
-                    aria-label={`End transaction ${name}`}
-                  >
-                    End transaction
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="brp-row">
-            <input
-              className="rec-input"
-              aria-label="Note"
-              value={noteText}
-              onChange={e => setNoteText(e.target.value)}
-              placeholder="Add a note for the next action…"
-            />
-            <button className="btn btn-secondary btn-sm" onClick={handleAddNote}>Add note</button>
-          </div>
-        </div>
+        <RecordingMarkerControls
+          key={sessionId}
+          openTransactions={openTransactions}
+          onStartTransaction={handleStartTransaction}
+          onEndTransaction={handleEndTransaction}
+          onAddNote={handleAddNote}
+          onInvalid={message => showFeedback(message, 'error')}
+        />
       )}
 
       {live && (

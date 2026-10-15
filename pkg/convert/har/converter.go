@@ -45,6 +45,9 @@ type ConvertOptions struct {
 	// Transactions (set by the browser recorder) tags each request with the
 	// recorded transaction open when it started.
 	Transactions []sample.TransactionWindow `json:"-"`
+	// Notes (set by the browser recorder) attaches each note written while
+	// recording to the next request.
+	Notes []sample.TimedNote `json:"-"`
 	// SalvageTruncated imports the complete entries of a HAR file that was cut
 	// off partway through (see SalvageTruncated); the import warns what is lost.
 	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
@@ -127,6 +130,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ResourceMode:        opts.ResourceMode,
 			HTMLSteps:           opts.HTMLSteps,
 			Transactions:        opts.Transactions,
+			Notes:               opts.Notes,
 			AsyncScan:           opts.AsyncScan,
 			Profile:             opts.Profile,
 			HTTPVersionMode:     opts.HTTPVersionMode,

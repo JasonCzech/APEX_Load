@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -121,14 +122,14 @@ func TestRecorderInteractiveOperationsRejectConcurrentFanout(t *testing.T) {
 }
 
 func TestSessionMarkerBounds(t *testing.T) {
-	if _, err := (&Session{}).AddMarker(Marker{Kind: MarkerNote, Text: strings.Repeat("x", maxBrowserMarkerText+1)}); err == nil {
+	if _, err := (&Session{}).AddMarker(Marker{Kind: MarkerNote, Text: strings.Repeat("x", marker.DefaultLimits.TextBytes+1)}); err == nil {
 		t.Fatal("oversized marker text was accepted")
 	}
-	session := &Session{retainedMarkerBytes: maxBrowserUserMarkerBytes}
+	session := &Session{retainedMarkerBytes: marker.DefaultLimits.UserBytes}
 	if _, err := session.AddMarker(Marker{Kind: MarkerNote, Text: "note"}); err == nil || !strings.Contains(err.Error(), "byte limit") {
 		t.Fatalf("marker byte-limit error = %v", err)
 	}
-	session = &Session{Markers: make([]Marker, maxBrowserUserMarkers)}
+	session = &Session{Markers: make([]Marker, marker.DefaultLimits.UserEntries)}
 	if _, err := session.AddMarker(Marker{Kind: MarkerNote, Text: "note"}); err == nil || !strings.Contains(err.Error(), "marker limit") {
 		t.Fatalf("marker count-limit error = %v", err)
 	}

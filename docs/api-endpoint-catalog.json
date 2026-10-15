@@ -4107,6 +4107,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/recorder/{id}/notes",
+      "operationId": "handleAddRecordingNote",
+      "summary": "Add Recording Note",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/recorder/{id}/pause",
       "operationId": "handlePauseRecording",
       "summary": "Pause Recording",
@@ -4140,6 +4150,26 @@
       "path": "/api/v1/recorder/{id}/stop",
       "operationId": "handleStopRecording",
       "summary": "Stop Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/transactions/end",
+      "operationId": "handleEndRecordingTransaction",
+      "summary": "End Recording Transaction",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/transactions/start",
+      "operationId": "handleStartRecordingTransaction",
+      "summary": "Start Recording Transaction",
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,

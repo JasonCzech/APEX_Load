@@ -699,14 +699,15 @@ func TestHandlePreviewBrowserRecordingConversionReportsHTTPCorrelations(t *testi
 	}
 }
 
-// The HTTP output measures the transactions marked while recording, as the
-// browser script does.
+// The HTTP output measures the transactions marked while recording and keeps
+// their notes, as the browser script does.
 func TestHandlePreviewBrowserRecordingConversionTagsHTTPTransactions(t *testing.T) {
 	artifact := recordedBrowserArtifact()
 	recorded := time.Date(2026, 5, 12, 20, 0, 0, 0, time.UTC)
 	artifact.Markers = []recbrowser.Marker{
 		{Kind: recbrowser.MarkerTransactionStart, Name: "Cart", Timestamp: recorded.Add(500 * time.Millisecond)},
 		{Kind: recbrowser.MarkerTransactionEnd, Name: "Cart", Timestamp: recorded.Add(1500 * time.Millisecond)},
+		{Kind: recbrowser.MarkerNote, Text: "cart opens", Timestamp: recorded.Add(700 * time.Millisecond)},
 	}
 	entry := func(started, path string) string {
 		return `{"startedDateTime":"` + started + `","time":12,"request":{"method":"GET","url":"https://shop.example` + path + `","httpVersion":"HTTP/1.1","headers":[],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}`
@@ -735,7 +736,7 @@ func TestHandlePreviewBrowserRecordingConversionTagsHTTPTransactions(t *testing.
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	tagged := map[string]any{}
+	tagged, notes := map[string]any{}, map[string]any{}
 	var layout []string
 	for _, script := range payload.Scripts {
 		if script.Protocol != "http" {
@@ -748,7 +749,11 @@ func TestHandlePreviewBrowserRecordingConversionTagsHTTPTransactions(t *testing.
 			}
 			layout = append(layout, action.Target)
 			tagged[action.Target] = action.Metadata["source_transaction"]
+			notes[action.Target] = action.Metadata["note"]
 		}
+	}
+	if notes["/api/home"] != nil || notes["/api/cart"] != "cart opens" {
+		t.Fatalf("HTTP notes = %v, want the note on /api/cart, the request after it", notes)
 	}
 	if len(tagged) != 2 || tagged["/api/home"] != nil || tagged["/api/cart"] != "Cart" {
 		t.Fatalf("HTTP transactions = %v, want only /api/cart in Cart", tagged)

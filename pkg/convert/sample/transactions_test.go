@@ -322,3 +322,25 @@ func layoutByTarget(script *dsl.Script) string {
 func jsonQuote(value string) string {
 	return fmt.Sprintf("%q", value)
 }
+
+func TestPlaceNotesAttachesEachNoteToTheNextRequest(t *testing.T) {
+	exchanges := []exchange{
+		{StartedAt: at(1), HasStartedAt: true},
+		{StartedAt: at(3), HasStartedAt: true},
+		{}, // no start time: never chosen
+		{StartedAt: at(2), HasStartedAt: true},
+	}
+	placed, unplaced := placeNotes([]TimedNote{
+		{Text: "after everything", At: at(9)},
+		{Text: "before the first", At: at(0)},
+		{Text: "between", At: at(1.5)},
+		{Text: "same instant", At: at(2)},
+	}, exchanges)
+	want := map[int]string{0: "before the first", 3: "between; same instant", 1: "after everything"}
+	if unplaced != 0 || fmt.Sprint(placed) != fmt.Sprint(want) {
+		t.Fatalf("placed = %v (unplaced %d), want %v", placed, unplaced, want)
+	}
+	if placed, unplaced := placeNotes([]TimedNote{{Text: "x", At: at(0)}}, []exchange{{}}); placed != nil || unplaced != 1 {
+		t.Fatalf("untimed exchanges: placed %v, unplaced %d", placed, unplaced)
+	}
+}

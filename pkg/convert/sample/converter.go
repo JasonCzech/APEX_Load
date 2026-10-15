@@ -53,6 +53,10 @@ type ConvertOptions struct {
 	// when it started (metadata.source_transaction). The browser recorder
 	// supplies the transactions marked while recording.
 	Transactions []TransactionWindow `json:"-"`
+	// Notes (HAR input) attaches each note written while recording to the
+	// first request that started at or after it (metadata.note), as the
+	// browser script attaches a note to its next action.
+	Notes []TimedNote `json:"-"`
 	// AsyncScan (HAR input; default on) collapses requests a page repeated in
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
@@ -385,6 +389,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}()
 	credentialNames := credentialpolicy.NewNameRegistry()
 
+	notesAt, unplacedNotes := placeNotes(req.Options.Notes, exchanges)
+	if unplacedNotes > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d note(s) written while recording are not in the script: the recording's requests have no start times to place them by", unplacedNotes))
+	}
+
 	for idx, ex := range exchanges {
 		stepVars := correlationVarsAvailableAtStep(correlationVars, correlationVarSources, idx+1)
 		mergeFileAssets(result.Script, ex.FileAssets)
@@ -421,6 +430,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				action.Metadata = map[string]any{}
 			}
 			action.Metadata[harSourceTransactionMeta] = name
+		}
+		if note := notesAt[idx]; note != "" {
+			if action.Metadata == nil {
+				action.Metadata = map[string]any{}
+			}
+			action.Metadata["note"] = note
 		}
 		if htmlStep := req.Options.HTMLSteps[ex.SourceEntryID]; htmlStep != nil && format == "har" {
 			// The page decides the URL, body and encoding at replay.

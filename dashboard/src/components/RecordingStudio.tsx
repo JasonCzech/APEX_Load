@@ -48,6 +48,7 @@ import {
 import { withFallbackPersistedScript } from "./importSaveUtils";
 import { useSourceSecretSessionLifecycle } from "./sourceSecretSessionLifecycle";
 import BrowserRecorderControlPanel from "./BrowserRecorderControlPanel";
+import RecordingMarkerControls from "./RecordingMarkerControls";
 import {
   CLIENT_DOWNLOAD_PLATFORMS,
   detectPlatformFromNavigator,
@@ -132,6 +133,8 @@ interface RecordingSession {
   // most recent such host; the browser got a 403 and nothing was recorded.
   rejected_requests?: number;
   last_rejected_host?: string;
+  // Transactions the tester marked while recording that are still open.
+  open_transactions?: string[];
   filters: {
     exclude_static: boolean;
     exclude_hosts?: string[];
@@ -206,15 +209,17 @@ function mergeRecordingSession(
   if (!previous || previous.id !== next.id) {
     return { ...next, requests: incoming };
   }
+  // A session omits open_transactions once none is open.
+  const current = { ...next, open_transactions: next.open_transactions ?? [] };
   if (incoming.length === 0) {
-    return { ...previous, ...next, requests: previous.requests || [] };
+    return { ...previous, ...current, requests: previous.requests || [] };
   }
   const bySeq = new Map<number, RecordedRequest>();
   (previous.requests || []).forEach((req) => bySeq.set(req.seq, req));
   incoming.forEach((req) => bySeq.set(req.seq, req));
   return {
     ...previous,
-    ...next,
+    ...current,
     requests: Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq).slice(-20),
   };
 }
@@ -1927,11 +1932,19 @@ export default function RecordingStudio({
   const handleStop = async () => {
     if (!activeSession) return;
     try {
-      await api.stopRecording(activeSession.id);
+      const stopped = await api.stopRecording(activeSession.id);
       if (!isCurrentProject()) return;
       const blocked = activeSession.rejected_requests ?? 0;
+      // Transactions still open at the stop end there.
+      const autoClosed = (stopped?.markers ?? [])
+        .filter((marker) => marker.auto && marker.kind === "transaction_end")
+        .map((marker) => `"${marker.name}"`);
+      const ended =
+        autoClosed.length > 3
+          ? `${autoClosed.slice(0, 3).join(", ")} and ${autoClosed.length - 3} more`
+          : autoClosed.join(", ");
       showFeedback(
-        `Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured${blocked > 0 ? `, ${blocked} blocked (private address)` : ""}`,
+        `Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured${blocked > 0 ? `, ${blocked} blocked (private address)` : ""}${ended ? `. Ended ${ended}, still open at the stop` : ""}`,
       );
       setActiveSession(null);
       void refresh();
@@ -1954,6 +1967,55 @@ export default function RecordingStudio({
       );
     } catch (e: any) {
       if (isCurrentProject()) showFeedback(e.message, "error");
+    }
+  };
+
+  // A marker response is a summary: keep the live feed's requests.
+  const acceptMarkerSession = (sessionId: string, session: RecordingSession) =>
+    setActiveSession((prev) =>
+      prev?.id === sessionId ? mergeRecordingSession(prev, session) : prev,
+    );
+
+  const handleStartProxyTransaction = async (name: string) => {
+    if (!activeSession) return false;
+    const sessionId = activeSession.id;
+    try {
+      const res = await api.startRecordingTransaction(sessionId, name);
+      if (!isCurrentProject()) return false;
+      acceptMarkerSession(sessionId, res.session);
+      showFeedback(`Transaction "${name}" started`);
+      return true;
+    } catch (e: any) {
+      if (isCurrentProject()) showFeedback(e.message, "error");
+      return false;
+    }
+  };
+
+  const handleEndProxyTransaction = async (name: string) => {
+    if (!activeSession) return;
+    const sessionId = activeSession.id;
+    try {
+      const res = await api.endRecordingTransaction(sessionId, name);
+      if (!isCurrentProject()) return;
+      acceptMarkerSession(sessionId, res.session);
+      showFeedback(`Transaction "${res.marker.name || name}" ended`);
+    } catch (e: any) {
+      if (isCurrentProject()) showFeedback(e.message, "error");
+    }
+  };
+
+  const handleAddProxyNote = async (text: string) => {
+    if (!activeSession) return false;
+    const sessionId = activeSession.id;
+    try {
+      const res = await api.addRecordingNote(sessionId, text);
+      if (!isCurrentProject()) return false;
+      acceptMarkerSession(sessionId, res.session);
+      showFeedback("Note added — it will attach to the next recorded request");
+      return true;
+    } catch (e: any) {
+      if (isCurrentProject()) showFeedback(e.message, "error");
+      return false;
     }
   };
 
@@ -3955,6 +4017,15 @@ export default function RecordingStudio({
                     </button>
                   </div>
                 )}
+
+                <RecordingMarkerControls
+                  key={activeSession.id}
+                  openTransactions={activeSession.open_transactions || []}
+                  onStartTransaction={handleStartProxyTransaction}
+                  onEndTransaction={handleEndProxyTransaction}
+                  onAddNote={handleAddProxyNote}
+                  onInvalid={(message) => showFeedback(message, "error")}
+                />
 
                 {/* Live request feed */}
                 {activeSession.requests &&

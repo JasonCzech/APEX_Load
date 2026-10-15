@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -144,6 +146,44 @@ func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+}
+
+func (s *Server) handleStartRecordingTransaction(w http.ResponseWriter, r *http.Request) {
+	s.handleRecordingMarker(w, r, marker.KindTransactionStart)
+}
+
+func (s *Server) handleEndRecordingTransaction(w http.ResponseWriter, r *http.Request) {
+	s.handleRecordingMarker(w, r, marker.KindTransactionEnd)
+}
+
+func (s *Server) handleAddRecordingNote(w http.ResponseWriter, r *http.Request) {
+	s.handleRecordingMarker(w, r, marker.KindNote)
+}
+
+// handleRecordingMarker marks a transaction boundary or a note on a proxy
+// recording, so an operator capturing a device can name each step as they
+// perform it: 404 unknown session, 409 not recording or paused, 400 invalid.
+func (s *Server) handleRecordingMarker(w http.ResponseWriter, r *http.Request, kind string) {
+	var req struct {
+		Name string `json:"name,omitempty"`
+		Text string `json:"text,omitempty"`
+	}
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
+	session, added, err := s.recorder.AddMarker(r.PathValue("id"), marker.Marker{Kind: kind, Name: req.Name, Text: req.Text})
+	switch {
+	case errors.Is(err, recorder.ErrSessionNotFound):
+		writeError(w, http.StatusNotFound, "recording session not found")
+		return
+	case errors.Is(err, recorder.ErrSessionNotLive):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case err != nil:
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": sanitizeRecorderSessionForResponse(session), "marker": added})
 }
 
 func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +337,9 @@ func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Ses
 			CaptureCookies:        session.Filters.CaptureCookies,
 			RecordingProfileID:    session.Filters.RecordingProfileID,
 		},
+		// Operator-authored transaction names and notes, not recorded traffic.
+		Markers:          append([]marker.Marker(nil), session.Markers...),
+		OpenTransactions: append([]string(nil), session.OpenTransactions...),
 	}
 	if session.StoppedAt != nil {
 		stoppedAt := *session.StoppedAt

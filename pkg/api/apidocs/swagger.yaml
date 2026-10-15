@@ -83617,8 +83617,18 @@ paths:
                   last_seq:
                     type: integer
                     format: int64
+                  markers:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: marker.Marker'
+                      additionalProperties: true
                   name:
                     type: string
+                  open_transactions:
+                    type: array
+                    items:
+                      type: string
                   project_id:
                     type: string
                   rejected_requests:
@@ -84075,6 +84085,77 @@ paths:
       tags:
         - Recorder
       x-handler: handleExportRecording
+  /api/v1/recorder/{id}/notes:
+    post:
+      summary: Add Recording Note
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleAddRecordingNote
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                text:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Recorder
+      x-handler: handleAddRecordingNote
   /api/v1/recorder/{id}/pause:
     post:
       summary: Pause Recording
@@ -84129,8 +84210,18 @@ paths:
                   last_seq:
                     type: integer
                     format: int64
+                  markers:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: marker.Marker'
+                      additionalProperties: true
                   name:
                     type: string
+                  open_transactions:
+                    type: array
+                    items:
+                      type: string
                   project_id:
                     type: string
                   rejected_requests:
@@ -84580,8 +84671,18 @@ paths:
                   last_seq:
                     type: integer
                     format: int64
+                  markers:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: marker.Marker'
+                      additionalProperties: true
                   name:
                     type: string
+                  open_transactions:
+                    type: array
+                    items:
+                      type: string
                   project_id:
                     type: string
                   rejected_requests:
@@ -84826,8 +84927,18 @@ paths:
                   last_seq:
                     type: integer
                     format: int64
+                  markers:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: marker.Marker'
+                      additionalProperties: true
                   name:
                     type: string
+                  open_transactions:
+                    type: array
+                    items:
+                      type: string
                   project_id:
                     type: string
                   rejected_requests:
@@ -85018,6 +85129,148 @@ paths:
       tags:
         - Recorder
       x-handler: handleStopRecording
+  /api/v1/recorder/{id}/transactions/end:
+    post:
+      summary: End Recording Transaction
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleEndRecordingTransaction
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                text:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Recorder
+      x-handler: handleEndRecordingTransaction
+  /api/v1/recorder/{id}/transactions/start:
+    post:
+      summary: Start Recording Transaction
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleStartRecordingTransaction
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                text:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Recorder
+      x-handler: handleStartRecordingTransaction
   /api/v1/recorder/ca.pem:
     get:
       summary: Recorder CA Cert
