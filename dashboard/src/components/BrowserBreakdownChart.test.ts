@@ -214,6 +214,22 @@ describe('legacy browser summary availability', () => {
     expect(buildBrowserBreakdownData('overall', { summary: { samples: 1, avg_lcp_ms: -1, avg_inp_ms: Infinity, avg_cls_score: 0 } })).toEqual([{ segment: 'Overall', cohortKey: JSON.stringify(['overall']), lcp: undefined, inp: undefined, cls: 0 }])
     expect(formatBrowserBreakdownTooltipValue(-1)).toBe('—')
   })
+
+  it('weighs a cohort LCP by its page loads, the other measures by its samples', () => {
+    const app = { ...completeSummary, browser_engine: 'chromium', samples: 10, document_loads: 1, avg_lcp_ms: 1000, avg_inp_ms: 100 }
+    const site = { ...completeSummary, browser_engine: 'chromium', samples: 10, document_loads: 9, avg_lcp_ms: 2000, avg_inp_ms: 200 }
+    const [chromium] = buildBrowserBreakdownData('engine', { devices: { app, site } })
+    expect(chromium.lcp).toBeCloseTo(1900)
+    expect(chromium.inp).toBeCloseTo(150)
+    // A cohort that loaded no page adds nothing to the LCP.
+    const inPage = { ...completeSummary, browser_engine: 'chromium', samples: 10, document_loads: 0, avg_lcp_ms: undefined, avg_inp_ms: 300 }
+    const [mixed] = buildBrowserBreakdownData('engine', { devices: { site, inPage } })
+    expect(mixed.lcp).toBeCloseTo(2000)
+    expect(mixed.inp).toBeCloseTo(250)
+    // An archived summary from before the count weighs its LCP by samples.
+    const archived = { ...completeSummary, browser_engine: 'chromium', samples: 10, document_loads: 0, avg_lcp_ms: 1000 }
+    expect(buildBrowserBreakdownData('engine', { devices: { site, archived } })[0].lcp).toBeCloseTo((2000 * 9 + 1000 * 10) / 19)
+  })
 })
 
 

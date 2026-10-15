@@ -1334,6 +1334,7 @@ func browserLiveMetricsFromGenerator(metrics generatorrpc.BrowserMetrics) *Brows
 	}
 	return &BrowserLiveMetrics{
 		Samples:              metrics.Samples,
+		DocumentLoads:        metrics.DocumentLoads,
 		AvgFCPMs:             metrics.AvgFCPMs,
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
@@ -1357,6 +1358,7 @@ func browserDeviceLiveMetricsFromGenerator(metrics generatorrpc.BrowserDeviceMet
 		DeviceTier:           metrics.DeviceTier,
 		BrowserEngine:        metrics.BrowserEngine,
 		Samples:              metrics.Metrics.Samples,
+		DocumentLoads:        metrics.Metrics.DocumentLoads,
 		AvgFCPMs:             metrics.Metrics.AvgFCPMs,
 		AvgLCPMs:             metrics.Metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.Metrics.AvgCLSScore,
@@ -1936,12 +1938,15 @@ func addGeneratorBrowserMetrics(out *generatorrpc.BrowserMetrics, value generato
 	}
 	samples := float64(value.Samples)
 	out.Samples += value.Samples
-	out.AvgFCPMs += value.AvgFCPMs * samples
-	out.AvgLCPMs += value.AvgLCPMs * samples
+	// Page-load averages weigh by the loads behind them.
+	loads := engine.BrowserDocumentLoads(value.DocumentLoads, value.Samples, value.AvgFCPMs, value.AvgLCPMs, value.AvgTTFBMs, value.AvgBlockingResources)
+	out.DocumentLoads += loads
+	out.AvgFCPMs += value.AvgFCPMs * float64(loads)
+	out.AvgLCPMs += value.AvgLCPMs * float64(loads)
+	out.AvgTTFBMs += value.AvgTTFBMs * float64(loads)
+	out.AvgBlockingResources += value.AvgBlockingResources * float64(loads)
 	out.AvgCLSScore += value.AvgCLSScore * samples
 	out.AvgINPMs += value.AvgINPMs * samples
-	out.AvgTTFBMs += value.AvgTTFBMs * samples
-	out.AvgBlockingResources += value.AvgBlockingResources * samples
 	out.AvgLongTaskCount += value.AvgLongTaskCount * samples
 	out.AvgJSHeapUsedMB += value.AvgJSHeapUsedMB * samples
 	out.AvgBrowserProcessCPU += value.AvgBrowserProcessCPU * samples
@@ -1953,12 +1958,12 @@ func finalizeGeneratorBrowserMetrics(out *generatorrpc.BrowserMetrics) {
 		return
 	}
 	divisor := float64(out.Samples)
-	out.AvgFCPMs /= divisor
-	out.AvgLCPMs /= divisor
+	out.AvgFCPMs = browserLoadAverage(out.AvgFCPMs, out.DocumentLoads)
+	out.AvgLCPMs = browserLoadAverage(out.AvgLCPMs, out.DocumentLoads)
+	out.AvgTTFBMs = browserLoadAverage(out.AvgTTFBMs, out.DocumentLoads)
+	out.AvgBlockingResources = browserLoadAverage(out.AvgBlockingResources, out.DocumentLoads)
 	out.AvgCLSScore /= divisor
 	out.AvgINPMs /= divisor
-	out.AvgTTFBMs /= divisor
-	out.AvgBlockingResources /= divisor
 	out.AvgLongTaskCount /= divisor
 	out.AvgJSHeapUsedMB /= divisor
 	out.AvgBrowserProcessCPU /= divisor

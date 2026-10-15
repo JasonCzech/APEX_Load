@@ -332,6 +332,7 @@ type MetricAggregate struct {
 
 type BrowserMetrics struct {
 	Samples              int64
+	DocumentLoads        int64
 	AvgFCPMs             float64
 	AvgLCPMs             float64
 	AvgCLSScore          float64
@@ -2148,6 +2149,7 @@ func browserMetricsFromProto(value *pb.BrowserMetrics) *BrowserMetrics {
 	}
 	return &BrowserMetrics{
 		Samples:              value.GetSamples(),
+		DocumentLoads:        engine.BrowserDocumentLoads(value.GetDocumentLoads(), value.GetSamples(), value.GetAvgFcpMs(), value.GetAvgLcpMs(), value.GetAvgTtfbMs(), value.GetAvgBlockingResources()),
 		AvgFCPMs:             value.GetAvgFcpMs(),
 		AvgLCPMs:             value.GetAvgLcpMs(),
 		AvgCLSScore:          value.GetAvgClsScore(),
@@ -2167,6 +2169,7 @@ func browserMetricsToProto(value *BrowserMetrics) *pb.BrowserMetrics {
 	}
 	return &pb.BrowserMetrics{
 		Samples:                 value.Samples,
+		DocumentLoads:           value.DocumentLoads,
 		AvgFcpMs:                value.AvgFCPMs,
 		AvgLcpMs:                value.AvgLCPMs,
 		AvgClsScore:             value.AvgCLSScore,

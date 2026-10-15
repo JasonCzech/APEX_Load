@@ -543,6 +543,12 @@ type ClientMetrics struct {
 	LongTaskCount         int                               `json:"long_task_count,omitempty"`
 	BrowserProcessCPUPct  float64                           `json:"browser_process_cpu_pct,omitempty"`
 	BrowserProcessMemMB   float64                           `json:"browser_process_mem_mb,omitempty"`
+	// SameDocument: the step ran in the document an earlier step measured
+	// (a single-page app such as Salesforce Lightning). Page-load measures
+	// (FCP, LCP, TTFB, DOM timings, render-blocking resources) belong to that
+	// load and are left out; CLS, INP, long tasks and resources cover this
+	// step only.
+	SameDocument bool `json:"same_document,omitempty"`
 }
 
 type ServerTelemetry struct {

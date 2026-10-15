@@ -1110,7 +1110,10 @@ samples have arrived). A journey is one iteration of the group's script, passed 
 failed. A **Browser groups** panel lists each browser group's journeys per minute
 (1 min avg), its page requests per second, and the pages' Web Vitals (LCP, FCP, INP,
 CLS and TTFB at p75) as they are published, and the **Groups** table adds a
-Journeys/min column. Page timings and Web Vitals, like the interaction evidence on
+Journeys/min column. LCP, FCP and TTFB describe page loads: a step that stays in a
+page an earlier step loaded (moving through a single-page app such as Salesforce
+Lightning) adds its INP and layout shift, not the load again. Page timings and Web
+Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's
 Runtime Settings › Browser; a scenario's or group's own browser runtime settings

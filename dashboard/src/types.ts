@@ -2392,6 +2392,9 @@ export interface GeneratorResourceSnapshot {
 
 export interface BrowserLiveMetrics {
   samples: number
+  // Samples that loaded a document: FCP, LCP, TTFB and render-blocking
+  // resources average over them (a single-page app loads once per journey).
+  document_loads?: number
   avg_fcp_ms?: number
   avg_lcp_ms?: number
   avg_cls_score?: number

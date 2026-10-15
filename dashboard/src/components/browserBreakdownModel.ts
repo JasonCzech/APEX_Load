@@ -248,13 +248,18 @@ function cohortAverage(entries: BrowserDeviceLiveMetrics[], key: BrowserBreakdow
   for (const metrics of entries) {
     const record = browserMetricRecord(metrics)
     if (!record) return undefined
+    // LCP averages over a cohort's page loads, the rest over its samples. A
+    // cohort that loaded no page (a single-page app's steps) has no LCP to
+    // add; an older summary without the count keeps its LCP.
+    if (key === 'avg_lcp_ms' && record.document_loads === 0 && record.avg_lcp_ms === undefined && validBrowserSamples(record.samples)) continue
     const value = finiteBrowserMetric(record[key])
     if (!validBrowserSamples(record.samples) || value === undefined) return undefined
-    const nextSamples = samples + record.samples
+    const weight = key === 'avg_lcp_ms' && validBrowserSamples(record.document_loads) ? record.document_loads! : record.samples
+    const nextSamples = samples + weight
     if (!Number.isSafeInteger(nextSamples)) return undefined
     // Weight before adding so a valid large finite value cannot overflow just
     // because its sample count is large. Never drop an unavailable cohort.
-    mean += (value - mean) * (record.samples / nextSamples)
+    mean += (value - mean) * (weight / nextSamples)
     if (finiteBrowserMetric(mean) === undefined) return undefined
     samples = nextSamples
   }

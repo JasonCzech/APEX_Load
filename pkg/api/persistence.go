@@ -1692,6 +1692,7 @@ func browserSummaryRecordToLiveMetrics(record *storage.BrowserMetricsSummaryReco
 	}
 	return &BrowserLiveMetrics{
 		Samples:              record.Samples,
+		DocumentLoads:        engine.BrowserDocumentLoads(record.DocumentLoads, record.Samples, record.AvgFCPMs, record.AvgLCPMs, record.AvgTTFBMs, record.AvgBlockingResources),
 		AvgFCPMs:             record.AvgFCPMs,
 		AvgLCPMs:             record.AvgLCPMs,
 		AvgCLSScore:          record.AvgCLSScore,
@@ -1720,6 +1721,7 @@ func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.Browser
 			DeviceTier:           record.DeviceTier,
 			BrowserEngine:        record.BrowserEngine,
 			Samples:              record.Samples,
+			DocumentLoads:        engine.BrowserDocumentLoads(record.DocumentLoads, record.Samples, record.AvgFCPMs, record.AvgLCPMs, record.AvgTTFBMs, record.AvgBlockingResources),
 			AvgFCPMs:             record.AvgFCPMs,
 			AvgLCPMs:             record.AvgLCPMs,
 			AvgCLSScore:          record.AvgCLSScore,

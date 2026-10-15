@@ -4760,6 +4760,9 @@ paths:
                             type: string
                           device_tier:
                             type: string
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
@@ -4801,6 +4804,9 @@ paths:
                             format: double
                           browser_engine:
                             type: string
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
@@ -4844,6 +4850,9 @@ paths:
                             type: string
                           device_platform:
                             type: string
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
@@ -11856,6 +11865,9 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
@@ -37128,6 +37140,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -37852,6 +37866,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -39044,6 +39060,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -39768,6 +39786,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -40997,6 +41017,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -41721,6 +41743,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -42832,6 +42856,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -43556,6 +43582,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -44667,6 +44695,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -45391,6 +45421,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -90680,10 +90712,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -92186,10 +92222,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -92235,10 +92275,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -97256,10 +97300,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -98762,10 +98810,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -98811,10 +98863,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -103833,10 +103889,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -105339,10 +105399,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -105388,10 +105452,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -110422,10 +110490,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -111928,10 +112000,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -111977,10 +112053,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -117011,10 +117091,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -118517,10 +118601,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -118566,10 +118654,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -123600,10 +123692,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -125106,10 +125202,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -125155,10 +125255,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -130189,10 +130293,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -131695,10 +131803,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -131744,10 +131856,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -135514,6 +135630,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -136238,6 +136356,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -137585,6 +137705,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -138309,6 +138431,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -139716,6 +139840,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -140440,6 +140566,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -141793,6 +141921,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -142517,6 +142647,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -143864,6 +143996,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -144588,6 +144722,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -145940,6 +146076,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -146664,6 +146802,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -148017,6 +148157,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -148741,6 +148883,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -189359,6 +189503,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -190083,6 +190229,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -191431,6 +191579,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -192155,6 +192305,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -193564,6 +193716,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -194288,6 +194442,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -195642,6 +195798,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -196366,6 +196524,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -197714,6 +197874,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -198438,6 +198600,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -199791,6 +199955,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -200515,6 +200681,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -201869,6 +202037,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -202593,6 +202763,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -224853,6 +225025,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -225577,6 +225751,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -229331,6 +229507,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -230055,6 +230233,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -236587,6 +236767,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -237311,6 +237493,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -259841,6 +260025,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -260565,6 +260751,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -270375,6 +270563,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -271099,6 +271289,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -321530,6 +321722,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -322254,6 +322448,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -348127,10 +348323,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -348176,10 +348376,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -350526,10 +350730,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -350575,10 +350783,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -361924,10 +362136,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -361973,10 +362189,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -364323,10 +364543,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -364372,10 +364596,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -384498,10 +384726,14 @@ paths:
                           type: string
                         device_tier:
                           type: string
+                        document_loads:
+                          type: integer
+                          format: int64
                         samples:
                           type: integer
                           format: int64
                       required:
+                        - document_loads
                         - samples
                       nullable: true
                   browser_by_engine:
@@ -384541,10 +384773,14 @@ paths:
                           format: double
                         browser_engine:
                           type: string
+                        document_loads:
+                          type: integer
+                          format: int64
                         samples:
                           type: integer
                           format: int64
                       required:
+                        - document_loads
                         - samples
                       nullable: true
                   browser_by_platform:
@@ -384586,10 +384822,14 @@ paths:
                           type: string
                         device_platform:
                           type: string
+                        document_loads:
+                          type: integer
+                          format: int64
                         samples:
                           type: integer
                           format: int64
                       required:
+                        - document_loads
                         - samples
                       nullable: true
                   browser_document_evidence:
@@ -395657,10 +395897,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       error_pct:
@@ -407331,10 +407575,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -407380,10 +407628,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -409730,10 +409982,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -409779,10 +410035,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -421072,10 +421332,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -421121,10 +421385,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -423471,10 +423739,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -423520,10 +423792,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -440694,10 +440970,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -440743,10 +441023,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -443093,10 +443377,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -443142,10 +443430,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -456422,10 +456714,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -456471,10 +456767,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -458809,10 +459109,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -458858,10 +459162,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:

@@ -1660,6 +1660,7 @@ export interface operations {
               "device_platform"?: string;
               "device_profile"?: string;
               "device_tier"?: string;
+              "document_loads"?: number;
               "samples"?: number;
             }) | null>;
             "browser_by_engine"?: Record<string, ({
@@ -1674,6 +1675,7 @@ export interface operations {
               "avg_long_task_count"?: number;
               "avg_ttfb_ms"?: number;
               "browser_engine"?: string;
+              "document_loads"?: number;
               "samples"?: number;
             }) | null>;
             "browser_by_platform"?: Record<string, ({
@@ -1689,6 +1691,7 @@ export interface operations {
               "avg_ttfb_ms"?: number;
               "browser_engine"?: string;
               "device_platform"?: string;
+              "document_loads"?: number;
               "samples"?: number;
             }) | null>;
             "browser_document_evidence"?: Array<{
@@ -4249,6 +4252,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads"?: number;
                 "samples"?: number;
               }) | null;
               "error_pct"?: number;
@@ -36798,6 +36802,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -37252,6 +37257,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -37269,6 +37275,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -44914,6 +44921,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -44931,6 +44939,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -45639,6 +45648,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -45656,6 +45666,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -60424,6 +60435,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -60671,6 +60683,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -63175,6 +63188,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -63192,6 +63206,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -63896,6 +63911,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -63913,6 +63929,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -67747,6 +67764,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -68201,6 +68219,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -68218,6 +68237,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -73177,6 +73197,7 @@ export interface operations {
               "device_platform"?: string;
               "device_profile"?: string;
               "device_tier"?: string;
+              "document_loads": number;
               "samples": number;
             }) | null>;
             "browser_by_engine"?: Record<string, ({
@@ -73191,6 +73212,7 @@ export interface operations {
               "avg_long_task_count"?: number;
               "avg_ttfb_ms"?: number;
               "browser_engine"?: string;
+              "document_loads": number;
               "samples": number;
             }) | null>;
             "browser_by_platform"?: Record<string, ({
@@ -73206,6 +73228,7 @@ export interface operations {
               "avg_ttfb_ms"?: number;
               "browser_engine"?: string;
               "device_platform"?: string;
+              "document_loads": number;
               "samples": number;
             }) | null>;
             "browser_document_evidence"?: Array<{
@@ -76491,6 +76514,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "error_pct": number;
@@ -80958,6 +80982,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -81205,6 +81230,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -81665,6 +81691,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -81912,6 +81939,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -83798,6 +83826,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -83815,6 +83844,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -84523,6 +84553,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -84540,6 +84571,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -102452,6 +102484,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -102699,6 +102732,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -103233,6 +103267,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -103480,6 +103515,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -103945,6 +103981,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -104192,6 +104229,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -105587,6 +105625,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -105604,6 +105643,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -106312,6 +106352,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -106329,6 +106370,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -122027,6 +122069,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -122481,6 +122524,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -122498,6 +122542,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -124138,6 +124183,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -124592,6 +124638,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -124609,6 +124656,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -126249,6 +126297,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -126703,6 +126752,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -126720,6 +126770,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -128360,6 +128411,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -128814,6 +128866,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -128831,6 +128884,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -130471,6 +130525,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
@@ -130925,6 +130980,7 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
+                  "document_loads": number;
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, ({
@@ -130942,6 +130998,7 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_loads": number;
                   "samples": number;
                 }) | null>;
                 "browser_documents"?: ({
@@ -134946,6 +135003,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -134963,6 +135021,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -135671,6 +135730,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -135688,6 +135748,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -138322,6 +138383,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -138569,6 +138631,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -139103,6 +139166,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -139350,6 +139414,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -139815,6 +139880,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -140062,6 +140128,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -146680,6 +146747,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -146927,6 +146995,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -148169,6 +148238,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -148416,6 +148486,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -149829,6 +149900,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -150076,6 +150148,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -151417,6 +151490,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -151664,6 +151738,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -153006,6 +153081,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -153253,6 +153329,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -154594,6 +154671,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -154841,6 +154919,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -155431,6 +155510,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -155678,6 +155758,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -156152,6 +156233,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -156399,6 +156481,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -156864,6 +156947,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -157111,6 +157195,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -157689,6 +157774,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -157936,6 +158022,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -158396,6 +158483,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -158643,6 +158731,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -160822,6 +160911,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -160839,6 +160929,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -161547,6 +161638,7 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
+                "document_loads": number;
                 "samples": number;
               }) | null;
               "browser_by_device"?: Record<string, ({
@@ -161564,6 +161656,7 @@ export interface operations {
                 "device_platform"?: string;
                 "device_profile"?: string;
                 "device_tier"?: string;
+                "document_loads": number;
                 "samples": number;
               }) | null>;
               "browser_documents"?: ({
@@ -173296,6 +173389,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -173543,6 +173637,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -174017,6 +174112,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -174264,6 +174360,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -174738,6 +174835,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -174985,6 +175083,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -175459,6 +175558,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -175706,6 +175806,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -180039,6 +180140,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -180286,6 +180388,7 @@ export interface operations {
                     }>) | null;
                     "version": number;
                   }) | null;
+                  "same_document"?: boolean;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;

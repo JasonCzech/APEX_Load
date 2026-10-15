@@ -116,8 +116,13 @@ func TestBrowserProtocolExecuteWebKitActions(t *testing.T) {
 	if wait.ClientMetrics == nil {
 		t.Fatal("ClientMetrics = nil, want WebKit page metrics")
 	}
-	if wait.ClientMetrics.TotalResourceCount == 0 {
-		t.Fatal("TotalResourceCount = 0, want recorded resource metrics")
+	// The page load and its resources belong to the navigation; the wait
+	// ran in the document it loaded.
+	if navigate.ClientMetrics == nil || navigate.ClientMetrics.TotalResourceCount == 0 || navigate.ClientMetrics.SameDocument {
+		t.Fatalf("navigate ClientMetrics = %+v, want the page load's resource metrics", navigate.ClientMetrics)
+	}
+	if !wait.ClientMetrics.SameDocument || wait.ClientMetrics.LCPMs != 0 || wait.ClientMetrics.TTFBMs != 0 {
+		t.Fatalf("wait ClientMetrics = %+v, want a step in the loaded document", wait.ClientMetrics)
 	}
 }
 
@@ -255,8 +260,13 @@ func TestBrowserProtocolValidationMatrixAcrossRepresentativeDeviceProfiles(t *te
 			if wait.ClientMetrics.BrowserEngine != tc.engine {
 				t.Fatalf("wait BrowserEngine = %q, want %q", wait.ClientMetrics.BrowserEngine, tc.engine)
 			}
-			if wait.ClientMetrics.TotalResourceCount == 0 {
-				t.Fatal("TotalResourceCount = 0, want recorded resource metrics")
+			// The page load and its resources belong to the navigation; the wait
+			// ran in the document it loaded.
+			if navigate.ClientMetrics == nil || navigate.ClientMetrics.TotalResourceCount == 0 || navigate.ClientMetrics.SameDocument {
+				t.Fatalf("navigate ClientMetrics = %+v, want the page load's resource metrics", navigate.ClientMetrics)
+			}
+			if !wait.ClientMetrics.SameDocument || wait.ClientMetrics.LCPMs != 0 || wait.ClientMetrics.TTFBMs != 0 {
+				t.Fatalf("wait ClientMetrics = %+v, want a step in the loaded document", wait.ClientMetrics)
 			}
 		})
 	}

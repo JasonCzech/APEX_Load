@@ -775,6 +775,10 @@ message BrowserMetrics {
   double avg_js_heap_used_mb = 9;
   double avg_browser_process_cpu_pct = 10;
   double avg_browser_process_mem_mb = 11;
+  // Steps that loaded a document. FCP, LCP, TTFB and render-blocking
+  // resources are averaged over them; zero from an older generator, whose
+  // samples were all loads.
+  int64 document_loads = 12;
 }
 
 message BrowserDeviceMetrics {

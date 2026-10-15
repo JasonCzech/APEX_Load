@@ -2136,7 +2136,7 @@ func archiveSummaryBrowserFromBatch(batch *pb.MetricsBatch) *archiveBrowserLiveM
 		return nil
 	}
 	return &archiveBrowserLiveMetrics{
-		Samples: metrics.Samples, AvgFCPMs: metrics.AvgFCPMs, AvgLCPMs: metrics.AvgLCPMs,
+		Samples: metrics.Samples, DocumentLoads: metrics.DocumentLoads, AvgFCPMs: metrics.AvgFCPMs, AvgLCPMs: metrics.AvgLCPMs,
 		AvgCLSScore: metrics.AvgCLSScore, AvgINPMs: metrics.AvgINPMs, AvgTTFBMs: metrics.AvgTTFBMs,
 		AvgBlockingResources: metrics.AvgBlockingResources, AvgLongTaskCount: metrics.AvgLongTaskCount,
 		AvgJSHeapUsedMB: metrics.AvgJSHeapUsedMB, AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
@@ -2161,7 +2161,7 @@ func archiveSummaryBrowserDevicesFromBatch(batch *pb.MetricsBatch) map[string]*a
 		metrics := value.Metrics
 		out[profile] = &archiveBrowserDeviceMetric{
 			DeviceProfile: profile, DevicePlatform: value.DevicePlatform, DeviceTier: value.DeviceTier, BrowserEngine: value.BrowserEngine,
-			Samples: metrics.Samples, AvgFCPMs: metrics.AvgFCPMs, AvgLCPMs: metrics.AvgLCPMs,
+			Samples: metrics.Samples, DocumentLoads: metrics.DocumentLoads, AvgFCPMs: metrics.AvgFCPMs, AvgLCPMs: metrics.AvgLCPMs,
 			AvgCLSScore: metrics.AvgCLSScore, AvgINPMs: metrics.AvgINPMs, AvgTTFBMs: metrics.AvgTTFBMs,
 			AvgBlockingResources: metrics.AvgBlockingResources, AvgLongTaskCount: metrics.AvgLongTaskCount,
 			AvgJSHeapUsedMB: metrics.AvgJSHeapUsedMB, AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
@@ -3313,6 +3313,7 @@ func browserMetricsFromEngine(metrics *engine.BrowserMetricsSummary) *BrowserMet
 	}
 	return &BrowserMetrics{
 		Samples:              metrics.Samples,
+		DocumentLoads:        metrics.DocumentLoads,
 		AvgFCPMs:             metrics.AvgFCPMs,
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
@@ -3348,6 +3349,7 @@ func browserDeviceMetricsFromEngine(values map[string]*engine.BrowserDeviceMetri
 			BrowserEngine:  metrics.BrowserEngine,
 			Metrics: BrowserMetrics{
 				Samples:              metrics.Samples,
+				DocumentLoads:        metrics.DocumentLoads,
 				AvgFCPMs:             metrics.AvgFCPMs,
 				AvgLCPMs:             metrics.AvgLCPMs,
 				AvgCLSScore:          metrics.AvgCLSScore,
@@ -3688,12 +3690,15 @@ func addBrowserMetrics(out *BrowserMetrics, value BrowserMetrics) {
 	}
 	samples := float64(value.Samples)
 	out.Samples += value.Samples
-	out.AvgFCPMs += value.AvgFCPMs * samples
-	out.AvgLCPMs += value.AvgLCPMs * samples
+	// Page-load averages weigh by the loads behind them.
+	loads := engine.BrowserDocumentLoads(value.DocumentLoads, value.Samples, value.AvgFCPMs, value.AvgLCPMs, value.AvgTTFBMs, value.AvgBlockingResources)
+	out.DocumentLoads += loads
+	out.AvgFCPMs += value.AvgFCPMs * float64(loads)
+	out.AvgLCPMs += value.AvgLCPMs * float64(loads)
+	out.AvgTTFBMs += value.AvgTTFBMs * float64(loads)
+	out.AvgBlockingResources += value.AvgBlockingResources * float64(loads)
 	out.AvgCLSScore += value.AvgCLSScore * samples
 	out.AvgINPMs += value.AvgINPMs * samples
-	out.AvgTTFBMs += value.AvgTTFBMs * samples
-	out.AvgBlockingResources += value.AvgBlockingResources * samples
 	out.AvgLongTaskCount += value.AvgLongTaskCount * samples
 	out.AvgJSHeapUsedMB += value.AvgJSHeapUsedMB * samples
 	out.AvgBrowserProcessCPU += value.AvgBrowserProcessCPU * samples
@@ -3705,12 +3710,12 @@ func finalizeBrowserMetrics(out *BrowserMetrics) {
 		return
 	}
 	divisor := float64(out.Samples)
-	out.AvgFCPMs /= divisor
-	out.AvgLCPMs /= divisor
+	out.AvgFCPMs = browserLoadAverage(out.AvgFCPMs, out.DocumentLoads)
+	out.AvgLCPMs = browserLoadAverage(out.AvgLCPMs, out.DocumentLoads)
+	out.AvgTTFBMs = browserLoadAverage(out.AvgTTFBMs, out.DocumentLoads)
+	out.AvgBlockingResources = browserLoadAverage(out.AvgBlockingResources, out.DocumentLoads)
 	out.AvgCLSScore /= divisor
 	out.AvgINPMs /= divisor
-	out.AvgTTFBMs /= divisor
-	out.AvgBlockingResources /= divisor
 	out.AvgLongTaskCount /= divisor
 	out.AvgJSHeapUsedMB /= divisor
 	out.AvgBrowserProcessCPU /= divisor
@@ -3907,4 +3912,13 @@ func (s *combinedSink) RecordBrowserInteractionEvidence(evidence *protocol.Brows
 		}
 	}
 	return fmt.Errorf("browser interaction archive sink is unavailable")
+}
+
+// browserLoadAverage divides a page-load measure's sum by the document loads
+// behind it, or is zero with none.
+func browserLoadAverage(sum float64, loads int64) float64 {
+	if loads <= 0 {
+		return 0
+	}
+	return sum / float64(loads)
 }

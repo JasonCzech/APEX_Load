@@ -226,7 +226,12 @@ JMS, Kafka, or other high-density protocol groups.
 - `config.browser.client_metrics` enables Core Web Vitals and related page
   timing metrics, including FCP, LCP, CLS, INP, DOM/load timing, long-task
   counts, blocking-resource counts, JS heap, screenshots, HTML, console, and
-  network evidence where available.
+  network evidence where available. Page-load measures (FCP, LCP, TTFB, DOM/load
+  timing, blocking resources) belong to the step that loaded the document: a
+  later step in the same document, as in a single-page app such as Salesforce
+  Lightning, is marked `same_document` and reports its own CLS, INP, long tasks
+  and resources instead, and summaries average the load measures over
+  `document_loads`.
 - Chromium runs with client metrics enabled also capture browser-process CPU
   and RSS memory through CDP process information plus OS lookup. WebKit process
   attribution remains limited to metrics Playwright exposes reliably.

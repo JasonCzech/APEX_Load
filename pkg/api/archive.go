@@ -906,6 +906,7 @@ type RunArchiveSOAPPayloadTimelineBucket struct {
 type BrowserEngineLiveMetrics struct {
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
+	DocumentLoads        int64   `json:"document_loads"`
 	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
@@ -922,6 +923,7 @@ type BrowserPlatformLiveMetrics struct {
 	DevicePlatform       string  `json:"device_platform,omitempty"`
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
+	DocumentLoads        int64   `json:"document_loads"`
 	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
