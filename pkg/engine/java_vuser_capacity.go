@@ -16,6 +16,7 @@ import (
 // account for pinned JVM sessions without retaining another parsed script.
 type JavaVuserCapacityPlan struct {
 	persistent        bool
+	sharedJVM         bool
 	open              bool
 	maxLiveWorkers    int64
 	iterationsPerUser int64
@@ -189,6 +190,10 @@ func NewJavaVuserCapacityPlan(script *dsl.Script) JavaVuserCapacityPlan {
 	}
 	plan := JavaVuserCapacityPlan{persistent: true}
 	if !isOpenWorkload(script) {
+		if javaSharedRequested(script) {
+			_, reason := javaSharedScriptReason(script)
+			plan.sharedJVM = reason == ""
+		}
 		return plan
 	}
 	plan.open = true
@@ -207,6 +212,13 @@ func javaVuserScriptUsesLegacyOneShot(script *dsl.Script) bool {
 
 func (plan JavaVuserCapacityPlan) RequiresPersistentLifecycle() bool {
 	return plan.persistent
+}
+
+// SharedJVM reports a script that asked for shared JVMs and has a shape the
+// shared slot adapter runs. A runner may still refuse it at staging, in which
+// case the group's dedicated demand is checked then.
+func (plan JavaVuserCapacityPlan) SharedJVM() bool {
+	return plan.sharedJVM
 }
 
 // Demand returns the maximum persistent JVM sessions that can be live for the
@@ -316,8 +328,14 @@ func validatedJavaVuserRuntimeCapacityForPlan(ctx context.Context, instance prot
 	if err != nil {
 		return protocol.RuntimeCapabilities{}, err
 	}
-	if demand > capabilities.MaxVUsers {
-		return protocol.RuntimeCapabilities{}, fmt.Errorf("java_vuser persistent runtime capacity exceeded: requires %d VUsers, maximum %d", demand, capabilities.MaxVUsers)
+	// A runner's live dedicated ceiling (shared JVMs and its memory budget)
+	// can be lower than its process slots.
+	limit := capabilities.MaxVUsers
+	if ceiling := capabilities.DedicatedCeiling; ceiling != nil {
+		limit = min(limit, max(*ceiling, 0))
+	}
+	if demand > limit {
+		return protocol.RuntimeCapabilities{}, fmt.Errorf("java_vuser persistent runtime capacity exceeded: requires %d VUsers, maximum %d", demand, limit)
 	}
 	if healthy, supported, healthErr := protocol.CheckRuntimeHealth(ctx, instance); supported {
 		if healthErr != nil {

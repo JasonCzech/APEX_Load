@@ -696,6 +696,50 @@ Attached JARs are supported on a local runner only. A distributed run that carri
 
 With `dedicated_class_loader`, the system classpath contains only the harness. The harness creates a child `URLClassLoader` for the effective script-plus-shared classpath, uses it for class loading and the complete requested lifecycle, and sets and restores the thread context class loader (including the startup worker). Local and sidecar execution create one JVM, `Actions` instance, and loader for each VUser session, retain them across `init`, repeated `action` calls, and `end`, and close them during teardown. Java fields, static state inside that isolated loader, and `lr.save_*` parameters therefore survive between lifecycle calls for the same VUser. This is class-loading isolation inside the runner; it is not a security sandbox.
 
+### End of a duration run
+
+When a run's duration ends, Java VUsers with separate `init`, `action` and
+`end` calls stop starting iterations, finish the call already in flight and
+then run `end`, as LoadRunner does by default. Each iteration is one `action`
+call, so this finishes the iteration. The wait is bounded by the longest Java
+call timeout (`timeout_ms` on the action, else `config.java_vuser.action_timeout_ms`,
+30 seconds by default); a call still running after that is cancelled and that
+VUser's `end` does not run. An explicit stop cancels calls at once, and other
+protocols keep stopping at the duration.
+
+### Shared JVMs
+
+By default each Java VUser gets its own JVM, so a runner holds at most
+`APEXLOAD_JAVA_VUSER_MAX_PROCESSES` VUsers (25 by default). Set
+`config.java_vuser.jvm_sharing` to `shared` to run many VUsers of one group in
+each JVM instead; `config.java_vuser.vusers_per_jvm` can lower the runner's
+VUsers per JVM. Each VUser still gets its own `Actions` instance, its own copy
+of the classes in the jar that holds the target class, its own `lr` context and
+its own lifecycle thread; libraries in the group's other jars load once per JVM.
+
+Shared JVMs run only on a Linux sidecar runner whose operator enabled them
+(`APEXLOAD_JAVA_VUSER_SHARED_JVM=true`, or the Helm chart's
+`javaVuser.runner.sharedJVM` values) and that has the delegated cgroup v2
+containment persistent lifecycles need (see Persistent process containment
+below; the stock compose service and chart sidecar lack it). The runner image
+ships the slot jars they load, and the runner sizes its JVM memory budget from
+its container's memory limit unless the operator sets one. They apply to
+scripts with exactly one `init`, `action` and `end` call on one target class,
+string parameters, a closed workload and sequential run logic. The runner also requires Java 17 or 21, a
+jar-only classpath and a clean native-code scan. When any of these does not
+hold, the group runs with one JVM per VUser and the run reports the reason
+(`apexctl run` prints it next to the results). An unexplained runner error, or
+a failure after the runner accepted the group, stops the run instead of
+changing modes. The run manifest's Java VMs entry shows each generator's
+outcome: its shared JVM count, or the reason it used one JVM per VUser.
+
+A scenario group can choose shared or dedicated JVMs, and the VUsers per JVM,
+in its Java Env runtime overrides without re-approving the script. Changing
+these settings on an approved script itself needs a new authoring approval.
+
+All of a group's VUsers are staged before the run starts, and a VUser's slot is
+never reused, so a schedule cannot grow a shared group past its staged VUsers.
+
 ### Backends and preflight
 
 `APEXLOAD_JAVA_VUSER_RUNNER_MODE` selects `local` (the backward-compatible default) or `sidecar`.
@@ -756,6 +800,10 @@ The relevant environment variables are:
 - `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` (same-host import asset root a local sidecar reads uploaded JAR bytes from)
 - `APEXLOAD_JAVA_VUSER_WORK_DIR`
 - `APEXLOAD_JAVA_VUSER_MAX_PROCESSES`
+- `APEXLOAD_JAVA_VUSER_SHARED_JVM` (runner sidecar, Linux only: enables shared JVMs, where many VUsers of one group share a JVM; see [Java VUser pooling](JAVA_VUSER_POOLING_IMPLEMENTATION.md#shared-jvms-runner-qualified))
+- `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` (default 250, 2–1,024), `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` (default 1,024)
+- `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` (runner-wide JVM memory budget shared by shared and dedicated JVMs) and `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` (default 256)
+- `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `APEXLOAD_JAVA_VUSER_SLOT_SHIM_JAR` (default: `apexload-slot-api.jar` and `apexload-slot-shim.jar` beside the harness jar)
 
 Helm, Kustomize, and Compose integrations are opt-in. The standard Java runner image contains JDK 21 and a Java 17-targeted harness. Operators can mount a read-only artifact volume or publish a signed custom runner image with approved precompiled classes/JARs.
 The packaged sidecar sets `APEXLOAD_JAVA_VUSER_WORK_DIR=/tmp`; its root filesystem is read-only and `/tmp` is the bounded writable volume used by child JVMs.

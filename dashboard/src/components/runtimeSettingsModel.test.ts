@@ -122,6 +122,16 @@ describe('runtimeSettingsModel', () => {
     expect(overrideFromRuntimeDraft({ log_level: '', auto_transactions: '', java_vuser: {} })?.java_vuser).toBeUndefined()
   })
 
+  it('formats and round-trips the shared-JVM choice', () => {
+    expect(formatJavaVuserSummary({ jvm_sharing: 'shared', vusers_per_jvm: 200 })).toBe('shared JVMs (200 per JVM)')
+    expect(formatJavaVuserSummary({ jvm_sharing: 'shared' })).toBe('shared JVMs')
+    expect(formatJavaVuserSummary({ jvm_sharing: 'dedicated' })).toBe('one JVM per VUser')
+    const override = { java_vuser: { jvm_sharing: 'shared' as const, vusers_per_jvm: 300 } }
+    const draft = runtimeDraftFromOverride(override)
+    expect(draft?.java_vuser).toEqual(override.java_vuser)
+    expect(overrideFromRuntimeDraft(draft)?.java_vuser).toEqual(override.java_vuser)
+  })
+
   it('formats pacing variants', () => {
     expect(formatPacing({ type: 'none' })).toBe('None')
     expect(formatPacing({ type: 'fixed_delay', delay_ms: 250 })).toBe('Fixed delay · 0.25 seconds')

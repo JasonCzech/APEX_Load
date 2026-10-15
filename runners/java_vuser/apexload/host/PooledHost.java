@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit;
  * This is lifecycle machinery, not a sandbox. External containment, authenticated
  * transport, lease enforcement, and workload qualification remain mandatory. */
 public final class PooledHost {
+    /** Lifetime slot admissions per JVM; matches javarunner.MaxPooledSlotsPerHost. */
+    public static final int MAX_SLOTS = 1024;
     private final Object lock = new Object();
     private final String generation;
     private final int capacity;
@@ -28,7 +30,7 @@ public final class PooledHost {
     private String reapRequest = "";
 
     public PooledHost(String generation, int capacity, URL shim, URL[] scripts, URL[] dependencies, String target) {
-        if (generation == null || !generation.matches("[A-Za-z0-9_-]{1,128}") || capacity < 1 || capacity > 256
+        if (generation == null || !generation.matches("[A-Za-z0-9_-]{1,128}") || capacity < 1 || capacity > MAX_SLOTS
                 || shim == null || scripts == null || scripts.length == 0 || scripts.length > 256
                 || dependencies == null || dependencies.length > 256 || target == null
                 || !target.matches("[A-Za-z_$][A-Za-z0-9_.$]*")) throw new IllegalArgumentException("invalid host configuration");

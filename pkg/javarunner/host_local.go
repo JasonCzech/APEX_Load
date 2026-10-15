@@ -46,6 +46,17 @@ func NewLocalHostBackend(launch PooledLaunchProvider) (*LocalHostBackend, error)
 	return &LocalHostBackend{containmentBackend: backend, launch: launch, runtimeSupported: pooledRuntimeSupported, credentialCheck: subprocessguard.ValidateAmbientCredentials, supports: SupportsStrongProcessContainment, start: StartStrongProcessTree, kill: KillProcessTree}, nil
 }
 
+// WithCredentialCheck replaces the ambient-credential guard run before every
+// host start. A runner sidecar passes its own check, which permits the
+// sidecar's loopback token and Kubernetes service links that the generator's
+// local-fork guard refuses; the host's environment is allowlisted either way.
+func (b *LocalHostBackend) WithCredentialCheck(check func() error) *LocalHostBackend {
+	if check != nil {
+		b.credentialCheck = check
+	}
+	return b
+}
+
 type hostCapture struct {
 	mu        sync.Mutex
 	bytes     []byte
@@ -253,7 +264,7 @@ func (h *localManagedHost) Ready(ctx context.Context, contexts map[string]map[st
 	if err != nil {
 		return errors.New("pooled_host_transport_lost")
 	}
-	transport, err := NewPooledTransport(connection, connection, h.generation, h.secret, func(error) { h.signal() })
+	transport, err := NewPooledTransportForSlots(connection, connection, h.generation, h.secret, max(1, len(contexts)), func(error) { h.signal() })
 	if err != nil {
 		_ = connection.Close()
 		return err

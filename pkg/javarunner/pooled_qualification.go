@@ -162,7 +162,7 @@ func (r *PooledQualificationRegistry) Select(ctx context.Context, profile string
 // LaunchProvider rechecks assets at provisioning. A changed input fails this
 // reservation; it never switches to dedicated execution or replays initialization.
 func (s PooledSelection) LaunchProvider() (PooledLaunchProvider, error) {
-	if s.decision.Mode != "pooled_pilot" {
+	if s.decision.Mode != "pooled_pilot" && s.decision.Mode != SharedJVMMode {
 		return nil, ErrPooledQualification
 	}
 	return func(ctx context.Context, a HostAllocation) (PooledLaunchSpec, error) {
@@ -249,7 +249,13 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 		if entry.IsDir() {
 			return nil
 		}
-		f, err := scan.file(path)
+		var f qualificationFile
+		var err error
+		if entry.Type()&fs.ModeSymlink != 0 {
+			f, err = runtimeLink(r.Launch.JDK.Home, path)
+		} else {
+			f, err = scan.file(path)
+		}
 		if err != nil {
 			return err
 		}
@@ -321,7 +327,34 @@ type qualificationFile struct {
 	Path, SHA256 string
 	Size         int64
 	Mode         uint32
+	// Link is a runtime symlink's target. Its file is hashed under its own
+	// path, so a link only adds where it points.
+	Link string `json:",omitempty"`
 }
+
+// runtimeLink accepts a symlink inside the JDK home only when it resolves to
+// a regular file that is also inside the home, as JDK builds link their
+// per-module legal notices to java.base. Anything else is refused.
+func runtimeLink(home, path string) (qualificationFile, error) {
+	target, err := os.Readlink(path)
+	if err != nil || target == "" || len(target) > 4096 || !utf8.ValidString(target) || strings.ContainsAny(target, "\x00\r\n") {
+		return qualificationFile{}, ErrPooledQualification
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return qualificationFile{}, ErrPooledQualification
+	}
+	rel, err := filepath.Rel(home, resolved)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return qualificationFile{}, ErrPooledQualification
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil || !info.Mode().IsRegular() {
+		return qualificationFile{}, ErrPooledQualification
+	}
+	return qualificationFile{Mode: uint32(fs.ModeSymlink), Link: target}, nil
+}
+
 type qualificationScanner struct {
 	ctx     context.Context
 	bytes   int64

@@ -246,6 +246,22 @@ spec:
               value: {{ .Values.javaVuser.runner.maxProcesses | quote }}
             - name: APEXLOAD_JAVA_VUSER_WORK_DIR
               value: /tmp
+{{- with .Values.javaVuser.runner.sharedJVM }}
+{{- if .enabled }}
+            - name: APEXLOAD_JAVA_VUSER_SHARED_JVM
+              value: "true"
+            - name: APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM
+              value: {{ .vusersPerJVM | quote }}
+            - name: APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB
+              value: {{ .heapMB | quote }}
+            - name: APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB
+              value: {{ .dedicatedJVMMemoryMB | quote }}
+{{- if .memoryBudgetMB }}
+            - name: APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB
+              value: {{ .memoryBudgetMB | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
           ports:
             - name: java-vuser
               containerPort: 8098

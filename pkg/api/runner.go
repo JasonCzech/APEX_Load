@@ -923,13 +923,25 @@ type GeneratorShardSummary struct {
 	RuntimeResourceClaim     *pb.RuntimeResourceClaim     `json:"runtime_resource_claim,omitempty"`
 	RuntimeResourceAdmission *pb.RuntimeResourceAdmission `json:"runtime_resource_admission,omitempty"`
 	JavaHost                 *JavaHostPlacementSummary    `json:"java_host,omitempty"`
-	Group                    string                       `json:"group"`
-	Target                   string                       `json:"target"`
-	VUsers                   int                          `json:"vusers"`
-	ShardStrategy            string                       `json:"shard_strategy,omitempty"`
-	ShardOrdinal             uint32                       `json:"shard_ordinal,omitempty"`
-	ShardCount               uint32                       `json:"shard_count,omitempty"`
-	VUserIDOffset            uint64                       `json:"vuser_id_offset,omitempty"`
+	// JavaVM is how the generator staged a group that asked for shared JVMs.
+	JavaVM        *JavaVMShardOutcome `json:"java_vm,omitempty"`
+	Group         string              `json:"group"`
+	Target        string              `json:"target"`
+	VUsers        int                 `json:"vusers"`
+	ShardStrategy string              `json:"shard_strategy,omitempty"`
+	ShardOrdinal  uint32              `json:"shard_ordinal,omitempty"`
+	ShardCount    uint32              `json:"shard_count,omitempty"`
+	VUserIDOffset uint64              `json:"vuser_id_offset,omitempty"`
+}
+
+// JavaVMShardOutcome is a generator's value-free shared-JVM outcome: "shared"
+// with its JVM count, or "dedicated" with the stable reason the group fell back.
+type JavaVMShardOutcome struct {
+	Mode         string   `json:"mode"`
+	Reason       string   `json:"reason,omitempty"`
+	JVMs         int      `json:"jvms,omitempty"`
+	VUsersPerJVM int      `json:"vusers_per_jvm,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 type RunLogicGoalSnapshot struct {
@@ -2403,6 +2415,11 @@ type RuntimeJavaVuserOverride struct {
 	UseXBootClasspath       *bool    `json:"use_xbootclasspath,omitempty"`
 	DedicatedClassLoader    *bool    `json:"dedicated_class_loader,omitempty"`
 	SkipParameterEvaluation *bool    `json:"skip_parameter_evaluation,omitempty"`
+	// JVMSharing ("dedicated" or "shared") and VUsersPerJVM override the
+	// script's shared-JVM opt-in for this group. Switching to dedicated also
+	// clears VUsersPerJVM, which applies only to shared JVMs.
+	JVMSharing   string `json:"jvm_sharing,omitempty"`
+	VUsersPerJVM int    `json:"vusers_per_jvm,omitempty"`
 }
 
 type RuntimeSettingsOverride struct {

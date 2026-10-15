@@ -21,12 +21,21 @@ WORKDIR /src
 COPY runners/java_vuser/Harness.java ./Harness.java
 COPY runners/java_vuser/apexload/ ./apexload/
 COPY runners/java_vuser/lrapi/lr.java ./lrapi/lr.java
+COPY runners/java_vuser/lrapi/SlotBridge.java ./lrapi/SlotBridge.java
 COPY runners/java_vuser/fixtures/SmokeActions.java ./fixtures/SmokeActions.java
 RUN mkdir -p /classes \
     && javac --release 17 -d /classes lrapi/lr.java Harness.java apexload/data/*.java apexload/bridge/Native*.java \
     && jar --create --file /java-vuser-runner.jar --main-class Harness -C /classes . \
     && mkdir -p /smoke \
     && javac --release 17 -d /smoke fixtures/SmokeActions.java
+# Shared JVMs (APEXLOAD_JAVA_VUSER_SHARED_JVM) load the slot host and the
+# per-VUser lr shim from these jars; the runner finds them beside the harness.
+# Keep in step with the Makefile's java-vuser-slot-runtime target.
+RUN mkdir -p /slot-api /slot-shim \
+    && javac --release 8 -d /slot-api apexload/bridge/SlotRuntime.java apexload/host/SlotLoader.java apexload/host/SlotWorker.java apexload/host/PooledHost.java apexload/host/PooledWire.java apexload/host/PooledMain.java apexload/host/GCPauses.java apexload/data/*.java apexload/bridge/Native*.java \
+    && jar --create --file /apexload-slot-api.jar -C /slot-api . \
+    && javac --release 8 -cp /slot-api -d /slot-shim lrapi/lr.java lrapi/SlotBridge.java \
+    && jar --create --file /apexload-slot-shim.jar -C /slot-shim .
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
@@ -38,6 +47,8 @@ RUN apk add --no-cache ca-certificates curl openjdk21-jre-headless \
 COPY --from=go-builder /apexload-java-vuser-runner /usr/local/bin/apexload-java-vuser-runner
 COPY --from=harness-builder /java-vuser-runner.jar /opt/apexload/java-vuser/java-vuser-runner.jar
 COPY --from=harness-builder /smoke/SmokeActions.class /opt/apexload/java-vuser/smoke/SmokeActions.class
+COPY --from=harness-builder /apexload-slot-api.jar /opt/apexload/java-vuser/apexload-slot-api.jar
+COPY --from=harness-builder /apexload-slot-shim.jar /opt/apexload/java-vuser/apexload-slot-shim.jar
 
 ENV JAVA_HOME=/opt/java/openjdk \
     JRE_HOME=/opt/java/openjdk \

@@ -41,6 +41,9 @@ type PooledRun struct {
 	controlMu                               sync.Mutex
 	controlReplies                          map[string]pooledControlReply
 	preparations                            map[string]*pooledPreparation
+	// groupLabel/scenarioLabel replace the opaque IDs in slot environments
+	// when a shared claim supplied the dedicated-mode labels.
+	groupLabel, scenarioLabel string
 }
 
 // OpenPooledRun accepts only a frozen, operator-qualified selection. No user
@@ -55,6 +58,7 @@ func (s *Server) OpenPooledRun(ctx context.Context, ownerID, epoch, execution, g
 	if err != nil {
 		return nil, err
 	}
+	backend = backend.WithCredentialCheck(s.credentialCheck)
 	d := selection.Decision()
 	return s.openPooledRun(ctx, ownerID, epoch, execution, group, budget, d.ConfigurationSHA256,
 		javarunner.HostProfile{SlotsPerHost: d.SlotsPerHost, MemoryBytesPerHost: d.HostMemoryBytes}, backend)

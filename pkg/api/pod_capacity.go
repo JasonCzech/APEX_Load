@@ -320,7 +320,11 @@ func podCapacityShards(group TestGroup, loads map[string]generatorLoadSnapshot, 
 				maxV = math.Min(maxV, load.PodCapacity.Remaining.Dimensions()[key]/n)
 			}
 		}
-		if available, ok := protocolRuntimeAvailableVUsers(load, group.Protocol); ok {
+		if strings.EqualFold(strings.TrimSpace(group.Protocol), "java_vuser") {
+			if available, ok, _ := groupJavaRuntimeAvailableVUsers(group, load); ok {
+				maxV = math.Min(maxV, float64(available))
+			}
+		} else if available, ok := protocolRuntimeAvailableVUsers(load, group.Protocol); ok {
 			maxV = math.Min(maxV, float64(available))
 		}
 		maxV = math.Min(maxV, float64(maximumVUsersWithinRuntimeResources(group, load, group.VUsers)))

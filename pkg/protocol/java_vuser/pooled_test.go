@@ -22,6 +22,7 @@ type adapterSlot struct {
 func (*adapterSlot) TargetClass() string { return "Actions" }
 func (*adapterSlot) HostID() string      { return "host" }
 func (*adapterSlot) SlotID() string      { return "slot" }
+func (*adapterSlot) Mode() string        { return "pooled_pilot" }
 func (*adapterSlot) Err() error          { return nil }
 func (s *adapterSlot) Close(ctx context.Context) error {
 	s.closes.Add(1)

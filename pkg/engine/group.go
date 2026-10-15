@@ -84,8 +84,11 @@ type GroupConfig struct {
 
 	// JavaBroker selects an operator-approved dedicated execution-pod backend.
 	// Nil preserves the existing local dedicated runtime. Scripts cannot set it.
-	JavaBroker     *JavaBrokerGroupOptions
-	javaBroker     *javaBrokerGroup
+	JavaBroker *JavaBrokerGroupOptions
+	javaBroker *javaBrokerGroup
+	// javaShared is set when the script asks for shared JVMs; it decides at
+	// preparation whether the group runs shared or falls back to dedicated.
+	javaShared     *javaSharedGroup
 	rateLimiter    *TokenBucket
 	throughputCap  *GroupThroughputCap
 	rendezvous     *RendezvousCoordinator
@@ -154,6 +157,7 @@ type MultiGroupEngine struct {
 	totalCtx               context.Context
 	wg                     *sync.WaitGroup
 	vuserCancels           map[int]context.CancelFunc
+	vuserRetires           map[int]context.CancelFunc // end at the next action boundary; the action in flight finishes
 	vuserGroups            map[int]string
 	vuserRunning           map[int]struct{}
 	vuserStopping          map[int]bool
@@ -318,6 +322,20 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			if err := newJavaBrokerGroup(g, cfg.Duration+cfg.PreBaseline+cfg.PostBaseline); err != nil {
 				return nil, err
 			}
+		} else if javaSharedRequested(g.Script) {
+			if g.Name == "" {
+				g.Name = g.Script.Name
+			}
+			if g.ScenarioID == "" {
+				g.ScenarioID = g.Script.ID
+			}
+			// Stage exactly the group's VUsers: the ID span is a namespace bound
+			// (generators set it to their whole capacity), not a population.
+			shared, err := newJavaSharedGroup(*g, g.VUsers)
+			if err != nil {
+				return nil, fmt.Errorf("group[%d] %q: %w", i, g.Name, err)
+			}
+			g.javaShared = shared
 		}
 	}
 	scripts := make([]*dsl.Script, 0, len(cfg.Groups))
@@ -397,7 +415,11 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			if strings.EqualFold(strings.TrimSpace(g.InitStrategy), "at_once") {
 				return nil, fmt.Errorf("group[%d] %q: init_strategy at_once is incompatible with persistent java_vuser lifecycle; use at_runtime", i, g.Name)
 			}
-			persistentJavaVUsers += javaCapacityPlan.Demand(g.VUsers)
+			// Shared groups hold no dedicated JVMs; a fallback is reserved at
+			// preparation, once the runner has decided.
+			if !g.javaShared.active() {
+				persistentJavaVUsers += javaCapacityPlan.Demand(g.VUsers)
+			}
 		} else if javaVuserScriptUsesLegacyOneShot(g.Script) {
 			legacyJavaConfigured = true
 		}
@@ -663,11 +685,11 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	defer mge.runtimePause.close()
 	remote := false
 	for _, group := range mge.groups {
-		remote = remote || group.javaBroker != nil
+		remote = remote || group.javaBroker != nil || group.javaShared.active()
 	}
 	if remote {
 		if !mge.brokerRunUsed.CompareAndSwap(false, true) {
-			return nil, fmt.Errorf("java_broker_engine_already_used")
+			return nil, fmt.Errorf("prepared_java_engine_already_used")
 		}
 		defer func() { runErr = errors.Join(runErr, mge.ClosePreparedRuntime()) }()
 	}
@@ -708,8 +730,19 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 				return nil, err
 			}
 		}
+		if group.javaShared.active() {
+			if err := group.javaShared.start(ctx, stopBrokerRun); err != nil {
+				return nil, err
+			}
+		}
 	}
-	if remote && coordinatedStart && !time.Now().Before(executionStart) {
+	// Recheck after preflight: a shared group that fell back to dedicated JVMs
+	// has nothing committed and must not fail the coordinated-start check.
+	committed := false
+	for _, group := range mge.groups {
+		committed = committed || group.javaBroker != nil || group.javaShared.active()
+	}
+	if committed && coordinatedStart && !time.Now().Before(executionStart) {
 		return nil, fmt.Errorf("java_broker_commit_missed_start")
 	}
 	if err := mge.acquireJavaVuserCapacity(); err != nil {
@@ -734,6 +767,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
+	mge.vuserRetires = make(map[int]context.CancelFunc)
 	mge.vuserGroups = make(map[int]string)
 	mge.vuserStopping = make(map[int]bool)
 	mge.resetVUserIDStateLocked()
@@ -894,6 +928,9 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 				launchCancel()
 				arrivalCancel()
 				mge.rampDownVUsers()
+				// Retired Java VUsers finish their action and run end() before
+				// the hard stop, within their action timeout.
+				mge.awaitDurationDrain(baseCtx)
 				baseCancel()
 				return
 			}
@@ -1535,12 +1572,22 @@ func (mge *MultiGroupEngine) importExecutionGateError(operation string) error {
 }
 
 func preflightGroupRuntimes(ctx context.Context, groups []GroupConfig) (int64, error) {
+	// Shared groups settle first: a refused claim hands the group to dedicated
+	// JVMs, and the dedicated capacity check below must then include it.
+	for index, group := range groups {
+		if group.javaShared == nil {
+			continue
+		}
+		if err := group.javaShared.prepare(ctx, group.SecretResolver); err != nil {
+			return 0, fmt.Errorf("group[%d] %q: %s", index, group.Name, scrubSensitiveTextWithConfig(err.Error(), group.RedactionConfig))
+		}
+	}
 	persistentJavaVUsers := int64(0)
 	var persistentJavaPlan JavaVuserCapacityPlan
 	persistentJavaConfigured := false
 	legacyJavaValidated := false
 	for index, group := range groups {
-		if group.javaBroker != nil || group.Script == nil || !strings.EqualFold(strings.TrimSpace(group.Script.Protocol), "java_vuser") {
+		if group.javaBroker != nil || group.javaShared.active() || group.Script == nil || !strings.EqualFold(strings.TrimSpace(group.Script.Protocol), "java_vuser") {
 			continue
 		}
 		plan := NewJavaVuserCapacityPlan(group.Script)
@@ -1581,6 +1628,11 @@ func preflightGroupRuntimes(ctx context.Context, groups []GroupConfig) (int64, e
 			}
 			continue
 		}
+		if group.javaShared.active() {
+			// The runner qualified and staged these JVMs; dedicated target
+			// validation would start JVMs the shared run does not use.
+			continue
+		}
 		result, err := PreflightScriptRuntime(ctx, group.Script, group.SecretResolver)
 		if err != nil {
 			message := scrubSensitiveTextWithConfig(err.Error(), group.RedactionConfig)
@@ -1600,7 +1652,7 @@ func preflightGroupRuntimes(ctx context.Context, groups []GroupConfig) (int64, e
 func persistentJavaConfiguredDemand(groups []GroupConfig) int64 {
 	var demand int64
 	for _, group := range groups {
-		if group.javaBroker == nil {
+		if group.javaBroker == nil && !group.javaShared.active() {
 			demand += NewJavaVuserCapacityPlan(group.Script).Demand(group.VUsers)
 		}
 	}
@@ -1609,7 +1661,7 @@ func persistentJavaConfiguredDemand(groups []GroupConfig) int64 {
 
 func hasPersistentJavaGroup(groups []GroupConfig) bool {
 	for _, group := range groups {
-		if group.javaBroker == nil && NewJavaVuserCapacityPlan(group.Script).RequiresPersistentLifecycle() {
+		if group.javaBroker == nil && !group.javaShared.active() && NewJavaVuserCapacityPlan(group.Script).RequiresPersistentLifecycle() {
 			return true
 		}
 	}
@@ -1707,6 +1759,7 @@ func (mge *MultiGroupEngine) signalVUserChangeLocked() {
 
 func (mge *MultiGroupEngine) unregisterVUserLocked(vuserID int) {
 	delete(mge.vuserCancels, vuserID)
+	delete(mge.vuserRetires, vuserID)
 	delete(mge.vuserGroups, vuserID)
 	delete(mge.vuserRunning, vuserID)
 	delete(mge.vuserStopping, vuserID)
@@ -1738,7 +1791,7 @@ func (mge *MultiGroupEngine) reconcileJavaVuserCapacityLocked() error {
 	var demand int64
 	for _, group := range mge.groups {
 		plan := NewJavaVuserCapacityPlan(group.Script)
-		if group.javaBroker != nil || !plan.RequiresPersistentLifecycle() {
+		if group.javaBroker != nil || group.javaShared.active() || !plan.RequiresPersistentLifecycle() {
 			continue
 		}
 		demand += max(plan.Demand(group.VUsers), liveByGroup[group.Name])
@@ -2076,6 +2129,11 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 		shedCancel()
 		vuCancel()
 	}
+	retireVUser := func() {
+		stopGracefulLink()
+		boundaryCancel()
+		vuCancel()
+	}
 	prepared := &preparedVUser{
 		identity:    identity,
 		group:       group,
@@ -2098,6 +2156,10 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 		return nil, nil
 	}
 	mge.vuserCancels[identity.handle] = cancelVUser
+	if mge.vuserRetires == nil {
+		mge.vuserRetires = make(map[int]context.CancelFunc)
+	}
+	mge.vuserRetires[identity.handle] = retireVUser
 	mge.vuserGroups[identity.handle] = group.Name
 	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()
@@ -2110,6 +2172,8 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	var err error
 	if group.javaBroker != nil {
 		vuProto, err = group.javaBroker.protocol(prepared.runtimeID)
+	} else if group.javaShared.active() {
+		vuProto, err = group.javaShared.protocol(prepared.runtimeID)
 	} else {
 		vuProto, err = protocol.Get(group.Script.Protocol)
 	}
@@ -2316,11 +2380,13 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 	type rampGroup struct {
 		duration time.Duration
 		cancels  []context.CancelFunc
+		// retire lets a Java VUser finish its action and run end().
+		retire bool
 	}
 	mge.mu.Lock()
 	ramps := make(map[string]*rampGroup, len(mge.groups))
 	for _, group := range mge.groups {
-		ramps[group.Name] = &rampGroup{duration: group.RampDown}
+		ramps[group.Name] = &rampGroup{duration: group.RampDown, retire: javaDurationDrain(group.Script) > 0}
 	}
 	ids := make([]int, 0, len(mge.vuserCancels))
 	for id := range mge.vuserCancels {
@@ -2345,7 +2411,11 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 		group := ramps[mge.vuserGroups[id]]
 		if group != nil {
 			mge.vuserStopping[id] = true
-			group.cancels = append(group.cancels, mge.vuserCancels[id])
+			stop := mge.vuserCancels[id]
+			if retire := mge.vuserRetires[id]; group.retire && retire != nil {
+				stop = retire
+			}
+			group.cancels = append(group.cancels, stop)
 		}
 	}
 	mge.mu.Unlock()
@@ -2393,6 +2463,39 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 		}()
 	}
 	rampsWG.Wait()
+}
+
+// awaitDurationDrain waits after a duration ramp-down until every VUser has
+// left or the longest Java drain has passed, so retired Java VUsers finish
+// their action and run end() before the hard stop. Without a Java group it
+// returns at once; a hard stop ends the wait.
+func (mge *MultiGroupEngine) awaitDurationDrain(ctx context.Context) {
+	drain := time.Duration(0)
+	mge.mu.Lock()
+	for i := range mge.groups {
+		drain = max(drain, javaDurationDrain(mge.groups[i].Script))
+	}
+	mge.mu.Unlock()
+	if drain <= 0 {
+		return
+	}
+	deadline := time.NewTimer(drain)
+	defer deadline.Stop()
+	for {
+		mge.mu.Lock()
+		remaining, changed := len(mge.vuserCancels), mge.vuserChanged
+		mge.mu.Unlock()
+		if remaining == 0 {
+			return
+		}
+		select {
+		case <-changed:
+		case <-deadline.C:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func sleepContext(ctx context.Context, delay time.Duration) bool {
@@ -2443,7 +2546,11 @@ func (mge *MultiGroupEngine) resetVUserIDStateLocked() {
 		if group.javaBroker != nil {
 			span = min(span, len(group.javaBroker.contexts))
 		}
-		mge.groupVUserIDPools[group.Name] = &groupVUserIDPool{span: span, noReuse: group.javaBroker != nil}
+		shared := group.javaShared.active()
+		if shared {
+			span = min(span, group.javaShared.prepared)
+		}
+		mge.groupVUserIDPools[group.Name] = &groupVUserIDPool{span: span, noReuse: group.javaBroker != nil || shared}
 	}
 }
 
@@ -2603,9 +2710,18 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		shedCancel()
 		vuCancel()
 	}
+	retireVUser := func() {
+		stopGracefulLink()
+		boundaryCancel()
+		vuCancel()
+	}
 
 	mge.mu.Lock()
 	mge.vuserCancels[identity.handle] = cancelVUser
+	if mge.vuserRetires == nil {
+		mge.vuserRetires = make(map[int]context.CancelFunc)
+	}
+	mge.vuserRetires[identity.handle] = retireVUser
 	mge.vuserGroups[identity.handle] = group.Name
 	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()
@@ -2890,12 +3006,20 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			return fmt.Errorf("java_broker_additional_ready_reservation_required")
 		}
 	}
+	if snapshotGroup.javaShared.active() && targetVUsers > snapshotGroup.VUsers {
+		// Shared slots are staged before the run and never reused.
+		available, err := mge.availableVUserIdentitiesLocked(groupName)
+		if err != nil || targetVUsers-snapshotGroup.VUsers > available {
+			mge.mu.Unlock()
+			return fmt.Errorf("java_vuser shared JVM group has no prepared slots for %d more VUsers", targetVUsers-snapshotGroup.VUsers)
+		}
+	}
 	targetCapacityPlan := NewJavaVuserCapacityPlan(snapshotGroup.Script)
 	currentVUsers := snapshotGroup.VUsers
 	mge.mu.Unlock()
 
 	var observedPersistentJavaLimit int64
-	if snapshotGroup.javaBroker == nil && targetCapacityPlan.RequiresPersistentLifecycle() && targetVUsers > currentVUsers {
+	if snapshotGroup.javaBroker == nil && !snapshotGroup.javaShared.active() && targetCapacityPlan.RequiresPersistentLifecycle() && targetVUsers > currentVUsers {
 		// Capability discovery can cold-start the sidecar probe. Keep it outside
 		// the engine state lock so teardown, metrics, and stop controls continue.
 		instance, err := protocol.Get("java_vuser")
@@ -2958,7 +3082,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			return fmt.Errorf("vuser id namespace has %d available ids, need %d", availableIDs, delta)
 		}
 	}
-	if group.javaBroker == nil && targetCapacityPlan.RequiresPersistentLifecycle() && delta != 0 {
+	if group.javaBroker == nil && !group.javaShared.active() && targetCapacityPlan.RequiresPersistentLifecycle() && delta != 0 {
 		persistentJavaTarget := persistentJavaScaleCapacityDemand(
 			mge.groups,
 			mge.liveVUsersByGroupLocked(),

@@ -392,6 +392,24 @@ func TestLocalHostBackendRefusesAmbientCredentialsBeforeProbe(t *testing.T) {
 	}
 }
 
+// A runner sidecar always holds its loopback token; the sidecar's own guard
+// accepts it, so the backend must run that guard rather than the generator's.
+func TestLocalHostBackendRunsTheSuppliedCredentialCheck(t *testing.T) {
+	t.Setenv("APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN", "runner-loopback-token")
+	b, _ := NewLocalHostBackend(func(context.Context, HostAllocation) (PooledLaunchSpec, error) {
+		return PooledLaunchSpec{}, errors.New("launch reached")
+	})
+	b.supports = func() bool { return true }
+	if _, err := b.Provision(context.Background(), HostAllocation{ID: "host"}); err == nil || strings.Contains(err.Error(), "launch reached") {
+		t.Fatalf("the generator guard accepted the runner token: %v", err)
+	}
+	checked := false
+	b = b.WithCredentialCheck(func() error { checked = true; return nil })
+	if _, err := b.Provision(context.Background(), HostAllocation{ID: "host"}); !checked || err == nil || !strings.Contains(err.Error(), "launch reached") {
+		t.Fatalf("supplied check not used: checked=%v %v", checked, err)
+	}
+}
+
 func TestLocalHostBackendDoesNotMisclassifyUncertainQualification(t *testing.T) {
 	b, _ := NewLocalHostBackend(func(context.Context, HostAllocation) (PooledLaunchSpec, error) {
 		return PooledLaunchSpec{}, ErrProcessContainmentFailed

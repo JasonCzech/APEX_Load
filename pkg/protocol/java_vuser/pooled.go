@@ -23,6 +23,7 @@ type pooledSlot interface {
 	TargetClass() string
 	HostID() string
 	SlotID() string
+	Mode() string
 	Err() error
 }
 
@@ -185,7 +186,7 @@ func (p *PooledSlotProtocol) evidence(result *protocol.Result) {
 	}
 	result.ProtocolEvidence["runner_contract"] = javarunner.PooledIPCContract
 	result.ProtocolEvidence["runner_backend"] = "sidecar"
-	result.ProtocolEvidence["runner_mode"] = "pooled_pilot"
+	result.ProtocolEvidence["runner_mode"] = p.slot.Mode()
 	result.ProtocolEvidence["runner_host_generation"] = p.slot.HostID()
 	result.ProtocolEvidence["runner_slot_id"] = p.slot.SlotID()
 }

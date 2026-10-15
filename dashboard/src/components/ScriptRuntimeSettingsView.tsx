@@ -1738,7 +1738,7 @@ export function ScriptRuntimeSettingsView({
           importedVMParameters={importedJavaVMParameters}
           onChange={next => updateField('config.java_vuser', { ...(script.config.java_vuser || {}), ...next })}
           dedicatedClassLoaderNote={persistentJavaVuserLifecycle
-            ? 'Each Java VUser keeps one JVM, Actions instance, and child loader for its full lifecycle. Java fields and saved LoadRunner parameters persist across init, repeated action iterations, and end, then the session is closed during teardown.'
+            ? 'Each Java VUser keeps its own Actions instance and child loader for its full lifecycle, and its own JVM unless shared JVMs are on. Java fields and saved LoadRunner parameters persist across init, repeated action iterations, and end, then the session is closed during teardown.'
             : 'This legacy full_lifecycle script uses one-shot JVM execution. Java fields and saved LoadRunner parameters do not persist between action invocations. Re-import the Java archive to generate the combined init/action/end lifecycle.'}
         />
 

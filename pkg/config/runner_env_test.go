@@ -224,3 +224,46 @@ func TestLoadJavaVuserOperatorConfigReadsAllowLegacyJavaFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadJavaVuserSharedJVMConfig(t *testing.T) {
+	for _, key := range []string{EnvJavaVuserSharedJVM, EnvJavaVuserSharedJVMVUsersPerJVM, EnvJavaVuserSharedJVMHeapMB, EnvJavaVuserJVMMemoryBudgetMB, EnvJavaVuserDedicatedJVMMemoryMB, EnvJavaVuserSlotAPIJar, EnvJavaVuserSlotShimJar} {
+		t.Setenv(key, "")
+	}
+	t.Setenv(EnvJavaVuserHarnessJar, "/opt/apexload/java-vuser/java-vuser-runner.jar")
+	cfg := LoadJavaVuserOperatorConfig().SharedJVM
+	if cfg.Enabled || cfg.VUsersPerJVM != DefaultJavaVuserSharedJVMVUsersPerJVM || cfg.HeapMB != DefaultJavaVuserSharedJVMHeapMB || cfg.MemoryBudgetMB != 0 || cfg.DedicatedJVMMemoryMB != DefaultJavaVuserDedicatedJVMMemoryMB {
+		t.Fatalf("defaults %+v", cfg)
+	}
+	if cfg.SlotAPIJar != "/opt/apexload/java-vuser/apexload-slot-api.jar" || cfg.SlotShimJar != "/opt/apexload/java-vuser/apexload-slot-shim.jar" {
+		t.Fatalf("slot jars default beside the harness: %+v", cfg)
+	}
+	t.Setenv(EnvJavaVuserSharedJVM, "true")
+	t.Setenv(EnvJavaVuserSharedJVMVUsersPerJVM, "500")
+	t.Setenv(EnvJavaVuserSharedJVMHeapMB, "2048")
+	t.Setenv(EnvJavaVuserJVMMemoryBudgetMB, "24576")
+	t.Setenv(EnvJavaVuserDedicatedJVMMemoryMB, "192")
+	t.Setenv(EnvJavaVuserSlotAPIJar, " /jars/api.jar ")
+	cfg = LoadJavaVuserOperatorConfig().SharedJVM
+	if !cfg.Enabled || cfg.VUsersPerJVM != 500 || cfg.HeapMB != 2048 || cfg.MemoryBudgetMB != 24576 || cfg.DedicatedJVMMemoryMB != 192 || cfg.SlotAPIJar != "/jars/api.jar" {
+		t.Fatalf("explicit %+v", cfg)
+	}
+	for _, tc := range []struct {
+		key, value string
+		check      func(JavaVuserSharedJVMConfig) bool
+	}{
+		{EnvJavaVuserSharedJVMVUsersPerJVM, "1", func(c JavaVuserSharedJVMConfig) bool { return c.VUsersPerJVM == DefaultJavaVuserSharedJVMVUsersPerJVM }},
+		{EnvJavaVuserSharedJVMVUsersPerJVM, "1025", func(c JavaVuserSharedJVMConfig) bool { return c.VUsersPerJVM == DefaultJavaVuserSharedJVMVUsersPerJVM }},
+		{EnvJavaVuserSharedJVMHeapMB, "8", func(c JavaVuserSharedJVMConfig) bool { return c.HeapMB == DefaultJavaVuserSharedJVMHeapMB }},
+		{EnvJavaVuserDedicatedJVMMemoryMB, "2", func(c JavaVuserSharedJVMConfig) bool {
+			return c.DedicatedJVMMemoryMB == DefaultJavaVuserDedicatedJVMMemoryMB
+		}},
+		{EnvJavaVuserJVMMemoryBudgetMB, "-1", func(c JavaVuserSharedJVMConfig) bool { return c.MemoryBudgetMB == 0 }},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if cfg := LoadJavaVuserOperatorConfig().SharedJVM; !tc.check(cfg) {
+				t.Fatalf("not normalized: %+v", cfg)
+			}
+		})
+	}
+}

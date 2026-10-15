@@ -316,6 +316,17 @@
               "required": ["repository", "tag", "pullPolicy"]
             },
             "maxProcesses": { "type": "integer", "minimum": 1, "maximum": 10000 },
+            "sharedJVM": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "vusersPerJVM": { "type": "integer", "minimum": 2, "maximum": 1024 },
+                "heapMB": { "type": "integer", "minimum": 64 },
+                "memoryBudgetMB": { "type": "integer", "minimum": 0 },
+                "dedicatedJVMMemoryMB": { "type": "integer", "minimum": 16 }
+              }
+            },
             "resources": { "type": "object" },
             "scratch": {
               "type": "object",

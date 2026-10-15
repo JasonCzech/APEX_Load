@@ -271,3 +271,29 @@ func TestPreparationReadinessValidatesStagedRunSupervision(t *testing.T) {
 		})
 	}
 }
+
+// A staged group must not expire while another group of the same test is still
+// preparing inside its AssignWork: shared JVMs can take minutes to start.
+func TestStageExpiryWaitsForAnInFlightGroup(t *testing.T) {
+	s, req := preparedReadinessFixture(t, WithAssignmentStageTTL(time.Hour))
+	s.mu.Lock()
+	token := s.lifecycleCoordinator.stageTokens[req.TestId]
+	s.lifecycleCoordinator.pendingStages[req.TestId] = &pendingAssignmentStage{token: 99, done: make(chan struct{})}
+	s.mu.Unlock()
+	s.expireStagedAssignment(req.TestId, token)
+	s.mu.Lock()
+	_, assigned := s.assignments[req.TestId]
+	rearmed := s.lifecycleCoordinator.stageTokens[req.TestId]
+	s.lifecycleCoordinator.finishPendingStageLocked(req.TestId, 99)
+	s.mu.Unlock()
+	if !assigned || rearmed == 0 || rearmed == token {
+		t.Fatalf("staged test expired or left unarmed while a group was preparing: assigned=%v token=%d->%d", assigned, token, rearmed)
+	}
+	s.expireStagedAssignment(req.TestId, rearmed)
+	s.mu.RLock()
+	_, assigned = s.assignments[req.TestId]
+	s.mu.RUnlock()
+	if assigned {
+		t.Fatal("re-armed expiry did not fire once the group finished")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -42,7 +43,59 @@ func (observation javaVuserCapacityObservation) persistentMaxVUsers() (int64, bo
 		observation.capabilities.MaxVUsers <= 0 {
 		return 0, false
 	}
-	return observation.capabilities.MaxVUsers, true
+	return dedicatedJVMMax(observation.capabilities), true
+}
+
+// dedicatedJVMMax is the dedicated JVM limit: the runner's process ceiling,
+// lowered by its live dedicated ceiling when shared JVMs and a memory budget
+// leave less room.
+func dedicatedJVMMax(capabilities protocol.RuntimeCapabilities) int64 {
+	maxVUsers := max(capabilities.MaxVUsers, 0)
+	if ceiling := capabilities.DedicatedCeiling; ceiling != nil {
+		maxVUsers = min(maxVUsers, max(*ceiling, 0))
+	}
+	return maxVUsers
+}
+
+// sharedCapacity is the runner's live shared-JVM envelope, present only on a
+// healthy persistent runtime whose operator enabled shared JVMs.
+func (observation javaVuserCapacityObservation) sharedCapacity() (*protocol.SharedJVMCapacity, bool) {
+	if _, ok := observation.persistentMaxVUsers(); !ok || observation.capabilities.SharedJVM == nil {
+		return nil, false
+	}
+	return observation.capabilities.SharedJVM, true
+}
+
+// Heartbeat in-use keys for shared JVMs, beside the per-protocol dedicated
+// counts: every shared VUser this generator admitted, and those whose stage
+// may not have reserved runner capacity yet.
+const (
+	sharedJVMAdmittedKey = "java_vuser.shared_jvm.admitted"
+	sharedJVMPendingKey  = "java_vuser.shared_jvm.pending"
+)
+
+// sharedJVMAvailable is the shared capacity left for new admissions. The
+// generator owns its runner, so its own admissions bound usage exactly; the
+// runner's live figure (which may lag a cached heartbeat) also reflects
+// dedicated JVMs and quarantined hosts. The lower of the two wins.
+func sharedJVMAvailable(capacity *protocol.SharedJVMCapacity, admitted, pending int64) int64 {
+	if capacity == nil {
+		return 0
+	}
+	return max(0, min(capacity.MaxVUsers-max(admitted, 0), capacity.AvailableVUsers-max(pending, 0)))
+}
+
+// activeSharedJavaVusersLocked sums the staged populations of shared groups.
+func (service *Service) activeSharedJavaVusersLocked() int64 {
+	var total int64
+	for _, assignment := range service.assignments {
+		for name, shared := range assignment.groupSharedJVM {
+			if shared {
+				total += int64(max(assignment.groupSharedJVMVUsers[name], 0))
+			}
+		}
+	}
+	return total
 }
 
 func (observation javaVuserCapacityObservation) persistentRuntimeError() error {
@@ -103,6 +156,8 @@ func (service *Service) assignmentHasPersistentJavaLocked(assignment assignedTes
 		if assignment.groupJavaHosts[groupName] != "" {
 			continue
 		}
+		// Shared groups still occupy the runner with persistent lifecycles, so
+		// they keep legacy one-shot work off it like dedicated groups do.
 		cached, ok := service.scriptCache.get(scriptID)
 		if ok && strings.EqualFold(cached.protocol, "java_vuser") && cached.requiresPhaseLifecycle {
 			return true
@@ -127,7 +182,7 @@ func (service *Service) assignmentHasLegacyJavaLocked(assignment assignedTest) b
 func (service *Service) assignmentPersistentJavaDemandLocked(assignment assignedTest) int64 {
 	var total int64
 	for groupName, scriptID := range assignment.groupScripts {
-		if assignment.groupJavaHosts[groupName] != "" {
+		if assignment.groupJavaHosts[groupName] != "" || assignment.groupSharedJVM[groupName] {
 			continue
 		}
 		cached, ok := service.scriptCache.get(scriptID)
@@ -213,6 +268,18 @@ func (coordinator *assignmentLifecycleCoordinator) pendingPersistentJavaVusersLo
 	for _, pending := range coordinator.pendingStages {
 		if pending != nil {
 			total += pending.persistentJavaDemand
+		}
+	}
+	return total
+}
+
+// pendingSharedJavaVusersLocked sums shared VUsers admitted to stages whose
+// runner reservations may not exist yet.
+func (coordinator *assignmentLifecycleCoordinator) pendingSharedJavaVusersLocked() int64 {
+	var total int64
+	for _, pending := range coordinator.pendingStages {
+		if pending != nil {
+			total += pending.sharedJavaDemand
 		}
 	}
 	return total
@@ -316,4 +383,14 @@ func (service *Service) adjustmentJavaVuserCapacityObservation(request *pb.VUser
 		return javaVuserCapacityObservation{}
 	}
 	return observeJavaVuserCapacity()
+}
+
+// javaVMOutcome reports a staged group's JVM mode on its assignment ack. Each
+// assignment carries one group, so at most one placement exists.
+func javaVMOutcome(placements []engine.JavaVMPlacement) *pb.JavaVMOutcome {
+	if len(placements) == 0 {
+		return nil
+	}
+	p := placements[0]
+	return &pb.JavaVMOutcome{Mode: p.Mode, Reason: p.Reason, Jvms: int32(min(p.JVMs, 1<<20)), VusersPerJvm: int32(min(p.VUsersPerJVM, 1<<20)), Warnings: append([]string(nil), p.Warnings...)}
 }

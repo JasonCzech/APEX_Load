@@ -72,6 +72,16 @@ func renderJavaVuserHelm(t *testing.T, enabled bool, imageTags ...string) javaVu
 	if len(imageTags) > 1 {
 		t.Fatalf("renderJavaVuserHelm accepts at most one image tag, got %d", len(imageTags))
 	}
+	var sets []string
+	if len(imageTags) == 1 {
+		sets = append(sets, "image.tag="+imageTags[0])
+	}
+	return renderJavaVuserHelmWith(t, enabled, sets...)
+}
+
+// renderJavaVuserHelmWith renders the chart with extra --set values.
+func renderJavaVuserHelmWith(t *testing.T, enabled bool, sets ...string) javaVuserStatefulSet {
+	t.Helper()
 	helm, err := exec.LookPath("helm")
 	if err != nil {
 		t.Skip("helm is required to render the chart")
@@ -85,8 +95,8 @@ func renderJavaVuserHelm(t *testing.T, enabled bool, imageTags ...string) javaVu
 		"--set", "dataPlatform.keyVaultUrl=https://ci-apexload.vault.azure.net",
 		"--set", "ingress.host=apexload-ci.example.internal",
 	}
-	if len(imageTags) == 1 {
-		args = append(args, "--set", "image.tag="+imageTags[0])
+	for _, set := range sets {
+		args = append(args, "--set", set)
 	}
 	if enabled {
 		args = append(args,
@@ -382,5 +392,29 @@ func TestJavaVuserRunnerImageAlwaysUsesPublishedStandardCoordinate(t *testing.T)
 				t.Fatalf("runner image = %q, want published coordinate %q", runner.Image, want)
 			}
 		})
+	}
+}
+
+func TestJavaVuserHelmSharedJVMIsOptIn(t *testing.T) {
+	runner := findJavaVuserContainer(renderJavaVuserHelm(t, true), "java-vuser-runner")
+	if runner == nil {
+		t.Fatal("Java Vuser runner container not found")
+	}
+	for _, item := range runner.Env {
+		if strings.Contains(item.Name, "SHARED_JVM") || item.Name == config.EnvJavaVuserJVMMemoryBudgetMB {
+			t.Fatalf("default chart sets %s", item.Name)
+		}
+	}
+	runner = findJavaVuserContainer(renderJavaVuserHelmWith(t, true, "javaVuser.runner.sharedJVM.enabled=true", "javaVuser.runner.sharedJVM.vusersPerJVM=500", "javaVuser.runner.sharedJVM.memoryBudgetMB=6144"), "java-vuser-runner")
+	for name, want := range map[string]string{
+		config.EnvJavaVuserSharedJVM:             "true",
+		config.EnvJavaVuserSharedJVMVUsersPerJVM: "500",
+		config.EnvJavaVuserSharedJVMHeapMB:       "1024",
+		config.EnvJavaVuserDedicatedJVMMemoryMB:  "256",
+		config.EnvJavaVuserJVMMemoryBudgetMB:     "6144",
+	} {
+		if got := envValue(runner.Env, name); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
 	}
 }

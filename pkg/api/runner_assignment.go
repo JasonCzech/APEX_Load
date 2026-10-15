@@ -341,8 +341,18 @@ func cloneGeneratorShardSummaries(in []GeneratorShardSummary) []GeneratorShardSu
 	copy(out, in)
 	for i := range out {
 		out[i].JavaHost = cloneJavaHostPlacementSummary(in[i].JavaHost)
+		out[i].JavaVM = cloneJavaVMShardOutcome(in[i].JavaVM)
 		out[i].RuntimeResourceClaim = generatorrpc.CloneRuntimeResourceClaim(in[i].RuntimeResourceClaim)
 		out[i].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(in[i].RuntimeResourceAdmission)
 	}
 	return out
+}
+
+func cloneJavaVMShardOutcome(in *JavaVMShardOutcome) *JavaVMShardOutcome {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Warnings = append([]string(nil), in.Warnings...)
+	return &out
 }

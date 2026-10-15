@@ -316,16 +316,20 @@ func TestHostLedgerRejectedReservationDoesNotMutate(t *testing.T) {
 }
 
 func TestHostLedgerMatchesJavaAdmissionCeiling(t *testing.T) {
-	l, _ := testHostLedger(t, HostBudget{2, 1000, 200})
-	if _, err := l.Reserve("epoch-1", 257, HostProfile{257, 100}, time.Second); !errors.Is(err, ErrHostState) {
+	if MaxPooledSlotsPerHost != 1024 {
+		t.Fatalf("Go ceiling %d drifted from PooledHost.MAX_SLOTS", MaxPooledSlotsPerHost)
+	}
+	over := MaxPooledSlotsPerHost + 1
+	l, _ := testHostLedger(t, HostBudget{2, 4000, 200})
+	if _, err := l.Reserve("epoch-1", over, HostProfile{over, 100}, time.Second); !errors.Is(err, ErrHostState) {
 		t.Fatalf("unsupported Java capacity accepted: %v", err)
 	}
 	_, usage := l.Snapshot()
 	if usage != (HostUsage{}) {
 		t.Fatalf("rejected capacity charged: %+v", usage)
 	}
-	h, err := l.Reserve("epoch-1", 257, HostProfile{MaxPooledSlotsPerHost, 100}, time.Second)
-	if err != nil || len(h) != 2 || len(h[0].SlotIDs) != 256 || len(h[1].SlotIDs) != 1 {
+	h, err := l.Reserve("epoch-1", over, HostProfile{MaxPooledSlotsPerHost, 100}, time.Second)
+	if err != nil || len(h) != 2 || len(h[0].SlotIDs) != MaxPooledSlotsPerHost || len(h[1].SlotIDs) != 1 {
 		t.Fatalf("ceiling partition: %v %+v", err, h)
 	}
 }

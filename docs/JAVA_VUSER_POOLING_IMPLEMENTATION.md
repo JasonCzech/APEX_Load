@@ -1,6 +1,6 @@
 # Java Vuser pooling: evidence tooling and implementation status
 
-Status: Experimental pooled evidence collector and dedicated distributed execution-pod integration; no distributed pooled execution or enabled AKS backend
+Status: Shared JVMs available for ordinary runs behind an operator switch and a per-script setting (2026-10-15); the pilot evidence collector and dedicated execution-pod integration remain; no enabled AKS backend
 
 This document tracks the evidence-first implementation of pooled Java Vuser
 hosts. Dedicated execution remains the default runtime path. Explicitly wired
@@ -54,6 +54,138 @@ archive source identity retains field 40.
 | Host supervisor and local backend | Join the ledger to IPC v3 and strong process containment; independent lease monitoring, all-host commit barrier, bounded native output, cancellation receipts, and exactly-once cleanup. Internal components only: no production sidecar endpoint, engine lease protocol, or durable AKS broker is enabled. |
 | Operator pilot manifest | Bounded, strict, versioned local file binding one reviewed qualification, resolved launch request, approved DSL digest, stage permissions, and a shared host/Vuser/memory budget. Runner loads it before opening its listener; Linux-only and disabled when the environment variable is absent. |
 | Pilot qualification registry | Operator-owned evidence records bound to inspected runtime/artifact/resource identities; frozen dedicated/pilot selection, stable fallback reasons, and pre-launch revalidation. Programmatic interface and operator manifest loading; no production qualification, registry configuration endpoint, or automatic approval is supplied. |
+
+## Shared JVMs (runner-qualified)
+
+The operator policy replaces the hand-signed pilot manifest for ordinary runs.
+Set `APEXLOAD_JAVA_VUSER_SHARED_JVM=true` on the Linux runner sidecar together
+with the existing runner enablement and authentication. The runner then builds
+one admission authority that every shared and dedicated JVM charges:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` | 250 | Lifetime slots per shared JVM (2–1,024). A script may ask for fewer. |
+| `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` | 1,024 | `-Xmx` of each shared JVM. |
+| `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` | process limit × one JVM reservation, capped at the container memory limit less 256 MiB | Runner-wide JVM memory budget. An explicit value is used as given. |
+| `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` | 256 | Budget charge of one dedicated JVM. |
+| `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `..._SLOT_SHIM_JAR` | beside the harness jar | Artifacts from `make java-vuser-slot-runtime`; the runner image ships both. |
+
+`APEXLOAD_JAVA_VUSER_MAX_PROCESSES` still caps JVMs per runner, now counting
+shared and dedicated JVMs alike. A runner refuses to start when the policy is
+invalid (including a container too small for one shared JVM), when it is not
+Linux, or when the pilot manifest is also set.
+
+Shared JVMs need the same delegated cgroup v2 containment as persistent Java
+lifecycles. The stock compose service and Helm sidecar run without it, so they
+do not advertise shared JVMs even with the policy on, and groups keep one JVM
+per VUser. On a governed runner, set the policy through the environment above
+or the chart's `javaVuser.runner.sharedJVM` values. Pooled hosts run the
+sidecar's own credential check, which accepts the runner's loopback token and
+Kubernetes service links; the host JVM's environment is allowlisted.
+
+A shared run starts with the `claim_shared` control operation. It carries the
+same runtime settings a dedicated session sends (JDK selection, exact VM
+parameters, classpath and uploaded classpath JARs), the target class and the
+script digest. The runner resolves them with the dedicated-mode validation and
+then qualifies the workload itself:
+
+- The JDK must be HotSpot or OpenJ9 17 or 21.
+- Every script classpath entry must be a jar. The jar that holds the target
+  class is private to each VUser, so the Actions class and its statics stay per
+  VUser. Other script jars and uploaded JARs load once in the shared loader. With
+  the script's dedicated class loader setting, every script jar is private.
+- The static native scan of the application jars must be complete and find no
+  indicators: native methods, `load` or `loadLibrary` calls on `System` or
+  `Runtime` (any `loadLibrary` name counts), JNA, JNR or `java.lang.foreign`
+  references, or packaged native libraries. Methods that are merely named
+  `load` (`Properties.load`, `KeyStore.load`, `ServiceLoader.load`) do not
+  count. The scan does not prove the absence of dynamic native loading or
+  background work; enabling the policy is the operator's acceptance of that.
+- The JDK home is hashed file by file. Symlinks inside it, such as the
+  per-module legal notices JDK builds link to `java.base`, count only when they
+  resolve to a regular file inside the home; their targets join the identity.
+- Script heap sizing (`-Xmx`, `-Xms`, `-XX:MaxRAM*` and similar) is dropped and
+  reported as `shared_jvm_script_heap_ignored`; the operator heap applies. Other
+  VM parameters pass through unchanged.
+
+A refusal uses a stable code (`shared_jvm_runtime_unsupported`,
+`shared_jvm_classpath_unsupported`, `shared_jvm_native_code_detected`,
+`shared_jvm_inspection_incomplete`, `shared_jvm_inputs_unsupported`, or a
+dedicated-mode runtime code) and leaves the workload eligible for dedicated
+JVMs. Each launch re-verifies the frozen qualification, as with the pilot.
+Healthy runners advertise `java_vuser_shared_jvm_v1` and a `shared_jvm`
+capacity envelope (slots per JVM, JVM reservation, maximum and available
+VUsers) on `/v1/capabilities`.
+
+## Shared JVMs across generators
+
+A generator whose runner hosts shared JVMs reports a `shared_jvm` envelope on
+the `java_vuser` runtime capacity in every heartbeat: VUsers per JVM, the
+runner's maximum, and the VUsers still available. The available figure is the
+lower of the runner's live figure (which already reflects dedicated JVMs and
+quarantined hosts) and the runner maximum minus every shared VUser this
+generator has admitted, so a heartbeat-cached runner figure cannot over-admit.
+
+For a group whose script asks for shared JVMs and has a supported shape, the
+controller places VUsers by that envelope (one slot per VUser) instead of by
+dedicated JVM slots, and generators without an envelope fall back to their
+dedicated capacity. The generator admits such a group against the same
+envelope, records it as shared so it never charges dedicated capacity, and
+stages its JVMs during assignment staging, inside the staging deadline, so
+commit never waits on cold JVM starts. Rollback and expiry close the staged
+JVMs like pod-based Java groups. A shared group cannot grow past its staged
+VUsers (`java_shared_jvm_additional_slots_required`). One runner run holds at
+most 4,096 VUsers, so the engine splits a larger group on one generator into
+runs of whole JVMs that are claimed, prepared, committed and closed together;
+a failure of any run after the first claim fails the group. While one group
+prepares, the generator keeps its other staged groups from expiring, and the
+controller waits the whole preparation budget (5 minutes) for the assignment.
+
+Dedicated JVMs share the runner's process slots and memory budget with shared
+JVMs, so the runner also reports `dedicated_capacity`: the dedicated JVMs it
+could hold beside its current shared JVMs. Generators admit and advertise
+dedicated Java work against the lower of that and the process limit.
+
+If the runner refuses the claim at staging, the group runs dedicated and must
+fit dedicated capacity; otherwise staging fails with the dedicated capacity
+error. With 250 VUsers per JVM and the default 25 JVMs per runner, one
+generator can host 6,250 shared Java VUsers, subject to its memory budget, so
+10,000 VUsers need two generators instead of 400.
+
+## Shared JVM benchmark (2026-10-15)
+
+`scripts/java-shared-jvm-bench/run.sh` runs the middleware-heavy evidence
+fixture (`HeavyActions`: Apache HttpClient, Jackson and Guava, a GET and a POST
+per transaction) through the real engine against a Linux runner in Docker
+(Docker Desktop on Apple silicon, Temurin 21, 6 CPUs and 6.5 GB for the runner
+container, 1,024 VUsers and a 320 MB heap per shared JVM). The order service
+runs in the same container, so CPU figures include it.
+
+| 25 VUsers, 60 s, 10 s warm-up | One JVM per VUser | Shared JVMs |
+| --- | --- | --- |
+| Paced (target 1,000 tx/s): achieved | 786–927 tx/s | 980–985 tx/s |
+| Paced: p50 / p90 / p99 | 5.0–5.7 / 9.0–12.7 / 12.8–51 ms | 2.0 / 6.2 / 9.4 ms |
+| Paced: CPU | 1.9–3.0 cores | 1.0 core |
+| JVM memory (PSS) | 3.8–4.8 GB (25 JVMs) | 0.30–0.35 GB (1 JVM) |
+| All VUsers initialized | 4–13 s | 0.7–1.0 s |
+| Closed loop: throughput | 0.9k–4.6k tx/s | 3.8k–8.9k tx/s |
+
+Shared JVMs had the higher closed-loop throughput in every same-container pair.
+Closed-loop runs saturate the CPUs, and the shared Docker VM made them vary
+widely between runs; their p99 was mixed (13–47 ms shared, 32–89 ms
+dedicated). Shared paced figures repeated closely; ranges cover every run.
+
+5,000 VUsers on one runner, paced at one iteration per VUser every 5 s with a
+60 s ramp, ran in 5 shared JVMs: 421,758 transactions, no errors, steady-state
+p50 / p95 / p99 2.0 / 6.2 / 14 ms, 3.1 GB of JVM memory (4.2 GB for the whole
+container) and 2.7 cores. One JVM per VUser at this fixture's 150–190 MB each
+would need several hundred gigabytes.
+
+The benchmark found and fixed: a native-code scan that flagged any method
+named `load`; JDK legal-notice symlinks failing input qualification; pooled
+hosts running the generator's credential guard, which refuses the runner's own
+token; groups over 4,096 VUsers on one generator; and a 40 ms tail from Nagle's
+algorithm on the host control socket.
 
 ## Building and checking fixtures
 
@@ -354,7 +486,11 @@ operation, carry stable status/reap fields, and preserve both exit option and
 exit status. The client rejects unknown, replayed, or mismatched responses.
 
 Both transport writers have bounded queues and never block a slot callback or
-control reader behind a slow write. The Go client retains identities rather than
+control reader behind a slow write. The queues scale with the host's slot count
+(Go: `2×slots+64` queued frames and `4×slots+64` outstanding requests, never below
+the original 64/512; Java: `4×slots+64` queued replies), so a whole host finishing
+an invocation at once queues instead of overflowing. With the original fixed
+64/512 bounds, a 1,024-slot init burst reaped the host. The Go client retains identities rather than
 parameter bodies for outstanding requests. Queue overflow, malformed transport,
 and uncertain control completion retire the host; peers receive
 `pooled_host_reaped`. Ordinary invocation cancellation requests permanent slot
@@ -368,7 +504,8 @@ slot state, commit barriers, controlled exits, bounded diagnostics, raw stdout/
 stderr writes, peer progress during a blocked invocation, cooperative closure,
 ignored interrupts, and preservation of the triggering failure. Go tests also
 cover blocked writers, queue exhaustion, response schema validation, and the
-ledger's matching 256-slot host admission ceiling.
+ledger's matching 1,024-slot host admission ceiling. A real-JVM burst test opens,
+initializes, runs and closes all 1,024 slots of one host concurrently.
 
 ## Supervisor and local containment adapter
 
@@ -537,8 +674,13 @@ and the host ceiling also respects the sidecar process limit. Remote callers
 cannot supply artifact paths, JVM arguments, memory budgets, or arbitrary context
 variables.
 
-This pilot allows one active run/group, at most 256 Vusers per configured run,
-and claim, renew, reserve, abort, and close by default. A profile must separately
+A runner accepts up to 64 concurrent runs per owner, one per execution/group,
+with at most 4,096 Vusers and 1,024 JVMs per run; the shared host admission
+budget caps their combined JVMs, Vusers and memory. Each prepared slot holds one
+event-capture descriptor, so the runner also caps open capture files at half of
+`RLIMIT_NOFILE` minus 1,024 reserved descriptors; a preparation beyond that fails
+with `pooled_capacity_unavailable` before any file or JVM is created. Claim, renew, reserve, abort, and close are
+available by default. A profile must separately
 set `AllowPreparation` to enable `prepare`. Healthy runners with such a profile
 advertise `java_vuser_pooled_preparation_v1`; the selected decision also reports
 `preparation_enabled`. This operation provisions qualified local hosts and opens
@@ -884,7 +1026,8 @@ Repeated review added regression coverage and corrected these issues:
 - Engine-configuration errors could leave a sample marked complete despite
   missing measurements. Error samples are now explicitly incomplete.
 - The Go ledger accepted profiles above the Java host admission ceiling. Both
-  now enforce a maximum of 256 lifetime slot admissions per host.
+  now enforce the same maximum of lifetime slot admissions per host (raised from
+  256 to 1,024 on 2026-10-15).
 - A binary response stream on stdout could be corrupted by raw/native output.
   IPC v3 replies now use a separate authenticated loopback socket.
 - Pending transport requests retained parameter bodies after serialization.

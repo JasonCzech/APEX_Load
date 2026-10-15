@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -130,6 +131,46 @@ func TestPooledQueueOverflowFailsClosed(t *testing.T) {
 		t.Fatal("overflow did not retire host", err)
 	}
 }
+
+func TestPooledTransportQueuesScaleWithHostSlots(t *testing.T) {
+	for _, tc := range []struct{ slots, writes, pending int }{{1, 66, 512}, {112, 288, 512}, {256, 576, 1088}, {MaxPooledSlotsPerHost, 2112, 4160}} {
+		if writes, pending := pooledTransportBounds(tc.slots); writes != tc.writes || pending != tc.pending {
+			t.Fatalf("bounds(%d) = %d/%d, want %d/%d", tc.slots, writes, pending, tc.writes, tc.pending)
+		}
+	}
+	for _, slots := range []int{0, -1, MaxPooledSlotsPerHost + 1} {
+		if _, err := NewPooledTransportForSlots(io.NopCloser(strings.NewReader("")), nopWriteCloser{}, "generation", make([]byte, 32), slots, func(error) {}); !errors.Is(err, ErrPooledFrame) {
+			t.Fatalf("slots %d accepted: %v", slots, err)
+		}
+	}
+	clientRead, serverWrite := io.Pipe()
+	serverRead, clientWrite := io.Pipe()
+	defer serverRead.Close()
+	defer serverWrite.Close()
+	reaped := make(chan error, 1)
+	transport, err := NewPooledTransportForSlots(clientRead, clientWrite, "generation", make([]byte, 32), MaxPooledSlotsPerHost, func(e error) { reaped <- e })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transport.Close()
+	// Every slot submits an invocation and a closure while the JVM is not
+	// reading: a full-host synchronized burst must queue, not reap the host.
+	for i := 0; i < 2*MaxPooledSlotsPerHost; i++ {
+		if _, err = transport.send("", "health", nil); err != nil {
+			t.Fatalf("burst frame %d retired the host: %v", i, err)
+		}
+	}
+	select {
+	case cause := <-reaped:
+		t.Fatalf("burst reaped host: %v", cause)
+	default:
+	}
+}
+
+type nopWriteCloser struct{}
+
+func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (nopWriteCloser) Close() error                { return nil }
 
 func TestPooledResponseSchema(t *testing.T) {
 	good := PooledFrame{Operation: "invoke", Fields: map[string]string{"code": "ok", "reap": "false", "return_code": "0", "event_fallback": "false", "event_truncated": "false", "exit_option": "1", "exit_status": "-17"}}

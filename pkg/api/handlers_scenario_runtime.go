@@ -318,11 +318,13 @@ func runtimeJavaVuserOverrideFromConfig(java dsl.JavaVuserConfig) *RuntimeJavaVu
 		UseXBootClasspath:       cloneBoolPointer(java.UseXBootClasspath),
 		DedicatedClassLoader:    cloneBoolPointer(java.DedicatedClassLoader),
 		SkipParameterEvaluation: cloneBoolPointer(java.SkipParameterEvaluation),
+		JVMSharing:              java.JVMSharing,
+		VUsersPerJVM:            java.VUsersPerJVM,
 	}
 	if projected.JDKSelection == "" && projected.JDKHome == "" &&
 		len(projected.AdditionalVMParameters) == 0 && len(projected.Classpath) == 0 &&
 		projected.UseXBootClasspath == nil && projected.DedicatedClassLoader == nil &&
-		projected.SkipParameterEvaluation == nil {
+		projected.SkipParameterEvaluation == nil && projected.JVMSharing == "" && projected.VUsersPerJVM == 0 {
 		return nil
 	}
 	return projected

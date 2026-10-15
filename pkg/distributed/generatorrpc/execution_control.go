@@ -360,7 +360,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 					runtimeValidation.executions[groupName] != execution) {
 				return commitTransition{err: status.Errorf(codes.Aborted, "group %q Java runtime validation is stale; retry commit", groupName)}
 			}
-			persistentJavaStarting = persistentJavaStarting || (cachedOK && cached.requiresPhaseLifecycle && !execution.javaHost)
+			persistentJavaStarting = persistentJavaStarting || (cachedOK && cached.requiresPhaseLifecycle && !execution.javaHost && !execution.javaShared)
 		}
 		if persistentJavaStarting {
 			if runtimeValidation == nil || !runtimeValidation.javaCapacityValid {
@@ -1301,6 +1301,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if assignment.groupJavaHosts[request.GetGroupName()] != "" && request.GetTargetVusers() > currentGroupVUsers && request.GetTargetVusers() > assignment.groupJavaHostPrepared[request.GetGroupName()] {
 		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "java_host_additional_ready_reservation_required")}
 	}
+	if assignment.groupSharedJVM[request.GetGroupName()] && request.GetTargetVusers() > currentGroupVUsers && request.GetTargetVusers() > assignment.groupSharedJVMVUsers[request.GetGroupName()] {
+		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "java_shared_jvm_additional_slots_required")}
+	}
 	var persistentJavaCurrentDemand int64
 	var persistentJavaTargetDemand int64
 	legacyJavaLifecycle := false
@@ -1309,7 +1312,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		if !cachedOK {
 			return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "group script is no longer available in the generator cache")}
 		}
-		if assignment.groupJavaHosts[request.GetGroupName()] == "" && cached.requiresPhaseLifecycle {
+		if assignment.groupJavaHosts[request.GetGroupName()] == "" && !assignment.groupSharedJVM[request.GetGroupName()] && cached.requiresPhaseLifecycle {
 			persistentJavaCurrentDemand = cached.javaVuserCapacity.Demand(int(currentGroupVUsers))
 			persistentJavaTargetDemand = cached.javaVuserCapacity.Demand(int(request.GetTargetVusers()))
 			if persistentJavaTargetDemand > persistentJavaCurrentDemand {
@@ -1325,7 +1328,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 					return scaleTransitionDecision{err: status.Errorf(codes.ResourceExhausted, "insufficient java_vuser runtime capacity: maximum %d", maxVUsers)}
 				}
 			}
-		} else if assignment.groupJavaHosts[request.GetGroupName()] == "" && strings.EqualFold(cached.protocol, "java_vuser") {
+		} else if assignment.groupJavaHosts[request.GetGroupName()] == "" && !assignment.groupSharedJVM[request.GetGroupName()] && strings.EqualFold(cached.protocol, "java_vuser") {
 			legacyJavaLifecycle = true
 			if request.GetTargetVusers() > currentGroupVUsers &&
 				service.persistentJavaRuntimeOccupiedLocked() {

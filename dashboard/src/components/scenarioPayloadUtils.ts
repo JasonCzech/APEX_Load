@@ -327,7 +327,9 @@ function hasJavaVuserOverride(java?: RuntimeJavaVuserSettings): boolean {
     || (java.classpath && java.classpath.length > 0)
     || java.use_xbootclasspath !== undefined
     || java.dedicated_class_loader !== undefined
-    || java.skip_parameter_evaluation !== undefined,
+    || java.skip_parameter_evaluation !== undefined
+    || java.jvm_sharing
+    || java.vusers_per_jvm,
   )
 }
 

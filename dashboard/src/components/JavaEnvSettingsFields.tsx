@@ -19,6 +19,8 @@ export type JavaEnvSettingsValue = Pick<
   | 'use_xbootclasspath'
   | 'dedicated_class_loader'
   | 'skip_parameter_evaluation'
+  | 'jvm_sharing'
+  | 'vusers_per_jvm'
 >
 
 export interface JavaEnvSettingsFieldsProps {
@@ -179,6 +181,69 @@ export function JavaEnvSettingsFields({
           <span>Load each Vuser using a dedicated class loader</span>
         </label>
         {dedicatedClassLoaderNote && <div className="cell-muted">{dedicatedClassLoaderNote}</div>}
+      </div>
+
+      <div className="settings-sub-group">
+        <h5>JVM sharing</h5>
+        <div className="runtime-checkbox-list" role="radiogroup" aria-label="JVM sharing">
+          {listOverrideInherits && (
+            <label className="checkbox-label">
+              <input
+                type="radio"
+                name={`${idPrefix}-jvm-sharing`}
+                checked={!value.jvm_sharing}
+                onChange={() => patch({ jvm_sharing: undefined, vusers_per_jvm: undefined })}
+              />
+              <span>Use the script's setting</span>
+            </label>
+          )}
+          <label className="checkbox-label">
+            <input
+              type="radio"
+              name={`${idPrefix}-jvm-sharing`}
+              checked={value.jvm_sharing === 'dedicated' || (!listOverrideInherits && !value.jvm_sharing)}
+              onChange={() => patch({ jvm_sharing: listOverrideInherits ? 'dedicated' : undefined, vusers_per_jvm: undefined })}
+            />
+            <span>One JVM per VUser</span>
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="radio"
+              name={`${idPrefix}-jvm-sharing`}
+              checked={value.jvm_sharing === 'shared'}
+              onChange={() => patch({ jvm_sharing: 'shared' })}
+            />
+            <span>Shared JVMs</span>
+          </label>
+        </div>
+        {value.jvm_sharing === 'shared' && (
+          <div className="form-grid">
+            <label>
+              <span>VUsers per JVM</span>
+              <input
+                aria-label="VUsers per JVM"
+                type="number"
+                min={2}
+                max={1024}
+                step={1}
+                value={value.vusers_per_jvm ?? ''}
+                placeholder="Runner default"
+                onChange={event => {
+                  const parsed = Number.parseInt(event.target.value, 10)
+                  patch({ vusers_per_jvm: Number.isFinite(parsed) && parsed > 0 ? parsed : undefined })
+                }}
+              />
+            </label>
+          </div>
+        )}
+        <div className="cell-muted">
+          Shared JVMs run many VUsers of this group in each JVM, so one load generator holds thousands of Java VUsers instead of about 25. Each VUser keeps its own Actions instance, script classes, lr context and thread. They need a runner with shared JVMs enabled, Java 17 or 21, jar-only classpaths, exactly one init, action and end call, and no native code. Otherwise the group runs one JVM per VUser and the run manifest says why.
+        </div>
+        {!listOverrideInherits && (
+          <div className="cell-muted" role="note">
+            Saving this on an approved Java script needs a new authoring approval. A scenario group can choose JVM sharing for its runs without one.
+          </div>
+        )}
       </div>
 
       <div className="settings-sub-group">

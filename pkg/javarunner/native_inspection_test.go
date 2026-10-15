@@ -142,3 +142,40 @@ func TestNativeInspectionRealJavaBytecode(t *testing.T) {
 		t.Fatal("raw source disclosed")
 	}
 }
+
+// Ordinary middleware calls methods named load (Properties, KeyStore,
+// ServiceLoader, Guava's CacheLoader); only System and Runtime loads count.
+func TestNativeInspectionResolvesLibraryLoadOwners(t *testing.T) {
+	javac, e := exec.LookPath("javac")
+	if e != nil {
+		t.Skip("javac unavailable")
+	}
+	dir := t.TempDir()
+	sources := map[string]string{
+		"CleanActions": `import java.util.*; public class CleanActions { public void load() {} public int run(java.io.InputStream in) throws Exception { new Properties().load(in); ServiceLoader.load(Runnable.class); java.security.KeyStore.getInstance("JKS").load(null, null); load(); return 0; } }`,
+		"SystemLoad":   `public class SystemLoad { public void run() { System.load("/opt/lib/libfixture.so"); } }`,
+		"RuntimeLoad":  `public class RuntimeLoad { public void run() { Runtime.getRuntime().loadLibrary("fixture"); } }`,
+	}
+	var files []string
+	for name, body := range sources {
+		path := filepath.Join(dir, name+".java")
+		if e := os.WriteFile(path, []byte(body), 0o600); e != nil {
+			t.Fatal(e)
+		}
+		files = append(files, path)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	if out, e := exec.CommandContext(ctx, javac, append([]string{"--release", "8", "-d", dir}, files...)...).CombinedOutput(); e != nil {
+		t.Fatalf("javac: %v %s", e, out)
+	}
+	for name, want := range map[string]bool{"CleanActions": false, "SystemLoad": true, "RuntimeLoad": true} {
+		report, e := InspectApplicationNative(ctx, []string{filepath.Join(dir, name+".class")})
+		if e != nil {
+			t.Fatal(e)
+		}
+		if found := len(report.Findings) > 0; found != want {
+			t.Fatalf("%s: findings %+v, want indicators=%v", name, report.Findings, want)
+		}
+	}
+}

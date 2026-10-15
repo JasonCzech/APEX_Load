@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/javarunner"
@@ -35,6 +36,11 @@ type pooledPreparation struct {
 	directory   string
 	commit      *pooledControlPhase // phase records are protected by run.controlMu
 	closures    map[string]*pooledControlPhase
+	// descriptors is this preparation's share of server.captureDescriptors,
+	// returned exactly once when its capture files close.
+	server       *Server
+	descriptorMu sync.Mutex
+	descriptors  int
 }
 
 func validPooledSlots(slots []PooledSlotContext) bool {
@@ -178,6 +184,16 @@ func (run *PooledRun) waitPreparation(ctx context.Context, reservation string, p
 }
 
 func (run *PooledRun) prepareCaptures(p *pooledPreparation) (map[string]map[string]string, error) {
+	// Admit every capture descriptor before creating anything; the preparation's
+	// capture reaper always runs afterwards and returns this share exactly once.
+	if !run.server.reserveCaptureDescriptors(len(p.slots)) {
+		return nil, javarunner.ErrHostCapacity
+	}
+	if run.server != nil {
+		p.descriptorMu.Lock()
+		p.server, p.descriptors = run.server, len(p.slots)
+		p.descriptorMu.Unlock()
+	}
 	parent, err := filepath.Abs(os.TempDir())
 	if err != nil {
 		return nil, err
@@ -189,6 +205,13 @@ func (run *PooledRun) prepareCaptures(p *pooledPreparation) (map[string]map[stri
 	p.directory = directory
 	p.captures = make(map[string]*pooledSlotCapture, len(p.slots))
 	values := make(map[string]map[string]string, len(p.slots))
+	group, scenario := run.group, run.execution
+	if run.groupLabel != "" {
+		group = run.groupLabel
+	}
+	if run.scenarioLabel != "" {
+		scenario = run.scenarioLabel
+	}
 	for i, slot := range p.slots {
 		path := filepath.Join(directory, strconv.Itoa(i)+".jsonl")
 		file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
@@ -198,8 +221,8 @@ func (run *PooledRun) prepareCaptures(p *pooledPreparation) (map[string]map[stri
 		p.captures[slot.SlotID] = &pooledSlotCapture{file: file, path: path}
 		values[slot.SlotID] = map[string]string{
 			"APEXLOAD_VUSER_ID":              strconv.FormatInt(slot.VUserID, 10),
-			"APEXLOAD_GROUP_NAME":            run.group,
-			"APEXLOAD_SCENARIO_ID":           run.execution,
+			"APEXLOAD_GROUP_NAME":            group,
+			"APEXLOAD_SCENARIO_ID":           scenario,
 			"APEXLOAD_IGNORE_THINK_TIME":     strconv.FormatBool(slot.IgnoreThinkTime),
 			"APEXLOAD_THINK_TIME_LIMIT_MS":   strconv.FormatInt(slot.ThinkTimeLimitMS, 10),
 			"APEXLOAD_JAVA_VUSER_EVENT_FILE": path,

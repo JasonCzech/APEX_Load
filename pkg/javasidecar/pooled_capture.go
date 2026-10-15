@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/jasonczech/apexload/pkg/hostnet"
 )
 
 var errPooledEventCapture = errors.New("pooled_event_capture_invalid")
@@ -97,4 +99,49 @@ func (p *pooledPreparation) closeCaptures() {
 		}
 		c.mu.Unlock()
 	}
+	p.releaseDescriptors()
+}
+
+// pooledCaptureDescriptorReserve keeps descriptors for the HTTP listener,
+// dedicated sessions, JDK probes and every pooled JVM's pipes and socket.
+const pooledCaptureDescriptorReserve = 1024
+
+// pooledCaptureDescriptorCeiling bounds runner-wide open capture files. Each
+// slot holds one capture descriptor and its host's pipes/socket amortize to at
+// most one more, so half of the unreserved limit is available to slots. An
+// unknown limit (Windows) leaves the shared admission budget authoritative.
+func pooledCaptureDescriptorCeiling(limit hostnet.OpenFileLimit) int {
+	if !limit.Available {
+		return 0
+	}
+	if limit.Soft <= pooledCaptureDescriptorReserve+2 {
+		return -1
+	}
+	return int(min(limit.Soft-pooledCaptureDescriptorReserve, 1<<30) / 2)
+}
+
+// reserveCaptureDescriptors admits n capture files before any is opened.
+func (s *Server) reserveCaptureDescriptors(n int) bool {
+	if s == nil {
+		return true
+	}
+	s.captureMu.Lock()
+	defer s.captureMu.Unlock()
+	if s.captureDescriptorLimit < 0 || s.captureDescriptorLimit > 0 && n > s.captureDescriptorLimit-s.captureDescriptors {
+		return false
+	}
+	s.captureDescriptors += n
+	return true
+}
+
+func (p *pooledPreparation) releaseDescriptors() {
+	p.descriptorMu.Lock()
+	defer p.descriptorMu.Unlock()
+	if p.descriptors == 0 || p.server == nil {
+		return
+	}
+	p.server.captureMu.Lock()
+	p.server.captureDescriptors -= p.descriptors
+	p.server.captureMu.Unlock()
+	p.descriptors = 0
 }

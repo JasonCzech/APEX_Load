@@ -14,12 +14,15 @@ import (
 // explicit dependency set; reject those layouts rather than hash an incomplete
 // set of executable assets. This does not prove application code cannot load
 // additional code dynamically; that still requires operator qualification.
+// qualificationJarLimits bounds every jar the pooled host loads or inspects.
+var qualificationJarLimits = zipbounds.Limits{MaxArchiveBytes: 2 << 30, MaxEntries: 16384, MaxCentralDirectoryBytes: 16 << 20, MaxNameBytes: 4096, MaxExtraBytes: 4096, MaxCommentBytes: 4096}
+
 func validateQualificationJar(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	// The caller has already checked and hashed this regular immutable file.
-	if err := zipbounds.ValidateFile(path, zipbounds.Limits{MaxArchiveBytes: 2 << 30, MaxEntries: 16384, MaxCentralDirectoryBytes: 16 << 20, MaxNameBytes: 4096, MaxExtraBytes: 4096, MaxCommentBytes: 4096}); err != nil {
+	if err := zipbounds.ValidateFile(path, qualificationJarLimits); err != nil {
 		return qualificationError(ctx)
 	}
 	archive, err := zip.OpenReader(path)

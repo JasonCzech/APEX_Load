@@ -82,6 +82,7 @@ type pendingAssignmentStage struct {
 	persistentJavaLifecycle bool
 	legacyJavaLifecycle     bool
 	persistentJavaDemand    int64
+	sharedJavaDemand        int64
 	done                    chan struct{}
 }
 
@@ -100,6 +101,7 @@ type assignmentStagePlan struct {
 	persistentJavaLifecycle bool
 	legacyJavaLifecycle     bool
 	persistentJavaDemand    int64
+	sharedJava              bool
 	executionDuration       time.Duration
 	durationOffset          time.Duration
 	nextDuration            time.Duration
@@ -116,6 +118,10 @@ type preparedAssignmentStage struct {
 	createdWriter                   bool
 	browserDocumentCaptureRequested bool
 	javaCapacity                    javaVuserCapacityObservation
+	// sharedFallback: the runner refused a group admitted as shared, so it runs
+	// on dedicated JVMs and must fit (and be recorded against) dedicated capacity.
+	sharedFallback       bool
+	sharedFallbackDemand int64
 }
 
 // AssignWork is the transport facade for the two-phase staging transition:
@@ -125,6 +131,17 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 	defer func() {
 		if assignment != nil && (callErr != nil || !ack.GetAccepted()) {
 			service.abortSourcePlanStage(assignment.TestId, assignment.ExecutionGeneration, assignment.RunSupervisionToken)
+		}
+	}()
+	defer func() {
+		if callErr != nil || !ack.GetAccepted() {
+			return
+		}
+		service.mu.RLock()
+		execution := service.executions[assignment.GetTestId()][assignment.GetGroupName()]
+		service.mu.RUnlock()
+		if execution != nil && execution.engine != nil {
+			ack.JavaVm = javaVMOutcome(execution.engine.JavaVMPlacements())
 		}
 	}()
 	defer func() {
@@ -418,15 +435,28 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		return rejectedAssignmentStage(err.Error(), available)
 	}
 	persistentJavaDemand := int64(0)
+	sharedJavaDemand := int64(0)
+	sharedJava := false
 	if request.GetJavaHost() == nil && cached.requiresPhaseLifecycle {
 		if strings.EqualFold(strings.TrimSpace(validated.initStrategy), "at_once") {
 			return rejectedAssignmentStage("init_strategy at_once is incompatible with persistent java_vuser lifecycle; use at_runtime", available)
 		}
-		persistentJavaDemand = cached.javaVuserCapacity.Demand(int(request.GetVuserCount()))
 		if service.legacyJavaRuntimeOccupiedLocked() {
 			return rejectedAssignmentStage("persistent java_vuser lifecycle cannot share generator process slots with an active legacy full_lifecycle assignment", available)
 		}
-		if maxVUsers, ok := javaCapacity.persistentMaxVUsers(); ok {
+		// A shared-eligible script on a runner that hosts shared JVMs charges
+		// the runner's live shared envelope. Otherwise (or if the runner later
+		// refuses the claim) the engine's dedicated capacity check applies.
+		if shared, ok := javaCapacity.sharedCapacity(); ok && cached.javaVuserCapacity.SharedJVM() && request.GetVuserCount() > 0 {
+			sharedJava, sharedJavaDemand = true, int64(request.GetVuserCount())
+			pending := coordinator.pendingSharedJavaVusersLocked()
+			if left := sharedJVMAvailable(shared, service.activeSharedJavaVusersLocked()+pending, pending); sharedJavaDemand > left {
+				return rejectedAssignmentStage(fmt.Sprintf("insufficient java_vuser shared JVM capacity: %d available", left), available)
+			}
+		} else {
+			persistentJavaDemand = cached.javaVuserCapacity.Demand(int(request.GetVuserCount()))
+		}
+		if maxVUsers, ok := javaCapacity.persistentMaxVUsers(); ok && !sharedJava {
 			projected := service.activePersistentJavaVusersLocked() +
 				coordinator.pendingPersistentJavaVusersLocked() +
 				persistentJavaDemand
@@ -520,6 +550,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		persistentJavaLifecycle: request.GetJavaHost() == nil && cached.requiresPhaseLifecycle,
 		legacyJavaLifecycle:     request.GetJavaHost() == nil && strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
 		persistentJavaDemand:    persistentJavaDemand,
+		sharedJavaDemand:        sharedJavaDemand,
 		done:                    make(chan struct{}),
 	}
 	coordinator.pendingStages[request.GetTestId()] = pending
@@ -536,6 +567,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 			persistentJavaLifecycle: request.GetJavaHost() == nil && cached.requiresPhaseLifecycle,
 			legacyJavaLifecycle:     request.GetJavaHost() == nil && strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
 			persistentJavaDemand:    persistentJavaDemand,
+			sharedJava:              sharedJava,
 			executionDuration:       executionDuration,
 			durationOffset:          executionDurationOffset,
 			nextDuration:            nextDuration,
@@ -665,7 +697,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 			return nil, service.availableCapacityLocked(), status.Error(codes.Internal, "prepared Java runtime capacity is unavailable")
 		}
 		if maxVUsers, ok := prepared.javaCapacity.persistentMaxVUsers(); ok {
-			occupied := service.activePersistentJavaVusersLocked() + coordinator.pendingPersistentJavaVusersLocked()
+			occupied := service.activePersistentJavaVusersLocked() + coordinator.pendingPersistentJavaVusersLocked() + prepared.sharedFallbackDemand
 			if occupied > maxVUsers {
 				return nil, service.availableCapacityLocked(), status.Errorf(codes.ResourceExhausted, "insufficient java_vuser runtime capacity: maximum %d", maxVUsers)
 			}
@@ -746,6 +778,13 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if request.GetJavaHost() != nil {
 		next.groupJavaHosts[request.GetGroupName()] = request.GetJavaHost().PolicySha256
 		next.groupJavaHostPrepared[request.GetGroupName()] = request.GetJavaHost().PreparedVusers
+	}
+	if plan.sharedJava && (prepared == nil || !prepared.sharedFallback) {
+		next.groupSharedJVM[request.GetGroupName()] = true
+		next.groupSharedJVMVUsers[request.GetGroupName()] = request.GetVuserCount()
+	} else {
+		delete(next.groupSharedJVM, request.GetGroupName())
+		delete(next.groupSharedJVMVUsers, request.GetGroupName())
 	}
 	next.vuserCount += request.GetVuserCount()
 
@@ -837,6 +876,13 @@ func (coordinator *assignmentLifecycleCoordinator) claimStageExpiryLocked(servic
 	if coordinator == nil || coordinator.stageTokens[testID] != token || !service.hasStagedExecutionLocked(testID) {
 		return false
 	}
+	if coordinator.pendingStages[testID] != nil {
+		// Another group of this test is still preparing (shared JVMs or a Java
+		// host can take minutes inside its AssignWork). Its completion re-arms
+		// the timer; until then keep one armed rather than expire the run.
+		coordinator.scheduleStageExpiryLocked(service, testID)
+		return false
+	}
 	coordinator.stopStageTimerLocked(testID)
 	return true
 }
@@ -867,6 +913,14 @@ func cloneAssignmentForStage(current assignedTest) assignedTest {
 	next.groupJavaHosts = cloneStringMap(current.groupJavaHosts)
 	if next.groupJavaHosts == nil {
 		next.groupJavaHosts = make(map[string]string)
+	}
+	next.groupSharedJVM = make(map[string]bool, len(current.groupSharedJVM))
+	for name, shared := range current.groupSharedJVM {
+		next.groupSharedJVM[name] = shared
+	}
+	next.groupSharedJVMVUsers = cloneStringInt32Map(current.groupSharedJVMVUsers)
+	if next.groupSharedJVMVUsers == nil {
+		next.groupSharedJVMVUsers = map[string]int32{}
 	}
 	if next.groups == nil {
 		next.groups = make(map[string]int32)
@@ -951,6 +1005,8 @@ func assignmentControlFingerprint(assignment assignedTest, exists bool) [sha256.
 		fingerprintWriteUint64(h, uint64(peak))
 		fingerprintWriteString(h, assignment.groupJavaHosts[name])
 		fingerprintWriteUint64(h, uint64(assignment.groupJavaHostPrepared[name]))
+		fingerprintWriteBool(h, assignment.groupSharedJVM[name])
+		fingerprintWriteUint64(h, uint64(uint32(assignment.groupSharedJVMVUsers[name])))
 	}
 	return fingerprintDigest(h)
 }
@@ -1272,6 +1328,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	}
 	prepared.execution = &groupExecution{
 		javaHost:            javaHost != nil,
+		javaShared:          plan.sharedJava,
 		stagedConfig:        &groupConfig,
 		groupName:           request.GetGroupName(),
 		executionGeneration: request.GetExecutionGeneration(),
@@ -1285,6 +1342,26 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if javaHost != nil {
 		if err := mge.PreflightRuntime(ctx); err != nil {
 			return nil, status.Error(codes.FailedPrecondition, "java_host_preparation_failed")
+		}
+	}
+	if plan.sharedJava {
+		// Start and stage the shared JVMs now, inside the staging deadline,
+		// so commit never waits on cold JVM starts at the fleet barrier.
+		if err := mge.PreflightRuntime(ctx); err != nil {
+			_ = mge.ClosePreparedRuntime()
+			if ctx != nil && ctx.Err() != nil {
+				return nil, status.FromContextError(ctx.Err()).Err()
+			}
+			return nil, status.Error(codes.FailedPrecondition, redactionConfig.ScrubText(err.Error()))
+		}
+		// A runner refusal leaves the group on dedicated JVMs: commit then
+		// charges and records it as dedicated, never as shared.
+		for _, placement := range mge.JavaVMPlacements() {
+			if placement.Mode != "shared" {
+				prepared.sharedFallback = true
+				prepared.sharedFallbackDemand = engine.NewJavaVuserCapacityPlan(&script).Demand(int(request.GetVuserCount()))
+				prepared.execution.javaShared = false
+			}
 		}
 	}
 	if ctx != nil {

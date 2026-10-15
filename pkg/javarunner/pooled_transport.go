@@ -28,6 +28,7 @@ type PooledTransport struct {
 	nativeCapable bool
 	done          chan struct{}
 	pending       map[uint64]pooledPending
+	maxPending    int
 	sequence      uint64
 	stopped       bool
 	// Must begin whole-host containment cleanup immediately and return promptly.
@@ -53,14 +54,38 @@ type pooledReply struct {
 // The caller must bound readiness with Call(ctx, "", "ready", nil) and must call
 // Close on lease loss/shutdown, even if the JVM has already exited.
 func NewPooledTransport(input io.ReadCloser, output io.WriteCloser, generation string, secret []byte, onFailure func(error)) (*PooledTransport, error) {
+	return newPooledTransport(input, output, generation, secret, 64, 512, onFailure)
+}
+
+// NewPooledTransportForSlots sizes the bounded writer queue and outstanding
+// request table for a host admitting up to slots lifetime VUsers. Each slot has
+// at most one invocation outstanding plus its own control/closure requests, so
+// a fixed queue would reap a large host on an ordinary synchronized burst.
+func NewPooledTransportForSlots(input io.ReadCloser, output io.WriteCloser, generation string, secret []byte, slots int, onFailure func(error)) (*PooledTransport, error) {
+	if slots < 1 || slots > MaxPooledSlotsPerHost {
+		return nil, ErrPooledFrame
+	}
+	writes, pending := pooledTransportBounds(slots)
+	return newPooledTransport(input, output, generation, secret, writes, pending, onFailure)
+}
+
+func newPooledTransport(input io.ReadCloser, output io.WriteCloser, generation string, secret []byte, writes, pending int, onFailure func(error)) (*PooledTransport, error) {
 	if input == nil || output == nil || !pooledID(generation, false) || len(secret) != 32 || onFailure == nil {
 		return nil, ErrPooledFrame
 	}
-	t := &PooledTransport{generation: generation, secret: append([]byte(nil), secret...), input: input, output: output, writes: make(chan []byte, 64), nativeWrites: make(chan []byte, 4), nativeSlots: make(chan struct{}, 4), done: make(chan struct{}), pending: make(map[uint64]pooledPending), onFailure: onFailure}
+	t := &PooledTransport{generation: generation, secret: append([]byte(nil), secret...), input: input, output: output, writes: make(chan []byte, writes), nativeWrites: make(chan []byte, 4), nativeSlots: make(chan struct{}, 4), done: make(chan struct{}), pending: make(map[uint64]pooledPending), maxPending: pending, onFailure: onFailure}
 	go t.writeLoop()
 	go t.readLoop()
 	return t, nil
 }
+
+// pooledTransportBounds returns the writer queue and outstanding-request limits
+// for a host. Small hosts keep the original 64/512 floor; larger hosts get room
+// for one invocation, one closure/interrupt and one diagnostic per slot.
+func pooledTransportBounds(slots int) (writes, pending int) {
+	return max(64, 2*slots+64), max(512, 4*slots+64)
+}
+
 func (t *PooledTransport) Done() <-chan struct{} { return t.done }
 func (t *PooledTransport) Close()                { t.fail(ErrPooledHostReaped) }
 func (t *PooledTransport) fail(cause error) {
@@ -241,7 +266,7 @@ func (t *PooledTransport) sendContext(ctx context.Context, slot, op string, fiel
 		t.mu.Unlock()
 		return nil, ErrPooledHostReaped
 	}
-	if len(t.pending) >= 512 || t.sequence == 1<<63-1 {
+	if len(t.pending) >= t.maxPending || t.sequence == 1<<63-1 {
 		t.mu.Unlock()
 		t.fail(errors.New("pooled_control_queue_overflow"))
 		return nil, ErrPooledHostReaped

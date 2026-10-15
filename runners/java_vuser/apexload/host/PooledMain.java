@@ -17,8 +17,14 @@ public final class PooledMain {
     private final String generation;
     private final boolean qualifiedCleanup;
     private final byte[] secret;
-    private final ArrayBlockingQueue<byte[]> responses = new ArrayBlockingQueue<byte[]>(64);
+    // At least one reply slot per request the Go transport may leave outstanding
+    // (max(512, 4*slots+64)), so a synchronized burst of completions queues
+    // instead of overflowing into a whole-host reap.
+    private final ArrayBlockingQueue<byte[]> responses;
     private final ArrayBlockingQueue<byte[]> nativeResponses = new ArrayBlockingQueue<byte[]>(4);
+    // An empty frame on responses only wakes the writer; one per native permit
+    // is reserved in its capacity.
+    private static final byte[] WAKE = new byte[0];
     private final Semaphore nativePermits=new Semaphore(4);
     private final ConcurrentHashMap<String,NativePending> nativePending=new ConcurrentHashMap<String,NativePending>();
     private static final class NativePending {
@@ -35,6 +41,7 @@ public final class PooledMain {
         String encoded=Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
         for(int i=0,pos=0;pos<encoded.length();i++,pos+=65536)frame.fields.put("payload"+i,encoded.substring(pos,Math.min(pos+65536,encoded.length())));
         if(!nativeResponses.offer(PooledWire.encode(frame,secret)))throw new IOException("native_service_capacity");
+        responses.offer(WAKE); // a writer parked on responses sends this call now, not after its poll timeout
         return pending.result.get();
       } catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException("native_service_canceled");}
       catch(Exception e){throw new IllegalStateException("native_service_exchange_lost");}
@@ -54,8 +61,9 @@ public final class PooledMain {
     private final GCPauses gcPauses;
     private volatile String terminalControlRequest = "";
 
-    private PooledMain(PooledHost host, String generation, boolean cleanup, byte[] secret, Diagnostics diagnostics) {
+    private PooledMain(PooledHost host, int capacity, String generation, boolean cleanup, byte[] secret, Diagnostics diagnostics) {
         this.host = host;
+        this.responses = new ArrayBlockingQueue<byte[]>(Math.max(512, 4 * capacity + 64) + 4);
         this.generation = generation;
         this.qualifiedCleanup = cleanup;
         this.secret = secret;
@@ -218,20 +226,23 @@ public final class PooledMain {
             bootstrap.readFully(secret);
             byte[] proof = hostProof(generation, secret);
             Socket controlSocket = new Socket();
+            // Frames are written whole; without this, a small frame that follows
+            // an unacknowledged one waits for loopback's delayed ACK (~40 ms).
+            controlSocket.setTcpNoDelay(true);
             controlSocket.connect(new InetSocketAddress("127.0.0.1", controlPort), 5000);
             final OutputStream output = controlSocket.getOutputStream();
             output.write(proof);
             output.flush();
             final DataInputStream control = new DataInputStream(controlSocket.getInputStream());
             PooledMain main = new PooledMain(new PooledHost(generation, capacity, shim, scripts, dependencies, target),
-                generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
+                capacity, generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
             Thread writer = new Thread(() -> {
                 try {
                     for (;;) {
                       byte[] data=main.responses.poll();
                       if(data==null)data=main.nativeResponses.poll();
                       if(data==null)data=main.responses.poll(10,TimeUnit.MILLISECONDS);
-                      if(data!=null){output.write(data);output.flush();}
+                      if(data!=null&&data.length>0){output.write(data);output.flush();}
                     }
                 } catch (Throwable failure) { main.fatal(); }
             }, "apexload-host-writer");

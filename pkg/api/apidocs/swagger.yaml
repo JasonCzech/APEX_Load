@@ -2593,6 +2593,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -2611,6 +2613,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -13560,12 +13565,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -14698,12 +14708,17 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             skip_parameter_evaluation:
                               type: boolean
                               nullable: true
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                           nullable: true
                         log:
                           type: object
@@ -15786,6 +15801,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -15804,6 +15821,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -17954,6 +17974,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -17972,6 +17994,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -19930,6 +19955,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -19948,6 +19975,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -52826,6 +52856,8 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           max_processes:
                             type: integer
                             format: int64
@@ -52844,6 +52876,9 @@ paths:
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                           work_dir:
                             type: string
                       jmeter:
@@ -56168,6 +56203,10 @@ paths:
                               group:
                                 type: string
                               java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              java_vm:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
@@ -87542,12 +87581,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -88647,12 +88691,17 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             skip_parameter_evaluation:
                               type: boolean
                               nullable: true
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                           nullable: true
                         log:
                           type: object
@@ -90330,6 +90379,26 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
                               nullable: true
                             runtime_resource_admission:
                               type: object
@@ -95034,12 +95103,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -96925,6 +96999,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -101628,12 +101722,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -103520,6 +103619,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -108223,12 +108342,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -110127,6 +110251,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -114830,12 +114974,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -116734,6 +116883,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -121437,12 +121606,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -123341,6 +123515,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -128044,12 +128238,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -129948,6 +130147,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -134651,12 +134870,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -150966,12 +151190,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -152133,12 +152362,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -152829,12 +153063,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -154915,12 +155154,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -155917,12 +156161,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -158208,12 +158457,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -159210,12 +159464,17 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     skip_parameter_evaluation:
                                       type: boolean
                                       nullable: true
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                   nullable: true
                                 log:
                                   type: object
@@ -160648,12 +160907,17 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   skip_parameter_evaluation:
                                     type: boolean
                                     nullable: true
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                 nullable: true
                               log:
                                 type: object
@@ -161877,12 +162141,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -162573,12 +162842,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -164659,12 +164933,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -165661,12 +165940,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -167850,12 +168134,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -168852,12 +169141,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -171905,12 +172199,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -172907,12 +173206,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -174697,12 +175001,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -178340,12 +178649,17 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             skip_parameter_evaluation:
                               type: boolean
                               nullable: true
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                           nullable: true
                         log:
                           type: object
@@ -180271,12 +180585,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -182411,12 +182730,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -184153,12 +184477,17 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             skip_parameter_evaluation:
                               type: boolean
                               nullable: true
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                           nullable: true
                         log:
                           type: object
@@ -186084,12 +186413,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -187670,12 +188004,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -188366,12 +188705,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -205133,6 +205477,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -205151,6 +205497,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -208251,6 +208600,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -208269,6 +208620,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -211397,6 +211751,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -211415,6 +211771,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -213382,6 +213741,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -213400,6 +213761,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -215565,6 +215929,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -215583,6 +215949,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -218681,6 +219050,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -218699,6 +219070,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -221755,6 +222129,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -221773,6 +222149,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -223998,6 +224377,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -224016,6 +224397,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -228396,6 +228780,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -228414,6 +228800,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -233449,6 +233838,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -233467,6 +233858,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -235690,6 +236084,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -235708,6 +236104,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -240798,6 +241197,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -240816,6 +241217,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -244630,6 +245034,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -244648,6 +245054,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -246631,6 +247040,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -246649,6 +247060,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -248723,6 +249137,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -248741,6 +249157,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -250734,6 +251153,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -250752,6 +251173,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -252669,6 +253093,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -252687,6 +253113,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -256701,6 +257130,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -256719,6 +257150,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -259128,6 +259562,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -259146,6 +259582,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -263182,6 +263621,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -263200,6 +263641,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -265129,6 +265573,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -265147,6 +265593,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -267328,6 +267777,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -267346,6 +267797,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -269613,6 +270067,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -269631,6 +270087,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -273707,6 +274166,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -273725,6 +274186,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -276611,6 +277075,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -276629,6 +277095,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -278456,6 +278925,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -278474,6 +278945,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -280720,6 +281194,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -280738,6 +281214,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -282544,6 +283023,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -282562,6 +283043,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -284799,6 +285283,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -284817,6 +285303,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -287916,6 +288405,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -287934,6 +288425,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -290364,6 +290858,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -290382,6 +290878,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -293951,6 +294450,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -293969,6 +294470,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -295923,6 +296427,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -295941,6 +296447,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -297827,6 +298336,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -297845,6 +298356,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -299464,6 +299978,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -299482,6 +299998,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -301539,6 +302058,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -301557,6 +302078,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -303511,6 +304035,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -303529,6 +304055,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -305415,6 +305944,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -305433,6 +305964,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -307052,6 +307586,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -307070,6 +307606,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -309174,6 +309713,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -309192,6 +309733,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -311096,6 +311640,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -311114,6 +311660,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -313166,6 +313715,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -313184,6 +313735,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -314935,6 +315489,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -314953,6 +315509,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -316620,6 +317179,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -316638,6 +317199,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -318701,6 +319265,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -318719,6 +319285,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -320924,6 +321493,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -320942,6 +321513,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -325022,6 +325596,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -325040,6 +325616,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -326977,6 +327556,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -326995,6 +327576,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -328893,6 +329477,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -328911,6 +329497,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -330857,6 +331446,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -330875,6 +331466,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -333075,6 +333669,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -333093,6 +333689,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -344624,12 +345223,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -345350,12 +345954,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -348209,6 +348818,26 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        java_vm:
+                          type: object
+                          properties:
+                            jvms:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            reason:
+                              type: string
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
+                            warnings:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - mode
+                          nullable: true
                         runtime_resource_admission:
                           type: object
                           description: 'Go type: pb.RuntimeResourceAdmission'
@@ -348960,12 +349589,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -358745,12 +359379,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -362041,6 +362680,26 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        java_vm:
+                          type: object
+                          properties:
+                            jvms:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            reason:
+                              type: string
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
+                            warnings:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - mode
+                          nullable: true
                         runtime_resource_admission:
                           type: object
                           description: 'Go type: pb.RuntimeResourceAdmission'
@@ -362792,12 +363451,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -372577,12 +373241,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -377627,6 +378296,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -378832,12 +379521,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -380632,6 +381326,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -381837,12 +382551,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -392704,6 +393423,11 @@ paths:
                                   description: 'Go type: JavaHostPlacementSummary'
                                   additionalProperties: true
                                   nullable: true
+                                java_vm:
+                                  type: object
+                                  description: 'Go type: JavaVMShardOutcome'
+                                  additionalProperties: true
+                                  nullable: true
                                 runtime_resource_admission:
                                   type: object
                                   description: 'Go type: pb.RuntimeResourceAdmission'
@@ -394302,6 +395026,11 @@ paths:
                                 java_host:
                                   type: object
                                   description: 'Go type: JavaHostPlacementSummary'
+                                  additionalProperties: true
+                                  nullable: true
+                                java_vm:
+                                  type: object
+                                  description: 'Go type: JavaVMShardOutcome'
                                   additionalProperties: true
                                   nullable: true
                                 runtime_resource_admission:
@@ -407608,6 +408337,26 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        java_vm:
+                          type: object
+                          properties:
+                            jvms:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            reason:
+                              type: string
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
+                            warnings:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - mode
+                          nullable: true
                         runtime_resource_admission:
                           type: object
                           description: 'Go type: pb.RuntimeResourceAdmission'
@@ -408359,12 +409108,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -418144,12 +418898,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -421384,6 +422143,26 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        java_vm:
+                          type: object
+                          properties:
+                            jvms:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            reason:
+                              type: string
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
+                            warnings:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - mode
+                          nullable: true
                         runtime_resource_admission:
                           type: object
                           description: 'Go type: pb.RuntimeResourceAdmission'
@@ -422135,12 +422914,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -431920,12 +432704,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -434313,12 +435102,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -435157,12 +435951,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -435959,12 +436758,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -436761,12 +437565,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -437628,12 +438437,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -438417,12 +439231,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -441112,6 +441931,26 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        java_vm:
+                          type: object
+                          properties:
+                            jvms:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            reason:
+                              type: string
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
+                            warnings:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - mode
+                          nullable: true
                         runtime_resource_admission:
                           type: object
                           description: 'Go type: pb.RuntimeResourceAdmission'
@@ -441863,12 +442702,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -451648,12 +452492,17 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           skip_parameter_evaluation:
                             type: boolean
                             nullable: true
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                         nullable: true
                       log:
                         type: object
@@ -453267,6 +454116,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -454053,12 +454922,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -454771,6 +455645,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -455557,12 +456451,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -456658,6 +457557,26 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            java_vm:
+                              type: object
+                              properties:
+                                jvms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                reason:
+                                  type: string
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
+                                warnings:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mode
+                              nullable: true
                             runtime_resource_admission:
                               type: object
                               description: 'Go type: pb.RuntimeResourceAdmission'
@@ -457148,12 +458067,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -474871,12 +475795,17 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               skip_parameter_evaluation:
                                 type: boolean
                                 nullable: true
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                             nullable: true
                           log:
                             type: object
@@ -475597,12 +476526,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object
@@ -477003,12 +477937,17 @@ paths:
                                   type: string
                                 jdk_selection:
                                   type: string
+                                jvm_sharing:
+                                  type: string
                                 skip_parameter_evaluation:
                                   type: boolean
                                   nullable: true
                                 use_xbootclasspath:
                                   type: boolean
                                   nullable: true
+                                vusers_per_jvm:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             log:
                               type: object
@@ -478550,12 +479489,17 @@ paths:
                           type: string
                         jdk_selection:
                           type: string
+                        jvm_sharing:
+                          type: string
                         skip_parameter_evaluation:
                           type: boolean
                           nullable: true
                         use_xbootclasspath:
                           type: boolean
                           nullable: true
+                        vusers_per_jvm:
+                          type: integer
+                          format: int64
                       nullable: true
                     log:
                       type: object

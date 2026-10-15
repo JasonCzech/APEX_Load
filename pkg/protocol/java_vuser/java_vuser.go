@@ -32,6 +32,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// DefaultActionTimeout bounds one Java action call when the script sets none.
+const DefaultActionTimeout = defaultActionTimeout
+
 const (
 	defaultRunnerCommand   = config.DefaultJavaVuserRunnerCommand
 	defaultMaxProcesses    = config.DefaultJavaVuserMaxProcesses
@@ -103,6 +106,7 @@ var knownSidecarCodes = map[string]struct{}{
 	javasidecar.FeatureExternalRuntimeV1:                       {},
 	javasidecar.FeatureRunnerOwnerLeaseV1:                      {},
 	javasidecar.FeatureRuntimeLeaseV1:                          {},
+	javasidecar.FeatureSharedJVMV1:                             {},
 	"vm_parameter_" + javarunner.VMParameterTooMany:            {},
 	"vm_parameter_" + javarunner.VMParameterTotalTooLarge:      {},
 	"vm_parameter_" + javarunner.VMParameterEmpty:              {},
@@ -1376,7 +1380,15 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 		if protocol.RuntimeFeaturesSatisfy(features, protocol.FeatureNativeDataSidecarV1+"+"+protocol.FeatureJavaVuserPersistentLifecycleV1+"+"+protocol.FeatureJavaVuserSessionFrameTokenV1) {
 			features = append(features, protocol.FeatureNativeDataJavaV1)
 		}
-		return protocol.RuntimeCapabilities{Available: true, Features: features, MaxVUsers: int64(capabilities.MaxProcesses)}
+		result := protocol.RuntimeCapabilities{Available: true, Features: features, MaxVUsers: int64(capabilities.MaxProcesses)}
+		if live := capabilities.DedicatedCapacity; live != nil {
+			ceiling := max(0, min(int64(*live), result.MaxVUsers))
+			result.DedicatedCeiling = &ceiling
+		}
+		if shared := capabilities.SharedJVM; shared != nil && protocol.RuntimeFeaturesSatisfy(features, javasidecar.FeatureSharedJVMV1) && shared.VUsersPerJVM >= 2 && shared.MaxVUsers > 0 {
+			result.SharedJVM = &protocol.SharedJVMCapacity{VUsersPerJVM: int64(shared.VUsersPerJVM), MaxVUsers: int64(shared.MaxVUsers), AvailableVUsers: max(0, min(int64(shared.AvailableVUsers), int64(shared.MaxVUsers)))}
+		}
+		return result
 	}
 	if !cfg.Enabled {
 		return protocol.RuntimeCapabilities{MaxVUsers: 0}

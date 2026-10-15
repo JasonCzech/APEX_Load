@@ -2,7 +2,11 @@ package javasidecar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/jasonczech/apexload/pkg/hostnet"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -443,5 +447,114 @@ func TestPooledPreparationClientRequiresReadinessEvidence(t *testing.T) {
 	valid.ReservationID, valid.PrepareDeadlineUnixMS = "", 0
 	if validPooledControlResponse(q, valid) {
 		t.Fatal("unexpected readiness on renew accepted")
+	}
+}
+
+func TestPooledCaptureDescriptorCeiling(t *testing.T) {
+	for _, tc := range []struct {
+		limit hostnet.OpenFileLimit
+		want  int
+	}{
+		{hostnet.OpenFileLimit{}, 0},
+		{hostnet.OpenFileLimit{Available: true, Soft: 256}, -1},
+		{hostnet.OpenFileLimit{Available: true, Soft: 1026}, -1},
+		{hostnet.OpenFileLimit{Available: true, Soft: 4096}, 1536},
+		{hostnet.OpenFileLimit{Available: true, Soft: 1 << 20}, (1<<20 - 1024) / 2},
+		{hostnet.OpenFileLimit{Available: true, Soft: 1 << 62}, 1 << 29},
+	} {
+		if got := pooledCaptureDescriptorCeiling(tc.limit); got != tc.want {
+			t.Fatalf("ceiling(%+v) = %d, want %d", tc.limit, got, tc.want)
+		}
+	}
+}
+
+func TestPooledPreparationRespectsDescriptorBudget(t *testing.T) {
+	var readies atomic.Int32
+	h := &preparationTestHost{ownedTestHost: ownedTestHost{done: make(chan struct{})}, ready: func(context.Context, map[string]map[string]string) error { readies.Add(1); return nil }}
+	run, c, _, q := preparationControlFixture(t, h)
+	s := run.server
+	s.captureMu.Lock()
+	s.captureDescriptorLimit = len(q.Slots) - 1
+	s.captureMu.Unlock()
+	_, err := c.PooledControl(context.Background(), q)
+	requireControlError(t, err, "pooled_capacity_unavailable")
+	if readies.Load() != 0 {
+		t.Fatal("over-budget preparation started a host")
+	}
+	waitCaptureCleanup(t, preparationRecord(run, q.ReservationID))
+	s.captureMu.Lock()
+	defer s.captureMu.Unlock()
+	if s.captureDescriptors != 0 {
+		t.Fatalf("refused preparation retained %d descriptors", s.captureDescriptors)
+	}
+}
+
+func TestPooledPreparationReturnsDescriptorsAfterCleanup(t *testing.T) {
+	h := &preparationTestHost{ownedTestHost: ownedTestHost{done: make(chan struct{})}, ready: func(context.Context, map[string]map[string]string) error { return nil }}
+	run, c, _, q := preparationControlFixture(t, h)
+	s := run.server
+	s.captureMu.Lock()
+	s.captureDescriptorLimit = len(q.Slots)
+	s.captureMu.Unlock()
+	if _, err := c.PooledControl(context.Background(), q); err != nil {
+		t.Fatal(err)
+	}
+	s.captureMu.Lock()
+	held := s.captureDescriptors
+	s.captureMu.Unlock()
+	if held != len(q.Slots) {
+		t.Fatalf("prepared run holds %d descriptors, want %d", held, len(q.Slots))
+	}
+	abort := q
+	abort.Operation, abort.RequestID, abort.Slots = "abort", "abort-1", nil
+	if _, err := c.PooledControl(context.Background(), abort); err != nil {
+		t.Fatal(err)
+	}
+	waitCaptureCleanup(t, preparationRecord(run, q.ReservationID))
+	s.captureMu.Lock()
+	defer s.captureMu.Unlock()
+	if s.captureDescriptors != 0 {
+		t.Fatalf("cleanup retained %d descriptors", s.captureDescriptors)
+	}
+}
+
+func TestPooledMaximumPrepareRequestFitsRequestLimit(t *testing.T) {
+	q := PooledControlRequest{Contract: ContractVersion, PooledContract: PooledControlContract, Operation: "prepare", RequestID: strings.Repeat("r", 128), OwnerID: strings.Repeat("o", 128), OwnerEpoch: strings.Repeat("e", 128), RunID: strings.Repeat("u", 128), RunToken: strings.Repeat("t", 64), ReservationID: strings.Repeat("v", 128)}
+	for i := 0; i < maxPooledControlVUsers; i++ {
+		id := fmt.Sprintf("%0128d", i)
+		q.Slots = append(q.Slots, PooledSlotContext{SlotID: id, VUserID: 2147483647 - int64(i), IgnoreThinkTime: true, ThinkTimeLimitMS: math.MaxInt64})
+	}
+	if !validPooledSlots(q.Slots) {
+		t.Fatal("worst-case slots rejected")
+	}
+	encoded, err := json.Marshal(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(encoded)) > MaxRequestBytes {
+		t.Fatalf("%d worst-case slots encode to %d bytes, over MaxRequestBytes %d", maxPooledControlVUsers, len(encoded), MaxRequestBytes)
+	}
+}
+
+func TestPooledCaptureUsesSharedClaimLabels(t *testing.T) {
+	run := &PooledRun{execution: "engine-0123", group: "group-abcd", groupLabel: "Checkout users", scenarioLabel: "scenario-7"}
+	p := &pooledPreparation{slots: []PooledSlotContext{{SlotID: "slot", VUserID: 3}}}
+	values, err := run.prepareCaptures(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { p.closeCaptures(); _ = os.RemoveAll(p.directory) }()
+	if values["slot"]["APEXLOAD_GROUP_NAME"] != "Checkout users" || values["slot"]["APEXLOAD_SCENARIO_ID"] != "scenario-7" {
+		t.Fatalf("labels not applied: %v", values["slot"])
+	}
+	plain := &PooledRun{execution: "engine-0123", group: "group-abcd"}
+	q := &pooledPreparation{slots: []PooledSlotContext{{SlotID: "slot", VUserID: 3}}}
+	values, err = plain.prepareCaptures(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { q.closeCaptures(); _ = os.RemoveAll(q.directory) }()
+	if values["slot"]["APEXLOAD_GROUP_NAME"] != "group-abcd" || values["slot"]["APEXLOAD_SCENARIO_ID"] != "engine-0123" {
+		t.Fatalf("pilot runs must keep opaque IDs: %v", values["slot"])
 	}
 }

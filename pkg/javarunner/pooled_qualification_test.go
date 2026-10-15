@@ -516,3 +516,57 @@ func TestPooledQualificationRejectsImplicitJarDependencies(t *testing.T) {
 		t.Fatal("ordinary bounded manifest rejected", err)
 	}
 }
+
+// JDK builds link per-module legal notices to java.base. A link to a regular
+// file inside the home qualifies and its target joins the identity; a link
+// that leaves the home, dangles or names a directory does not.
+func TestPooledQualificationRuntimeSymlinks(t *testing.T) {
+	request := qualificationFixture(t)
+	home := request.Launch.JDK.Home
+	if err := os.MkdirAll(filepath.Join(home, "legal", "java.base"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "legal", "java.sql"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "legal", "java.base", "LICENSE"), []byte("license"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "legal", "java.sql", "LICENSE")
+	if err := os.Symlink("../java.base/LICENSE", link); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := InspectPooledQualification(context.Background(), request)
+	if err != nil {
+		t.Fatalf("in-home runtime link refused: %v", err)
+	}
+	// Retargeting the link to an identical file changes the identity.
+	if err := os.WriteFile(filepath.Join(home, "legal", "java.base", "NOTICE"), []byte("license"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../java.base/NOTICE", link); err != nil {
+		t.Fatal(err)
+	}
+	retargeted, err := InspectPooledQualification(context.Background(), request)
+	if err != nil || retargeted == linked {
+		t.Fatalf("retargeted link kept the identity: %v", err)
+	}
+	outside := filepath.Join(filepath.Dir(home), "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{"escaping": outside, "dangling": "../java.base/absent", "directory": "../java.base"} {
+		if err := os.Remove(link); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := InspectPooledQualification(context.Background(), request); err == nil {
+			t.Fatalf("%s runtime link qualified", name)
+		}
+	}
+}

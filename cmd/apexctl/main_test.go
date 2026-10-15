@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -479,5 +480,23 @@ func TestEvaluateLocalSLARequiresEvidenceForEveryConfiguredThreshold(t *testing.
 	allFailed := evaluateLocalSLA(&engine.RunResult{TotalErrors: 5}, &api.GoalConfig{MaxErrorPct: &maxErrorPct})
 	if allFailed == nil || !allFailed.Evaluated || !allFailed.Breached {
 		t.Fatalf("all-failed SLA evidence = %#v, want evaluated 100%% error-rate breach", allFailed)
+	}
+}
+
+func TestJavaVMSummaryLines(t *testing.T) {
+	lines := javaVMSummaryLines([]engine.JavaVMPlacement{
+		{Group: "a", Mode: "shared", JVMs: 4, VUsersPerJVM: 250, Warnings: []string{"shared_jvm_script_heap_ignored"}},
+		{Group: "b", Mode: "dedicated", Reason: "shared_jvm_native_code_detected"},
+	})
+	want := []string{
+		"  Java VMs:     shared (4 JVMs, up to 250 VUsers each)",
+		"    - shared_jvm_script_heap_ignored",
+		"  Java VMs:     one per VUser (shared JVMs refused: shared_jvm_native_code_detected)",
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("lines:\n%s", strings.Join(lines, "\n"))
+	}
+	if javaVMSummaryLines(nil) != nil {
+		t.Fatal("dedicated scripts print nothing")
 	}
 }
