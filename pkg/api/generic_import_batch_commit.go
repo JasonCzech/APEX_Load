@@ -30,6 +30,10 @@ type genericImportBatchCommitRequest struct {
 	SourceProfile             string       `json:"source_profile"`
 	ImportSessionIDs          []string     `json:"import_session_ids,omitempty"`
 	SourceRecordingSessionIDs []string     `json:"source_recording_session_ids,omitempty"`
+	// UpdateTargets is positional with Scripts: an entry names the earlier
+	// imported script that script updates as a new version (it keeps its
+	// folder); null, or no list, creates. See importExistingScripts.
+	UpdateTargets []*importUpdateTarget `json:"update_targets,omitempty"`
 }
 
 // OpenAPI-Responses: 201
@@ -89,6 +93,12 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "operation_id is required")
 		return
 	}
+	updateTargets, err := normalizeImportUpdateTargets(req.UpdateTargets, len(req.Scripts))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updatesExisting := hasImportUpdateTargets(updateTargets)
 	requestedProfile := normalizeGenericImportSourceProfile(req.SourceProfile)
 	if requestedProfile == "" {
 		writeError(w, http.StatusBadRequest, "source_profile is not supported by the generic import batch")
@@ -121,14 +131,14 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	if !s.requireDomainFeatureForProject(w, projectID, featureIDForImportProfile(requestedProfile)) {
 		return
 	}
+	boundDrafts, ok := s.bindImportDrafts(w, req.Scripts, projectID)
+	if !ok {
+		return
+	}
 	requestScripts := make([]*dsl.Script, 0, len(req.Scripts))
 	requestedFolderIDs := make([]*string, len(req.Scripts))
-	for index := range req.Scripts {
-		draft := req.Scripts[index]
-		if err := bindDraftScriptProject(&draft, projectID); err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
-			return
-		}
+	for index := range boundDrafts {
+		draft := boundDrafts[index]
 		if status, err := s.applyProtectedImportFolderOverride(&draft, req.FolderID); err != nil {
 			writeError(w, status, err.Error())
 			return
@@ -146,6 +156,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		"folder":                       req.FolderID,
 		"import_session_ids":           importSessionIDs,
 		"source_recording_session_ids": sourceRecordingSessionIDs,
+		"update_targets":               importUpdateTargetsDigestValue(updateTargets),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint import batch")
@@ -180,6 +191,11 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	plannedIDs := importBatchPlannedAssetIDs(
 		attempt, genericImportBatchWorkflow, projectID, operationID, len(requestScripts),
 	)
+	for index, target := range updateTargets {
+		if target != nil {
+			plannedIDs[index] = target.ScriptID
+		}
+	}
 
 	// A stale receipt may come from another controller process that committed
 	// every deterministic asset before losing the receipt-completion response.
@@ -187,7 +203,9 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	// in-memory credential attestation intentionally does not survive restart.
 	// This branch can only adopt existing assets for the exact durable request
 	// digest; it never authorizes a new create with an invalid token.
-	if attempt != nil && !attempt.created && !anyNonEmpty(importSessionIDs) {
+	// A script to update exists before the save, so its presence proves
+	// nothing; recovery compares exact content after preparation instead.
+	if attempt != nil && !attempt.created && !anyNonEmpty(importSessionIDs) && !updatesExisting {
 		if !s.fenceImportBatchAdoption(w, genericImportBatchWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
@@ -256,6 +274,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	}()
 	prepared := make([]*dsl.Script, 0, len(requestScripts))
 	profiles := make([]string, 0, len(requestScripts))
+	updates := make(map[string]*StoredScript)
 	baselines := make([]*attestedRecordingBaseline, len(requestScripts))
 	baselineSourcesUnavailable := make([]bool, len(requestScripts))
 	for index, submitted := range requestScripts {
@@ -382,7 +401,11 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 			return
 		}
 		persistent.ID = plannedIDs[index]
+		if !s.reserveImportUpdate(w, projectID, index, persistent, updateTargets[index], updates) {
+			return
+		}
 		persistent.RefKey = ""
+		stampImportedContentDigest(persistent)
 		if len(sourceRecordingSessionIDs) > 0 && sourceRecordingSessionIDs[index] != "" {
 			baseline, baselineErr := s.attestRecordingBaselineCapture(
 				projectID,
@@ -413,12 +436,18 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		profiles = append(profiles, profile)
 	}
 	allocateAtomicImportBatchScriptNames(prepared)
+	keepUpdatedScriptNames(prepared, updates)
 
 	if attempt != nil && !attempt.created {
 		if !s.fenceImportBatchAdoption(w, genericImportBatchWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		if loadErr == nil && importUpdatesPending(stored, prepared, updateTargets) {
+			// The earlier attempt did not update a script it was to update, so
+			// it did not finish: save normally (its creates, if any, replay).
+			loadErr = errImportUpdateTargetStale
+		}
 		if loadErr == nil {
 			// The deterministic assets already exist, so never abandon their
 			// pending receipt on a subsequent verification error. Keeping the
@@ -459,7 +488,12 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	transaction, err = newCreateImportTransaction(s, genericImportBatchProfile, prepared, "", nil)
+	// Recovery above adopted an update an earlier attempt applied; anything
+	// else must still be the version the operator reviewed.
+	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+		return
+	}
+	transaction, err = newImportTransaction(s, genericImportBatchProfile, prepared, updates, "", nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare import batch: "+err.Error())
 		return
@@ -476,7 +510,11 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				return
 			}
 		}
-		created, createErr := transaction.createImportedScript(script, profiles[index])
+		created, createErr := transaction.saveImportedScript(script, profiles[index])
+		if errors.Is(createErr, errImportUpdateTargetStale) {
+			writeImportUpdateTargetStale(w, index, createErr)
+			return
+		}
 		if createErr != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save imported script %d: %v", index+1, createErr))
 			return

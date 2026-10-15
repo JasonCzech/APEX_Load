@@ -646,3 +646,26 @@ func TestApplyMintsNoParameterWhenNoFieldRewritten(t *testing.T) {
 		t.Fatalf("base_url = %q", got)
 	}
 }
+
+// Session and anti-forgery names stay credential-shaped: the parameter
+// projection masks them, so a plain value under one would be lost on the
+// next save. A trace or business identifier is an ordinary input.
+func TestCredentialShapedKeepsSessionNames(t *testing.T) {
+	for name, want := range map[string]bool{
+		"sessionId":          true,
+		"jsessionid":         true,
+		"userSessionId":      true,
+		"csrf":               true,
+		"sessionCookie":      true,
+		"csrfToken":          true,
+		"apiToken":           true,
+		"password":           true,
+		"traceId":            false,
+		"orderId":            false,
+		"sessionIdleTimeout": false,
+	} {
+		if got := CredentialShaped(name); got != want {
+			t.Errorf("CredentialShaped(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

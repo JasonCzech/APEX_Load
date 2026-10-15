@@ -162,6 +162,8 @@
           },
           "recorded_resource_urls": null,
           "recorded_resource_urls_available": true,
+          "source_document": "script",
+          "source_document_declared": false,
           "source_review": {
             "mappings": [
               {

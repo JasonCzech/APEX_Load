@@ -326,6 +326,12 @@ func governedSensitiveName(name string, options Options) (string, bool) {
 	if credential.SensitiveName(name) || credential.SensitiveXMLName(name) {
 		return name, true
 	}
+	return declaredSensitiveName(name, options)
+}
+
+// declaredSensitiveName reports a name the source itself declares a
+// credential (Options.SensitiveNames), with its label.
+func declaredSensitiveName(name string, options Options) (string, bool) {
 	if len(options.SensitiveNames) == 0 {
 		return "", false
 	}
@@ -760,8 +766,17 @@ func ProjectHeaders(input []HeaderOccurrence, options Options) ([]HeaderOccurren
 	result := exactResult()
 	for index := range out {
 		sensitiveName := out[index].Name
-		if !credential.SensitiveHeader(out[index].Name) {
+		// Cookies and session, anti-forgery and tracing headers are state the
+		// source recorded and stay as imported: nothing an imported script
+		// holds is a secret. One the source itself declares a credential is
+		// still governed, and a value matching a known credential is still
+		// caught.
+		recordedState := credential.RecordedStateHeader(out[index].Name)
+		if recordedState || !credential.SensitiveHeader(out[index].Name) {
 			governedName, sensitive := governedSensitiveName(out[index].Name, options)
+			if recordedState {
+				governedName, sensitive = declaredSensitiveName(out[index].Name, options)
+			}
 			if !sensitive {
 				if options.KnownCredentialMatcher != nil {
 					if structuralMIMEHeader(out[index].Name) {

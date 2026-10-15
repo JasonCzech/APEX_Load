@@ -96,7 +96,6 @@ func maskScriptSecretsWithMemo(script *dsl.Script, memo *importProjectionTextMem
 	}
 	restoreBrunoNativeCompactProvenance(&projectedScript, script)
 	restoreProjectedJavaVuserApprovalEvidence(&projectedScript, script)
-	restoreProjectedBoundedNonSecretHeaders(&projectedScript, script)
 	return &projectedScript
 }
 
@@ -173,43 +172,14 @@ func projectScriptDisclosureCopy(payload []byte, memo *importProjectionTextMemo)
 	return projectedScript
 }
 
-func restoreProjectedBoundedNonSecretHeaders(projected, source *dsl.Script) {
-	if projected == nil || source == nil {
-		return
-	}
-	allowed := make(map[string]string)
-	if err := dslwalk.Walk(source, func(ref dslwalk.SurfaceRef) error {
-		if ref.Action == nil {
-			return nil
-		}
-		for name, value := range ref.Action.Headers {
-			if isBoundedNonSecretHeaderValue(name, value) {
-				allowed[ref.Path+"\x00"+strings.ToLower(strings.TrimSpace(name))] = strings.TrimSpace(value)
-			}
-		}
-		return nil
-	}); err != nil || len(allowed) == 0 {
-		return
-	}
-	_ = dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
-		if ref.Action == nil {
-			return nil
-		}
-		for name := range ref.Action.Headers {
-			if value, ok := allowed[ref.Path+"\x00"+strings.ToLower(strings.TrimSpace(name))]; ok {
-				ref.Action.Headers[name] = value
-			}
-		}
-		return nil
-	})
-}
-
 // maskImportHeaderFidelityBytes projects the exact, inert source bytes retained
 // for runtime-incompatible headers and multipart fields. The durable execution
-// copy keeps those bytes behind import_review_required, but ordinary reads,
-// exports, and review responses must not disclose either an authored name or
-// value. The historical function name is retained because header fidelity was
-// the first consumer of this shared byte envelope.
+// copy keeps those bytes behind import_review_required; ordinary reads,
+// exports, and review responses mask them. An occurrence's name field still
+// names the header (or quotes a name HTTP cannot carry) on purpose, so the
+// review and the editor can say which header was left out: nothing an
+// imported script holds is a secret. The historical function name is retained
+// because header fidelity was the first consumer of this shared byte envelope.
 func maskImportHeaderFidelityBytes(script *dsl.Script) error {
 	if script == nil {
 		return nil
@@ -1508,8 +1478,12 @@ func projectHeaderValue(name string, value any, memo *importProjectionTextMemo) 
 	if !ok {
 		return projectScriptNode(value, scriptProjectionContext{key: name, opaqueMap: true, textMemo: memo})
 	}
-	if isBoundedNonSecretHeaderValue(name, text) {
-		return strings.TrimSpace(text)
+	if credential.RecordedStateHeader(name) {
+		// Cookies and session, anti-forgery and tracing headers are state the
+		// source recorded, not credentials, so they show as recorded. The
+		// disclosure projection that follows still masks a value that is a
+		// credential held elsewhere in the script or a known project secret.
+		return text
 	}
 	if (scrub.Policy{}).SensitiveHeader(name) || isSensitiveScriptKey(name) {
 		if isPortableTemplateBinding(text) {
@@ -1530,19 +1504,6 @@ func projectHeaderValue(name string, value any, memo *importProjectionTextMemo) 
 		return scrub.ValueURL(text, scrub.Policy{})
 	}
 	return memo.scrubScriptText(text)
-}
-
-func isBoundedNonSecretHeaderValue(name, value string) bool {
-	switch normalizeScriptFieldName(name) {
-	case "xsessionendreason":
-		// Agentforce defines this as a lifecycle reason enum, not a session
-		// identifier or credential. Preserve only the converter-authored value;
-		// arbitrary values under this otherwise sensitive-looking header remain
-		// disclosure-projected.
-		return strings.EqualFold(strings.TrimSpace(value), "UserRequest")
-	default:
-		return false
-	}
 }
 
 func projectScriptString(value string, ctx scriptProjectionContext) string {

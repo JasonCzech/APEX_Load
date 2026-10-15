@@ -174,7 +174,18 @@ func directJMeterImportRequestDigest(
 	s *Server,
 	scripts []*dsl.Script,
 	scenario *jmeter.ScenarioDraft,
+	updateTargets []*importUpdateTarget,
 ) (string, error) {
+	for _, target := range updateTargets {
+		if target != nil {
+			// A save that updates earlier scripts is a different request; one
+			// that does not keeps the digest it always had.
+			return s.directImportScriptsRequestDigest(scripts, map[string]any{
+				"scenario_draft": scenario,
+				"update_targets": importUpdateTargetsDigestValue(updateTargets),
+			})
+		}
+	}
 	return s.directImportScriptsRequestDigest(scripts, scenario)
 }
 

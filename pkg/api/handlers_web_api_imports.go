@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
@@ -181,7 +182,10 @@ type openAPIImportCommitRequest struct {
 	Mode            string     `json:"mode,omitempty"`
 	TargetScriptID  string     `json:"target_script_id,omitempty"`
 	ReplaceMode     string     `json:"replace_mode,omitempty"`
-	DryRun          bool       `json:"dry_run,omitempty"`
+	// ExpectedUpdatedAt makes a replace a re-import update: the target must
+	// still be at the version the operator reviewed, and it keeps its name.
+	ExpectedUpdatedAt *time.Time `json:"expected_updated_at,omitempty"`
+	DryRun            bool       `json:"dry_run,omitempty"`
 }
 
 type openAPIImportDiff struct {

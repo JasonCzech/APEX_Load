@@ -37,6 +37,12 @@ describe('defaultImportSurfaces fallback registry', () => {
     expect(defaultImportSurfaces.every(surface => surface.visible)).toBe(true)
   })
 
+  it('names the protocols Bruno and Postman collections carry, so a SOAP search finds them', () => {
+    for (const launcher of ['bruno', 'postman']) {
+      expect(defaultImportSurfaces.find(surface => surface.launcher === launcher)?.protocols).toContain('SOAP')
+    }
+  })
+
   it('makes VuGen USZ and multi-project archive import discoverable', () => {
     const archive = defaultImportSurfaces.find(surface => surface.launcher === 'enterprise_archive')
     expect(archive?.description).toContain('ZIP or USZ')

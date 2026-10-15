@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
@@ -20,6 +21,10 @@ type importSharedValuesApplyRequest struct {
 	// Values maps candidate ID to the operator-entered value. Candidate bodies
 	// are never accepted: the server re-derives them from the scripts it holds.
 	Values map[string]string `json:"values"`
+	// Bindings supplies an input the source left unset per virtual user
+	// instead: a data pool column ({{data.alias.column}}) or a value generated
+	// each iteration. Keyed by candidate ID, like Values.
+	Bindings map[string]sharedvalue.Binding `json:"bindings,omitempty"`
 }
 
 // handleApplyImportSharedValues handles
@@ -53,9 +58,15 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
-	if len(req.Values) == 0 {
-		writeError(w, http.StatusBadRequest, "values is required")
+	if len(req.Values) == 0 && len(req.Bindings) == 0 {
+		writeError(w, http.StatusBadRequest, "values or bindings is required")
 		return
+	}
+	for id := range req.Bindings {
+		if strings.TrimSpace(req.Values[id]) != "" {
+			writeError(w, http.StatusBadRequest, "an input takes either a value for every user or a binding, not both")
+			return
+		}
 	}
 
 	// Claim every credential-preserving draft up front. A collection-wide value
@@ -141,14 +152,30 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 	}
 
 	trusted := trustedSharedValueCandidates(safeScripts)
-	trustedByID := make(map[string]bool, len(trusted))
+	trustedByID := make(map[string]sharedvalue.Candidate, len(trusted))
 	for _, candidate := range trusted {
-		trustedByID[candidate.ID] = true
+		trustedByID[candidate.ID] = candidate
 	}
 	for id := range req.Values {
-		if !trustedByID[id] {
+		if _, ok := trustedByID[id]; !ok {
 			writeError(w, http.StatusConflict,
 				"selected shared values are stale or unavailable; refresh the import preview")
+			return
+		}
+	}
+	for id, binding := range req.Bindings {
+		candidate, ok := trustedByID[id]
+		if !ok {
+			writeError(w, http.StatusConflict,
+				"selected input bindings are stale or unavailable; refresh the import preview")
+			return
+		}
+		if candidate.Kind != sharedvalue.KindSourceVariable {
+			writeError(w, http.StatusBadRequest, "bindings can only supply an input the source left unset")
+			return
+		}
+		if err := binding.ValidateFor(candidate); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
@@ -164,11 +191,19 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if err := applyImportInputBindings(applyTargets, trusted, req.Values, req.Bindings); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "failed to bind inputs: "+err.Error())
+		return
+	}
+
 	applied := map[string]bool{}
 	for _, diff := range diffs {
 		if diff.CandidateID != "" {
 			applied[diff.CandidateID] = true
 		}
+	}
+	for id := range req.Bindings {
+		applied[id] = true
 	}
 
 	// Validate every script before touching any capability, so a validation
@@ -254,4 +289,46 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 	})
 
 	writeScriptImportResponse(w, http.StatusOK, response)
+}
+
+// applyImportInputBindings binds each input the source left unset that the
+// operator chose to supply per virtual user, in every script that reads it,
+// and records how every supplied input is supplied
+// (script.metadata.import.inputs), so a later import can offer the same
+// choice again.
+func applyImportInputBindings(scripts []*dsl.Script, candidates []sharedvalue.Candidate, values map[string]string, bindings map[string]sharedvalue.Binding) error {
+	for _, candidate := range candidates {
+		if candidate.Kind != sharedvalue.KindSourceVariable {
+			continue
+		}
+		binding, bound := bindings[candidate.ID]
+		valued := strings.TrimSpace(values[candidate.ID]) != ""
+		if !bound && !valued {
+			continue
+		}
+		for _, index := range candidate.ScriptIndexes {
+			if index < 0 || index >= len(scripts) || scripts[index] == nil {
+				continue
+			}
+			script := scripts[index]
+			input := dsl.ImportInput{Mode: "value"}
+			if bound {
+				if _, err := sharedvalue.Bind(script, candidate, binding); err != nil {
+					return err
+				}
+				input = binding.Input(candidate.Name)
+			}
+			if script.Metadata == nil {
+				script.Metadata = &dsl.ScriptMetadata{}
+			}
+			if script.Metadata.Import == nil {
+				script.Metadata.Import = &dsl.ImportMetadata{}
+			}
+			if script.Metadata.Import.Inputs == nil {
+				script.Metadata.Import.Inputs = map[string]dsl.ImportInput{}
+			}
+			script.Metadata.Import.Inputs[candidate.Name] = input
+		}
+	}
+	return nil
 }

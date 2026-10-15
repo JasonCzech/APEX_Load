@@ -1,6 +1,8 @@
 import type { ScenarioFormState, ScenarioStartChoice } from './TestHub'
 import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUtils'
 import { legacyFlatFormFieldsValid, migrateLegacyFlatForm } from './scenarioAuthoringDraftV2'
+import { emptyScenarioForm, emptyScenarioGroup } from './scenarioFormModel'
+import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 
 /** Authoring checkpoints are browser-local and can never be used as run payloads. */
 export interface ScenarioAuthoringDraft {
@@ -38,6 +40,33 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const WIZARD_STEPS: ScenarioWizardStep[] = ['scripts', 'source', 'run', 'data', 'review']
 // Version 1 checkpoints were written while the builder opened on a separate Start step.
 const V1_WIZARD_STEPS = ['start', 'scripts', 'source', 'run', 'data', 'review']
+
+// New Scenario Builder work with one group per script, one virtual user each,
+// opened at Model & Shape. Saved as a project draft, it can hold scripts that
+// cannot run yet, which a saved scenario refuses. Each group is named for its
+// script as the builder names one, so scripts sharing a name get distinct groups.
+export function scenarioAuthoringDraftFromScripts(projectId: string, name: string, scripts: ReadonlyArray<{ id: string; name: string }>): ScenarioAuthoringDraft {
+  const groups: ScenarioFormState['groups'] = []
+  scripts.forEach((script, index) => {
+    const group = emptyScenarioGroup(script.id, index)
+    groups.push({ ...group, name: scenarioGroupNameAfterScriptSelection(group.name, index, script.name, '', groups.map(item => item.name)), vusers: 1 })
+  })
+  return {
+    version: 3,
+    projectId,
+    savedAt: new Date().toISOString(),
+    editingId: null,
+    editingUpdatedAt: '',
+    form: { ...emptyScenarioForm(), name, groups },
+    source: 'shape',
+    startChoice: '',
+    shapeId: '',
+    templateId: '',
+    cloneId: '',
+    step: 'source',
+    visited: WIZARD_STEPS.indexOf('source'),
+  }
+}
 
 /**
  * Upgrade a stored checkpoint to the current version. Version 1 used six steps

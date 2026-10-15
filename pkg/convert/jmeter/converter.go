@@ -276,6 +276,8 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 
+	planDocument, planDeclared := jmeterSourceDocument(enabledPlans, opts.FileName)
+	threadGroupNames := make(map[string]int, len(threadGroups))
 	for i, tg := range threadGroups {
 		mappingStart := len(sourceMappings)
 		groupProtocol, heterogeneous := classifyThreadGroupProtocol(tg)
@@ -347,6 +349,14 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				},
 			}},
 		}
+		// A thread group name repeated in the plan (JMeter's default "Thread
+		// Group") is told apart by its place among the groups so named.
+		threadGroupNames[threadName]++
+		threadItem := threadName
+		if repeat := threadGroupNames[threadName]; repeat > 1 {
+			threadItem = fmt.Sprintf("%s #%d", threadName, repeat)
+		}
+		dsl.SetImportSourceIdentity(script, planDocument, planDeclared, threadItem)
 		ancestorConfigs, _ := jmeterAncestorScopeConfigs(trees, tg)
 		for _, config := range ancestorConfigs {
 			_, counted := countedAncestorConfigs[config]
@@ -1654,4 +1664,20 @@ func (result *ConvertResult) Accounting() convertresult.Accounting {
 		result.Stats.SkippedSamplers,
 		result.SourceReview.ReviewOnlyActionCount(),
 	)
+}
+
+// jmeterSourceDocument names the test plan a re-import matches: its own name,
+// unless that is a default such as JMeter's "Test Plan", which unrelated
+// plans share; then the file name, which is not a declared identity.
+func jmeterSourceDocument(plans []*treeNode, fileName string) (string, bool) {
+	for _, plan := range plans {
+		if plan == nil || plan.Element == nil {
+			continue
+		}
+		name := strings.TrimSpace(attrOr(plan.Element, "testname", ""))
+		if name != "" && !dsl.GenericImportSourceName(name) {
+			return name, true
+		}
+	}
+	return strings.TrimSpace(fileName), false
 }

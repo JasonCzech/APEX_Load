@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
+	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
@@ -314,7 +316,52 @@ http:
 	}
 }
 
-func TestBrunoNativeInspectTreatsPolicyHeaderRedactionSentinelAsUnavailable(t *testing.T) {
+func TestBrunoNativeBatchCommitsUnresolvedCredentialsWithoutBindings(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{
+			Path:    "demo/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: Unbound credential, uid: unbound-credential}\n",
+		},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Unbound credential, uid: unbound-credential-request, type: http}
+http:
+  method: GET
+  url: https://example.test
+  auth: {type: basic, username: '{{username}}', password: '{{password}}'}
+`,
+		},
+	})
+	if len(inspection.Result.SecretRequirements) != 2 {
+		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
+	}
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-unbound")
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create_native_batch",
+		FolderID:        &folderID,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("unbound credential commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	created := decodeBrunoNativeBatchTestResponse(t, response)
+	encoded, err := json.Marshal(created.Scripts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requirement := range inspection.Result.SecretRequirements {
+		if !strings.Contains(string(encoded), requirement.Replacement) {
+			t.Fatalf("saved script lost unresolved reference %q: %s", requirement.Replacement, encoded)
+		}
+	}
+}
+
+// A session header is recorded state, not a credential. When the export
+// redacted its value, the header becomes an input supplied at review instead
+// of a project secret, and the sentinel is never sent or disclosed.
+func TestBrunoNativeInspectTurnsRedactedRecordedHeaderIntoInput(t *testing.T) {
 	tests := []struct {
 		name    string
 		headers string
@@ -356,21 +403,23 @@ http:
 			if strings.Contains(strings.ToLower(string(responseBody)), "[redacted]") {
 				t.Fatalf("native inspect response disclosed the redaction sentinel: %s", responseBody)
 			}
-			if len(inspection.Result.SecretRequirements) != 1 ||
-				len(inspection.Result.Scripts) != 1 ||
-				len(inspection.Result.Scripts[0].SecretRequirements) != 1 {
-				t.Fatalf("redacted native requirements = aggregate %#v candidates %#v", inspection.Result.SecretRequirements, inspection.Result.Scripts)
+			if len(inspection.Result.SecretRequirements) != 0 || len(inspection.Result.Scripts) != 1 {
+				t.Fatalf("redacted recorded header = aggregate %#v candidates %#v", inspection.Result.SecretRequirements, inspection.Result.Scripts)
 			}
-			for _, requirement := range []brunoconvert.SecretRequirement{
-				inspection.Result.SecretRequirements[0],
-				inspection.Result.Scripts[0].SecretRequirements[0],
-			} {
-				if requirement.Value != "" || requirement.SourceValueAvailable ||
-					requirement.DestinationValuePreserved ||
-					requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue ||
-					!strings.Contains(requirement.Context, "has no recoverable imported value") {
-					t.Errorf("redacted native requirement = %#v", requirement)
+			candidate := inspection.Result.Scripts[0]
+			if len(candidate.SecretRequirements) != 0 ||
+				!slices.Equal(candidate.MissingVariables, []string{"header_idpctx_ixp_dark_mode_session"}) {
+				t.Fatalf("redacted recorded header candidate = %#v", candidate)
+			}
+			// The review offers a value field for the input.
+			offered := false
+			if inspection.SharedValues != nil {
+				for _, value := range inspection.SharedValues.Candidates {
+					offered = offered || (value.Kind == sharedvalue.KindSourceVariable && value.Name == "header_idpctx_ixp_dark_mode_session")
 				}
+			}
+			if !offered {
+				t.Fatalf("shared values = %#v, want an input for the redacted header", inspection.SharedValues)
 			}
 
 			session, err := server.loadBrunoImportSession(
@@ -381,9 +430,12 @@ http:
 			if err != nil {
 				t.Fatalf("load redacted native session: %v", err)
 			}
-			if len(session.Result.SecretRequirements) != 1 ||
-				session.Result.SecretRequirements[0].Value != "" {
-				t.Fatalf("protected session retained redaction sentinel: %#v", session.Result.SecretRequirements)
+			encoded, err := json.Marshal(session.Result.Scripts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(session.Result.SecretRequirements) != 0 || strings.Contains(strings.ToLower(string(encoded)), "[redacted]") {
+				t.Fatalf("protected session kept the redaction sentinel: %s", encoded)
 			}
 		})
 	}
@@ -427,15 +479,6 @@ http:
   method: GET
   url: https://example.test
   headers: [{name: Authorization, value: "Bearer [REDACTED]"}]
-`,
-		},
-		{
-			name: "Cookie wrapper",
-			request: `info: {name: Cookie sentinel, uid: cookie-sentinel, type: http}
-http:
-  method: GET
-  url: https://example.test
-  headers: [{name: Cookie, value: "sid=[redacted]"}]
 `,
 		},
 	}
@@ -661,7 +704,7 @@ http:
 		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
 	}
 	requirement := inspection.Result.SecretRequirements[0]
-	if !strings.HasPrefix(requirement.SuggestedName, "PARTNER_USERNAME_") ||
+	if requirement.SuggestedName != "PARTNER_USERNAME" ||
 		requirement.Replacement != "{{secret."+requirement.SuggestedName+"}}" ||
 		requirement.DisplayLabel != "Partner username" ||
 		requirement.SourceVariable != "partnerUserName" ||
@@ -784,13 +827,15 @@ http:
 `,
 		},
 	})
-	for _, protectedValue := range []string{
+	// Session headers are recorded state, not credentials, so the review
+	// shows them as imported.
+	for _, recordedValue := range []string{
 		activateSessionValue,
 		darkModeSessionValue,
 		cpniSessionValue,
 	} {
-		if bytes.Contains(responseBody, []byte(protectedValue)) {
-			t.Fatalf("native inspect response disclosed a supplied header credential")
+		if !bytes.Contains(responseBody, []byte(recordedValue)) {
+			t.Fatalf("native inspect response hid recorded session state %q", recordedValue)
 		}
 	}
 
@@ -806,7 +851,7 @@ http:
 		preservationReason   string
 	}{
 		{
-			name:                "CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055",
+			name:                "X_CDF_AUTH_TOKEN",
 			label:               "X-CDF auth token",
 			path:                "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
 			candidateSourcePath: "CTA/InquireAccountProfile_312.yml",
@@ -815,22 +860,35 @@ http:
 			unresolved:          true,
 			preservationReason:  brunoconvert.PreservationUnavailableSourceValue,
 		},
-		{
-			name:                 "CTA_COLLECTION_6A_CTA_ACTIVATESUBSCRIBER_V302_HEADER_IDPCTX_IXP_DARK_MODE_SESSION_161E2747AD92",
-			label:                "IDP context IXP dark mode session",
-			path:                 "CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml",
-			candidateSourcePath:  "CTA/ActivateSubscriber_v302.yml",
-			contextParts:         []string{`header "idpctx-ixp-dark-mode-session"`, "contains an imported value", "can be preserved"},
-			destinationPreserved: true,
-		},
-		{
-			name:                 "CTA_COLLECTION_6A_CTA_INQUIRECPNICONTACTINFORMATION_224_HEADER_IDPCTX_SESSION_ID",
-			label:                "IDP context session ID",
-			path:                 "CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml",
-			candidateSourcePath:  "CTA/InquireCPNIContactInformation_224.yml",
-			contextParts:         []string{`header "idpctx-session-id"`, "contains an imported value", "can be preserved"},
-			destinationPreserved: true,
-		},
+	}
+	// Session and trace headers are recorded state, not credentials: they
+	// stay in the saved scripts as imported.
+	if len(inspection.Result.SecretRequirements) != len(tests) {
+		t.Fatalf("requirements = %#v, want only the auth token", inspection.Result.SecretRequirements)
+	}
+	session, err := server.loadBrunoImportSession(
+		httptest.NewRequest(http.MethodGet, "/", nil),
+		inspection.ImportSessionID,
+		brunoImportTestProject,
+	)
+	if err != nil {
+		t.Fatalf("load native session: %v", err)
+	}
+	keptValues := map[string]string{}
+	for _, candidate := range session.Result.Scripts {
+		for _, header := range candidate.Script.Actions[0].HeaderList {
+			keptValues[candidate.SourcePath+" "+header.Name] = header.Value
+		}
+	}
+	for key, want := range map[string]string{
+		"CTA/ActivateSubscriber_v302.yml idpctx-session-id":            activateSessionValue,
+		"CTA/ActivateSubscriber_v302.yml idpctx-ixp-dark-mode-session": darkModeSessionValue,
+		"CTA/InquireCPNIContactInformation_224.yml idpctx-session-id":  cpniSessionValue,
+		"CTA/InquireCPNIContactInformation_224.yml idp-trace-id":       "test-trace-id-for-cpni-contact",
+	} {
+		if keptValues[key] != want {
+			t.Errorf("%s = %q, want the imported value", key, keptValues[key])
+		}
 	}
 
 	aggregateByName := make(map[string]brunoconvert.SecretRequirement, len(inspection.Result.SecretRequirements))
@@ -1299,7 +1357,8 @@ http:
 		MigrateSecrets:  &migrate,
 	})
 	if unauthorized.Code != http.StatusForbidden ||
-		!strings.Contains(unauthorized.Body.String(), "source secret migration is not allowed") {
+		!strings.Contains(unauthorized.Body.String(), "source secret migration is not allowed") ||
+		!strings.Contains(unauthorized.Body.String(), `"reason":"policy_disabled"`) {
 		t.Fatalf("unauthorized native migration status = %d body=%s", unauthorized.Code, unauthorized.Body.String())
 	}
 	if strings.Contains(unauthorized.Body.String(), "source-password-value") {

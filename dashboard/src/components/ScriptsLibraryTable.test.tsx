@@ -82,6 +82,17 @@ describe('ScriptsLibraryTable federation', () => {
     vi.clearAllMocks()
   })
 
+  it('offers importing beside creating when the library is empty', async () => {
+    const onCreate = vi.fn()
+    const onImport = vi.fn()
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} scripts={[]} emptyMessage="No scripts yet." canManageScripts onCreate={onCreate} onImport={onImport} />))
+    const importButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Import scripts')
+    expect(importButton).toBeDefined()
+    await act(async () => importButton!.click())
+    expect(onImport).toHaveBeenCalledOnce()
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
   it('offers moving only addressable local scripts and disables conflicting actions while moving', async () => {
     const onMove = vi.fn()
     const scripts = [script, { ...script, id: '', name: 'Legacy Script' }]

@@ -117,12 +117,13 @@ flowchart TD
 ### 1.4 Parameterization pass (`pkg/convert/paramize`)
 
 Runs **after** conversion, on **every** import, in
-`pkg/convert/paramize/paramize.go → Suggest(script, opts)`. It proposes three
+`pkg/convert/paramize/paramize.go → Suggest(script, opts)`. It proposes four
 kinds of edits so the script is data-driven rather than hard-coded:
 
 | Kind | What it finds | Replacement |
 |---|---|---|
 | `correlation` | response→request value flow (via `pkg/convert/correlate`) | extract from response, inject `{{var.*}}` downstream |
+| `generated` | identifiers and time stamps a client makes up per request (trace, span, message, request and correlation IDs; a request time stamp) | a `uuid`, `random_string` or `date_time` `Parameter` updated each iteration, referenced as `{{var.*}}` |
 | `data_param` | parameterizable literals (user id, email, search term) | `{{data.*}}` / a `Parameter` |
 | `secret` | credential-shaped values (passwords, tokens, keys) | `{{secret.*}}` |
 
@@ -136,6 +137,23 @@ not match. Runtime and configuration ids (`client_id`, `sessionId`, `x_request_i
 accessor and header names (`getDeviceId`, `x_request_id`), sort fields and names longer
 than five words are excluded.
 These suggestions start unchecked (confidence 0.6).
+
+`generated` suggestions (`generated.go`) find GUIDs, ISO date-times and, in a field named
+for an identifier, hex runs of 16 or more characters, in header values, the query and the
+body (XML elements and attributes, JSON and form fields alike). Only the token is replaced,
+so a prefix such as `Partner~` or a trace header's flags stay as recorded, and a value used
+in several places is one parameter, new each iteration, so those places still agree. Values
+recorded once each in the same kind of field of different requests (an `X-Request-Id` per
+request) share one parameter that is new each time it is sent (`update: each_occurrence`),
+rather than one parameter per request; two values in one request stay apart. A suggestion
+never takes the name of a variable the script reads, even one nothing defines yet (an input
+the source left unset). A generated time stamp
+keeps the recorded layout (fractional digits and zone style). A suggestion is pre-selected
+(confidence 0.85) when every place names a per-request identifier or a time stamp. A
+session, conversation, transaction or event ID (the target may already hold it), a GUID in
+any other field and a date that may mean something start unchecked.
+Credential headers, path segments, templates and values a correlation or secret already
+owns are left alone, and a data parameter never claims a literal holding a generated value.
 
 Suggestions at or above `autoApplyConfidence = 0.8` (in `paramize.go`) are pre-selected;
 high-confidence correlations may already be wired into the draft (`PreApplied`). The user

@@ -87,6 +87,43 @@ func TestEnterpriseVuGenFolderImportUsesArchiveConverter(t *testing.T) {
 	}
 }
 
+// A folder picked on a Mac or from a working copy carries .DS_Store and .git
+// files, sometimes beside the script folder itself. They are left out: they
+// neither join the archive nor make the selection look like two roots.
+func TestEnterpriseVuGenFolderLeavesOutOperatingSystemAndVersionControlFiles(t *testing.T) {
+	fixture := filepath.Join("..", "convert", "enterprisearchive", "testdata", "golden_web_http_html_vugen24")
+	files := map[string][]byte{
+		".DS_Store":              []byte("Bud1"),
+		"VuGen24Real/.DS_Store":  []byte("Bud1"),
+		"VuGen24Real/.git/HEAD":  []byte("ref: refs/heads/main"),
+		"VuGen24Real/._Action.c": []byte("appledouble"),
+	}
+	for _, name := range []string{"VuGen24Real.usr", "Action.c", "vuser_init.c", "vuser_end.c", "default.cfg", "default.usp", "VuGen24Real.prm"} {
+		data, err := os.ReadFile(filepath.Join(fixture, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files["VuGen24Real/"+name] = data
+	}
+	response := httptest.NewRecorder()
+	decoded, ok := readEnterpriseArchiveImportRequest(response, enterpriseFolderRequest(t, files))
+	if !ok {
+		t.Fatalf("decode failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	archive, err := zip.NewReader(bytes.NewReader(decoded.Data), int64(len(decoded.Data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range archive.File {
+		if strings.Contains(file.Name, ".DS_Store") || strings.Contains(file.Name, ".git/") || strings.Contains(file.Name, "._") {
+			t.Errorf("the folder archive holds %s", file.Name)
+		}
+	}
+	if len(archive.File) != 7 {
+		t.Errorf("archive has %d files, want the 7 script files", len(archive.File))
+	}
+}
+
 func TestEnterpriseVuGenFolderRejectsUnsafeAndIncompletePaths(t *testing.T) {
 	for _, test := range []struct {
 		name  string

@@ -1,3 +1,4 @@
+import { countLabel as formatCount } from '../utils/numberFormat'
 import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator, TrafficProfile } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { normalizeRequiredLabels } from './assignmentLabels'
@@ -1100,9 +1101,6 @@ export function formatGroupPlacement(override?: GroupRunOverride, group?: Scenar
   return labelText ? `${hostText} · ${labelText}` : hostText
 }
 
-function formatCount(value: number, singular: string, plural = `${singular}s`) {
-  return `${value} ${value === 1 ? singular : plural}`
-}
 
 export function groupPlacementSummary(overrides: Record<string, GroupRunOverride>, groups?: ScenarioScriptGroup[]) {
   const assignments = groups

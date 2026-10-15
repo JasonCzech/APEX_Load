@@ -114,8 +114,13 @@ func ImportedCredentialValues(script *dsl.Script) ([]string, error) {
 // moved to a neutral-name field, so publishing a best-effort projection would
 // disclose an unproven value. Callers may return an error or replace their
 // complete output surface with a disclosure-safe marker.
+//
+// Unlike run evidence, a script view shows the cookies and the session,
+// anti-forgery and tracing headers the source recorded (see
+// credential.RecordedStateHeader): they are not credentials, and nothing an
+// imported script holds is a secret.
 func ImportedCredentialValuesForDisclosure(script *dsl.Script) ([]string, error) {
-	values, err := ImportedCredentialValues(script)
+	values, _, err := inspectImportedCredentialsShowing(script, true)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +156,16 @@ type disclosureJavaJDBCSourceEnvelope struct {
 func inspectImportedCredentials(
 	script *dsl.Script,
 ) ([]string, *importedCredentialTemplatePlan, error) {
+	return inspectImportedCredentialsShowing(script, false)
+}
+
+// inspectImportedCredentialsShowing is inspectImportedCredentials, leaving
+// recorded-state header values out when showRecordedState is set (a script
+// view, not run evidence).
+func inspectImportedCredentialsShowing(
+	script *dsl.Script,
+	showRecordedState bool,
+) ([]string, *importedCredentialTemplatePlan, error) {
 	if !scriptPreservesImportedCredentialValues(script) {
 		return nil, nil, nil
 	}
@@ -158,9 +173,10 @@ func inspectImportedCredentials(
 		expressions: make(map[string]struct{}),
 	}
 	collector := importedCredentialCollector{
-		script:       script,
-		templatePlan: plan,
-		seen:         make(map[string]struct{}),
+		script:            script,
+		templatePlan:      plan,
+		seen:              make(map[string]struct{}),
+		showRecordedState: showRecordedState,
 	}
 
 	if err := collector.collectSensitiveConfig(script.Config); err != nil {
@@ -387,6 +403,16 @@ type importedCredentialCollector struct {
 	resolved     bool
 	seen         map[string]struct{}
 	values       []string
+	// showRecordedState leaves out the values of headers carrying recorded
+	// cookie, session, anti-forgery or tracing state, which a script view
+	// shows (run evidence still treats them as credentials).
+	showRecordedState bool
+}
+
+// shownRecordedState reports whether a header's value stays out because it
+// is recorded state a script view shows.
+func (collector *importedCredentialCollector) shownRecordedState(name string) bool {
+	return collector.showRecordedState && credential.RecordedStateHeader(name)
 }
 
 func (collector *importedCredentialCollector) add(value string) {
@@ -714,6 +740,9 @@ func (collector *importedCredentialCollector) collectSensitiveTree(value any, ke
 				}
 				continue
 			}
+			if _, scalar := child.(string); scalar && nextHeaderMap && collector.shownRecordedState(childKey) {
+				continue
+			}
 			sensitive := credential.SensitiveName(childKey) ||
 				(nextHeaderMap && credential.SensitiveHeader(childKey))
 			if scalar, ok := child.(string); ok && sensitive {
@@ -887,6 +916,12 @@ func (collector *importedCredentialCollector) collectSurfaceTarget(
 		name, value, ok := surfaceHeaderEntry(ref, target.Index)
 		if !ok {
 			return errors.New("retained credential header locator no longer matches the executable request")
+		}
+		if collector.shownRecordedState(name) {
+			// An import before recorded state stayed out of credential review
+			// may still locate a cookie or session header; the locator holds,
+			// but a script view shows the value.
+			return nil
 		}
 		if credential.MatchableNamedValue(name, value) {
 			collector.add(value)

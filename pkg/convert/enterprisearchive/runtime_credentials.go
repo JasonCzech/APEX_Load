@@ -358,7 +358,7 @@ func applyEnterpriseRuntimeBindings(
 
 		headerNames := make([]string, 0, len(httpConfig.DefaultHeaders))
 		for name := range httpConfig.DefaultHeaders {
-			if credential.SensitiveHeader(name) {
+			if credential.ImportCredentialHeader(name) {
 				headerNames = append(headerNames, name)
 			}
 		}

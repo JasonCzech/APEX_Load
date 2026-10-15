@@ -60,6 +60,10 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 			if diff, ok := appendExtractor(clone, suggestion); ok {
 				diffs = append(diffs, diff)
 			}
+		case KindGenerated:
+			if diff, ok := materializeGeneratedParameter(clone, suggestion); ok {
+				diffs = append(diffs, diff)
+			}
 		case KindDataParam:
 			if suggestion.Parameter == nil {
 				continue
@@ -853,6 +857,31 @@ func materializeParameters(script *dsl.Script, suggestions []Suggestion, selecte
 	}
 	sort.SliceStable(diffs, func(i, j int) bool { return diffs[i].After < diffs[j].After })
 	return diffs
+}
+
+// materializeGeneratedParameter declares the parameter a generated suggestion
+// references, unless the script already has one by that name.
+func materializeGeneratedParameter(script *dsl.Script, suggestion Suggestion) (Diff, bool) {
+	if suggestion.Parameter == nil {
+		return Diff{}, false
+	}
+	for _, param := range script.Parameters {
+		if strings.EqualFold(param.Name, suggestion.Parameter.Name) {
+			return Diff{}, false
+		}
+	}
+	param := *suggestion.Parameter
+	script.Parameters = append(script.Parameters, param)
+	when := "new each iteration"
+	if param.Update == "each_occurrence" {
+		when = "new each time it is sent"
+	}
+	return Diff{
+		SuggestionID: suggestion.ID,
+		Kind:         "parameter_added",
+		Path:         "/parameters",
+		After:        fmt.Sprintf("%s -> %s, %s", param.Name, param.Type, when),
+	}, true
 }
 
 func csvEscape(value string) string {

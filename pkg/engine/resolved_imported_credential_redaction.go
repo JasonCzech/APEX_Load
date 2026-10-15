@@ -289,6 +289,9 @@ func resolvedActionContentType(action *protocol.Action) string {
 }
 
 func (collector *importedCredentialCollector) collectHeaderCredential(name, value string) {
+	if collector.shownRecordedState(name) {
+		return
+	}
 	// A header is a credential by name, so a value too short to tell apart
 	// from ordinary text is not matched (see credential.MatchableNamedValue).
 	if credential.MatchableNamedValue(name, value) {

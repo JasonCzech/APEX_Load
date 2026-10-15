@@ -19,6 +19,7 @@ import { authoringHealthCounts, prioritizeHealthInputs } from './authoringHealth
 import { isAddressableScriptId } from './scriptIdentity'
 import type { IssueDetail } from './IssueDetailsDialog'
 import { scriptContainsSecretReferences } from './scriptSecretReferenceModel'
+import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import SelectAllCheckbox from './SelectAllCheckbox'
 import StatusBadge from './StatusBadge'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
@@ -76,6 +77,8 @@ interface Props {
   canManageScripts?: boolean
   emptyMessage?: string
   onCreate?: () => void
+  // Opens the import sources; offered beside Create when the library is empty.
+  onImport?: () => void
   federation?: ScriptLibraryFederation
   github?: ScriptLibraryGitHub
   secretStatusByScript?: Record<string, ScriptSecretStatus>
@@ -204,6 +207,7 @@ export default function ScriptsLibraryTable({
   canManageScripts = true,
   emptyMessage = 'No scripts yet.',
   onCreate,
+  onImport,
   federation,
   github,
   secretStatusByScript = {},
@@ -311,7 +315,10 @@ export default function ScriptsLibraryTable({
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
   if (isEmpty && onCreate && canManageScripts) return <div className="empty-card">
     <p>{emptyMessage}</p><p className="empty-hint">Create or import a script to begin building your test library.</p>
-    <button type="button" className="btn btn-primary" onClick={onCreate}>Create your first script</button>
+    <div className="settings-inline-actions empty-card-actions">
+      <button type="button" className="btn btn-primary" onClick={onCreate}>Create your first script</button>
+      {onImport && <button type="button" className="btn btn-secondary" onClick={onImport}>Import scripts</button>}
+    </div>
   </div>
   return (
     <div className="data-table">
@@ -353,6 +360,9 @@ export default function ScriptsLibraryTable({
             const secretStatus = scriptAddressable ? secretStatusByScript[scriptId] : undefined
             const secretStatusState = scriptAddressable ? secretStatusStateByScript[scriptId] : 'error'
             const missingSecrets = secretStatus?.missing || []
+            // Names as the Secret bindings dialog shows them; the exact name
+            // stays on hover and in the details.
+            const secretLabels = secretBindingDisplayNames([...(secretStatus?.required || []), ...missingSecrets], script.script)
             const requiresSecrets = (secretStatus?.required.length || 0) > 0 || scriptContainsSecretReferences(script)
             const secretStatusUnknown = !scriptAddressable
               || (requiresSecrets && secretStatusState !== undefined && secretStatusState !== 'ready')
@@ -427,7 +437,7 @@ export default function ScriptsLibraryTable({
                         health={script.authoring_health}
                         inputs={prioritizeHealthInputs(script.authoring_health?.inputs || [])}
                         secretState={!scriptAddressable ? 'unaddressable' : !secretStatusUnknown ? 'ready' : secretStatusState === 'loading' ? 'loading' : 'error'}
-                        missingSecrets={missingSecrets}
+                        missingSecrets={missingSecrets.map(name => secretDisplayName(secretLabels, name))}
                         onConfigureSecrets={configureSecretsAvailable ? () => onConfigureSecrets?.(script) : undefined}
                         onRetrySecretCheck={onRetrySecretStatus && scriptAddressable ? () => onRetrySecretStatus(script) : undefined}
                       />
@@ -474,13 +484,18 @@ export default function ScriptsLibraryTable({
                             }
                             setIssueDialog({
                               title: `${script.name} missing secrets`,
-                              issues: missingSecrets.map((name, index) => ({
-                                id: `${name}-${index}`,
-                                severity: 'warning',
-                                title: name,
-                                description: 'This required project secret has not been configured.',
-                                source: 'Project secrets',
-                              })),
+                              issues: missingSecrets.map((name, index) => {
+                                const label = secretDisplayName(secretLabels, name)
+                                return {
+                                  id: `${name}-${index}`,
+                                  severity: 'warning',
+                                  title: label,
+                                  description: label === name
+                                    ? 'This required project secret has not been configured.'
+                                    : `This required project secret, ${name}, has not been configured.`,
+                                  source: 'Project secrets',
+                                }
+                              }),
                             })
                           }}
                         />
@@ -574,7 +589,10 @@ export default function ScriptsLibraryTable({
                           <div className="script-health-detail">
                             <span className="results-compare-label">Missing Project Secrets</span>
                             <div className="archive-report-badges">
-                              {missingSecrets.map(name => <span key={name} className="archive-chip danger">{name}</span>)}
+                              {missingSecrets.map(name => {
+                                const label = secretDisplayName(secretLabels, name)
+                                return <span key={name} className="archive-chip danger" title={label === name ? undefined : name}>{label}</span>
+                              })}
                             </div>
                             {onConfigureSecrets && (
                               <button className="btn btn-secondary btn-sm" type="button" onClick={() => onConfigureSecrets(script)}>
@@ -721,6 +739,9 @@ export default function ScriptsLibraryTable({
                   <span className="cell-muted">{emptyMessage}</span>
                   {onCreate && canManageScripts && (
                     <button type="button" className="btn btn-primary btn-sm" onClick={onCreate}>Create your first script</button>
+                  )}
+                  {onCreate && onImport && canManageScripts && (
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={onImport}>Import scripts</button>
                   )}
                 </div>
               </td>

@@ -30,9 +30,12 @@ var (
 
 // dataParamSuggestions proposes binding literal business values (ids, emails,
 // SKUs, ...) to a generated data source. claimed lists values already owned by
-// the correlation or secret passes, which take precedence.
-func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[string]bool, skipBodies map[string]bool) ([]Suggestion, error) {
+// the correlation or secret passes, which take precedence. generatedParts are
+// the values the generated pass makes each iteration; a literal holding one
+// stays with that pass.
+func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[string]bool, skipBodies map[string]bool, generatedParts []string) ([]Suggestion, error) {
 	collector := newDataParamCollector(names, claimed)
+	collector.generatedParts = generatedParts
 	budget := &suggestionRegexBudget{}
 	var scanErr error
 	forEachAction(script, func(section string, index int, action *dsl.Action) {
@@ -280,11 +283,12 @@ func collectUploadParams(collector *dataParamCollector, section string, index in
 // dataParamCollector groups occurrences of the same (key, value) pair under a
 // single suggestion that replaces every occurrence when applied.
 type dataParamCollector struct {
-	names   *nameRegistry
-	claimed map[string]bool
-	order   []string
-	grouped map[string]*Suggestion
-	seen    map[string]bool // location+search dedupe (regex scans can overlap)
+	names          *nameRegistry
+	claimed        map[string]bool
+	generatedParts []string
+	order          []string
+	grouped        map[string]*Suggestion
+	seen           map[string]bool // location+search dedupe (regex scans can overlap)
 }
 
 func newDataParamCollector(names *nameRegistry, claimed map[string]bool) *dataParamCollector {
@@ -299,6 +303,11 @@ func newDataParamCollector(names *nameRegistry, claimed map[string]bool) *dataPa
 func (c *dataParamCollector) add(key, value, kind, section string, index int, action *dsl.Action, field, search string, buildReplace func(template string) string) {
 	if c.claimed[value] {
 		return
+	}
+	for _, part := range c.generatedParts {
+		if strings.Contains(value, part) {
+			return
+		}
 	}
 	groupKey := strings.ToLower(key) + "|" + value
 	locationKey := fmt.Sprintf("%s|%s|%d|%s|%s", groupKey, section, index, field, search)

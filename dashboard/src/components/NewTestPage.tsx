@@ -1,3 +1,4 @@
+import { countLabel as formatCount } from '../utils/numberFormat'
 import { validateGoalConfig } from './goalConfigValidation'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
 import type { MonitorBinding, MonitorRule } from '../types/runMonitoring'
@@ -231,9 +232,6 @@ function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
 
-function formatCount(value: number, singular: string, plural = `${singular}s`) {
-  return `${value} ${value === 1 ? singular : plural}`
-}
 
 
 function totalScenarioVUsers(scenario?: StoredScenario | null) {

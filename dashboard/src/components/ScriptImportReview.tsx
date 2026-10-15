@@ -19,10 +19,12 @@ import {
   type SharedValues,
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
-import { isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
+import { isRecordedStateHeader, isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
 import { importActionEntries } from './importReviewIssues'
 import ParameterizationReview from './ParameterizationReview'
 import { ImportTransportPanel } from './ImportTransportPanel'
+import ImportExistingScripts from './ImportExistingScripts'
+import type { ImportSaveChoices } from './importReimport'
 import SharedImportValues from './SharedImportValues'
 import { importDraftExpiryStatus, protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
@@ -39,6 +41,7 @@ import './ScriptImportReview.css'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import { formatDateTime } from '../utils/dateTime'
 import { useImportDestination } from './importDestinationContext'
+import { countLabel } from '../utils/numberFormat'
 
 const severityRank: Record<string, number> = {
   blocker: 0,
@@ -73,6 +76,17 @@ function previewObjectHasSensitiveSemanticName(candidate: Record<string, unknown
     }
   }
   return false
+}
+
+// previewHeaderContainer reports whether the object at path is a header map
+// (headers, default_headers) or one header_list entry.
+function previewHeaderContainer(path: string): 'map' | 'entry' | null {
+  const segments = path.split('/')
+  const last = normalizeCredentialPreviewName(segments[segments.length - 1] || '')
+  if (last === 'headers' || last === 'defaultheaders') return 'map'
+  const parent = normalizeCredentialPreviewName(segments[segments.length - 2] || '')
+  if ((parent === 'headerlist' || parent === 'defaultheaderlist') && /^\d+$/.test(segments[segments.length - 1] || '')) return 'entry'
+  return null
 }
 
 function safeCredentialReference(value: string): boolean {
@@ -342,7 +356,9 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
     truncated: false,
     seen: new WeakSet<object>(),
   }
-  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false, path = ''): unknown => {
+  // recordedState marks the value of a cookie, session, anti-forgery or tracing
+  // header: state the source recorded, which the server shows as recorded.
+  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false, path = '', recordedState = false): unknown => {
     if (state.nodes >= maxNodes || depth > maxDepth) {
       state.truncated = true
       return '… preview limit reached …'
@@ -353,7 +369,7 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
       if (sensitiveAncestor && !safeCredentialReference(candidate)) return PROTECTED_PREVIEW_VALUE
       const truncated = candidate.length > maxString
       const boundedCandidate = truncated ? candidate.slice(0, maxString) : candidate
-      const safeCandidate = redactPreviewText(boundedCandidate)
+      const safeCandidate = recordedState && !sensitiveAncestor ? boundedCandidate : redactPreviewText(boundedCandidate)
       if (!truncated && safeCandidate.length <= maxString) return safeCandidate
       state.truncated = true
       return `${safeCandidate.slice(0, maxString)}…`
@@ -378,38 +394,50 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
         for (let index = 0; index < itemCount && state.nodes < maxNodes; index += 1) {
           result.push(visit(candidate[index], depth + 1, sensitiveAncestor, `${path}/${index}`))
         }
-        if (result.length < candidate.length) { state.truncated = true; result.push(`… ${candidate.length - result.length} more item(s) omitted …`) }
+        if (result.length < candidate.length) { state.truncated = true; result.push(`… ${countLabel(candidate.length - result.length, 'more item')} omitted …`) }
         return result
       }
       const keys = Object.keys(candidate)
       const keyCount = Math.min(keys.length, maxKeys)
       if (keyCount < keys.length) state.truncated = true
       const result: Record<string, unknown> = {}
-      const sensitiveSemanticName = previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
+      const headerContainer = previewHeaderContainer(path)
+      let recordedEntry = false
+      if (headerContainer === 'entry') {
+        try {
+          const headerName = (candidate as Record<string, unknown>).name
+          recordedEntry = typeof headerName === 'string' && isRecordedStateHeader(headerName)
+        } catch {
+          // A throwing accessor cannot prove the header is recorded state.
+        }
+      }
+      const sensitiveSemanticName = !recordedEntry && previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
       for (let index = 0; index < keyCount && state.nodes < maxNodes; index += 1) {
         const key = keys[index]
         if (['import_draft_token', 'source_secret_session_id', 'protected_import_session_id'].includes(key)) { result[key] = PROTECTED_PREVIEW_VALUE; continue }
         try {
           const child = (candidate as Record<string, unknown>)[key]
           const semanticNameKey = sensitiveSemanticName && isPreviewSemanticNameKey(key)
+          const childRecordedState = (headerContainer === 'map' && isRecordedStateHeader(key)) ||
+            (recordedEntry && normalizeCredentialPreviewName(key) === 'value')
           const childSensitive = (
             sensitiveAncestor
             // Opaque source snippets and positional arguments cannot be safely
             // classified by a browser name-based redactor. Preserve their shape
             // while hiding values in the downloadable review.
             || (complete && ['metadata', 'args', 'call_args'].includes(key))
-            || (!semanticNameKey && isSensitiveCredentialPreviewKey(key))
+            || (!semanticNameKey && !childRecordedState && isSensitiveCredentialPreviewKey(key))
             // A semantic credential record can use arbitrary adapter-specific
             // payload keys such as defaultValue, values, or schema.default. Protect
             // every non-name descendant instead of relying on a small allowlist.
             || (sensitiveSemanticName && !semanticNameKey)
           )
-          result[key] = visit(child, depth + 1, childSensitive, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`)
+          result[key] = visit(child, depth + 1, childSensitive, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`, childRecordedState)
         } catch {
           result[key] = '[Unable to preview value]'
         }
       }
-      if (Object.keys(result).length < keys.length) { state.truncated = true; result['…'] = `${keys.length - Object.keys(result).length} more field(s) omitted` }
+      if (Object.keys(result).length < keys.length) { state.truncated = true; result['…'] = `${countLabel(keys.length - Object.keys(result).length, 'more field')} omitted` }
       return result
     } finally {
       state.seen.delete(candidate)
@@ -437,6 +465,12 @@ interface Props {
   runtimeContent?: ReactNode
   dataContent?: ReactNode
   batchControls?: ReactNode
+  /**
+   * The scripts an earlier import already saved and what the save does to
+   * each (update as a new version, or copy). Its choices also start each
+   * unset input from how the updated scripts supplied it.
+   */
+  existingScripts?: { choices: ImportSaveChoices; labels: readonly string[] }
   compactReview?: boolean
   showOriginalDiagnostics?: boolean
   showCredentials?: boolean
@@ -539,6 +573,7 @@ export default function ScriptImportReview({
   onSettingsBusyChange,
   dataContent,
   batchControls,
+  existingScripts,
   credentialIntroduction,
   reviewNavigation,
   script,
@@ -1021,9 +1056,12 @@ export default function ScriptImportReview({
   const credentialSetupCount = secretBindingRequirements.filter(requirementNeedsSecretBinding).length
   // Neither kept as a usable value nor replaceable by a project secret.
   const keptAsRecordedCredentialCount = secretBindingRequirements.length - preservedCredentialCount - credentialSetupCount
-  const editableSharedCandidates = onSharedValuesApplied ? (sharedValues?.candidates || []).filter(candidate => !candidate.credential_shaped) : []
-  const requiredDataCount = editableSharedCandidates.filter(candidate => candidate.kind === 'source_variable').length
-  const optionalDataCount = editableSharedCandidates.length - requiredDataCount + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
+  const sharedDataCandidates = onSharedValuesApplied ? sharedValues?.candidates || [] : []
+  // Every unset input is supplied in the Data tab, a credential from a project
+  // secret or data pool column; other credential-shaped values are not offered.
+  const requiredDataCount = sharedDataCandidates.filter(candidate => candidate.kind === 'source_variable').length
+  const optionalDataCount = sharedDataCandidates.filter(candidate => candidate.kind !== 'source_variable' && !candidate.credential_shaped).length
+    + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
   const hasParameterizationReview = !!parameterization && (!!parameterization.aura_payload || (!!onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0))
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
@@ -1175,6 +1213,7 @@ export default function ScriptImportReview({
           reviewGeneration={reviewGeneration}
           disabled={credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleSharedValuesApplyingChange}
+          previousInputs={existingScripts?.choices.previousInputs}
           onApplied={onSharedValuesApplied}
         />
       )}
@@ -1208,6 +1247,9 @@ export default function ScriptImportReview({
       {showPreviewAside && onSettingsApplied && <ImportSourceInventory script={script} />}
     </div>
   )
-  const reviewContent = tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
+  const reimportControl = existingScripts?.choices.hasMatches
+    ? <ImportExistingScripts choices={existingScripts.choices} labels={existingScripts.labels} disabled={saving || reviewBusy || sharedValuesApplying || credentialAction !== null} />
+    : null
+  const reviewContent = tabbed ? <>{reimportControl}{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : <>{reimportControl}{content}</>
   return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
 }

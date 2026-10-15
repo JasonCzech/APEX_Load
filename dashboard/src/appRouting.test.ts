@@ -67,6 +67,10 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/tests?scenarioId=s1&step=nowhere')).toEqual({ page: 'tests', scenarioView: 'builder', scenarioId: 's1' })
     expect(parseAppViewFromHash('#/tests?view=plans&scenarioId=s1')).toEqual({ page: 'tests', scenarioView: 'plans' })
     expect(viewToLocationHash({ page: 'tests', scenarioView: 'builder', scenarioId: 's1', scenarioStep: 'data', projectId: 'p1' })).toBe('#/tests?view=builder&scenarioId=s1&step=data&projectId=p1')
+    // A project draft opens in the builder too.
+    expect(parseAppViewFromHash('#/tests?view=builder&draftId=d1&projectId=p1')).toEqual({ page: 'tests', scenarioView: 'builder', scenarioDraftId: 'd1', projectId: 'p1' })
+    expect(parseAppViewFromHash('#/tests?view=library&draftId=d1')).toEqual({ page: 'tests', scenarioView: 'library' })
+    expect(viewToLocationHash({ page: 'tests', scenarioView: 'builder', scenarioDraftId: 'd1', projectId: 'p1' })).toBe('#/tests?view=builder&draftId=d1&projectId=p1')
     // Like any scenario link, one without a project resolves its owner first.
     expect(unscopedProjectAssetForAppView({ page: 'tests', scenarioView: 'builder', scenarioId: 's1' })).toEqual({ kind: 'scenario', id: 's1' })
     expect(scopeAppViewToProject({ page: 'tests', scenarioView: 'builder', scenarioId: 's1' }, 'p1')).toEqual({ page: 'tests', scenarioView: 'builder', scenarioId: 's1', projectId: 'p1' })

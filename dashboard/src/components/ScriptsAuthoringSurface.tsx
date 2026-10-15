@@ -1,7 +1,7 @@
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import ObjectHistory from './ObjectHistory'
 import type { ObjectActivitySummary } from '../types/objectActivity'
-import { lazy, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import { type ImportKind } from './ProtocolAssetImport'
@@ -9,7 +9,7 @@ import { RECORDING_STUDIO_RETURN_TARGET, type AuthoringReturnTarget, type DraftE
 import LazyLoadBoundary from './LazyLoadBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID } from './enterpriseArchiveReviewOutcome'
 import ImportDestinationFolder from './ImportDestinationFolder'
-import { ImportDestinationContext } from './importDestinationContext'
+import { ImportDestinationContext, ImportFolderSuggestionContext } from './importDestinationContext'
 
 const ScriptEditor = lazy(() => import('./ScriptEditor'))
 const EnterpriseArchiveImport = lazy(() => import('./EnterpriseArchiveImport'))
@@ -39,6 +39,7 @@ export interface ScriptsAuthoringSurfaceProps {
   editingRetainedCreatedSecretNames?: string[]
   editingScript: ScriptDefinition | null
   editingActivity?: ObjectActivitySummary
+  editingWorkspace?: 'debug'
   projectId?: string
   // folderId is the destination folder for scripts saved from the authoring
   // surface. The server binds it on create and re-validates it when a review
@@ -63,6 +64,7 @@ function createOptionsSurface(
   hidden: boolean,
   destination: ReactNode,
   destinationOperationBusy = false,
+  suggestFolderName: ((name: string) => void) | null = null,
 ) {
   return (
     <div className="page" hidden={hidden}>
@@ -74,7 +76,9 @@ function createOptionsSurface(
       >
         {/* The importer's review shows the destination at its Save step. */}
         <ImportDestinationContext.Provider value={destination}>
-          {content}
+          <ImportFolderSuggestionContext.Provider value={suggestFolderName}>
+            {content}
+          </ImportFolderSuggestionContext.Provider>
         </ImportDestinationContext.Provider>
       </fieldset>
     </div>
@@ -128,6 +132,7 @@ function ScriptsAuthoringContent({
   editingRetainedJsonText,
   editingRetainedCreatedSecretNames,
   editingActivity,
+  editingWorkspace,
   draftInitiallyDirty,
   projectId,
   folderId,
@@ -152,6 +157,11 @@ function ScriptsAuthoringContent({
   const [destinationFolderId, setDestinationFolderId] = useState(folderId ?? '')
   const [importOperationBusy, setImportOperationBusy] = useState(false)
   const [destinationOperationBusy, setDestinationOperationBusy] = useState(false)
+  // The source name the importer of this view offers for a new destination
+  // folder; a view without one (the recorder) offers none.
+  const [folderSuggestion, setFolderSuggestion] = useState({ view: '', name: '' })
+  const setSuggestedFolderName = useCallback((name: string) => setFolderSuggestion({ view: subView, name }), [subView])
+  const suggestedFolderName = folderSuggestion.view === subView ? folderSuggestion.name : ''
   useEffect(() => {
     setDestinationFolderId(folderId ?? '')
   }, [folderId, projectId])
@@ -162,6 +172,7 @@ function ScriptsAuthoringContent({
       onChange={setDestinationFolderId}
       disabled={importOperationBusy}
       onOperationBusyChange={setDestinationOperationBusy}
+      suggestedName={suggestedFolderName}
     />
   )
   // Empty string is "project root"; the save APIs expect null rather than "".
@@ -174,7 +185,7 @@ function ScriptsAuthoringContent({
     ? []
     : libraryScripts.filter(script => script.id !== editingId && (script.folder_id || null) === (nameFolder || null)).map(script => script.name)
   const renderCreateOptionsSurface = (content: ReactNode, hidden = false) =>
-    createOptionsSurface(content, hidden, destinationFolderControl, destinationOperationBusy)
+    createOptionsSurface(content, hidden, destinationFolderControl, destinationOperationBusy, setSuggestedFolderName)
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
     importLauncher: 'enterprise_archive',
@@ -210,6 +221,7 @@ function ScriptsAuthoringContent({
     hidden,
     destinationFolderControl,
     destinationOperationBusy,
+    setSuggestedFolderName,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
 
@@ -229,7 +241,7 @@ function ScriptsAuthoringContent({
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
       // History opens from the editor's More menu; an archived script has no editor, so it keeps the panel.
-      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} /></>}</div>
+      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} initialWorkspace={editingWorkspace} /></>}</div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">

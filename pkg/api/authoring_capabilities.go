@@ -83,6 +83,9 @@ type AuthoringImportSurface struct {
 	Launcher    string                `json:"launcher"`
 	Visible     bool                  `json:"visible"`
 	Modes       []AuthoringImportMode `json:"modes,omitempty"`
+	// Protocols names the protocols a collection format carries when its
+	// title does not, so a search for "soap" finds Bruno and Postman.
+	Protocols []string `json:"protocols,omitempty"`
 }
 
 type AuthoringImportMode struct {
@@ -202,6 +205,13 @@ func runtimeParityIssueCount(counts map[string]int) int {
 		counts[string(enterprisearchive.RuntimeSettingStatusCompatibilityOnly)]
 }
 
+// collectionImportProtocols lists what a request collection's import turns
+// into runnable scripts. GraphQL is left out: those requests are held for
+// translation review. A new slice each call, so no caller can change another's.
+func collectionImportProtocols() []string {
+	return []string{"HTTP", "REST", "SOAP"}
+}
+
 func authoringImportSurfaces() []AuthoringImportSurface {
 	return []AuthoringImportSurface{
 		{
@@ -223,6 +233,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 			Order:       15,
 			Launcher:    "bruno",
 			Visible:     true,
+			Protocols:   collectionImportProtocols(),
 		},
 		{
 			ID:          "postman",
@@ -233,6 +244,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 			Order:       20,
 			Launcher:    "postman",
 			Visible:     true,
+			Protocols:   collectionImportProtocols(),
 		},
 		{
 			ID:          "wsdl",

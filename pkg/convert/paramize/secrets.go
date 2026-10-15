@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -253,20 +254,28 @@ func collectFillSecrets(collector *secretCollector, section string, index int, a
 	}, "{{env."+envKey+"}}")
 }
 
-type sensitiveActionHeader struct {
+type actionHeader struct {
 	name  string
 	value string
 }
 
-// sensitiveActionHeaders scans both representations. HeaderList is the
-// authoritative wire representation and can carry sensitive duplicate values
-// that the compatibility map omits; the map can still contain a value when an
-// older producer did not populate HeaderList.
-func sensitiveActionHeaders(action *dsl.Action) []sensitiveActionHeader {
+// sensitiveActionHeaders lists the credential headers of an action: those an
+// operator supplies, not cookies or the session, anti-forgery and tracing
+// state the source recorded, which stay as imported.
+func sensitiveActionHeaders(action *dsl.Action) []actionHeader {
+	return actionHeaders(action, func(name, _ string) bool { return credential.ImportCredentialHeader(name) })
+}
+
+// actionHeaders lists an action's non-empty headers that keep accepts (all of
+// them when keep is nil). It scans both representations. HeaderList is the
+// authoritative wire representation and can carry duplicate values that the
+// compatibility map omits; the map can still contain a value when an older
+// producer did not populate HeaderList.
+func actionHeaders(action *dsl.Action, keep func(name, value string) bool) []actionHeader {
 	if action == nil {
 		return nil
 	}
-	headers := make([]sensitiveActionHeader, 0, len(action.Headers)+len(action.HeaderList))
+	headers := make([]actionHeader, 0, len(action.Headers)+len(action.HeaderList))
 	seen := make(map[string]struct{}, len(action.Headers)+len(action.HeaderList))
 	headerListNames := make(map[string]struct{}, len(action.HeaderList))
 	for _, header := range action.HeaderList {
@@ -276,7 +285,7 @@ func sensitiveActionHeaders(action *dsl.Action) []sensitiveActionHeader {
 		}
 	}
 	add := func(name, value string) {
-		if !SensitiveHeaderKey(name) || strings.TrimSpace(value) == "" {
+		if strings.TrimSpace(value) == "" || (keep != nil && !keep(name, value)) {
 			return
 		}
 		identity := strings.ToLower(strings.TrimSpace(name)) + "\x00" + value
@@ -284,7 +293,7 @@ func sensitiveActionHeaders(action *dsl.Action) []sensitiveActionHeader {
 			return
 		}
 		seen[identity] = struct{}{}
-		headers = append(headers, sensitiveActionHeader{name: name, value: value})
+		headers = append(headers, actionHeader{name: name, value: value})
 	}
 
 	keys := make([]string, 0, len(action.Headers))

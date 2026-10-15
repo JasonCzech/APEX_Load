@@ -41,11 +41,12 @@ interface Props {
 
 const kindLabels: Record<string, string> = {
   correlation: 'Correlations',
+  generated: 'Generated values',
   data_param: 'Data Parameters',
   secret: 'Secrets',
 }
 
-const kindOrder = ['correlation', 'data_param', 'secret']
+const kindOrder = ['correlation', 'generated', 'data_param', 'secret']
 const SUGGESTION_PAGE_SIZE = 50
 const DIFF_PAGE_SIZE = 100
 const LOCATION_PREVIEW_LIMIT = 20
@@ -173,7 +174,9 @@ export default function ParameterizationReview({ parameterization, script, scrip
   const safeSuggestionPage = Math.min(suggestionPage, suggestionPageCount - 1)
   const suggestionPageStart = safeSuggestionPage * SUGGESTION_PAGE_SIZE
   const visibleSuggestions = suggestions.slice(suggestionPageStart, suggestionPageStart + SUGGESTION_PAGE_SIZE)
-  const grouped = kindOrder
+  // A kind this panel has no label for still shows, after the known ones:
+  // its auto-applied rows arrive checked and must be visible to review.
+  const grouped = [...kindOrder, ...new Set(visibleSuggestions.map(s => s.kind).filter(kind => !kindOrder.includes(kind)))]
     .map(kind => ({ kind, items: visibleSuggestions.filter(s => s.kind === kind) }))
     .filter(group => group.items.length > 0)
 

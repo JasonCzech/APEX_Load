@@ -620,6 +620,7 @@ func nativeJSONSecretRequirement(
 		Context:       "Bruno JSON body credential " + name,
 		Value:         recoverableBrunoCredentialValue(value),
 		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
+		readableName:  readableNativeSecretBase(name),
 	}
 }
 

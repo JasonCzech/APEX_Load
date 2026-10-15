@@ -140,20 +140,6 @@ func TestPreservedImportedCredentialsCannotBeRedirected(t *testing.T) {
 			useMasked:   true,
 		},
 		{
-			name: "cookie cannot move to a different request target",
-			script: &dsl.Script{
-				Config: dsl.ScriptConfig{BaseURL: "https://origin.example.test"},
-				Actions: []dsl.Action{{
-					Name: "request", Type: "request", Method: http.MethodGet, Target: "/account",
-					Headers: map[string]string{"Cookie": "session=" + credential},
-				}},
-			},
-			mutate: func(script *dsl.Script) {
-				script.Actions[0].Target = "https://redirect.example.test/account"
-			},
-			wantContext: "actions[0]",
-		},
-		{
 			name: "body credential cannot move to a different request target",
 			script: &dsl.Script{
 				Config: dsl.ScriptConfig{BaseURL: "https://origin.example.test"},
@@ -549,5 +535,23 @@ func TestImportedCredentialsPermitReplayEvidenceCapture(t *testing.T) {
 	candidate.Config.BaseURL = "https://elsewhere.test"
 	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
 		t.Fatal("credential destination change was allowed")
+	}
+}
+
+// A cookie is session state the source recorded, not a retained credential:
+// editing it, or the request that sends it, is an ordinary edit.
+func TestPreservedImportedCookieEditsAreOrdinaryEdits(t *testing.T) {
+	prior := importedCredentialContextScript(t, &dsl.Script{
+		Config: dsl.ScriptConfig{BaseURL: "https://origin.example.test"},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "request", Method: http.MethodGet, Target: "/account",
+			Headers: map[string]string{"Cookie": "session=recorded-cookie-4821"},
+		}},
+	})
+	candidate := cloneScriptDefinition(prior)
+	candidate.Actions[0].Target = "https://other.example.test/account"
+	candidate.Actions[0].Headers["Cookie"] = "session=edited-cookie-9173"
+	if _, err := preparePersistentLibraryScript(candidate, prior); err != nil {
+		t.Fatalf("cookie edit refused: %v", err)
 	}
 }

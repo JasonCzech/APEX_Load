@@ -5,6 +5,8 @@
 //
 //   - correlation: dynamic values extracted from a response and reused in later
 //     requests (delegates detection to pkg/convert/correlate)
+//   - generated: identifiers and time stamps a client makes up per request
+//     (trace and message IDs, a request time stamp), generated each iteration
 //   - data_param: literal values that should come from a data source (user ids,
 //     emails, SKUs, ...) so each VUser gets distinct data
 //   - secret: credentials that should be externalized to {{env.KEY}} instead of
@@ -16,7 +18,9 @@ package paramize
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +35,7 @@ type Kind string
 
 const (
 	KindCorrelation Kind = "correlation"
+	KindGenerated   Kind = "generated"
 	KindDataParam   Kind = "data_param"
 	KindSecret      Kind = "secret"
 )
@@ -84,9 +89,9 @@ type Suggestion struct {
 	// Correlation-only: the extractor to add at the source action.
 	Extractor     *dsl.Extractor `json:"extractor,omitempty"`
 	FoundInAction *Location      `json:"found_in_action,omitempty"`
-	// DataParam-only: the parameter to materialize on apply. Its DataSource
-	// reference is finalized by ApplySuggestions when the consolidated data
-	// source is created.
+	// DataParam and Generated: the parameter to materialize on apply. A data
+	// parameter's DataSource reference is finalized by ApplySuggestions when
+	// the consolidated data source is created; a generated one needs none.
 	Parameter *dsl.Parameter `json:"parameter,omitempty"`
 }
 
@@ -132,8 +137,11 @@ type Options struct {
 	ObservationIDsZeroBased bool
 	// PreApplied lists correlations the converter already wired into the
 	// script; they surface as informational pre_applied suggestions.
-	PreApplied           []PreAppliedCorrelation
-	EnableCorrelation    bool
+	PreApplied        []PreAppliedCorrelation
+	EnableCorrelation bool
+	// EnableGenerated proposes generated parameters for per-request
+	// identifiers and time stamps.
+	EnableGenerated      bool
 	EnableDataParams     bool
 	EnableSecrets        bool
 	AuraInspectionBudget *AuraInspectionBudget `json:"-"`
@@ -168,6 +176,14 @@ func Suggest(script *dsl.Script, opts Options) Result {
 			suggestions = append(suggestions, secretAdvice...)
 		}
 	}
+	if opts.EnableGenerated {
+		generatedAdvice, err := generatedSuggestions(script, names, claimedValues(suggestions))
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Generated-value analysis was not completed and no generated-value suggestions were produced: %v", err))
+		} else {
+			suggestions = append(suggestions, generatedAdvice...)
+		}
+	}
 	if opts.EnableDataParams {
 		claimed := claimedValues(suggestions)
 		auraAdvice, coverage, warnings := auraPayloadSuggestions(script, names, claimed, opts.AuraInspectionBudget)
@@ -178,7 +194,15 @@ func Suggest(script *dsl.Script, opts Options) Result {
 		if coverage != nil {
 			skipBodies = coverage.skipBodies
 		}
-		dataAdvice, err := dataParamSuggestions(script, names, claimed, skipBodies)
+		var generatedParts []string
+		for _, suggestion := range suggestions {
+			if suggestion.Kind == KindGenerated {
+				for _, location := range suggestion.Locations {
+					generatedParts = append(generatedParts, location.SearchText)
+				}
+			}
+		}
+		dataAdvice, err := dataParamSuggestions(script, names, claimed, skipBodies, generatedParts)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("Data-parameter analysis was not completed and no data-parameter suggestions were produced: %v", err))
 		} else {
@@ -231,7 +255,7 @@ func buildSummary(suggestions []Suggestion) Summary {
 	return summary
 }
 
-var kindOrder = map[Kind]int{KindCorrelation: 0, KindDataParam: 1, KindSecret: 2}
+var kindOrder = map[Kind]int{KindCorrelation: 0, KindGenerated: 1, KindDataParam: 2, KindSecret: 3}
 
 func sortSuggestions(suggestions []Suggestion) {
 	sort.SliceStable(suggestions, func(i, j int) bool {
@@ -308,13 +332,21 @@ func claimedValues(suggestions []Suggestion) map[string]bool {
 		if s.LiteralValue != "" {
 			claimed[s.LiteralValue] = true
 		}
+		if s.Kind == KindGenerated {
+			// One generated parameter can stand for several recorded values.
+			for _, location := range s.Locations {
+				if location.SearchText != "" {
+					claimed[location.SearchText] = true
+				}
+			}
+		}
 	}
 	return claimed
 }
 
 // nameRegistry hands out unique variable names, seeded with identifiers the
 // script already uses so suggestions never collide with existing parameters,
-// data sources, or extractors.
+// data sources, extractors, or variables the script reads.
 type nameRegistry struct {
 	taken map[string]bool
 }
@@ -344,8 +376,19 @@ func newNameRegistry(script *dsl.Script) *nameRegistry {
 		}
 		return nil
 	})
+	// A variable the script reads keeps its name even when nothing defines it,
+	// as with an input the source left unset: a suggestion under that name
+	// would supply the input with its own value, or define it twice.
+	if payload, err := json.Marshal(script); err == nil {
+		for _, match := range variableReferencePattern.FindAllSubmatch(payload, -1) {
+			registry.taken[string(match[1])] = true
+		}
+	}
 	return registry
 }
+
+// variableReferencePattern finds the name in a {{var.NAME}} reference.
+var variableReferencePattern = regexp.MustCompile(`\{\{\s*var\.([A-Za-z0-9_\-]+)`)
 
 func reserveExtractorNames(taken map[string]bool, raw any) {
 	reserve := func(value any) {

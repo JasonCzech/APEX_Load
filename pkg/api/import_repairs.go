@@ -78,7 +78,7 @@ func (s *Server) handlePreviewImportRepair(w http.ResponseWriter, r *http.Reques
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, 400, "Invalid repair request")
+		writeError(w, 400, "invalid repair request: "+err.Error())
 		return
 	}
 	s.processImportRepair(w, r, false, req)
@@ -89,7 +89,7 @@ func (s *Server) handleApplyImportRepair(w http.ResponseWriter, r *http.Request)
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, 400, "Invalid repair request")
+		writeError(w, 400, "invalid repair request: "+err.Error())
 		return
 	}
 	s.processImportRepair(w, r, true, req)

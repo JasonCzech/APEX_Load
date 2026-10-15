@@ -29,11 +29,15 @@ it('confirms saving without navigation, and opens only an explicitly selected sa
   await act(async () => outcome.publish(result))
   expect(notify).toHaveBeenLastCalledWith({ ...result, stayInImportReview: true })
   expect(container.textContent).toContain('Saved 1 script to the script library')
-  await act(async () => container.querySelectorAll('button')[0].click())
+  const button = (name: string) => [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === name)!
+  await act(async () => button('Import More Files').click())
   expect(more).toHaveBeenCalledOnce()
   expect(notify).toHaveBeenCalledTimes(1)
-  await act(async () => container.querySelectorAll('button')[1].click())
+  await act(async () => button('Open Imported One in Visual Editor').click())
   expect(notify).toHaveBeenLastCalledWith({ ...result, stayInImportReview: false })
+  // Debug opens the same script, in the debugger.
+  await act(async () => button('Debug Imported One').click())
+  expect(notify).toHaveBeenLastCalledWith({ ...result, editorWorkspace: 'debug', stayInImportReview: false })
 })
 
 it('honors editor saves for one script but keeps batches and stale saves on the importer', async () => {

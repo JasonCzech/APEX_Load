@@ -1,0 +1,6 @@
+.import-input-supply { display: grid; gap: 10px; }
+.import-input-supply label { display: flex; flex-direction: column; gap: 4px; }
+.import-input-supply select { width: min(100%, 36rem); }
+.import-input-supply small { color: var(--text-muted); }
+.import-input-supply .import-input-supply-error { color: var(--danger-text); }
+.import-input-supply .import-input-supply-warning { color: var(--warning-text); }

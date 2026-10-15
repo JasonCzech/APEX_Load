@@ -154,6 +154,26 @@ type ImportMetadata struct {
 	Source           string         `json:"source,omitempty"`
 	SourceScriptName string         `json:"source_script_name,omitempty"`
 	Preserved        map[string]any `json:"preserved,omitempty"`
+	// Inputs records how the import supplied each variable the source left
+	// unset, by parameter name, so a later import of the same source can
+	// offer the same choice.
+	Inputs map[string]ImportInput `json:"inputs,omitempty"`
+}
+
+// ImportInput is how one source variable was supplied at import: one value
+// for every virtual user (mode "value"; the parameter of that name holds it),
+// a data pool column read per virtual user ("data"), a value generated each
+// iteration ("generated"), or, for a credential, a project secret ("secret").
+type ImportInput struct {
+	Mode      string `json:"mode"`
+	Alias     string `json:"alias,omitempty"`
+	Column    string `json:"column,omitempty"`
+	Generator string `json:"generator,omitempty"`
+	Digits    int    `json:"digits,omitempty"`
+	// Reference is the project secret a credential input reads
+	// ({{secret.NAME}}; mode "secret"). The key is not one a projection masks,
+	// so the name survives every read.
+	Reference string `json:"reference,omitempty"`
 }
 
 type ScriptConfig struct {

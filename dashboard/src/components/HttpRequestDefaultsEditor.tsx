@@ -11,6 +11,7 @@ import {
   parseBulkHeaders,
 } from './httpRequestDefaultsModel'
 import { httpSequenceRequests } from './scriptActionHelpers'
+import { isRecordedStateHeader } from './credentialPreviewPolicy'
 
 export type HTTPRuntimeActionType = 'cookie_clear' | 'cache_clear' | 'http_connections_close'
 
@@ -160,7 +161,7 @@ function headerFindings(entry: ScriptHeaderEntry, all: ScriptHeaderEntry[], http
   if (TYPED_HEADERS.has(normalized)) {
     findings.push({ level: 'warning', message: `${name} duplicates a typed HTTP setting; this row is authoritative.` })
   }
-  if (SENSITIVE_HEADER_PATTERN.test(name) &&
+  if (sensitiveHeader(name) &&
     entry.value !== '[REDACTED]' &&
     !entry.value.includes('{{secret.')) {
     findings.push({ level: 'warning', message: `${name} may contain a credential. Prefer a {{secret.*}} reference.` })
@@ -235,8 +236,10 @@ function flattenActions(actions: ScriptActionDefinition[]): ScriptActionDefiniti
   ])
 }
 
+// Cookies and session, anti-forgery and tracing headers are state a
+// recording or import carries, not credentials.
 function sensitiveHeader(name: string): boolean {
-  return SENSITIVE_HEADER_PATTERN.test(name)
+  return SENSITIVE_HEADER_PATTERN.test(name) && !isRecordedStateHeader(name)
 }
 
 function maskedValue(name: string, value: string): string {

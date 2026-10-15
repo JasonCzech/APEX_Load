@@ -97,6 +97,9 @@ type BrunoNativeImportCommit struct {
 	// in the same transaction as the scripts and receipt so a failed batch does
 	// not consume durable reference-key sequence values.
 	RefKeyEnv string
+	// ExpectedUpdatedAt is positional with Scripts; a non-nil entry updates
+	// that existing script as a new version. See ImportBatchCommit.
+	ExpectedUpdatedAt []*time.Time
 }
 
 type BrunoNativeImportCommitResult struct {

@@ -304,7 +304,7 @@ func headerListIssuesForVersion(headers protocol.HeaderList, version string, all
 				Code:   HeaderListIssueInvalidName,
 				Index:  index,
 				Name:   "<invalid>",
-				Detail: "header name is not valid on the HTTP wire",
+				Detail: "header name contains characters HTTP does not allow",
 			})
 			continue
 		}
@@ -326,7 +326,7 @@ func headerListIssuesForVersion(headers protocol.HeaderList, version string, all
 				Code:   HeaderListIssueInvalidValue,
 				Index:  index,
 				Name:   name,
-				Detail: "header value is not valid on the HTTP wire",
+				Detail: InvalidHeaderValueDetail(name, header.Value),
 			})
 			continue
 		}
@@ -384,6 +384,22 @@ func headerListIssuesForVersion(headers protocol.HeaderList, version string, all
 		return nil
 	}
 	return issues
+}
+
+// InvalidHeaderValueDetail says, without repeating the value, why HTTP cannot
+// carry a header value that validResolvedHeaderValue rejects.
+func InvalidHeaderValueDetail(name, value string) string {
+	canonicalName := strings.ToLower(strings.TrimSpace(name))
+	switch {
+	case !httpguts.ValidHeaderFieldValue(value):
+		return "header value contains characters HTTP does not allow"
+	case (canonicalName == "host" || canonicalName == "user-agent") && strings.TrimSpace(value) == "":
+		return "header value cannot be empty"
+	case canonicalName == "host":
+		return "header value is not a valid host"
+	default:
+		return "header value contains characters HTTP does not allow"
+	}
 }
 
 func validResolvedHeaderValue(canonicalName, value string) bool {

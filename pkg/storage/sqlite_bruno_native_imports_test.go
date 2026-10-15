@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -134,6 +135,123 @@ func TestCommitBrunoNativeImportSharesContentAddressedArtifactsAcrossBatches(t *
 	}
 	if count != 2 {
 		t.Fatalf("shared artifact row count = %d, want raw + sanitized only", count)
+	}
+}
+
+func TestCommitBrunoNativeImportUpdatesExistingScriptsAsNextVersion(t *testing.T) {
+	store := newBrunoImportTestStore(t)
+	first := brunoNativeImportCommitFixture("native-session-version-1", "request-sha-version-1")
+	first.RefKeyEnv = "local"
+	for _, script := range first.Scripts {
+		script.RefKey = ""
+	}
+	created, err := store.CommitBrunoNativeImport(first)
+	if err != nil {
+		t.Fatalf("first commit: %v", err)
+	}
+
+	// Script one now lives in a folder that is not a script folder. An update
+	// keeps that placement instead of failing the batch.
+	now := time.Now().UTC()
+	if err := store.SaveFolder(&Folder{
+		ID: "shared-folder", ProjectID: "project-bruno", Name: "Shared", Category: "results",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := store.GetScript("native-script-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedFolder := "shared-folder"
+	moved.FolderID = &sharedFolder
+	if err := store.SaveScript(moved); err != nil {
+		t.Fatal(err)
+	}
+	moved, err = store.GetScript("native-script-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created.Scripts[0].UpdatedAt = moved.UpdatedAt
+
+	// The second batch updates script one and creates a third script.
+	second := brunoNativeImportCommitFixture("native-session-version-2", "request-sha-version-2")
+	second.Batch.ID = "native-batch-version-2"
+	second.RefKeyEnv = "local"
+	second.Scripts[0].RefKey = ""
+	second.Scripts[0].Name = "Request one, re-imported"
+	second.Scripts[0].FolderID = &sharedFolder
+	second.Scripts[1].ID = "native-script-3"
+	second.Scripts[1].RefKey = ""
+	reviewed := created.Scripts[0].UpdatedAt
+	second.ExpectedUpdatedAt = []*time.Time{&reviewed, nil}
+	updated, err := store.CommitBrunoNativeImport(second)
+	if err != nil {
+		t.Fatalf("update commit: %v", err)
+	}
+	if got := []string{updated.Scripts[0].RefKey, updated.Scripts[1].RefKey}; got[0] != "LOC-SCR-0001-v2" || got[1] != "LOC-SCR-0003-v1" {
+		t.Fatalf("reference keys = %#v, want the next version and a new script", got)
+	}
+	stored, err := store.GetScript("native-script-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "Request one, re-imported" || stored.RefKey != "LOC-SCR-0001-v2" ||
+		stored.FolderID == nil || *stored.FolderID != sharedFolder ||
+		!stored.CreatedAt.Equal(created.Scripts[0].CreatedAt) {
+		t.Fatalf("updated script = %+v", stored)
+	}
+
+	// An import update keeps placement; asking for another folder is refused.
+	move := brunoNativeImportCommitFixture("native-session-version-move", "request-sha-version-move")
+	move.Batch.ID = "native-batch-version-move"
+	move.Scripts = move.Scripts[:1]
+	move.Scripts[0].RefKey = ""
+	move.Batch.CandidateIDs = move.Batch.CandidateIDs[:1]
+	current, err := store.GetScript("native-script-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moveReviewed := current.UpdatedAt
+	move.ExpectedUpdatedAt = []*time.Time{&moveReviewed}
+	// The reviewed time is current, so only the folder difference can fail
+	// it; a move after review reads as a concurrent change.
+	if _, err := store.CommitBrunoNativeImport(move); !errors.Is(err, ErrBrunoImportConcurrentChange) {
+		t.Fatalf("moving update error = %v", err)
+	}
+	if unchanged, err := store.GetScript("native-script-1"); err != nil || unchanged.FolderID == nil || *unchanged.FolderID != sharedFolder {
+		t.Fatalf("refused move changed the script: %+v, %v", unchanged, err)
+	}
+
+	// A batch reviewed against the older updated_at must not overwrite the
+	// newer save, and must leave nothing behind.
+	stale := brunoNativeImportCommitFixture("native-session-version-3", "request-sha-version-3")
+	stale.Batch.ID = "native-batch-version-3"
+	stale.Scripts = stale.Scripts[:1]
+	stale.Scripts[0].RefKey = ""
+	stale.Scripts[0].FolderID = &sharedFolder
+	stale.Batch.CandidateIDs = stale.Batch.CandidateIDs[:1]
+	stale.ExpectedUpdatedAt = []*time.Time{&reviewed}
+	if _, err := store.CommitBrunoNativeImport(stale); !errors.Is(err, ErrBrunoImportConcurrentChange) {
+		t.Fatalf("stale update error = %v, want ErrBrunoImportConcurrentChange", err)
+	}
+	if _, err := store.GetBrunoNativeImportByIdempotencyKey("native-session-version-3", "project-bruno"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("stale receipt lookup error = %v, want sql.ErrNoRows", err)
+	}
+
+	// An update of a script that no longer exists fails instead of creating it.
+	missing := brunoNativeImportCommitFixture("native-session-version-4", "request-sha-version-4")
+	missing.Batch.ID = "native-batch-version-4"
+	missing.Scripts = missing.Scripts[:1]
+	missing.Scripts[0].ID = "native-script-missing"
+	missing.Scripts[0].RefKey = ""
+	missing.Batch.CandidateIDs = missing.Batch.CandidateIDs[:1]
+	missing.ExpectedUpdatedAt = []*time.Time{&reviewed}
+	if _, err := store.CommitBrunoNativeImport(missing); !errors.Is(err, ErrBrunoImportConcurrentChange) {
+		t.Fatalf("missing update target error = %v, want ErrBrunoImportConcurrentChange", err)
+	}
+	if _, err := store.GetScript("native-script-missing"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing update target lookup error = %v, want sql.ErrNoRows", err)
 	}
 }
 

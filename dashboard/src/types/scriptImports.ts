@@ -29,6 +29,8 @@ export interface AuthoringImportSurface {
   launcher: string
   visible: boolean
   modes?: AuthoringImportMode[]
+  /** Protocols a collection format carries when its title does not say. */
+  protocols?: string[]
 }
 
 export interface AuthoringCapabilitiesResponse {
@@ -72,7 +74,7 @@ export interface ImportRepairSuggestion {
   selector_signals?: string[]
 }
 
-export type ParameterizationKind = 'correlation' | 'data_param' | 'secret'
+export type ParameterizationKind = 'correlation' | 'generated' | 'data_param' | 'secret'
 
 export interface AuraParameterRoutePart {
   kind: 'key' | 'index' | 'json_string'
@@ -203,7 +205,8 @@ export interface SharedValueCandidate {
   script_names?: string[]
   // Credential-shaped candidates are never applied as parameters: a parameter
   // of that name is masked out of every disclosure-safe read, so the value
-  // would be destroyed on the next save. They route to Secret Bindings instead.
+  // would be destroyed on the next save. An unset one reads a project secret or
+  // data pool column instead; any other is left to credential review.
   credential_shaped?: boolean
   rationale?: string
   targets_base_url?: boolean
@@ -233,6 +236,8 @@ export interface SharedValueDiff {
 export interface ApplySharedValuesRequest {
   scripts: ScriptDefinition[]
   values: Record<string, string>
+  /** Inputs the source left unset, read per virtual user instead: a data pool column or a generated value. */
+  bindings?: Record<string, { mode: 'data' | 'generated' | 'secret'; alias?: string; column?: string; generator?: 'uuid' | 'timestamp' | 'digits'; digits?: number; secret?: string }>
 }
 
 export interface ApplySharedValuesResponse {
@@ -360,6 +365,48 @@ export interface ScriptImportResult<
   expires_at?: string
   import_draft_expires_at?: string
   preflight?: ReplayPreflight
+  /** Positional with scripts: the earlier imported script each one would
+   * update as a new version, or null. Absent when nothing matches. */
+  existing_scripts?: (ImportExistingScript | null)[]
+}
+
+/** How an earlier imported script supplied one input the source leaves unset. */
+export interface ImportPreviousInput {
+  mode: string
+  value?: string
+  alias?: string
+  column?: string
+  generator?: string
+  digits?: number
+  /** The project secret a credential input reads, {{secret.NAME}}. */
+  reference?: string
+}
+
+/** An earlier imported script a new one matches by source identity. */
+export interface ImportExistingScript {
+  script_id: string
+  name: string
+  ref_key?: string
+  folder_id?: string
+  updated_at: string
+  /** Earlier scripts from the same source item; each is offered to one new script, the most recent first. */
+  matches: number
+  /** The source declares its identity (not just a file name), so updating is the default. */
+  same_source: boolean
+  /** Changed in APEX after its import saved it: updating replaces those changes. */
+  edited_since_import: boolean
+  /** Fingerprint of the script's content as reviewed, sent back as expected_content_digest. */
+  content_digest?: string
+  /** How the script supplied each input its import recorded, by input name. */
+  inputs?: Record<string, ImportPreviousInput>
+}
+
+/** Names the earlier script a save updates as a new version, and the version reviewed. */
+export interface ImportUpdateTarget {
+  script_id: string
+  expected_updated_at: string
+  /** The content reviewed: a script put back to it after a failed save is still the version reviewed. */
+  expected_content_digest?: string
 }
 
 export interface ImportAssetUploadResponse {
@@ -1295,6 +1342,8 @@ export interface OracleEBusinessSupportMatrixResponse {
 export interface SaveJMeterImportRequest {
   scripts: ScriptDefinition[]
   scenario_draft?: JMeterScenarioDraft
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface SaveJMeterImportResponse {
@@ -1307,6 +1356,8 @@ export interface SaveEnterpriseArchiveImportRequest {
   scripts: ScriptDefinition[]
   folder_id?: string | null
   operation_id: string
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface SaveEnterpriseArchiveImportResponse {
@@ -1324,6 +1375,8 @@ export interface SavePostmanImportRequest {
   folder_id?: string | null
   mode?: 'create' | 'replace'
   target_script_id?: string
+  /** Makes the replace a re-import update of the version the operator reviewed. */
+  expected_updated_at?: string
 }
 
 export interface SavePostmanImportResponse {
@@ -1355,6 +1408,8 @@ export interface CommitOpenAPIImportRequest {
   mode?: 'create' | 'replace'
   target_script_id?: string
   replace_mode?: 'full' | 'merge_by_operation_id'
+  /** Makes the replace a re-import update of the version the operator reviewed. */
+  expected_updated_at?: string
   dry_run?: boolean
 }
 
@@ -1375,6 +1430,8 @@ export interface CommitAsyncAPIImportBatchRequest {
   scripts: ScriptDefinition[]
   folder_id?: string | null
   operation_id: string
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface CommitAsyncAPIImportBatchResponse {
@@ -1389,6 +1446,8 @@ export interface CommitGenericImportBatchRequest {
   source_profile: GenericImportBatchSourceProfile
   import_session_ids?: string[]
   source_recording_session_ids?: string[]
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface CommitGenericImportBatchResponse {
@@ -1406,8 +1465,9 @@ export type ImportSourceRevision = BrunoAPISchemas['ImportSourceRevision']
 export type BrunoCommitErrorResponse = BrunoAPISchemas['BrunoCommitErrorResponse']
 
 export type BrunoNativeScriptCandidate =
-  Omit<BrunoAPISchemas['BrunoNativeScriptCandidate'], 'script'> & {
+  Omit<BrunoAPISchemas['BrunoNativeScriptCandidate'], 'script' | 'parameterization'> & {
     script: ScriptDefinition
+    parameterization?: Parameterization
   }
 
 type BrunoNativeInspectResult =

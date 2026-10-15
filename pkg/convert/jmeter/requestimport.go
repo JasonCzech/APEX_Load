@@ -332,7 +332,7 @@ func projectJMeterHTTPConfigCredentials(script *dsl.Script, ctx *convertContext,
 		occurrences := make([]credentialpolicy.HeaderOccurrence, 0, len(input))
 		headerApplications := make(map[int][]string)
 		for _, header := range input {
-			if credential.SensitiveHeader(header.Name) {
+			if credential.ImportCredentialHeader(header.Name) {
 				if projected, ok := jmeterProjectedActionHeader(script, header.Name); ok {
 					script.Config.HTTP.DefaultHeaders[header.Name] = projected
 					continue

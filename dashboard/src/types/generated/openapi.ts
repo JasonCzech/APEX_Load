@@ -42,6 +42,7 @@ export interface components {
       "size_bytes": number;
     };
     "BrunoCapabilities": {
+      "converted_hooks"?: number;
       "has_bruno_apps": boolean;
       "has_certificates": boolean;
       "has_file_bodies": boolean;
@@ -52,10 +53,12 @@ export interface components {
       "request_types": Array<string>;
       "required_sandbox": string;
       "runner_profile"?: string;
+      "unconverted_hooks"?: number;
     };
     "BrunoCollection": {
       "items": Array<components["schemas"]["BrunoCollectionItem"]>;
       "name": string;
+      "name_declared"?: boolean;
       "uid"?: string;
     };
     "BrunoCollectionItem": {
@@ -108,6 +111,7 @@ export interface components {
       "name": string;
       "path": string;
       "type": string;
+      "values"?: Record<string, string>;
     };
     "BrunoExecutionPreflight": components["schemas"]["BrunoNativeExecutionPreflight"];
     "BrunoFidelityReport": {
@@ -124,6 +128,14 @@ export interface components {
       "id": string;
       "required_resolution": string;
       "summary": string;
+    };
+    "BrunoInputBinding": {
+      "alias"?: string;
+      "column"?: string;
+      "digits"?: number;
+      "generator"?: "uuid" | "timestamp" | "digits";
+      "mode": "data" | "generated" | "secret";
+      "secret"?: string;
     };
     "BrunoInspectFile": {
       "content"?: string;
@@ -149,6 +161,7 @@ export interface components {
       "expires_at": string;
       "import_session_id": string;
       "parameterization": (Record<string, unknown>) | null;
+      "previous_inputs"?: Record<string, components["schemas"]["BrunoPreviousInput"]>;
       "result": components["schemas"]["BrunoInspectResult"];
       "shared_values"?: Record<string, unknown>;
     };
@@ -172,14 +185,18 @@ export interface components {
     "BrunoNativeBatchCommitRequest": {
       "acknowledged_finding_ids"?: Array<string>;
       "candidate_ids"?: Array<string>;
-      "folder_id": string;
+      "folder_id"?: string;
+      "header_repairs"?: Record<string, "trim" | "remove">;
       "import_session_id": string;
+      "input_bindings"?: Record<string, components["schemas"]["BrunoInputBinding"]>;
       "migrate_secrets"?: boolean;
       "mode": "create_native_batch";
       "name_overrides"?: Record<string, string>;
+      "parameterization_selections"?: Record<string, Array<string>>;
       "project_id": string;
       "secret_bindings"?: Record<string, string>;
       "shared_values"?: Record<string, string>;
+      "update_targets"?: Record<string, components["schemas"]["BrunoNativeUpdateTarget"]>;
     };
     "BrunoNativeBatchCommitResponse": {
       "batch_id": string;
@@ -188,6 +205,8 @@ export interface components {
       "idempotent_replay": boolean;
       "scripts": Array<components["schemas"]["APEXScript"]>;
       "secret_migrations"?: Array<Record<string, unknown>>;
+      "unconfigured_secret_names"?: Array<string>;
+      "updated_script_ids"?: Array<string>;
     };
     "BrunoNativeCandidateExecutionPreflight": {
       "blockers"?: Array<string>;
@@ -198,6 +217,7 @@ export interface components {
       "acknowledgement_required"?: boolean;
       "code": string;
       "finding_id"?: string;
+      "header_repair"?: components["schemas"]["BrunoNativeHeaderRepair"];
       "id": string;
       "message": string;
       "path"?: string;
@@ -208,12 +228,37 @@ export interface components {
       "candidates": Array<components["schemas"]["BrunoNativeCandidateExecutionPreflight"]>;
       "ready": boolean;
     };
+    "BrunoNativeExistingScript": {
+      "edited_since_import"?: boolean;
+      "folder_id"?: string;
+      "matches": number;
+      "name": string;
+      "ref_key"?: string;
+      "same_collection"?: boolean;
+      "script_id": string;
+      "updated_at": string;
+    };
+    "BrunoNativeHeaderRepair": {
+      "action_index": number;
+      "header_index": number;
+      "header_name": string;
+      "invalid_character"?: string;
+      "kept_characters"?: number;
+      "omitted"?: boolean;
+      "options": Array<"trim" | "remove">;
+      "removed_characters"?: number;
+      "replaces_body_default"?: boolean;
+    };
     "BrunoNativeInspectResult": {
       "capabilities": components["schemas"]["BrunoCapabilities"];
       "collection": components["schemas"]["BrunoCollection"];
       "environments"?: Array<components["schemas"]["BrunoEnvironment"]>;
       "fidelity": components["schemas"]["BrunoFidelityReport"];
       "inspected_at": string;
+      "kept_headers"?: Array<{
+        "name": string;
+        "requests": number;
+      }>;
       "manifest": components["schemas"]["BrunoManifest"];
       "missing_variables"?: Array<string>;
       "native_projection": components["schemas"]["BrunoNativeProjection"];
@@ -223,6 +268,11 @@ export interface components {
       "scripts": Array<components["schemas"]["BrunoNativeScriptCandidate"]>;
       "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
       "security_findings"?: Array<components["schemas"]["BrunoSecurityFinding"]>;
+      "skipped_file_count"?: number;
+      "skipped_files"?: Array<{
+        "path": string;
+        "reason": "operating_system_file" | "version_control_file" | "ignore_list";
+      }>;
       "source_format": string;
     };
     "BrunoNativeProjection": {
@@ -232,9 +282,11 @@ export interface components {
     "BrunoNativeScriptCandidate": {
       "candidate_id": string;
       "diagnostics"?: Array<components["schemas"]["BrunoNativeDiagnostic"]>;
+      "existing_script"?: components["schemas"]["BrunoNativeExistingScript"];
       "fidelity": string;
       "method": string;
       "missing_variables"?: Array<string>;
+      "parameterization"?: Record<string, unknown>;
       "planned_script_id": string;
       "script": components["schemas"]["APEXScript"];
       "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
@@ -243,6 +295,19 @@ export interface components {
       "source_path": string;
       "source_uid": string;
       "target": string;
+    };
+    "BrunoNativeUpdateTarget": {
+      "expected_updated_at": string;
+      "script_id": string;
+    };
+    "BrunoPreviousInput": {
+      "alias"?: string;
+      "column"?: string;
+      "digits"?: number;
+      "generator"?: "uuid" | "timestamp" | "digits";
+      "mode": "value" | "data" | "generated" | "secret";
+      "reference"?: string;
+      "value"?: string;
     };
     "BrunoSecretRequirement": {
       "affected_paths"?: Array<string>;
@@ -1123,6 +1188,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -5931,6 +5997,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -6773,6 +6840,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -7517,6 +7585,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -12976,6 +13045,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -13880,6 +13950,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -14601,6 +14672,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -15223,6 +15295,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -15794,6 +15867,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -15925,6 +15999,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "bindings"?: Record<string, Record<string, unknown>>;
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -16507,6 +16582,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -17102,6 +17178,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -17819,6 +17896,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -19368,6 +19446,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -23394,6 +23473,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -24481,6 +24561,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -25319,6 +25400,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -25588,6 +25670,7 @@ export interface operations {
                 "label": string;
               }>;
               "order": number;
+              "protocols"?: Array<string>;
               "title": string;
               "visible": boolean;
             }>;
@@ -26444,6 +26527,7 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "expected_updated_at"?: (string) | null;
           "folder_id"?: (string) | null;
           "import_session_id"?: string;
           "mode"?: string;
@@ -27186,6 +27270,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -27265,6 +27350,11 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -27837,6 +27927,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -27918,6 +28009,11 @@ export interface operations {
           }>;
           "source_profile": "broker_config" | "browser_recorder" | "browser_recording_har" | "cloudtest" | "curl" | "devweb" | "eventhubs_capture" | "github" | "har" | "k6" | "raml" | "raw_http" | "recorder" | "recorder-export" | "recorder_export" | "rest_json" | "salesforce" | "sample" | "sample-import" | "truclient" | "wsdl";
           "source_recording_session_ids"?: Array<string>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -28036,6 +28132,7 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "expected_updated_at"?: (string) | null;
           "folder_id"?: (string) | null;
           "import_session_id"?: string;
           "mode"?: string;
@@ -30023,6 +30120,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -30756,6 +30854,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -41622,6 +41721,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -42682,6 +42782,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -57048,6 +57149,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -59104,6 +59206,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -79819,6 +79922,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -80543,6 +80647,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -92419,6 +92524,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -93144,6 +93250,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -111663,6 +111770,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -112618,6 +112726,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -113352,6 +113461,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -114155,6 +114265,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -115207,6 +115318,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -115928,6 +116040,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -116550,6 +116663,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -117121,6 +117235,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -119396,6 +119511,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -120120,6 +120236,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -120839,6 +120956,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -132578,6 +132696,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -133409,6 +133528,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -140937,6 +141057,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -142897,6 +143018,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -142976,6 +143098,11 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -143612,6 +143739,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -143745,6 +143873,11 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -143795,6 +143928,7 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "expected_updated_at"?: (string) | null;
           "folder_id"?: (string) | null;
           "import_session_id"?: string;
           "mode"?: string;
@@ -146277,6 +146411,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -147765,6 +147900,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -149385,6 +149521,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -150972,6 +151109,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -152560,6 +152698,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -154147,6 +154286,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -164666,6 +164806,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -165398,6 +165539,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -171745,6 +171887,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;
@@ -172803,6 +172946,7 @@ export interface operations {
               }>;
               "metadata"?: ({
                 "import"?: ({
+                  "inputs"?: Record<string, Record<string, unknown>>;
                   "preserved"?: Record<string, unknown>;
                   "source"?: string;
                   "source_script_name"?: string;
@@ -178242,6 +178386,7 @@ export interface operations {
             }>;
             "metadata"?: ({
               "import"?: ({
+                "inputs"?: Record<string, Record<string, unknown>>;
                 "preserved"?: Record<string, unknown>;
                 "source"?: string;
                 "source_script_name"?: string;

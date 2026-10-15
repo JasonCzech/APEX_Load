@@ -190,3 +190,19 @@ func TestResolveMethodRejectsUnknownTypesUnlessExplicit(t *testing.T) {
 		}
 	}
 }
+
+func TestInvalidHeaderValueDetailExplainsTheCause(t *testing.T) {
+	for _, test := range []struct {
+		name, value, want string
+	}{
+		{name: "X-Note", value: "a\nb", want: "header value contains characters HTTP does not allow"},
+		{name: "Cookie", value: `a=1" junk`, want: "header value contains characters HTTP does not allow"},
+		{name: "Host", value: "", want: "header value cannot be empty"},
+		{name: "User-Agent", value: " ", want: "header value cannot be empty"},
+		{name: "host", value: "example.test/path", want: "header value is not a valid host"},
+	} {
+		if got := InvalidHeaderValueDetail(test.name, test.value); got != test.want {
+			t.Errorf("InvalidHeaderValueDetail(%q) = %q, want %q", test.name, got, test.want)
+		}
+	}
+}

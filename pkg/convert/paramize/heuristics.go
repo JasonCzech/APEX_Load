@@ -137,7 +137,9 @@ func acronymPlural(runes []rune, index int) bool {
 	return runes[index] == 's' && (index+1 == len(runes) || !unicode.IsLower(runes[index+1]))
 }
 
-// SensitiveHeaderKey reports whether a header carries credentials.
+// SensitiveHeaderKey reports whether a header's value is redacted from
+// recorded evidence. It is broader than what goes to credential review
+// (credential.ImportCredentialHeader): cookies and session headers count.
 func SensitiveHeaderKey(key string) bool {
 	return credential.SensitiveHeader(key)
 }

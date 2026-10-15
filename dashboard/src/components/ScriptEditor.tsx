@@ -96,7 +96,8 @@ import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, templateVariableNames } from './replayPreflightUtils'
-import { openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
+import { headerIssueText, openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
+import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import {
   applyMigrationAssistantSuggestion,
   applyAuthoringComponentToScript,
@@ -313,6 +314,11 @@ type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
 
 const DEBUG_TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped'])
+
+// A status check whose expected value is a literal status code, not a template.
+function numericStatusCheck(assertion: Assertion): boolean {
+  return assertion.type === 'status_code' && !assertion.source && /^\d{3}$/.test(String(assertion.expected ?? '').trim())
+}
 
 function isFinalizedDebugSession(session: ScriptDebugSession | undefined, report?: ReplayReport | null): boolean {
   if (!session) return Boolean(report?.completed_at)
@@ -717,6 +723,8 @@ interface Props {
   returnTarget?: { label: string; description?: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null
   /** Who created and last changed the stored script; History opens from the editor's More menu. */
   activity?: ObjectActivitySummary
+  /** Opens in this workspace instead of the route's or the last one used. */
+  initialWorkspace?: WorkbenchMode
 }
 
 function scriptHasAuthoredActions(script: ScriptData): boolean {
@@ -726,7 +734,7 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 const SAVED_SCRIPT_OPENING = 'This script was saved and is opening. Edits made after it was saved are not kept.'
 
-export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget, activity }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget, activity, initialWorkspace }: Props) {
   const [authorOverview, setAuthorOverview] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
@@ -757,7 +765,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   } | null>(null)
   const projectSecretProbeRequestRef = useRef(0)
   const [projectSecretProbeRetryGeneration, setProjectSecretProbeRetryGeneration] = useState(0)
-  const replayMissingProjectSecretsRef = useRef<string[]>([])
+  const replayMissingProjectSecretLabelsRef = useRef<string[]>([])
   const replaySecretStatusKnownRef = useRef(true)
   const refreshScriptSecretStatus = useCallback(async () => {
     const requestId = ++scriptSecretStatusRequestRef.current
@@ -1215,6 +1223,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 	  setHttpConversionError('')
 	}, [activeReplaySessionId, browserReplaySession, projectId, replayReport, script])
   const [workspaceTab, setWorkspaceTab] = useState<WorkbenchMode>(() => {
+    if (initialWorkspace) return initialWorkspace
     try {
       const route = new URLSearchParams(window.location.hash.split('?')[1] || '')
       if (route.get('workspace') === 'debug') return 'debug'
@@ -3332,7 +3341,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setError('Project secret status is not available yet. Wait for the credential check to complete before running this script.')
       return
     }
-    const missingSecrets = replayMissingProjectSecretsRef.current
+    const missingSecrets = replayMissingProjectSecretLabelsRef.current
     if (missingSecrets.length > 0) {
       setError(`Configure missing project secret${missingSecrets.length === 1 ? '' : 's'} before running: ${missingSecrets.join(', ')}.`)
       return
@@ -3941,11 +3950,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       ? Array.from(persistedStatusByName.values())
       : []
   const secretStatusKnown = requiredProjectSecretNames.length === 0 || projectProbeIsReady || canUsePersistedStatusFallback
+  // Secret names as the Secret bindings dialog shows them, worked out over
+  // every secret the script needs so each reads the same everywhere.
+  const secretLabels = secretBindingDisplayNames(requiredProjectSecretNames, script)
   const secretReconciledPreflight = reconcileReplayPreflightSecretStatus(
     preflightWithAllRequiredSecrets,
     secretStatuses,
     secretStatusKnown,
     projectProbeIsUnavailable,
+    secretLabels,
   )
   const replayPreflight = errorCount || jsonParseMessage || (validationResultIsCurrent && validationSidebarResult?.tone === 'error') ? { ...secretReconciledPreflight, valid: false, checks: [...(secretReconciledPreflight.checks || []), { id: 'author-problems', label: 'Current draft', status: 'fail' as const, detail: 'The current draft has blocking issues. Open Author Problems to repair them.' }] } : secretReconciledPreflight
   // Readiness problems come from the preflight Checks & readiness shows, so
@@ -3963,12 +3976,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   } satisfies ReadinessFacts)
   // Text Author Problems already lists from validation or the last replay.
   const alreadyListedProblemsJson = JSON.stringify([...(validationResultIsCurrent ? validationSidebarResult?.issues || [] : []), ...warnings])
+  const secretLabelsJson = JSON.stringify([...secretLabels])
   const readinessIssues = useMemo(
-    () => replayReadinessIssues(JSON.parse(readinessFactsJson) as ReadinessFacts, JSON.parse(alreadyListedProblemsJson) as string[]),
-    [readinessFactsJson, alreadyListedProblemsJson],
+    () => replayReadinessIssues(
+      JSON.parse(readinessFactsJson) as ReadinessFacts,
+      JSON.parse(alreadyListedProblemsJson) as string[],
+      new Map(JSON.parse(secretLabelsJson) as [string, string][]),
+    ),
+    [readinessFactsJson, alreadyListedProblemsJson, secretLabelsJson],
   )
   const missingProjectSecrets = replayPreflight.missing_secrets || []
-  replayMissingProjectSecretsRef.current = missingProjectSecrets
+  const missingProjectSecretLabels = missingProjectSecrets.map(name => secretDisplayName(secretLabels, name))
+  replayMissingProjectSecretLabelsRef.current = missingProjectSecretLabels
   replaySecretStatusKnownRef.current = secretStatusKnown
   const replayBlockedByUnknownSecretStatus = requiredProjectSecretNames.length > 0 && !secretStatusKnown
   const replayBlockedByMissingSecrets = missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus
@@ -4004,7 +4023,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ? 'Project secret status is temporarily unavailable. Retry the credential check before running.'
         : 'Checking project secret configuration before running…')
     : replayBlockedByMissingSecrets
-      ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecrets.join(', ')}.`
+      ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecretLabels.join(', ')}.`
       : replayStartButtonLabel
   const debugActionRows = scriptPhaseActionRows
   const stepReplayDisabled = replaying
@@ -5452,7 +5471,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }] : []),
     ]
     const serverIssues: IssueDetail[] = validationResultIsCurrent ? (validationSidebarResult?.issues || []).map((title, index) => ({
-      id: `server-${index}`, severity: 'error', title, source: 'Server validation', onSelect: () => {
+      id: `server-${index}`, severity: 'error', ...(headerIssueText(title) || { title }), source: 'Server validation', onSelect: () => {
         const match = /(?:script\.)?(actions|init|teardown)\[(\d+)\]/.exec(title)
         if (match) { const row = scriptPhaseActionRows.find(row => row.phase === (match[1] === 'actions' ? 'action' : match[1]) && row.actionIndex === Number(match[2])); if (row) selectAuthorPhaseActionRef.current(row) }
         else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) }
@@ -5822,7 +5841,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     offersStatus: checkFamily(script.protocol) === 'http',
     disabledReason: event => !eventStep(event) ? 'This response is not from a step of the script.' : replayStepsInPlace ? '' : jsonDirty || jsonParseMessage ? 'Apply or discard the JSON edits to add from this response.' : 'The steps changed since this replay. Replay again to add from its response.',
     laterUses: (event, text) => { const position = eventStep(event); return position ? laterUses(script, position, text).length : 0 },
-    onStatus: (event, status) => addCheck(event, { type: 'status_code', expected: status }, name => `Added the check “Status is ${status}” to ${name}.`),
+    // One status check per step: a different status replaces the numeric one
+    // the step has rather than adding a check that can never pass with it.
+    onStatus: (event, status) => {
+      const checked = responseActions.checkedStatus(event)
+      return changeEventStep(event,
+        action => (action.assertions || []).some(existing => existing.type === 'status_code' && String(existing.expected ?? '') === String(status) && !existing.source),
+        action => {
+          const assertions = action.assertions || []
+          const index = assertions.findIndex(numericStatusCheck)
+          return { ...action, assertions: index < 0 ? [...assertions, { type: 'status_code', expected: status }] : assertions.map((existing, at) => at === index ? { ...existing, expected: status } : existing) }
+        },
+        name => checked === undefined ? `Added the check “Status is ${status}” to ${name}.` : `Changed the status check on ${name} from ${checked} to ${status}.`)
+    },
+    checkedStatus: event => {
+      const position = eventStep(event)
+      const check = position ? resolveAuthorJsonScopeByKey(script, authorFocusKey(position))?.action.assertions?.find(numericStatusCheck) : undefined
+      return check ? Number(check.expected) : undefined
+    },
     onContains: (event, text) => addCheck(event, { type: checkFamily(script.protocol) === 'http' ? 'text_contains' : 'body_contains', value: text }, name => `Added a check that the response contains it to ${name}.`),
     onSave: (event, selection) => {
       if (!selection.boundaries) return false

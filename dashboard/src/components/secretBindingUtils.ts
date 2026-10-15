@@ -4,6 +4,17 @@ import { type ScriptDefinition } from '../types/scripts'
 export const MAX_SECRET_BINDING_NAME_LENGTH = 249
 const secretBindingNamePattern = /^[A-Z0-9_]{1,249}$/
 const nativeBrunoSourceIdentitySuffixPattern = /^(.+)_([A-F0-9]{12}|[A-F0-9]{24})$/
+// An older native Bruno header, query, body or auth secret was named after the
+// request's path, then the kind and field, then the identity:
+// CTA_ORDERS_GET_ORDER_HEADER_X_API_KEY_84921F7A1055. Its label is the name a
+// new import gives the same field (X_API_KEY, or AUTH_PASSWORD for auth). A
+// header, query or body marker wins over AUTH, which header names often hold
+// (X_CDF_AUTH_TOKEN).
+const nativeBrunoPathPrefixedFieldPattern = /^(?:.*_)?(?:HEADER|QUERY|BODY_JSON|BODY_XML|BODY_FORM|BODY_MULTIPART)_([A-Z0-9][A-Z0-9_]*)_[A-F0-9]{12}$/
+const nativeBrunoPathPrefixedAuthPattern = /^(?:.*_)?AUTH_([A-Z0-9][A-Z0-9_]*)_[A-F0-9]{12}$/
+// Before readable numbering, every importer's shared allocator named a second
+// credential wanting a taken name with 12 hex digits of its source identity.
+const importedCollisionSuffixPattern = /^(.+)_((?=[A-F]*[0-9])[A-F0-9]{12})$/
 
 export function isValidSecretBindingName(value: string): boolean {
   return secretBindingNamePattern.test(value.trim())
@@ -19,20 +30,30 @@ function isNativeBrunoImport(script: ScriptDefinition): boolean {
     && imported.preserved?.native_importer === 'apexload-bruno-native-importer'
 }
 
-function friendlySecretBindingBaseName(value: string, script: ScriptDefinition): string {
+function friendlySecretBindingBaseName(value: string, script: ScriptDefinition | null | undefined): string {
   const name = value.trim()
-  if (!isNativeBrunoImport(script)) return name
-  return name.match(nativeBrunoSourceIdentitySuffixPattern)?.[1] || name
+  if (!script) return name
+  if (isNativeBrunoImport(script)) {
+    const field = name.match(nativeBrunoPathPrefixedFieldPattern)?.[1]
+    if (field) return field
+    const authField = name.match(nativeBrunoPathPrefixedAuthPattern)?.[1]
+    if (authField) return `AUTH_${authField}`
+    return name.match(nativeBrunoSourceIdentitySuffixPattern)?.[1] || name
+  }
+  if (script.metadata?.import?.source) return name.match(importedCollisionSuffixPattern)?.[1] || name
+  return name
 }
 
-// Native Bruno imports append either a 48-bit or 96-bit identity to unresolved
-// source variables because Bruno names are case-sensitive. Simplify only those
-// known, provenance-marked shapes. When two exact references simplify to the
-// same label, retain a stable visible discriminator so operators cannot
-// confuse their write-only values.
+// Older imports named secrets with a hashed identity: a native Bruno import
+// always (48 or 96 bits, because Bruno names are case-sensitive), any other
+// import on a name collision (48 bits). Simplify only those known shapes, in
+// an imported script. When two exact references simplify to the same label,
+// retain a stable visible discriminator so operators cannot confuse their
+// write-only values. Pass every secret the script references, not only the
+// ones a surface lists, so a name reads the same on every surface.
 export function secretBindingDisplayNames(
   values: readonly string[],
-  script: ScriptDefinition,
+  script: ScriptDefinition | null | undefined,
 ): Map<string, string> {
   const exactNames = Array.from(new Set(values.map(value => value.trim()).filter(Boolean)))
   const baseByExactName = new Map(exactNames.map(name => [name, friendlySecretBindingBaseName(name, script)]))
@@ -50,6 +71,11 @@ export function secretBindingDisplayNames(
     }
   }
   return result
+}
+
+// The label for one secret name: its display name, or the name itself.
+export function secretDisplayName(labels: ReadonlyMap<string, string>, name: string): string {
+  return labels.get(name.trim()) || name.trim()
 }
 
 export function collisionSafeSecretName(base: string, ordinal: number): string {

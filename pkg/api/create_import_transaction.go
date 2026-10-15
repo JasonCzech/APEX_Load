@@ -25,13 +25,27 @@ type createImportTransaction struct {
 	sourceInstanceID string
 	items            map[string]LibraryBundleItem
 	applied          map[string]LibraryBundleItem
-	mutationStarted  bool
-	closed           bool
+	// updates holds, by script ID, the earlier imported script a re-import
+	// updates as a new version. An update is atomic on its own and is not
+	// journaled for crash recovery: a restart leaves an applied update
+	// applied, which is the version the operator asked for. A failure later in
+	// the same request puts its prior content back as a further version.
+	updates         map[string]*StoredScript
+	appliedUpdates  map[string]bool
+	mutationStarted bool
+	closed          bool
 }
 
 var errCreateImportAssetCompensation = errors.New("direct import asset compensation failed")
 
 func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Script, scenarioID string, scenarioRequest *CreateScenarioRequest) (*createImportTransaction, error) {
+	return newImportTransaction(server, source, scripts, nil, scenarioID, scenarioRequest)
+}
+
+// newImportTransaction is newCreateImportTransaction where each script whose
+// ID is in updates replaces that earlier imported script as a new version
+// instead of being created.
+func newImportTransaction(server *Server, source string, scripts []*dsl.Script, updates map[string]*StoredScript, scenarioID string, scenarioRequest *CreateScenarioRequest) (*createImportTransaction, error) {
 	if server == nil || server.runner == nil {
 		return nil, fmt.Errorf("import transaction requires a test runner")
 	}
@@ -69,6 +83,9 @@ func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Sc
 		id := strings.TrimSpace(script.ID)
 		if id == "" {
 			return nil, fmt.Errorf("planned import script %d has no reserved id", index+1)
+		}
+		if updates[id] != nil {
+			continue
 		}
 		// Direct imports are local creates, so source timestamps are not ownership
 		// evidence. Give even the in-memory store a non-zero version fence; SQL
@@ -113,23 +130,85 @@ func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Sc
 		items[createImportItemKey("scenario", scenarioID)] = item
 		bundle.Items = append(bundle.Items, item)
 	}
-	if len(bundle.Items) == 0 {
+	if len(bundle.Items) == 0 && len(updates) == 0 {
 		return nil, fmt.Errorf("import transaction requires at least one asset")
 	}
 
+	tx := &createImportTransaction{
+		server: server, journal: newLibraryImportJournal(server),
+		remoteID: remoteID, projectID: projectID, sourceInstanceID: sourceInstanceID,
+		items: items, applied: make(map[string]LibraryBundleItem, len(items)),
+		updates: updates, appliedUpdates: make(map[string]bool, len(updates)),
+	}
+	if len(bundle.Items) == 0 {
+		return tx, nil
+	}
 	claims, err := server.acquireLibraryImportClaims(bundle, remoteID, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("start durable import transaction: %w", err)
 	}
-	tx := &createImportTransaction{
-		server: server, claims: claims, journal: newLibraryImportJournal(server),
-		remoteID: remoteID, projectID: projectID, sourceInstanceID: sourceInstanceID,
-		items: items, applied: make(map[string]LibraryBundleItem, len(items)),
-	}
+	tx.claims = claims
 	if err := claims.prepareDirectCreates(bundle.Items); err != nil {
 		return nil, errors.Join(fmt.Errorf("prepare durable import transaction: %w", err), tx.rollback())
 	}
 	return tx, nil
+}
+
+// updateImportedScript replaces the earlier imported script reserved for
+// script.ID with script, as a new version, if it is still the version the
+// operator reviewed. Its folder and creation time stay.
+func (tx *createImportTransaction) updateImportedScript(script *dsl.Script, sourceProfile string) (*StoredScript, error) {
+	if tx == nil || tx.closed {
+		return nil, fmt.Errorf("import transaction is not active")
+	}
+	if script == nil {
+		return nil, fmt.Errorf("script is required")
+	}
+	before := tx.updates[strings.TrimSpace(script.ID)]
+	if before == nil || before.Script == nil {
+		return nil, fmt.Errorf("script %s was not reserved for update by the import transaction", strings.TrimSpace(script.ID))
+	}
+	sourceProfile = strings.TrimSpace(sourceProfile)
+	if sourceProfile == "" {
+		return nil, fmt.Errorf("import source profile is required")
+	}
+	beforeDigest, err := scriptCorrelationActionGraphDigest(before.Script)
+	if err != nil {
+		return nil, err
+	}
+	tx.mutationStarted = true
+	stored, updated, err := tx.server.runner.UpdateImportedScriptDurableInProjectIfUnchanged(
+		before.ID, script, before.ProjectID, before.Script.UpdatedAt, beforeDigest, sourceProfile,
+	)
+	if errors.Is(err, errScriptConcurrentChange) {
+		return nil, staleImportUpdate("the script to update changed after review")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !updated || stored == nil || stored.Script == nil {
+		return nil, staleImportUpdate("the script to update no longer exists")
+	}
+	prior := cloneScriptDefinition(before.Script)
+	after := cloneScriptDefinition(stored.Script)
+	tx.journal.add(func() error {
+		afterDigest, err := scriptCorrelationActionGraphDigest(after)
+		if err != nil {
+			return fmt.Errorf("rollback updated script %s: %w", after.ID, err)
+		}
+		_, restored, err := tx.server.runner.UpdateImportedScriptDurableInProjectIfUnchanged(
+			after.ID, prior, after.ProjectID, after.UpdatedAt, afterDigest, sourceProfile,
+		)
+		if err != nil {
+			return fmt.Errorf("rollback updated script %s: %w", after.ID, err)
+		}
+		if !restored {
+			return fmt.Errorf("rollback updated script %s lost its version fence", after.ID)
+		}
+		return nil
+	})
+	tx.appliedUpdates[before.ID] = true
+	return stored, nil
 }
 
 func createImportItemKey(kind, id string) string {
@@ -254,6 +333,11 @@ func (tx *createImportTransaction) validateAllItemsApplied() error {
 	if len(tx.applied) != len(tx.items) {
 		return fmt.Errorf("cannot commit direct import: %d of %d reserved assets were applied", len(tx.applied), len(tx.items))
 	}
+	for id := range tx.updates {
+		if !tx.appliedUpdates[id] {
+			return fmt.Errorf("cannot commit direct import: reserved update of script %s was not applied", id)
+		}
+	}
 	for key := range tx.items {
 		if _, ok := tx.applied[key]; !ok {
 			return fmt.Errorf("cannot commit direct import: reserved asset %q was not applied", key)
@@ -279,11 +363,13 @@ func (tx *createImportTransaction) commitRetainingClaims() error {
 	if err := tx.validateAllItemsApplied(); err != nil {
 		return err
 	}
-	if err := tx.claims.markDirectCreatesApplied(tx.appliedItems()); err != nil {
-		return fmt.Errorf("checkpoint durable import transaction: %w", err)
-	}
-	if err := tx.claims.markCommittedRetainingClaims(); err != nil {
-		return fmt.Errorf("commit durable import transaction: %w", err)
+	if tx.claims != nil {
+		if err := tx.claims.markDirectCreatesApplied(tx.appliedItems()); err != nil {
+			return fmt.Errorf("checkpoint durable import transaction: %w", err)
+		}
+		if err := tx.claims.markCommittedRetainingClaims(); err != nil {
+			return fmt.Errorf("commit durable import transaction: %w", err)
+		}
 	}
 	tx.closed = true
 	tx.journal.undo = nil

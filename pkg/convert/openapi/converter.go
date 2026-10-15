@@ -679,6 +679,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		finalized.Requirements[index].Value = ""
 	}
 	result.Script = finalized.Script
+	// A re-import of the same specification (by its declared title, unless a
+	// framework's default) can update this script as a new version.
+	if title := strings.TrimSpace(doc.Info.Title); !dsl.GenericImportSourceName(title) {
+		dsl.SetImportSourceIdentity(result.Script, title, true, "")
+	} else {
+		dsl.SetImportSourceIdentity(result.Script, req.Name, false, "")
+	}
 	result.Summary.BaseURL = result.Script.Config.BaseURL
 	for _, item := range finalized.Diagnostics {
 		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
@@ -1067,7 +1074,7 @@ func sensitiveOpenAPISourceValues(doc *document) ([]string, bool) {
 		}
 	}
 	walkParameter := func(param parameter) {
-		if schemaCredentialField(param.Name, parameterSchema(param)) || (strings.EqualFold(param.In, "header") && credential.SensitiveHeader(param.Name)) {
+		if schemaCredentialField(param.Name, parameterSchema(param)) || (strings.EqualFold(param.In, "header") && credential.ImportCredentialHeader(param.Name)) {
 			add(param.Example)
 			add(param.Default)
 			add(param.Schema.Example)
@@ -1978,7 +1985,7 @@ func openAPIPreGovernedHeaderOccurrences(headers requestimport.HeaderList) map[i
 		return false
 	}
 	for index, header := range headers {
-		if !credential.SensitiveHeader(header.Name) || !strings.Contains(header.Value, "{{") {
+		if !credential.ImportCredentialHeader(header.Name) || !strings.Contains(header.Value, "{{") {
 			continue
 		}
 		kind, _ := credentialpolicy.ClassifyWholeTemplate(header.Value, nil)
@@ -3294,7 +3301,7 @@ func applyHeaderAndCookieParams(headers map[string]string, params []parameter, c
 		template, governed := openAPIParameterTemplate(param)
 		switch strings.ToLower(strings.TrimSpace(param.In)) {
 		case "header":
-			if credential.SensitiveHeader(name) && !governed {
+			if credential.ImportCredentialHeader(name) && !governed {
 				template = openAPICredentialReference(name)
 				governed = true
 			}
@@ -3487,7 +3494,7 @@ func sensitiveParameterReviewCodes(params []parameter) []string {
 			continue
 		}
 		sensitive := schemaCredentialField(name, parameterSchema(param)) ||
-			(strings.EqualFold(strings.TrimSpace(param.In), "header") && credential.SensitiveHeader(name))
+			(strings.EqualFold(strings.TrimSpace(param.In), "header") && credential.ImportCredentialHeader(name))
 		if !sensitive {
 			continue
 		}

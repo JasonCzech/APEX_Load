@@ -17,7 +17,7 @@ async function openLoadRunnerImport(page: Page) {
 
 async function validateQueuedFolder(page: Page) {
   const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
-  await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
   const response = await validated
   expect(response.ok()).toBeTruthy()
   const result = await response.json()

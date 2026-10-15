@@ -24,16 +24,32 @@ export function cloneAssignment(
   }
 }
 
-function emptyScenarioGroup(): ScenarioFormGroup {
+// A new group, named for its place after the first, running scriptId.
+export function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
   return {
-    name: '',
-    script_id: '',
+    name: index === 0 ? '' : `Group ${index + 1}`,
+    script_id: scriptId,
     vusers: DEFAULT_GROUP_VUSERS,
     ramp_up: '',
 		ramp_down: '',
 		start_offset: '',
     stages: [],
     initialization: 'at_runtime',
+  }
+}
+
+// The form a new scenario starts from in the Scenario Builder.
+export function emptyScenarioForm(scriptId = ''): ScenarioFormState {
+  return {
+    name: '',
+    duration: '1m',
+    start_delay: '',
+    groups: [emptyScenarioGroup(scriptId)],
+    scenario_mode: 'vuser_driven',
+    script_shakeout: false,
+    resource_baseline: false,
+    // These are defaults for a new owned draft, not an edit-time replacement.
+    goal_config: { early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' } },
   }
 }
 

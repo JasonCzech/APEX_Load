@@ -16,6 +16,11 @@ interface Props {
   disabled?: boolean
   /** Lets the import surface fence script operations while a folder is created. */
   onOperationBusyChange?: (busy: boolean) => void
+  /**
+   * A name for a new folder taken from the import's source, offered until the
+   * operator types one (and not when the project already has that folder).
+   */
+  suggestedName?: string
 }
 
 type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable'
@@ -30,7 +35,7 @@ const FOLDER_CREATION_DENIED_MESSAGE = 'Your current role can import scripts but
  * creation is an administrative operation and is therefore exposed only after
  * effective access confirms manage_projects.
  */
-export default function ImportDestinationFolder({ projectId, value, onChange, disabled = false, onOperationBusyChange }: Props) {
+export default function ImportDestinationFolder({ projectId, value, onChange, disabled = false, onOperationBusyChange, suggestedName = '' }: Props) {
   const api = useApi()
   const [folders, setFolders] = useState<Folder[]>([])
   const [foldersLoadedForProject, setFoldersLoadedForProject] = useState('')
@@ -38,7 +43,8 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
   const [loadError, setLoadError] = useState('')
   const [reloadGeneration, setReloadGeneration] = useState(0)
   const [folderCreationAccess, setFolderCreationAccess] = useState<FolderCreationAccess>(projectId ? 'checking' : 'denied')
-  const [newFolderName, setNewFolderName] = useState('')
+  // null until the operator types a name: the source's name is offered then.
+  const [typedFolderName, setTypedFolderName] = useState<string | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [createError, setCreateError] = useState('')
   const [notice, setNotice] = useState('')
@@ -68,7 +74,7 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
     setFolders([])
     setFoldersLoadedForProject('')
     setLoadError('')
-    setNewFolderName('')
+    setTypedFolderName(null)
     setCreateError('')
     setNotice('')
     if (!projectId) {
@@ -141,6 +147,9 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
   }, [folders, foldersLoadedForProject, onChange, projectId, value])
 
   const options = useMemo(() => brunoDestinationFolderOptions(folders), [folders])
+  const suggestion = suggestedName.trim()
+  const suggestionExists = suggestion !== '' && folders.some(folder => folder.name.trim().toLowerCase() === suggestion.toLowerCase())
+  const newFolderName = typedFolderName ?? (suggestionExists ? '' : suggestion)
 
   const createDestinationFolder = async () => {
     const folderName = newFolderName.trim()
@@ -161,7 +170,7 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
         : [...previous, created])
       setFoldersLoadedForProject(sourceProjectId)
       onChange(created.id)
-      setNewFolderName('')
+      setTypedFolderName(null)
       setNotice(`Created and selected script folder “${created.name}”.`)
     } catch (cause) {
       if (projectScopeRef.current !== sourceProjectScope) return
@@ -230,7 +239,7 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
               value={newFolderName}
               disabled={disabled || creatingFolder}
               onChange={event => {
-                setNewFolderName(event.target.value)
+                setTypedFolderName(event.target.value)
                 setCreateError('')
               }}
               placeholder="Imported API scripts"

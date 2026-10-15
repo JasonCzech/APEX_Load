@@ -160,9 +160,23 @@ func validateHTTPActionHeaderContractIssues(label string, action Action, inherit
 			// performs the strict effective-header check before any group traffic.
 			effectiveIssues = structuralHTTPHeaderIssues(effectiveIssues)
 		}
-		issues = append(issues, formatHTTPHeaderIssues(label+".effective_headers", effectiveIssues)...)
+		issues = append(issues, formatHTTPHeaderIssues(label+".effective_headers", withoutHeaderSyntaxIssues(effectiveIssues))...)
 	}
 	return issues
+}
+
+// withoutHeaderSyntaxIssues drops invalid name and value issues from the
+// effective (inherited plus authored) header view. Each one is already
+// reported where the header is authored: the action's own headers or the
+// script's default headers. Reporting it twice made one bad header read as two.
+func withoutHeaderSyntaxIssues(issues []httpprotocol.HeaderListIssue) []httpprotocol.HeaderListIssue {
+	result := make([]httpprotocol.HeaderListIssue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Code != httpprotocol.HeaderListIssueInvalidName && issue.Code != httpprotocol.HeaderListIssueInvalidValue {
+			result = append(result, issue)
+		}
+	}
+	return result
 }
 
 func unshadowedHTTPHeaderMap(headers map[string]string, headerList HeaderList) map[string]string {

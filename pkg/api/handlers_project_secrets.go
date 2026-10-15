@@ -743,7 +743,7 @@ func (s *Server) handleMigrateSourceSecrets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if !s.sourceSecretMigrationAuthorized(r, projectID) {
-		writeError(w, http.StatusForbidden, "source secret migration is not allowed")
+		s.writeSourceSecretMigrationDenied(w, r, projectID)
 		return
 	}
 	if len(req.Secrets) == 0 || len(req.Secrets) > projectSecretMaxBatchItems {
@@ -1400,18 +1400,45 @@ func jsonPointerStringValue(root any, path string) (string, bool) {
 }
 
 func (s *Server) sourceSecretMigrationAuthorized(r *http.Request, projectID string) bool {
+	reason, _ := s.sourceSecretMigrationDenial(r, projectID)
+	return reason == ""
+}
+
+// sourceSecretMigrationDenial returns why the caller cannot copy source
+// credentials into project secrets, or an empty reason when it can. The
+// explanation names only the deployment policy and the caller's own role.
+func (s *Server) sourceSecretMigrationDenial(r *http.Request, projectID string) (string, string) {
 	if s == nil || s.runner == nil || !s.runner.GetSystemSettings().ScriptImports.AllowSourceSecretMigration {
-		return false
+		return "policy_disabled", "source secret migration is not allowed: a system administrator must turn on " +
+			"Settings > Import credential policy > Allow source secret migration (script_imports.allow_source_secret_migration)"
 	}
 	if _, serviceAccount := AuthenticatedServiceAccountFromContext(r.Context()); serviceAccount {
-		return false
+		return "service_account", "source secret migration is not allowed: service accounts cannot copy source credentials into project secrets"
 	}
 	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
-		return true
+		return "", ""
 	}
 	user, ok := AuthenticatedUserFromContext(r.Context())
-	return ok && user != nil &&
-		(user.hasGlobalRole(RoleProjectAdmin, RoleSystemAdmin) || userHasProjectOrParentRole(s.store, user, projectID, RoleProjectAdmin))
+	if ok && user != nil &&
+		(user.hasGlobalRole(RoleProjectAdmin, RoleSystemAdmin) || userHasProjectOrParentRole(s.store, user, projectID, RoleProjectAdmin)) {
+		return "", ""
+	}
+	return "role_required", "source secret migration is not allowed: copying source credentials into project secrets " +
+		"requires the project admin role on this project, or system admin"
+}
+
+// writeSourceSecretMigrationDenied answers a refused migration opt-in with the
+// specific policy or role that blocked it.
+func (s *Server) writeSourceSecretMigrationDenied(w http.ResponseWriter, r *http.Request, projectID string) {
+	reason, message := s.sourceSecretMigrationDenial(r, projectID)
+	if reason == "" {
+		reason, message = "role_required", "source secret migration is not allowed"
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{
+		"error":  message,
+		"code":   "source_secret_migration_not_allowed",
+		"reason": reason,
+	})
 }
 
 func (s *Server) requireHumanSecretWrite(w http.ResponseWriter, r *http.Request) bool {

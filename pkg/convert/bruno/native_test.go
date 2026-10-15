@@ -92,7 +92,7 @@ settings: {encodeUrl: true, timeout: 0, followRedirects: true, maxRedirects: 5}
 		if action.Type != "POST" || action.Method != "POST" || action.Body != wantBody {
 			t.Fatalf("action[%d] = %#v, want raw body %q", index, action, wantBody)
 		}
-		if len(action.Assertions) != 6 || action.TimeoutMs != nativeMaxTimeoutMS ||
+		if len(action.Assertions) != 6 || action.TimeoutMs != nativeDefaultTimeoutMS ||
 			action.MaxRedirects == nil || *action.MaxRedirects != 5 {
 			t.Fatalf("action[%d] assertions/settings = %#v", index, action)
 		}
@@ -101,7 +101,7 @@ settings: {encodeUrl: true, timeout: 0, followRedirects: true, maxRedirects: 5}
 				t.Fatalf("action[%d] synthesized SOAPAction header: %#v", index, action.HeaderList)
 			}
 		}
-		if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_clamped") {
+		if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_defaulted") {
 			t.Fatalf("candidate[%d] diagnostics = %#v", index, candidate.Diagnostics)
 		}
 		for _, importedAction := range candidate.Script.Actions {
@@ -146,7 +146,7 @@ func TestInspectNativeAttachedShapeProducesExactHTTPAssertions(t *testing.T) {
 		!strings.Contains(action.Body, "<SOAP-ENV:Envelope") {
 		t.Fatalf("native HTTP action = %#v", action)
 	}
-	if action.TimeoutMs != nativeMaxTimeoutMS || action.MaxRedirects == nil || *action.MaxRedirects != 5 {
+	if action.TimeoutMs != nativeDefaultTimeoutMS || action.MaxRedirects == nil || *action.MaxRedirects != 5 {
 		t.Fatalf("timeout/redirects = %d/%v", action.TimeoutMs, action.MaxRedirects)
 	}
 	if candidate.Script.Config.HTTP.Traceparent == nil || *candidate.Script.Config.HTTP.Traceparent ||
@@ -169,7 +169,7 @@ func TestInspectNativeAttachedShapeProducesExactHTTPAssertions(t *testing.T) {
 	if action.Metadata["review_required"] != nil {
 		t.Fatalf("known static hook was review-gated: %#v", action.Metadata)
 	}
-	if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_clamped") {
+	if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_unbounded_timeout_defaulted") {
 		t.Fatalf("diagnostics = %#v", candidate.Diagnostics)
 	}
 }
@@ -632,9 +632,11 @@ settings: {followRedirects: false, timeout: 50}
 		}
 	}
 	if action.Auth == nil || action.Auth.Type != "basic" ||
-		!strings.HasPrefix(action.Auth.Username, "{{secret.USERNAME_") ||
+		// The request's own auth shadows the collection's, which no script
+		// uses, so the request's credentials take the plain names.
+		action.Auth.Username != "{{secret.USERNAME}}" ||
 		!strings.HasSuffix(action.Auth.Username, "}}") ||
-		!strings.HasPrefix(action.Auth.Password, "{{secret.PASSWORD_") ||
+		action.Auth.Password != "{{secret.PASSWORD}}" ||
 		!strings.HasSuffix(action.Auth.Password, "}}") {
 		t.Fatalf("Basic auth = %#v", action.Auth)
 	}
@@ -1000,8 +1002,11 @@ http:
 			if test.wantPassword != "" && password != test.wantPassword {
 				t.Fatalf("password = %q, want %q", password, test.wantPassword)
 			}
-			if strings.Contains(password, "secret.PASSWORD") {
-				t.Fatalf("credential definition was replaced with invented name: %q", password)
+			// A readable name such as PASSWORD is fine here: the import API
+			// numbers it past any secret the project already holds for
+			// something else (TestBrunoNativeSecretNamesAvoidUnrelatedProjectSecrets).
+			if test.wantPassword == "" && password != "{{secret.PASSWORD}}" {
+				t.Fatalf("credential definition = %q, want its readable name", password)
 			}
 			if test.wantSourceValue != "" {
 				found := false
@@ -1047,7 +1052,8 @@ http:
 	}
 	candidate := result.Scripts[0]
 	password := candidate.Script.Actions[0].Auth.Password
-	if !strings.HasPrefix(password, "{{secret.") || strings.Contains(password, "secret.CRED}}") {
+	// The definition's own name, readable: a generated requirement, not the raw {{cred}}.
+	if password != "{{secret.CRED}}" {
 		t.Fatalf("governed credential replacement = %q", password)
 	}
 	var requirement *SecretRequirement

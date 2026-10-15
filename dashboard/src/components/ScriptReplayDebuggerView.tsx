@@ -148,7 +148,10 @@ export interface ResponseActions {
   onContains: (event: BrowserReplayEvent, text: string) => boolean
   onSave: (event: BrowserReplayEvent, selection: ResponseSelectionValue) => boolean
   onCorrelate: (event: BrowserReplayEvent, selection: ResponseSelectionValue) => void
+  /** Sets the step's status check to status, adding one when it has none. */
   onStatus: (event: BrowserReplayEvent, status: number) => boolean
+  /** The status the event's step already checks for, if any. */
+  checkedStatus: (event: BrowserReplayEvent) => number | undefined
 }
 
 export interface ScriptReplayDebuggerViewProps {
@@ -1448,6 +1451,7 @@ export function ScriptReplayDebuggerView({
                                             body={event.snapshot.response_body}
                                             bodyState={bodyState === 'partial' || bodyState === 'redacted' ? bodyState : 'whole'}
                                             status={responseActions.offersStatus ? event.snapshot.response_status || event.status_code : undefined}
+                                            checkedStatus={responseActions.checkedStatus(event)}
                                             disabledReason={responseActions.disabledReason(event)}
                                             laterUses={text => responseActions.laterUses(event, text)}
                                             onContains={text => responseActions.onContains(event, text)}

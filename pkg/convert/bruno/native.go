@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -474,6 +475,9 @@ func nativeRequestScripts(
 		candidates = append(candidates, candidate)
 	}
 	if err := failures.err(); err != nil {
+		return nil, nil, nil, findings, err
+	}
+	if err := assignReadableNativeSecretNames(candidates, aggregateRequirements); err != nil {
 		return nil, nil, nil, findings, err
 	}
 
@@ -1884,12 +1888,30 @@ func buildNativeCandidate(
 		context := nativeTemplateOrdinary
 		if nativeSensitiveHeaderName(header.Name) {
 			context = nativeTemplateSensitiveHeader
+		} else if credentialpolicy.ClassifySourceCredentialValue(header.Value) ==
+			credentialpolicy.SourceCredentialValueRedactedPlaceholder {
+			// The export redacted a recorded value such as a cookie or session
+			// id. It is not a credential, so it becomes an input supplied at
+			// review instead of a placeholder sent on the wire.
+			value, variable, kept := nativeRedactedHeaderInput(header.Value, header.Name)
+			if kept {
+				// Only text that stays in the script is translated, so a
+				// replaced value cannot ask for inputs nothing uses.
+				value = rewriteNativeTemplates(value, nativeTemplateOrdinary, header.Name, templateState)
+			}
+			templateState.missing[variable] = struct{}{}
+			headerList = append(headerList, dsl.HeaderEntry{Name: header.Name, Value: value})
+			continue
 		}
 		headerList = append(headerList, dsl.HeaderEntry{
 			Name:  header.Name,
 			Value: rewriteNativeTemplates(header.Value, context, header.Name, templateState),
 		})
 	}
+
+	var headerDiagnostics []NativeDiagnostic
+	headerList, headerDiagnostics = separateUnsendableHeaders(headerList, item.UID+"\x00"+item.Path, file.Path)
+	diagnostics = append(diagnostics, headerDiagnostics...)
 
 	if encodeURL &&
 		(nativeURLComponentsContainTemplates(target, templateState.missing) ||
@@ -1976,6 +1998,7 @@ func buildNativeCandidate(
 	}
 	if bodyContentType != "" && !nativeHeaderListContains(headerList, "Content-Type") {
 		headerList = append(headerList, dsl.HeaderEntry{Name: "Content-Type", Value: bodyContentType})
+		markBodyDefaultContentType(headerDiagnostics, len(headerList)-1)
 	}
 	if bodyReview != nil {
 		diagnostics = append(diagnostics, *bodyReview)
@@ -2073,12 +2096,15 @@ func buildNativeCandidate(
 	} else {
 		switch timeout := *effective.Settings.TimeoutMS; {
 		case timeout == 0:
-			action.TimeoutMs = nativeMaxTimeoutMS
+			// Bruno writes 0 ("no timeout") by default. A load test needs a
+			// bounded wait, so use the same default as an omitted timeout
+			// rather than the one-hour maximum.
+			action.TimeoutMs = nativeDefaultTimeoutMS
 			diagnostics = append(diagnostics, nativeDiagnostic(
 				file.Path,
-				"warning",
-				"bruno_unbounded_timeout_clamped",
-				fmt.Sprintf("Bruno timeout 0 is unbounded; APEX applies its maximum request timeout of %d ms.", nativeMaxTimeoutMS),
+				"info",
+				"bruno_unbounded_timeout_defaulted",
+				fmt.Sprintf("Bruno timeout 0 means no timeout; APEX uses its default request timeout of %d ms. Raise it in the request settings if this request needs longer.", nativeDefaultTimeoutMS),
 				false,
 			))
 		case timeout < 0:
@@ -2369,28 +2395,29 @@ func buildNativeCandidate(
 		Source:           "bruno",
 		SourceScriptName: item.Name,
 		Preserved: map[string]any{
-			"schema_version":         ImporterVersion,
-			"native_importer":        nativeImporterVersion,
-			"collection_name":        collection.Name,
-			"collection_uid":         collection.UID,
-			"collection_sha256":      collectionSHA256,
-			"manifest_sha256":        manifest.SHA256,
-			"source_path":            item.Path,
-			"source_uid":             item.UID,
-			"source_sequence":        item.Sequence,
-			"source_sha256":          manifestHashes[file.Path],
-			"ancestor_folders":       ancestorSummary,
-			"effective_headers":      nativeHeaderNames(headers),
-			"effective_auth":         effective.Auth.Mode,
-			"soap_version_hint":      soapVersion,
-			"soap_operation_hint":    soapOperation,
-			"hook_hashes":            hookHashes,
-			"converted_hook_count":   convertedHookCount,
-			"review_hook_count":      reviewHookCount,
-			"diagnostic_ids":         diagnosticIDs,
-			"finding_ids":            findingIDs,
-			"effective_fields":       effectiveFields,
-			"missing_variable_count": len(missing),
+			"schema_version":           ImporterVersion,
+			"native_importer":          nativeImporterVersion,
+			"collection_name":          collection.Name,
+			"collection_name_declared": collection.NameDeclared,
+			"collection_uid":           collection.UID,
+			"collection_sha256":        collectionSHA256,
+			"manifest_sha256":          manifest.SHA256,
+			"source_path":              item.Path,
+			"source_uid":               item.UID,
+			"source_sequence":          item.Sequence,
+			"source_sha256":            manifestHashes[file.Path],
+			"ancestor_folders":         ancestorSummary,
+			"effective_headers":        nativeHeaderNames(headers),
+			"effective_auth":           effective.Auth.Mode,
+			"soap_version_hint":        soapVersion,
+			"soap_operation_hint":      soapOperation,
+			"hook_hashes":              hookHashes,
+			"converted_hook_count":     convertedHookCount,
+			"review_hook_count":        reviewHookCount,
+			"diagnostic_ids":           diagnosticIDs,
+			"finding_ids":              findingIDs,
+			"effective_fields":         effectiveFields,
+			"missing_variable_count":   len(missing),
 		},
 	}}
 
@@ -2429,7 +2456,7 @@ func buildNativeCandidate(
 			fidelity = "review_required"
 			break
 		}
-		if strings.Contains(diagnostic.Code, "clamped") {
+		if strings.Contains(diagnostic.Code, "clamped") || diagnostic.Code == "bruno_unbounded_timeout_defaulted" {
 			fidelity = "exact_with_runtime_bound"
 		}
 	}
@@ -3112,6 +3139,56 @@ func nativeSecretRequirement(rawName, sourcePath, context string) SecretRequirem
 	}
 }
 
+// nativeRedactedHeaderInput replaces a redacted recorded header value with a
+// review input and names that input. When exactly one plain redaction marker
+// stands in for part of the value, as in "sid=[redacted]; theme=dark", the
+// rest is kept and the input is named for that part (header_cookie_sid), so
+// it never shares a name with an input that stands for a whole header. Any
+// other redaction replaces the whole value with header_<name>. kept reports
+// whether any of the source text stayed.
+func nativeRedactedHeaderInput(value, headerName string) (string, string, bool) {
+	markers := nativeRedactionMarker.FindAllStringIndex(value, -1)
+	if len(markers) == 1 && strings.TrimSpace(value[:markers[0][0]]+value[markers[0][1]:]) != "" {
+		before, after := value[:markers[0][0]], value[markers[0][1]:]
+		part := "part"
+		if match := nativeRedactedPairName.FindStringSubmatch(before); match != nil {
+			part = match[1]
+		}
+		variable := nativeRedactedHeaderVariable(headerName + "_" + part)
+		kept := before + "{{var." + variable + "}}" + after
+		if credentialpolicy.ClassifySourceCredentialValue(kept) != credentialpolicy.SourceCredentialValueRedactedPlaceholder {
+			return kept, variable, true
+		}
+	}
+	variable := nativeRedactedHeaderVariable(headerName)
+	return "{{var." + variable + "}}", variable, false
+}
+
+// nativeRedactedPairName finds the name of the name=value pair a redaction
+// marker ends, as in a cookie or a form of parameters.
+var nativeRedactedPairName = regexp.MustCompile(`([A-Za-z0-9_.\-]+)\s*=\s*$`)
+
+var nativeRedactionMarker = regexp.MustCompile(`(?i)\[redacted\]`)
+
+// nativeRedactedHeaderVariable names the input that replaces a redacted
+// recorded header value. The header_ prefix keeps it apart from the
+// collection's own variables.
+func nativeRedactedHeaderVariable(headerName string) string {
+	var builder strings.Builder
+	builder.WriteString("header_")
+	lastUnderscore := true
+	for _, r := range strings.ToLower(strings.TrimSpace(headerName)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			builder.WriteRune(r)
+			lastUnderscore = false
+		} else if !lastUnderscore {
+			builder.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.TrimRight(builder.String(), "_")
+}
+
 func nativeSourceVariableSecretName(sourceVariable string) string {
 	name := nativeCamelCaseBoundary.ReplaceAllString(strings.TrimSpace(sourceVariable), `${1}_${2}`)
 	name = strings.NewReplacer("-", "_", ".", "_").Replace(name)
@@ -3253,6 +3330,7 @@ func nativeUnresolvedSourceVariableSecretRequirement(
 	requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
 	requirement.SourceVariable = sourceVariable
 	requirement.UnresolvedSourceVariable = true
+	requirement.readableName = readableNativeSecretBase(sourceVariable)
 	return requirement
 }
 
@@ -3325,6 +3403,7 @@ func nativeComposedHeaderSecretRequirement(
 		Context:       context,
 		DisplayLabel:  nativeHeaderDisplayLabel(headerName),
 		AffectedPaths: nativeCandidateAffectedPaths(sourcePath, candidatePaths...),
+		readableName:  readableNativeSecretBase(headerName),
 	}
 }
 
@@ -3357,6 +3436,7 @@ func nativeVariableSecretRequirement(
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
 		AffectedPaths: nativeSecretRequirementPaths(fallbackPath),
+		readableName:  readableNativeSecretBase(variable.Name),
 	}
 }
 
@@ -3385,6 +3465,7 @@ func nativeAuthSecretRequirement(
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
 		AffectedPaths: nativeCandidateAffectedPaths(sourcePath, candidatePaths...),
+		readableName:  readableNativeSecretBase("auth_" + field),
 	}
 }
 
@@ -3422,6 +3503,7 @@ func nativeBodyFieldSecretRequirement(
 		Replacement:   "{{secret." + name + "}}",
 		Context:       "Bruno " + bodyKind + " body credential " + field,
 		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
+		readableName:  readableNativeSecretBase(field),
 	}
 }
 

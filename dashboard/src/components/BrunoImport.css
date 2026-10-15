@@ -79,8 +79,7 @@
 
 .bruno-source-actions,
 .bruno-checks,
-.bruno-source-links,
-.bruno-capability-list {
+.bruno-source-links {
   display: flex;
   flex-wrap: wrap;
   gap: 9px;
@@ -94,8 +93,7 @@
   margin-top: 14px;
 }
 
-.bruno-file-list span,
-.bruno-capability-list span {
+.bruno-file-list span {
   overflow: hidden;
   padding: 7px 9px;
   border: 1px solid var(--border);
@@ -653,6 +651,54 @@
   font-weight: 600;
 }
 
+.bruno-header-repair {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.bruno-header-repair legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+/* Radio rows inside the fix list are plain options, not the card's
+   separated acknowledgement row. */
+.bruno-native-acknowledgement-card .bruno-header-repair label {
+  padding-top: 0;
+  border-top: 0;
+  font-weight: 400;
+}
+
+.bruno-native-existing {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.bruno-native-existing label {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.bruno-native-existing small {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+
+.bruno-native-existing .bruno-native-existing-warning {
+  padding: 2px 6px;
+  border-left: 3px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .bruno-native-finding-layout { grid-template-columns: 1fr; }
   .bruno-native-finding-queue { max-height: 300px; }
@@ -1014,9 +1060,17 @@
 .bruno-data-review details button { margin: 6px; }
 .bruno-optional-values label { margin: 16px 0; }
 .bruno-import [role=tabpanel] { scroll-margin-top: 90px; }
-.bruno-import .import-review-tabs { position: sticky; top: 72px; z-index: 2; background: var(--bg-card); flex-wrap: wrap; }
+.bruno-kept-headers ul, .bruno-skipped-files ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.bruno-kept-headers li, .bruno-skipped-files li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.bruno-kept-headers li span, .bruno-skipped-files li span { color: var(--text-secondary); }
+.bruno-skipped-files { margin-top: 12px; }
+.bruno-source-requests { display: grid; gap: 8px; }
+.bruno-evidence-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.bruno-source-mapping-table { border-collapse: collapse; margin: 12px 0; }
+.bruno-source-mapping-table :is(th, td) { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.bruno-provenance { margin-top: 12px; }
+.bruno-unset-secrets ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
 @container bruno-import (max-width: 700px) {
-  .bruno-import .import-review-tabs { position: static; }
   .bruno-commit-bar { flex-direction: column; }
   .bruno-readiness { grid-template-columns: 1fr; }
 }
@@ -1030,3 +1084,12 @@
 .bruno-native-table td { overflow-wrap: anywhere; }
 .bruno-native-table td > small { white-space: normal; overflow: visible; }
 .bruno-native-table-wrap:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.bruno-generated-list { list-style: none; padding: 0; margin: 0; }
+.bruno-generated-list li { display: flex; flex-direction: column; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.bruno-generated-list label { display: flex; gap: 10px; align-items: flex-start; }
+.bruno-generated-list input { margin-top: 3px; flex: none; }
+.bruno-generated-list small { padding-left: 26px; color: var(--text-muted); }
+.bruno-environment-fill { display: grid; gap: 8px; padding: 12px 0 16px; border-bottom: 1px solid var(--border); }
+.bruno-environment-fill p { margin: 0; }
+.bruno-environment-fill label { display: flex; flex-direction: column; gap: 4px; }
+.bruno-environment-fill select { width: min(100%, 36rem); }

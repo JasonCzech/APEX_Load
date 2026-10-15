@@ -661,6 +661,24 @@ describe('EnterpriseArchiveImport', () => {
     expect(live()).toBe('Folder added')
   })
 
+  it('leaves out operating-system files dropped with archives or inside a folder', async () => {
+    const files = [
+      new File(['zip'], 'Checkout.zip', { type: 'application/zip' }),
+      new File(['Bud1'], '.DS_Store'),
+      new File(['appledouble'], '._Checkout.zip'),
+    ]
+    await act(async () => root.render(<EnterpriseArchiveImport initialFiles={files} />))
+    await flushPromises()
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(1)
+    expect(container.textContent).not.toContain('unsupported file')
+
+    // A ._ resource fork of the .usr is not a second project file.
+    await dropOnArchiveZone(container, droppedFolder('Search', ['Search.usr', 'Action.c', '.DS_Store', '._Search.usr']))
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 500)) })
+    expect(container.textContent).not.toContain('is not a VuGen script folder')
+    expect(container.textContent).toContain('2 sources queued')
+  })
+
   it('reports a dropped folder that cannot be read', async () => {
     await act(async () => root.render(<EnterpriseArchiveImport />))
     const unreadable = { isFile: false, isDirectory: true, name: 'Locked', createReader: () => ({ readEntries: (_resolve: unknown, reject: (error: Error) => void) => reject(new Error('Locked could not be opened.')) }) }
@@ -1865,6 +1883,87 @@ describe('EnterpriseArchiveImport', () => {
     }))
   })
 
+  it('updates an earlier script from one archive only when two archives match it in one batch save', async () => {
+    const files = [
+      new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+      new File(['beta'], 'beta.zip', { type: 'application/zip' }),
+    ]
+    const resultFor = (file: File) => ({
+      ...executableEnterpriseResult({
+        name: file.name === 'alpha.zip' ? 'Login' : 'Login copy',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+      }),
+      existing_scripts: [{
+        script_id: 'earlier-login', name: 'Login', updated_at: '2026-10-15T10:00:00Z',
+        content_digest: 'digest-login', matches: 1, same_source: true, edited_since_import: false,
+      }],
+    })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => resultFor(file))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => resultFor(file))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledWith(expect.objectContaining({
+      update_targets: [
+        { script_id: 'earlier-login', expected_updated_at: '2026-10-15T10:00:00Z', expected_content_digest: 'digest-login' },
+        null,
+      ],
+    }))
+  })
+
+  it('holds an archive for review when a bulk save would replace a script changed in APEX', async () => {
+    const resultFor = (file: File) => ({
+      ...executableEnterpriseResult({
+        name: file.name === 'alpha.zip' ? 'Login' : 'Checkout',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+      }),
+      ...(file.name === 'alpha.zip' ? {
+        existing_scripts: [{
+          script_id: 'earlier-login', name: 'Login', updated_at: '2026-10-15T10:00:00Z',
+          matches: 1, same_source: true, edited_since_import: true,
+        }],
+      } : {}),
+    })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => resultFor(file))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => resultFor(file))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['alpha'], 'alpha.zip', { type: 'application/zip' }), new File(['beta'], 'beta.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    const request = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0]
+    expect(request.scripts).toEqual([expect.objectContaining({ name: 'Checkout' })])
+    expect(request.update_targets).toBeUndefined()
+    expect(container.textContent).toContain('alpha.zip — Ready to save')
+    expect(container.textContent).toContain('Changed in APEX after it was imported.')
+  })
+
   it('does not validate another queued archive after Back fences a pending validation', async () => {
     const onClose = vi.fn()
     const script = {
@@ -2791,7 +2890,7 @@ describe('EnterpriseArchiveImport', () => {
     await attachDependencyJar()
     const save = findButton(container, 'Save combined Java draft for approval')!
     expect(save.disabled).toBe(true)
-    expect(findButton(container, 'Attach Required File(s)')?.disabled).toBe(true)
+    expect(findButton(container, 'Attach Required Files')?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')?.disabled).toBe(true)
     expect(onBusy).toHaveBeenLastCalledWith(true)
     await clickButton(save)
@@ -5446,7 +5545,7 @@ describe('EnterpriseArchiveImport', () => {
       checkboxes[3].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
     expect(validateButton).toBeTruthy()
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).not.toBeNull()
     if (!validateButton) {
@@ -5650,7 +5749,7 @@ describe('EnterpriseArchiveImport', () => {
       checkboxes[2]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
     expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
@@ -7450,7 +7549,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
     expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
@@ -7575,7 +7674,7 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
       expect(validateButton).toBeTruthy()
       if (!validateButton) {
         return
@@ -7732,7 +7831,7 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
+      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script'))
       expect(validateButton).toBeTruthy()
       if (!validateButton) {
         return

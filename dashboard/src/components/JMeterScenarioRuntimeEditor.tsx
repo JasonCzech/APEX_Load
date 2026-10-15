@@ -4,6 +4,7 @@ import type { JMeterScenarioDraft } from '../types/scriptImports'
 import { isValidDurationInput } from '../utils/timeUtils'
 import DurationField from './DurationField'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
+import { countLabel } from '../utils/numberFormat'
 
 export default function JMeterScenarioRuntimeEditor({ scenario, onApply, disabled = false }: {
   scenario?: JMeterScenarioDraft
@@ -33,7 +34,7 @@ export default function JMeterScenarioRuntimeEditor({ scenario, onApply, disable
       })),
     }
     onApply(next)
-    setMessage(mode === 'iterations' ? `Applied ${Math.max(1, Math.floor(iterations || 1))} iteration(s) to every imported thread group.` : `Applied a finite duration of ${next.duration}.`)
+    setMessage(mode === 'iterations' ? `Applied ${countLabel(Math.max(1, Math.floor(iterations || 1)), 'iteration')} to every imported thread group.` : `Applied a finite duration of ${next.duration}.`)
   }
   return <section className="jmeter-runtime-editor" aria-label="JMeter runtime settings">
     <ImportReviewSectionHeader title="Imported scenario settings" description="Choose the finite completion rule used when the generated scenario draft is saved. This resolves unbounded thread-group blockers in the current review." />

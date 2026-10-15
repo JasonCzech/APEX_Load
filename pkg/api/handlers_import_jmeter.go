@@ -510,7 +510,8 @@ func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileNam
 				continue
 			}
 			name := normalizeJMeterMultipartSidecarName(header.Filename)
-			if name == "" || (primaryName != "" && strings.EqualFold(name, primaryName)) {
+			if name == "" || (primaryName != "" && strings.EqualFold(name, primaryName)) ||
+				archiveingest.JunkReason(name) != "" {
 				continue
 			}
 			file, err := header.Open()
@@ -726,6 +727,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		Scripts       []dsl.Script          `json:"scripts"`
 		ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft,omitempty"`
+		// UpdateTargets is positional with Scripts: an entry names the
+		// earlier imported script that thread group's script updates as a new
+		// version; null, or no list, creates.
+		UpdateTargets []*importUpdateTarget `json:"update_targets,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -736,6 +741,11 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	}
 	if len(req.Scripts) > jmeterImportSaveMaxScripts {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("JMeter import batch must contain at most %d scripts", jmeterImportSaveMaxScripts))
+		return
+	}
+	updateTargets, err := normalizeImportUpdateTargets(req.UpdateTargets, len(req.Scripts))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// Resolve the browser-authorized destination before replacing disclosure-safe
@@ -779,7 +789,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	for index := range req.Scripts {
 		requestScripts = append(requestScripts, &req.Scripts[index])
 	}
-	requestDigest, err := directJMeterImportRequestDigest(s, requestScripts, req.ScenarioDraft)
+	requestDigest, err := directJMeterImportRequestDigest(s, requestScripts, req.ScenarioDraft, updateTargets)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint JMeter import: "+err.Error())
 		return
@@ -1039,15 +1049,31 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	updates := make(map[string]*StoredScript)
 	for index, script := range preparedScripts {
 		script.ID = plannedScriptIDs[index]
+		if !s.reserveImportUpdate(w, projectID, index, script, updateTargets[index], updates) {
+			return
+		}
 		script.RefKey = ""
+		stampImportedContentDigest(script)
 	}
 
 	scenarioID := plannedScenarioID
-	scenarioRequest, err := buildJMeterScenarioRequest(preparedScripts, req.ScenarioDraft)
+	updatedNames := make(map[string]string, len(updates))
+	for id, existing := range updates {
+		updatedNames[id] = existing.Name
+	}
+	scenarioRequest, err := buildJMeterScenarioRequestNamed(preparedScripts, req.ScenarioDraft, updatedNames)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// The scenario resolved its groups by the source names; an updated
+	// script then keeps its current name.
+	keepUpdatedScriptNames(preparedScripts, updates)
+	if blocked := jmeterScenarioBlockedScripts(preparedScripts, scenarioRequest); len(blocked) > 0 {
+		writeJMeterScenarioScriptsBlocked(w, blocked)
 		return
 	}
 
@@ -1066,6 +1092,11 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			deterministicScriptIDs(preparedScripts),
 			scenarioID,
 		)
+		if loadErr == nil && importUpdatesPending(storedScripts, preparedScripts, updateTargets) {
+			// The earlier attempt did not update a script it was to update, so
+			// it did not finish: save normally (its creates, if any, replay).
+			loadErr = errImportUpdateTargetStale
+		}
 		if loadErr == nil {
 			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(
@@ -1089,7 +1120,12 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	transaction, err = newCreateImportTransaction(s, "jmeter", preparedScripts, scenarioID, scenarioRequest)
+	// Recovery above adopted an update an earlier attempt applied; anything
+	// else must still be the version the operator reviewed.
+	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+		return
+	}
+	transaction, err = newImportTransaction(s, "jmeter", preparedScripts, updates, scenarioID, scenarioRequest)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare imported assets: "+err.Error())
 		return
@@ -1107,7 +1143,11 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
-		stored, err := transaction.createImportedScript(safeScript, "jmeter")
+		stored, err := transaction.saveImportedScript(safeScript, "jmeter")
+		if errors.Is(err, errImportUpdateTargetStale) {
+			writeImportUpdateTargetStale(w, index, err)
+			return
+		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
 			return
@@ -1190,6 +1230,17 @@ func buildJMeterScenarioRequest(
 	scripts []*dsl.Script,
 	draft *jmeter.ScenarioDraft,
 ) (*CreateScenarioRequest, error) {
+	return buildJMeterScenarioRequestNamed(scripts, draft, nil)
+}
+
+// buildJMeterScenarioRequestNamed is buildJMeterScenarioRequest where a group
+// the draft leaves unnamed is named after names[script ID] when set (the name
+// an updated script keeps) instead of the imported name.
+func buildJMeterScenarioRequestNamed(
+	scripts []*dsl.Script,
+	draft *jmeter.ScenarioDraft,
+	names map[string]string,
+) (*CreateScenarioRequest, error) {
 	if draft == nil || len(draft.Groups) == 0 {
 		return nil, nil
 	}
@@ -1246,6 +1297,9 @@ func buildJMeterScenarioRequest(
 		groupName := group.Name
 		if groupName == "" {
 			groupName = script.Name
+			if name := strings.TrimSpace(names[strings.TrimSpace(script.ID)]); name != "" {
+				groupName = name
+			}
 			if len(draft.Groups) > 1 {
 				groupName = fmt.Sprintf("%s (#%d)", groupName, index+1)
 			}
@@ -1310,7 +1364,7 @@ func buildJMeterScenarioRequest(
 			}
 		}
 		if request.Duration == "" {
-			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration")
+			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration; set a Duration under Runtime settings (Imported scenario settings) and apply it, or save the scripts without the scenario draft")
 		}
 	}
 	if request.Duration == "" && request.TerminationMode != dsl.TerminationIterations {
@@ -1400,6 +1454,10 @@ func (s *Server) resolveJMeterBatchDestination(
 			return "", nil, http.StatusBadRequest, errors.New("JMeter scripts must use one destination folder")
 		}
 	}
+	// A project that does not exist is named before its folder is checked.
+	if status, err := s.importProjectStatus(projectID); err != nil {
+		return "", nil, status, err
+	}
 	if status, err := s.applyProtectedImportFolderOverride(&scripts[0], &folderID); err != nil {
 		return "", nil, status, err
 	}
@@ -1430,4 +1488,64 @@ func completeJMeterImportDraftClaims(s *Server, claims []*importDraftAttestation
 		}
 		claims[index] = nil
 	}
+}
+
+// importScenarioScriptsBlockedCode is the error code of a JMeter save whose
+// scenario draft uses scripts that need review before they can run.
+const importScenarioScriptsBlockedCode = "import_scenario_scripts_blocked"
+
+// jmeterScenarioBlockedScripts names the scripts a scenario draft uses that
+// its launch review gate would refuse (a messaging plan's draft is exempt, as
+// when the scenario is stored), so the save can say so before writing.
+func jmeterScenarioBlockedScripts(scripts []*dsl.Script, request *CreateScenarioRequest) []string {
+	if request == nil {
+		return nil
+	}
+	byID := make(map[string]*dsl.Script, len(scripts))
+	for _, script := range scripts {
+		if script != nil {
+			byID[strings.TrimSpace(script.ID)] = script
+		}
+	}
+	var blocked []string
+	seen := make(map[string]bool)
+	for _, group := range request.Groups {
+		script := byID[strings.TrimSpace(group.ScriptID)]
+		if script == nil || seen[script.ID] {
+			continue
+		}
+		seen[script.ID] = true
+		if script.Config.JMeter != nil && script.Config.JMeter.Profile == dsl.JMeterMessagingProfile {
+			continue
+		}
+		if len(launchReviewGateIssues(script)) > 0 {
+			blocked = append(blocked, script.Name)
+		}
+	}
+	return blocked
+}
+
+// writeJMeterScenarioScriptsBlocked answers a save whose scenario draft uses
+// scripts that still need review: the scripts can be saved without it.
+func writeJMeterScenarioScriptsBlocked(w http.ResponseWriter, blocked []string) {
+	named := make([]string, 0, 5)
+	for index, name := range blocked {
+		if index == 5 {
+			named = append(named, fmt.Sprintf("%d more", len(blocked)-5))
+			break
+		}
+		named = append(named, fmt.Sprintf("%q", name))
+	}
+	subject := "a script that still needs review before it can run"
+	if len(blocked) > 1 {
+		subject = fmt.Sprintf("%d scripts that still need review before they can run", len(blocked))
+	}
+	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+		"error": fmt.Sprintf(
+			"the scenario draft uses %s (%s); save the scripts without the scenario draft, resolve them in the editor, then create the scenario from the saved scripts",
+			subject, strings.Join(named, ", "),
+		),
+		"code":    importScenarioScriptsBlockedCode,
+		"scripts": blocked,
+	})
 }

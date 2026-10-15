@@ -80,6 +80,38 @@ export function isSensitiveCredentialPreviewHeader(name: string): boolean {
   return lower.split(/[-_. ]+/).some(part => part === 'auth' || part === 'key')
 }
 
+// Keep these in parity with pkg/credential recordedStateWords and
+// credentialWords.
+const recordedStateWords = new Set([
+  'session', 'sessionid', 'sessiontoken', 'sid',
+  'csrf', 'csrftoken', 'xsrf', 'xsrftoken',
+  'trace', 'traceid', 'traceparent', 'tracestate',
+  'span', 'spanid', 'correlation', 'correlationid',
+  'conversation', 'conversationid', 'idempotency',
+])
+const credentialWords = new Set([
+  'auth', 'authorization', 'authtoken', 'apikey',
+  'password', 'passwd', 'secret', 'clientsecret', 'privatekey',
+])
+
+function hasHeaderWord(words: string[], vocabulary: Set<string>): boolean {
+  return words.some((word, index) =>
+    vocabulary.has(word) || (index + 1 < words.length && vocabulary.has(word + words[index + 1])))
+}
+
+/**
+ * Keep this classifier in parity with pkg/credential.RecordedStateHeader:
+ * cookies, and session, anti-forgery and tracing headers with no credential
+ * word, are state the source recorded rather than credentials.
+ */
+export function isRecordedStateHeader(name: string): boolean {
+  const lower = name.trim().toLowerCase()
+  if (!lower) return false
+  if (lower === 'cookie' || lower === 'set-cookie') return true
+  const words = lower.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  return hasHeaderWord(words, recordedStateWords) && !hasHeaderWord(words, credentialWords)
+}
+
 export function isSensitiveCredentialPreviewKey(name: string): boolean {
   return isSensitiveCredentialPreviewName(name) || isSensitiveCredentialPreviewHeader(name)
 }

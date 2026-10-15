@@ -295,7 +295,7 @@ func (pipeline *postmanRequestPipeline) collectSourceReviewCredentialEvidence(
 		}
 	}
 	for _, header := range item.Request.Header {
-		if credential.SensitiveHeader(header.Key) || credential.SensitiveName(header.Key) {
+		if credential.ImportCredentialHeader(header.Key) {
 			recordReferences(header.Value)
 		}
 	}

@@ -17,3 +17,8 @@ export function formatPercentValue(value: number, digits = 2): string {
   if (value > 0 && value < 10 ** -digits) return `<${formatFixed(10 ** -digits, digits)}%`
   return `${formatFixed(value, digits)}%`
 }
+
+/** "1 request", "2 requests": a count with its noun in the matching number. */
+export function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}

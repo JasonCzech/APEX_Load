@@ -217,7 +217,8 @@ func bindRAMLRequestParameters(action *dsl.Action, method map[string]any, result
 				text = "{{secret.RAML_CLIENT_SECRET}}"
 				bound = true
 			default:
-				if credential.SensitiveName(name) || kind == "headers" && credential.SensitiveHeader(name) {
+				if kind == "headers" && credential.ImportCredentialHeader(name) ||
+					kind != "headers" && credential.SensitiveName(name) {
 					text = "{{secret.RAML_" + credential.EnvKey(name) + "}}"
 					bound = true
 				}

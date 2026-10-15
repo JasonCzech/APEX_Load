@@ -910,7 +910,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			Type: "object",
 			Properties: map[string]oasSchema{
 				"name": {Type: "string"},
-				"uid":  {Type: "string"},
+				"name_declared": {
+					Type:        "boolean",
+					Description: "True when name comes from the collection's own metadata rather than a folder name, file name or default.",
+				},
+				"uid": {Type: "string"},
 				"items": {
 					Type:  "array",
 					Items: &oasSchema{Ref: "#/components/schemas/BrunoCollectionItem"},
@@ -921,9 +925,10 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 		"BrunoEnvironment": {
 			Type: "object",
 			Properties: map[string]oasSchema{
-				"name": {Type: "string"},
-				"path": {Type: "string"},
-				"type": {Type: "string"},
+				"name":   {Type: "string"},
+				"path":   {Type: "string"},
+				"type":   {Type: "string"},
+				"values": openAPIStringMap("The environment's plain values for the variables the requests leave unset, offered to fill those inputs. Secret, disabled and scrubbed variables are never included, nor are .env values."),
 			},
 			Required: []string{"name", "path", "type"},
 		},
@@ -940,6 +945,14 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"has_bruno_apps":        {Type: "boolean"},
 				"required_sandbox":      {Type: "string"},
 				"runner_profile":        {Type: "string"},
+				"converted_hooks": {
+					Type:        "integer",
+					Description: "JavaScript hooks converted to native checks, counted once per request that runs them.",
+				},
+				"unconverted_hooks": {
+					Type:        "integer",
+					Description: "JavaScript hooks left for review, counted once per request that runs them.",
+				},
 			},
 			Required: []string{
 				"request_types", "has_javascript", "has_npm_dependencies", "has_local_modules",
@@ -995,8 +1008,62 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"path":                     {Type: "string"},
 				"message":                  {Type: "string"},
 				"acknowledgement_required": {Type: "boolean"},
+				"header_repair":            {Ref: "#/components/schemas/BrunoNativeHeaderRepair"},
 			},
 			Required: []string{"id", "severity", "code", "message"},
+		},
+		"BrunoNativeHeaderRepair": {
+			Type:        "object",
+			Description: "Locates a request header HTTP cannot carry and lists the fixes available at commit. It carries no header value.",
+			Properties: map[string]oasSchema{
+				"action_index":       {Type: "integer"},
+				"header_index":       {Type: "integer"},
+				"header_name":        {Type: "string", Description: "Empty when the name itself is invalid."},
+				"options":            {Type: "array", Items: &oasSchema{Type: "string", Enum: []string{"trim", "remove"}}},
+				"kept_characters":    {Type: "integer", Description: "Characters trim keeps."},
+				"removed_characters": {Type: "integer", Description: "Characters trim removes."},
+				"invalid_character":  {Type: "string", Description: "Plain description of the first character HTTP does not allow."},
+				"omitted":            {Type: "boolean", Description: "True when the header is not a credential and was left out of the script: trim puts the kept text back, remove confirms it stays out."},
+				"replaces_body_default": {
+					Type:        "boolean",
+					Description: "True when the request body's default Content-Type took the left-out header's place: trim overwrites that default and remove keeps it.",
+				},
+			},
+			Required: []string{"action_index", "header_index", "header_name", "options"},
+		},
+		"BrunoNativeExistingScript": {
+			Type:        "object",
+			Description: "A script an earlier import created from the same source request.",
+			Properties: map[string]oasSchema{
+				"script_id":  {Type: "string"},
+				"name":       {Type: "string"},
+				"ref_key":    {Type: "string"},
+				"folder_id":  {Type: "string"},
+				"updated_at": {Type: "string", Format: "date-time"},
+				"matches":    {Type: "integer", Description: "Active scripts imported from this request. A script from the same collection is offered first, then the newest."},
+				"same_collection": {
+					Type:        "boolean",
+					Description: "True when the collection UIDs match or, with no UIDs, the collection names do. Other matches should default to creating a copy.",
+				},
+				"edited_since_import": {
+					Type:        "boolean",
+					Description: "True when the script changed after the import that last saved it, including a rename or move, or that cannot be confirmed. Updating replaces its steps and settings and keeps its name and folder.",
+				},
+			},
+			Required: []string{"script_id", "name", "updated_at", "matches"},
+		},
+		"BrunoNativeUpdateTarget": {
+			Type:                 "object",
+			AdditionalProperties: boolPointer(false),
+			Properties: map[string]oasSchema{
+				"script_id": {Type: "string"},
+				"expected_updated_at": {
+					Type:        "string",
+					Format:      "date-time",
+					Description: "The script's updated_at when it was reviewed. The update fails if the script changed since.",
+				},
+			},
+			Required: []string{"script_id", "expected_updated_at"},
 		},
 		"BrunoSourceMapping": {
 			Type: "object",
@@ -1050,6 +1117,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:  "array",
 					Items: &oasSchema{Ref: "#/components/schemas/BrunoNativeDiagnostic"},
 				},
+				"existing_script":   {Ref: "#/components/schemas/BrunoNativeExistingScript"},
 				"missing_variables": {Type: "array", Items: &oasSchema{Type: "string"}},
 				"secret_requirements": {
 					Type:  "array",
@@ -1059,6 +1127,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:        "array",
 					Description: "Scrubbed, sanitized-source mappings that influenced this candidate.",
 					Items:       &oasSchema{Ref: "#/components/schemas/BrunoSourceMapping"},
+				},
+				"parameterization": {
+					Type:                 "object",
+					Description:          "This request's shared parameter suggestions (generated values and data parameters), as the other importers report them. Select IDs through parameterization_selections on commit.",
+					AdditionalProperties: boolPointer(true),
 				},
 			},
 			Required: []string{
@@ -1124,6 +1197,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Description:          "Collection-wide values the operator supplies once; present for native request inspection only.",
 					AdditionalProperties: boolPointer(true),
 				},
+				"previous_inputs": {
+					Type:                 "object",
+					Description:          "Shared-value candidate ID to how the scripts a re-import updates supplied that input: a value for every user, a data pool column or a generated value.",
+					AdditionalProperties: &oasSchema{Ref: "#/components/schemas/BrunoPreviousInput"},
+				},
 			},
 			Required: []string{
 				"import_session_id", "expires_at", "result", "artifacts",
@@ -1175,10 +1253,56 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:  "array",
 					Items: &oasSchema{Type: "string"},
 				},
+				"update_targets": {
+					Type:                 "object",
+					Description:          "Native candidate ID to the script an earlier import created from the same request. That script is updated as a new version instead of creating a duplicate. folder_id may be omitted when every selected candidate has an update target.",
+					AdditionalProperties: &oasSchema{Ref: "#/components/schemas/BrunoNativeUpdateTarget"},
+				},
+				"header_repairs": {
+					Type:                 "object",
+					Description:          "bruno_invalid_header_value finding ID to the fix to apply. A repaired finding needs no acknowledgement.",
+					AdditionalProperties: &oasSchema{Type: "string", Enum: []string{"trim", "remove"}},
+				},
+				"input_bindings": {
+					Type:                 "object",
+					Description:          "Shared-value candidate ID of a variable the source left unset to a data pool column ({{data.alias.column}}, read per virtual user) or a value generated each iteration. A candidate takes a binding or a shared_values value, not both.",
+					AdditionalProperties: &oasSchema{Ref: "#/components/schemas/BrunoInputBinding"},
+				},
+				"parameterization_selections": {
+					Type:                 "object",
+					Description:          "Native candidate ID to the IDs of that candidate's parameterization suggestions to apply, such as a trace or message ID generated each iteration.",
+					AdditionalProperties: &oasSchema{Type: "array", Items: &oasSchema{Type: "string"}},
+				},
 			},
-			Required: []string{"project_id", "import_session_id", "mode", "folder_id"},
+			Required: []string{"project_id", "import_session_id", "mode"},
 		},
 		"BrunoCommitRequest": {Ref: "#/components/schemas/BrunoNativeBatchCommitRequest"},
+		"BrunoInputBinding": {
+			Type:                 "object",
+			AdditionalProperties: boolPointer(false),
+			Properties: map[string]oasSchema{
+				"mode":      {Type: "string", Enum: []string{"data", "generated", "secret"}},
+				"alias":     {Type: "string", Description: "Data binding alias the scenario binds to a pool."},
+				"column":    {Type: "string"},
+				"generator": {Type: "string", Enum: []string{"uuid", "timestamp", "digits"}},
+				"digits":    {Type: "integer", Description: "Length of a generated digits value, 1 to 64."},
+				"secret":    {Type: "string", Description: "Project secret a credential input reads (capital letters, digits, underscores)."},
+			},
+			Required: []string{"mode"},
+		},
+		"BrunoPreviousInput": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"mode":      {Type: "string", Enum: []string{"value", "data", "generated", "secret"}},
+				"value":     {Type: "string"},
+				"alias":     {Type: "string"},
+				"column":    {Type: "string"},
+				"generator": {Type: "string", Enum: []string{"uuid", "timestamp", "digits"}},
+				"digits":    {Type: "integer"},
+				"reference": {Type: "string", Description: "Project secret a credential input reads, {{secret.NAME}}."},
+			},
+			Required: []string{"mode"},
+		},
 		"ImportSourceRevision": {
 			Type: "object",
 			Properties: map[string]oasSchema{
@@ -1218,6 +1342,16 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"created":           {Type: "boolean"},
 				"idempotent_replay": {Type: "boolean"},
 				"secret_migrations": {Type: "array", Items: &oasSchema{Type: "object", AdditionalProperties: boolPointer(true)}},
+				"updated_script_ids": {
+					Type:        "array",
+					Description: "Scripts this batch updated as a new version rather than created.",
+					Items:       &oasSchema{Type: "string"},
+				},
+				"unconfigured_secret_names": {
+					Type:        "array",
+					Description: "Project secrets the saved scripts reference that have no value yet. Configure them before a run. Omitted on an idempotent replay.",
+					Items:       &oasSchema{Type: "string"},
+				},
 			},
 			Required: []string{"batch_id", "scripts", "count", "created", "idempotent_replay"},
 		},
@@ -1285,10 +1419,35 @@ func brunoInspectResultSchema(outputMode string) oasSchema {
 			Type:  "array",
 			Items: &oasSchema{Ref: "#/components/schemas/BrunoSecurityFinding"},
 		},
-		"fidelity":          {Ref: "#/components/schemas/BrunoFidelityReport"},
-		"native_projection": {Ref: "#/components/schemas/BrunoNativeProjection"},
-		"missing_variables": {Type: "array", Items: &oasSchema{Type: "string"}},
-		"inspected_at":      {Type: "string", Format: "date-time"},
+		"fidelity":           {Ref: "#/components/schemas/BrunoFidelityReport"},
+		"native_projection":  {Ref: "#/components/schemas/BrunoNativeProjection"},
+		"missing_variables":  {Type: "array", Items: &oasSchema{Type: "string"}},
+		"inspected_at":       {Type: "string", Format: "date-time"},
+		"skipped_file_count": {Type: "integer", Description: "All skipped files; skipped_files lists at most the first 100 in path order."},
+		"skipped_files": {
+			Type:        "array",
+			Description: "Uploaded files that are not collection content: operating-system or version-control files, files Bruno's ignore list excludes, and gitignored files Bruno does not load itself.",
+			Items: &oasSchema{
+				Type: "object",
+				Properties: map[string]oasSchema{
+					"path":   {Type: "string"},
+					"reason": {Type: "string", Enum: []string{"operating_system_file", "version_control_file", "ignore_list"}},
+				},
+				Required: []string{"path", "reason"},
+			},
+		},
+		"kept_headers": {
+			Type:        "array",
+			Description: "Sensitive-looking headers, such as cookies and session ids, kept as imported because they carry recorded state rather than credentials.",
+			Items: &oasSchema{
+				Type: "object",
+				Properties: map[string]oasSchema{
+					"name":     {Type: "string"},
+					"requests": {Type: "integer", Description: "Requests that send this header."},
+				},
+				Required: []string{"name", "requests"},
+			},
+		},
 	}
 	required := []string{
 		"schema_version", "output_mode", "source_format", "root_path", "manifest",

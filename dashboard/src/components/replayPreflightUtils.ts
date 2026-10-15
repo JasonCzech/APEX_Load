@@ -1,7 +1,7 @@
 import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProjectSecretStatus } from '../types/secrets'
 import {
-  actionExecutionBlockers,
+  actionExecutionBlockerDetails,
   actionMetadataBool,
 } from './scriptActionHelpers'
 
@@ -95,7 +95,7 @@ function appendReviewGateIssues(
   script: ScriptDefinition,
   issues: string[],
 ): void {
-  const blockers = actionExecutionBlockers(action)
+  const blockers = actionExecutionBlockerDetails(action)
   const name = action.name?.trim()
   const label = name ? `${path} "${name}"` : path
   if (blockers.length > 0) {
@@ -286,6 +286,8 @@ export function reconcileReplayPreflightSecretStatus(
   statuses: readonly ProjectSecretStatus[],
   statusKnown: boolean,
   statusUnavailable = false,
+  // Display names for the secrets (secretBindingDisplayNames), by exact name.
+  secretLabels: ReadonlyMap<string, string> = new Map(),
 ): ReplayPreflight {
   const required = Array.from(new Set((preflight.required_secrets || []).map(canonicalProjectSecretName).filter(Boolean))).sort()
   if (!statusKnown) {
@@ -326,7 +328,7 @@ export function reconcileReplayPreflightSecretStatus(
     return {
       ...check,
       status: 'fail' as const,
-      detail: `Configure missing project secret${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}.`,
+      detail: `Configure missing project secret${missing.length === 1 ? '' : 's'}: ${missing.map(name => secretLabels.get(name) || name).join(', ')}.`,
     }
   })
   return {

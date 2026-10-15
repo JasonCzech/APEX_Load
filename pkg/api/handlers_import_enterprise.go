@@ -417,6 +417,11 @@ func zipEnterpriseFolderUpload(fields map[string][]*multipart.FileHeader) ([]byt
 		if err != nil {
 			return nil, fmt.Errorf("invalid encoded folder path: %w", err)
 		}
+		// A folder picked on a Mac or from a working copy carries .DS_Store
+		// and .git files; they are not part of the script.
+		if archiveingest.JunkReason(name) != "" {
+			continue
+		}
 		names = append(names, name)
 		headers[name] = files[0]
 	}

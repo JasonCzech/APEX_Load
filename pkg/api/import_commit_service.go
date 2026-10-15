@@ -205,6 +205,10 @@ func finalizeImportCommitScript(
 ) (*dsl.Script, *ReplayPreflight, error) {
 	finalized, err := requestimport.FinalizeScript(script, nil, requestimport.FinalizeOptions{})
 	if err != nil {
+		var invalid *requestimport.ScriptValidationError
+		if errors.As(err, &invalid) {
+			return nil, nil, fmt.Errorf("the script is not valid: %s; correct it in the review and save again", strings.Join(invalid.Issues, "; "))
+		}
 		return nil, nil, fmt.Errorf("failed to finalize imported script: %w", err)
 	}
 	script = finalized.Script
@@ -219,6 +223,7 @@ func finalizeImportCommitScript(
 	}
 	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
 	attachImportReplayPreflight(script, sourceProfile, preflight)
+	stampImportedContentDigest(script)
 	return script, preflight, nil
 }
 
@@ -698,6 +703,9 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				draftAttestationClaim.Token,
 			)
 		}
+		if !s.requireImportProject(w, script.ProjectID) {
+			return
+		}
 		script, preflight, err := finalizeImportCommitScript(
 			script,
 			spec.sourceProfile,
@@ -979,6 +987,14 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	// Re-imports may replace content but may never relocate a script or erase
 	// its durable identity/creation metadata.
 	preserveReplacedScriptIdentity(next, existing.Script)
+	if req.ExpectedUpdatedAt != nil {
+		// A re-import updates the script the operator named, under that name,
+		// keeping what APEX set on it that the import does not write.
+		if strings.TrimSpace(existing.Name) != "" {
+			next.Name = existing.Name
+		}
+		keepAPEXScriptSettings(next, existing.Script)
+	}
 	next, preflight, err := finalizeImportCommitScript(
 		next,
 		spec.sourceProfile,
@@ -1045,6 +1061,14 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				projectedNext,
 			)
 		}
+	}
+	if req.ExpectedUpdatedAt != nil && !replacementAlreadyApplied &&
+		!sameImportUpdateTime(existing.Script.UpdatedAt, *req.ExpectedUpdatedAt) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": staleImportUpdate("the script to update changed after review").Error(),
+			"code":  importUpdateTargetStaleCode,
+		})
+		return
 	}
 	if req.DryRun {
 		spec.writeResponse(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})

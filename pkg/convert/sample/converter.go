@@ -195,8 +195,9 @@ type response struct {
 	Body           string
 }
 
-// Sensitive header detection is shared with the paramize package so every
-// importer agrees on which headers carry credentials (see paramize.SensitiveHeaderKey).
+// Evidence redaction of sensitive headers is shared with the paramize package
+// (paramize.SensitiveHeaderKey); credential review uses the narrower
+// credential.ImportCredentialHeader, as every importer does.
 
 const (
 	rawHTTPRequestDelimiter  = "\n\n### APEXLOAD REQUEST ###\n\n"

@@ -23,13 +23,17 @@ func buildImportSharedValues(scripts []*dsl.Script) *sharedvalue.Result {
 // trustedSharedValueCandidates re-derives the candidates a caller is allowed to
 // act on. Only IDs and operator-entered values cross the trust boundary; the
 // candidate bodies a browser sends are descriptors, never mutation
-// instructions. Credential-shaped candidates are dropped entirely here — they
-// are handled by the guided credential-binding workflow.
+// instructions. Credential-shaped candidates are dropped here — the guided
+// credential-binding workflow handles them — except an input the source left
+// unset, which a binding supplies from a project secret or data pool column
+// (Binding.ValidateFor) and which Apply refuses a value for.
 func trustedSharedValueCandidates(scripts []*dsl.Script) []sharedvalue.Candidate {
 	result := sharedvalue.Detect(scripts)
 	trusted := make([]sharedvalue.Candidate, 0, len(result.Candidates))
 	for _, candidate := range result.Candidates {
-		if candidate.CredentialShaped {
+		// A credential-shaped input the source left unset stays, for a data
+		// pool column or a project secret; Apply refuses a value for it.
+		if candidate.CredentialShaped && candidate.Kind != sharedvalue.KindSourceVariable {
 			continue
 		}
 		trusted = append(trusted, candidate)

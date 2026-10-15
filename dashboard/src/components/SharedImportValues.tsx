@@ -1,13 +1,17 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
+import type { SharedDataPool } from '../types/dataPools'
 import {
+  type ImportPreviousInput,
   type SharedValueCandidate,
   type SharedValueDiff,
   type SharedValues,
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { brunoInputBindingComplete, suggestedInputSecretName, unusedSecretName, type BrunoInputBinding } from './brunoReviewState'
+import ImportInputSupply, { type SupplyMode } from './ImportInputSupply'
 import { reachLabel, sharedValueNameError } from './sharedImportValueUtils'
 import './SharedImportValues.css'
 
@@ -32,6 +36,16 @@ interface Props {
   reviewGeneration?: string | number
   disabled?: boolean
   onApplyingChange?: (applying: boolean) => void
+  /**
+   * The project's data pools, offered when an input the source left unset is
+   * read per virtual user. Without it the alias and column are typed.
+   */
+  loadDataPools?: () => Promise<SharedDataPool[]>
+  /**
+   * How the scripts a re-import updates supplied each input, by input name.
+   * Each unset input starts from that choice.
+   */
+  previousInputs?: Record<string, ImportPreviousInput>
   onApplied?: (
     scripts: ScriptDefinition[],
     diffs: SharedValueDiff[],
@@ -61,6 +75,39 @@ function initialSelection(): Record<string, boolean> {
   return {}
 }
 
+// {{secret.API_TOKEN}} → API_TOKEN.
+function secretNameFromReference(reference: string | undefined): string {
+  return /^\{\{secret\.([A-Z0-9_]{1,249})\}\}$/.exec(reference?.trim() ?? '')?.[1] ?? ''
+}
+
+// A re-import starts each unset input from how the scripts it updates supplied
+// it: the same value for every user (checked, as the operator chose it before),
+// or the same data pool column or generated value. A credential is seeded only
+// from the project secret or data column it read; otherwise it stays
+// unsupplied until the operator chooses, like every other row.
+function seedFromPrevious(candidates: SharedValueCandidate[], previous: Record<string, ImportPreviousInput> | undefined) {
+  const values: Record<string, string> = {}
+  const selected: Record<string, boolean> = {}
+  const bindings: Record<string, BrunoInputBinding> = {}
+  for (const candidate of candidates) {
+    const input = previous?.[candidate.name]
+    if (!input || candidate.kind !== 'source_variable') continue
+    const credential = Boolean(candidate.credential_shaped)
+    if (input.mode === 'value' && input.value && !credential) {
+      values[candidate.id] = input.value
+      selected[candidate.id] = true
+    } else if (input.mode === 'data') {
+      bindings[candidate.id] = { mode: 'data', alias: input.alias ?? '', column: input.column ?? '' }
+    } else if (input.mode === 'generated' && !credential) {
+      const generator = input.generator === 'timestamp' || input.generator === 'digits' ? input.generator : 'uuid'
+      bindings[candidate.id] = { mode: 'generated', generator, digits: input.digits }
+    } else if (input.mode === 'secret' && credential) {
+      bindings[candidate.id] = { mode: 'secret', secret: secretNameFromReference(input.reference) || suggestedInputSecretName(candidate.name) }
+    }
+  }
+  return { values, selected, bindings }
+}
+
 export default function SharedImportValues({
   sharedValues,
   guided = false,
@@ -72,6 +119,8 @@ export default function SharedImportValues({
   reviewGeneration = 0,
   disabled = false,
   onApplyingChange,
+  loadDataPools,
+  previousInputs,
   onApplied,
 }: Props) {
   const headingId = useId()
@@ -79,12 +128,20 @@ export default function SharedImportValues({
   const candidates = useMemo(() => (sharedValues.candidates ?? []).filter(candidate => !guided || candidate.kind !== 'source_variable'), [sharedValues.candidates, guided])
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(candidates))
   const [selected, setSelected] = useState<Record<string, boolean>>(initialSelection)
+  // Inputs the source left unset that each virtual user reads from a data pool
+  // or generates, by candidate ID. Applied with the values, server-side.
+  const [bindings, setBindings] = useState<Record<string, BrunoInputBinding>>({})
+  const [pools, setPools] = useState<SharedDataPool[]>([])
+  const [projectSecrets, setProjectSecrets] = useState<string[]>([])
   const [applying, setApplying] = useState(false)
   const [appliedCount, setAppliedCount] = useState(0)
   const [search, setSearch] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [error, setError] = useState('')
 
+  // Per-user supply is offered for unset inputs on the apply path; the pool
+  // list is read only when such an input is on screen.
+  const bindable = !guided && !collectOnly
   const onApplyingChangeRef = useRef(onApplyingChange)
   onApplyingChangeRef.current = onApplyingChange
   const onValuesChangeRef = useRef(onValuesChange)
@@ -99,14 +156,80 @@ export default function SharedImportValues({
 
   // A new import or review generation resets the panel; a stale value carried
   // across would be applied to a tree it was never derived from.
+  const touchedRef = useRef(new Set<string>())
   useEffect(() => {
+    touchedRef.current = new Set()
     setValues(initialValues(candidates))
     setSelected(initialSelection())
+    setBindings({})
     setApplying(false)
     onApplyingChangeRef.current?.(false)
     setAppliedCount(0); setReviewing(false)
     setError('')
-  }, [candidates, reviewGeneration])
+  }, [bindable, candidates, reviewGeneration])
+
+  // Inputs start from how the scripts a re-import updates supplied them. A
+  // change in which scripts it updates re-seeds only the inputs the operator
+  // has not touched since the reset.
+  const previousInputsRef = useRef(previousInputs)
+  previousInputsRef.current = previousInputs
+  const previousKey = JSON.stringify(previousInputs ?? {})
+  useEffect(() => {
+    if (!bindable) return
+    const seeded = seedFromPrevious(candidates, previousInputsRef.current)
+    const reseed = candidates.filter(candidate =>
+      candidate.kind === 'source_variable' && !touchedRef.current.has(candidate.id))
+    if (reseed.length === 0) return
+    setValues(previous => {
+      const next = { ...previous }
+      for (const candidate of reseed) next[candidate.id] = seeded.values[candidate.id] ?? candidate.current_value ?? ''
+      return next
+    })
+    setSelected(previous => {
+      const next = { ...previous }
+      for (const candidate of reseed) next[candidate.id] = seeded.selected[candidate.id] ?? false
+      return next
+    })
+    setBindings(previous => {
+      const next = { ...previous }
+      for (const candidate of reseed) {
+        if (seeded.bindings[candidate.id]) next[candidate.id] = seeded.bindings[candidate.id]
+        else delete next[candidate.id]
+      }
+      return next
+    })
+    // What the panel shows changed, so an earlier apply no longer describes it.
+    setAppliedCount(0); setReviewing(false)
+  }, [bindable, candidates, reviewGeneration, previousKey])
+  const needsInputs = bindable && candidates.some(candidate => candidate.kind === 'source_variable')
+  // Without a loader the panel reads the pools of its scripts' project.
+  const projectId = scripts.find(script => script.project_id)?.project_id
+  const listDataPools = typeof api.listDataPools === 'function' ? api.listDataPools : undefined
+  const loadPools = useCallback(async () => {
+    if (loadDataPools) return loadDataPools()
+    if (!projectId || !listDataPools) return []
+    return (await listDataPools(projectId)).data_pools || []
+  }, [loadDataPools, listDataPools, projectId])
+  useEffect(() => {
+    if (!needsInputs) return
+    let current = true
+    loadPools().then(loaded => {
+      if (current) setPools(loaded.filter(pool => !pool.archived_at))
+    }).catch(() => undefined)
+    return () => { current = false }
+  }, [loadPools, needsInputs])
+  // A credential input's suggested project secret avoids the names the
+  // project already holds; the list is read only when such an input is shown.
+  const needsSecretNames = needsInputs && candidates.some(candidate => candidate.kind === 'source_variable' && candidate.credential_shaped)
+  const listProjectSecrets = typeof api.listProjectSecrets === 'function' ? api.listProjectSecrets : undefined
+  useEffect(() => {
+    if (!needsSecretNames || !projectId || !listProjectSecrets) return
+    let current = true
+    listProjectSecrets(projectId).then(response => {
+      if (current) setProjectSecrets((response.secrets || []).map(secret => secret.name))
+    }).catch(() => undefined)
+    return () => { current = false }
+  }, [listProjectSecrets, needsSecretNames, projectId])
 
   // Collect mode has no apply step, so the caller needs the current selection
   // continuously — it is carried on that importer's own commit request.
@@ -126,7 +249,12 @@ export default function SharedImportValues({
   const editable = candidates.filter(candidate => !candidate.credential_shaped)
   const hasRequiredInputs = candidates.some(candidate => candidate.kind === 'source_variable')
   const selectedIds = editable
-    .filter(candidate => selected[candidate.id] && (values[candidate.id] ?? '').trim() !== '')
+    .filter(candidate => !bindings[candidate.id] && selected[candidate.id] && (values[candidate.id] ?? '').trim() !== '')
+    .map(candidate => candidate.id)
+  // A credential input is bound only through the supply control (a project
+  // secret or data pool column the operator chose), never given a value.
+  const boundIds = candidates
+    .filter(candidate => (!candidate.credential_shaped || (bindable && candidate.kind === 'source_variable')) && brunoInputBindingComplete(bindings[candidate.id]))
     .map(candidate => candidate.id)
   const nameErrors = new Map(
     editable
@@ -134,20 +262,56 @@ export default function SharedImportValues({
       .map(candidate => [candidate.id, sharedValueNameError(candidate.name)] as const)
       .filter(([, message]) => message !== ''),
   )
-  const canApply = selectedIds.length > 0 && nameErrors.size === 0 && !applying && !disabled
+  const canApply = selectedIds.length + boundIds.length > 0 && nameErrors.size === 0 && !applying && !disabled
   const affectedScriptCount = scriptCount ?? scripts.length
 
   const toggle = (candidate: SharedValueCandidate) => {
     if (candidate.credential_shaped || applying || disabled) return
+    touchedRef.current.add(candidate.id)
     setSelected(previous => ({ ...previous, [candidate.id]: !previous[candidate.id] }))
     setAppliedCount(0); setReviewing(false)
   }
 
   const setValue = (candidate: SharedValueCandidate, value: string) => {
+    touchedRef.current.add(candidate.id)
     setValues(previous => ({ ...previous, [candidate.id]: value }))
     // Typing a value is intent to use it; requiring a separate checkbox click
     // after filling the field would be a pointless second step.
     setSelected(previous => ({ ...previous, [candidate.id]: value.trim() !== '' }))
+    setAppliedCount(0); setReviewing(false)
+  }
+
+  const setMode = (candidate: SharedValueCandidate, mode: SupplyMode) => {
+    touchedRef.current.add(candidate.id)
+    setBindings(previous => {
+      const next = { ...previous }
+      if (mode === 'value') delete next[candidate.id]
+      else if (mode === 'secret') {
+        // The secret the scripts it updates read, else one named after the
+        // input that no other credential, in the project or this panel, uses.
+        const earlier = previousInputsRef.current?.[candidate.name]
+        const chosen = Object.entries(previous)
+          .flatMap(([id, binding]) => id !== candidate.id && binding.mode === 'secret' && binding.secret ? [binding.secret] : [])
+        next[candidate.id] = {
+          mode: 'secret',
+          secret: (earlier?.mode === 'secret' && secretNameFromReference(earlier.reference))
+            || unusedSecretName(suggestedInputSecretName(candidate.name), [...projectSecrets, ...chosen]),
+        }
+      }
+      else next[candidate.id] = mode === 'data' ? { mode: 'data', alias: '', column: '' } : { mode: 'generated', generator: 'uuid' }
+      return next
+    })
+    // A binding replaces the value for every user.
+    if (mode !== 'value') {
+      setValues(previous => ({ ...previous, [candidate.id]: '' }))
+      setSelected(previous => ({ ...previous, [candidate.id]: false }))
+    }
+    setAppliedCount(0); setReviewing(false)
+  }
+
+  const setBinding = (candidate: SharedValueCandidate, binding: BrunoInputBinding) => {
+    touchedRef.current.add(candidate.id)
+    setBindings(previous => ({ ...previous, [candidate.id]: binding }))
     setAppliedCount(0); setReviewing(false)
   }
 
@@ -159,9 +323,14 @@ export default function SharedImportValues({
     try {
       const payload: Record<string, string> = {}
       for (const id of selectedIds) payload[id] = values[id]
-      const response = await api.applyImportSharedValues({ scripts, values: payload })
+      const boundPayload = Object.fromEntries(boundIds.map(id => [id, bindings[id]]))
+      const response = await api.applyImportSharedValues({
+        scripts,
+        values: payload,
+        ...(boundIds.length > 0 ? { bindings: boundPayload } : {}),
+      })
       if (!mountedRef.current) return
-      setAppliedCount(response.applied_count ?? selectedIds.length)
+      setAppliedCount(response.applied_count ?? selectedIds.length + boundIds.length)
       onApplied?.(
         response.scripts ?? [],
         response.diffs ?? [],
@@ -215,7 +384,26 @@ export default function SharedImportValues({
                 <span className="shared-values-reach">{reachLabel(candidate)}</span>
               </div>
               {candidate.rationale && <p className="shared-values-rationale">{guided ? 'Only detected occurrences are eligible for this substitution.' : candidate.rationale}</p>}{guided && <details><summary>Affected scripts</summary><ul>{(candidate.script_names || []).map(name => <li key={name}>{name}</li>)}</ul><p>Exact request changes are returned after applying. The import does not expose individual request paths for these suggestions.</p></details>}
-              {candidate.credential_shaped ? (
+              {bindable && candidate.kind === 'source_variable' ? (
+                <>
+                  <ImportInputSupply
+                    valueInputId={inputId}
+                    credential={Boolean(candidate.credential_shaped)}
+                    projectSecrets={projectSecrets}
+                    variable={candidate.name}
+                    value={values[candidate.id] ?? ''}
+                    binding={bindings[candidate.id]}
+                    previous={previousInputs?.[candidate.name]}
+                    pools={pools}
+                    canBind
+                    disabled={applying || disabled}
+                    onValue={value => setValue(candidate, value)}
+                    onMode={mode => setMode(candidate, mode)}
+                    onBinding={binding => setBinding(candidate, binding)}
+                  />
+                  {nameError && <p className="shared-values-name-error">{nameError}</p>}
+                </>
+              ) : candidate.credential_shaped ? (
                 <p className="shared-values-credential">
                   This looks like a credential. Set it in the Credentials tab — a script
                   parameter of this name is hidden from every later read, so the value would be
@@ -267,7 +455,7 @@ export default function SharedImportValues({
               disabled={!canApply}
               onClick={() => { if (guided && !reviewing) setReviewing(true); else void handleApply() }}
             >
-              {applying ? 'Applying…' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}
+              {applying ? 'Applying…' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length + boundIds.length > 0 ? ` (${selectedIds.length + boundIds.length})` : ''}`}
             </button>
             <small>Nothing changes until you apply.</small>
           </>

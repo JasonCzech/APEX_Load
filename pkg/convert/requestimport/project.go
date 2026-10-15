@@ -412,7 +412,7 @@ func FinalizeScript(script *dsl.Script, reports []Report, options FinalizeOption
 	}
 	markCredentialParameterProvenance(result.Script, result.Requirements)
 	if len(result.ValidationIssues) != 0 {
-		return nil, fmt.Errorf("internal request import invariant: generated script failed DSL validation: %s", strings.Join(result.ValidationIssues, "; "))
+		return nil, &ScriptValidationError{Issues: result.ValidationIssues}
 	}
 	result.Disposition = dispositionForReadiness(result.Readiness, reports)
 	return result, nil
@@ -1951,4 +1951,15 @@ func clearExecutionBlockerCode(action *dsl.Action, code string) {
 	sort.Strings(remaining)
 	action.Metadata["execution_blocker"] = remaining[0]
 	action.Metadata["execution_blockers"] = remaining
+}
+
+// ScriptValidationError is a finalized script that fails DSL validation. For
+// a converter it is its own bug; a caller finalizing a script it was given
+// (an import commit) reports it as that script's fault.
+type ScriptValidationError struct {
+	Issues []string
+}
+
+func (e *ScriptValidationError) Error() string {
+	return "internal request import invariant: generated script failed DSL validation: " + strings.Join(e.Issues, "; ")
 }

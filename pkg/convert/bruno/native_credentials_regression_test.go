@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1660,13 +1661,14 @@ http:
 		label      string
 		context    string
 	}{
-		"partnerPassword": {"PARTNER_PASSWORD_", "Partner password", "XML password element <mh:userPassword>"},
-		"partnerUserName": {"PARTNER_USERNAME_", "Partner username", "XML username element <mh:userName>"},
+		"partnerPassword": {"PARTNER_PASSWORD", "Partner password", "XML password element <mh:userPassword>"},
+		"partnerUserName": {"PARTNER_USERNAME", "Partner username", "XML username element <mh:userName>"},
 	}
 	bindings := make(map[string]string, len(result.SecretRequirements))
 	for _, requirement := range result.SecretRequirements {
 		want, exists := wantMetadata[requirement.SourceVariable]
-		if !exists || !strings.HasPrefix(requirement.SuggestedName, want.namePrefix) ||
+		// A readable name: the variable's own, with no source path or hash.
+		if !exists || requirement.SuggestedName != want.namePrefix ||
 			requirement.DisplayLabel != want.label ||
 			!requirement.UnresolvedSourceVariable ||
 			requirement.Context != want.context ||
@@ -1727,7 +1729,7 @@ http:
 	for _, requirement := range result.SecretRequirements {
 		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
 			!requirement.UnresolvedSourceVariable ||
-			!strings.HasPrefix(requirement.SuggestedName, "CLIENT_ID_") {
+			!(requirement.SuggestedName == "CLIENT_ID" || strings.HasPrefix(requirement.SuggestedName, "CLIENT_ID_")) {
 			t.Fatalf("distinct unresolved metadata = %#v", requirement)
 		}
 		wantVariables[requirement.SourceVariable] = true
@@ -1799,8 +1801,8 @@ http:
 	}
 	auth := candidate.Script.Actions[0].Auth
 	if auth == nil || auth.Username == auth.Password ||
-		!strings.HasPrefix(auth.Username, "{{secret.ENV_CLIENT_ID_") ||
-		!strings.HasPrefix(auth.Password, "{{secret.ENV_CLIENT_ID_") {
+		!strings.HasPrefix(auth.Username, "{{secret.ENV_CLIENT_ID") ||
+		!strings.HasPrefix(auth.Password, "{{secret.ENV_CLIENT_ID") {
 		t.Fatalf("distinct auth bindings = %#v", auth)
 	}
 }
@@ -2241,29 +2243,28 @@ http:
 	}{
 		{
 			id:             "a73758b339b71e1635eb25f9",
-			name:           "CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055",
+			name:           "X_CDF_AUTH_TOKEN",
 			label:          "X-CDF auth token",
 			path:           "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
 			sourceVariable: "authToken",
 			contextParts:   []string{`header "X-CDF-AUTH-TOKEN"`, "references {{authToken}}", "does not include a value", "configured destination value", "when this request runs"},
 			unresolved:     true,
 		},
-		{
-			id:           "6b6c3b23a33b3293c01a677d",
-			name:         "CTA_COLLECTION_6A_CTA_ACTIVATESUBSCRIBER_V302_HEADER_IDPCTX_IXP_DARK_MODE_SESSION_161E2747AD92",
-			label:        "IDP context IXP dark mode session",
-			path:         "CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml",
-			contextParts: []string{`header "idpctx-ixp-dark-mode-session"`, "contains an imported value", "can be preserved"},
-			hasValue:     true,
-		},
-		{
-			id:           "887c23d56055c1804ec9137f",
-			name:         "CTA_COLLECTION_6A_CTA_INQUIRECPNICONTACTINFORMATION_224_HEADER_IDPCTX_SESSION_ID",
-			label:        "IDP context session ID",
-			path:         "CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml",
-			contextParts: []string{`header "idpctx-session-id"`, "contains an imported value", "can be preserved"},
-			hasValue:     true,
-		},
+	}
+	// Session, trace and cookie headers are recorded state, not credentials:
+	// they stay as imported and never reach credential review.
+	if len(result.SecretRequirements) != len(tests) {
+		t.Fatalf("credential requirements = %#v, want only the auth token", result.SecretRequirements)
+	}
+	for _, candidate := range result.Scripts {
+		for _, header := range candidate.Script.Actions[0].HeaderList {
+			switch strings.ToLower(header.Name) {
+			case "idpctx-session-id", "idpctx-ixp-dark-mode-session", "idp-trace-id", "cookie":
+				if !strings.HasPrefix(header.Value, "test-") {
+					t.Errorf("%s header in %s = %q, want the imported value", header.Name, candidate.SourcePath, header.Value)
+				}
+			}
+		}
 	}
 	requirementsByName := make(map[string]SecretRequirement, len(result.SecretRequirements))
 	for _, requirement := range result.SecretRequirements {
@@ -2297,20 +2298,54 @@ http:
 	}
 }
 
-func TestInspectNativeTreatsPolicyHeaderRedactionSentinelAsUnrecoverable(t *testing.T) {
+func TestInspectNativeTurnsRedactedRecordedHeaderIntoInput(t *testing.T) {
 	tests := []struct {
-		name    string
-		headers string
+		name     string
+		headers  string
+		variable string
+		value    string
 	}{
+		{
+			name: "cookie pair",
+			headers: `
+    - {name: Cookie, value: "sid=[redacted]; theme=dark"}`,
+			variable: "header_cookie_sid",
+			value:    "sid={{var.header_cookie_sid}}; theme=dark",
+		},
+		{
+			name: "cookie pair beside a template",
+			headers: `
+    - {name: Cookie, value: "sid=[redacted]; region={{region}}"}`,
+			variable: "header_cookie_sid",
+			value:    "sid={{var.header_cookie_sid}}; region={{var.region}}",
+		},
+		{
+			name: "unnamed part",
+			headers: `
+    - {name: X-Device, value: "tablet-[redacted]"}`,
+			variable: "header_x_device_part",
+			value:    "tablet-{{var.header_x_device_part}}",
+		},
+		{
+			name: "cookie with two redacted pairs",
+			headers: `
+    - {name: Cookie, value: "sid=[redacted]; csrf=[REDACTED]; region={{region}}"}`,
+			variable: "header_cookie",
+			value:    "{{var.header_cookie}}",
+		},
 		{
 			name: "header list",
 			headers: `
     - {name: idpctx-ixp-dark-mode-session, value: "[REDACTED]"}`,
+			variable: "header_idpctx_ixp_dark_mode_session",
+			value:    "{{var.header_idpctx_ixp_dark_mode_session}}",
 		},
 		{
 			name: "header map",
 			headers: `
     idpctx-ixp-dark-mode-session: "[redacted]"`,
+			variable: "header_idpctx_ixp_dark_mode_session",
+			value:    "{{var.header_idpctx_ixp_dark_mode_session}}",
 		},
 	}
 	for _, test := range tests {
@@ -2328,30 +2363,22 @@ http:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.SecretRequirements) != 1 || len(result.Scripts) != 1 ||
-				len(result.Scripts[0].SecretRequirements) != 1 {
-				t.Fatalf("redacted policy header requirements = aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts)
+			// A recorded session value is not a credential, so a redacted one
+			// becomes an input to supply rather than a secret or a literal.
+			if len(result.SecretRequirements) != 0 || len(result.Scripts) != 1 {
+				t.Fatalf("redacted recorded header = requirements %#v candidates %#v", result.SecretRequirements, result.Scripts)
 			}
-			requirement := result.SecretRequirements[0]
-			candidateRequirement := result.Scripts[0].SecretRequirements[0]
-			for _, current := range []SecretRequirement{requirement, candidateRequirement} {
-				if current.Value != "" || current.SourceValueAvailable ||
-					current.DisplayLabel != "IDP context IXP dark mode session" ||
-					current.SourceVariable != "" || current.UnresolvedSourceVariable ||
-					!strings.Contains(current.Context, "has no recoverable imported value") ||
-					!strings.Contains(current.Context, "configured destination value is required") ||
-					strings.Contains(current.Context, "Configure the generated project secret") ||
-					!reflect.DeepEqual(current.AffectedPaths, []string{"request.yml"}) {
-					t.Errorf("redacted policy header requirement = %#v", current)
-				}
+			candidate := result.Scripts[0]
+			variable := test.variable
+			if got := candidate.Script.Actions[0].HeaderList[0].Value; got != test.value {
+				t.Fatalf("redacted header value = %q", got)
 			}
-			action := result.Scripts[0].Script.Actions[0]
-			if action.Headers["idpctx-ixp-dark-mode-session"] != requirement.Replacement {
-				t.Fatalf("redacted policy header action = %#v, requirement %#v", action.Headers, requirement)
+			// A replaced value's templates are gone, so they are not inputs.
+			if wantRegion := strings.Contains(test.value, "region"); slices.Contains(candidate.MissingVariables, "region") != wantRegion {
+				t.Fatalf("missing variables = %#v, want region=%t", candidate.MissingVariables, wantRegion)
 			}
-			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-			if strings.Contains(strings.ToLower(string(sanitized)), "[redacted]") {
-				t.Fatalf("sanitized native header retained redaction sentinel:\n%s", sanitized)
+			if !slices.Contains(candidate.MissingVariables, variable) || !slices.Contains(result.MissingVariables, variable) {
+				t.Fatalf("missing variables = candidate %#v result %#v", candidate.MissingVariables, result.MissingVariables)
 			}
 		})
 	}
@@ -2489,16 +2516,6 @@ http:
   url: https://example.test
   headers:
     - {name: Authorization, value: "Bearer [REDACTED]"}
-`,
-		},
-		{
-			name: "cookie wrapper",
-			source: `info: {name: Cookie sentinel, uid: cookie-sentinel, type: http}
-http:
-  method: GET
-  url: https://example.test
-  headers:
-    - {name: Cookie, value: "sid=[redacted]"}
 `,
 		},
 		{

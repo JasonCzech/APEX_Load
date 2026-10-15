@@ -4,6 +4,7 @@ import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { importScenarioName, useImportScenario } from './useImportScenario'
 import { type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
@@ -14,7 +15,7 @@ import { ApiError } from '../hooks/apiClient'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
-import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type SharedValues, type TrueClient2CompatReport } from '../types/scriptImports'
+import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type ImportUpdateTarget, type SalesforceReview, type SecretBindingSelection, type SharedValues, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type JavaClasspathAsset, type ReplayPreflight, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
@@ -32,6 +33,8 @@ import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRe
 import { getImportSummary } from './scriptEditorImportModel'
 import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
+import { countLabel } from '../utils/numberFormat'
+import { buildImportSaveChoices, importMatchesIdentity, type ImportSaveChoice } from './importReimport'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
@@ -54,7 +57,9 @@ import {
 } from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
+import { importJunkReason } from '../utils/importJunkFiles'
 import './EnterpriseArchiveImport.css'
+import { useSuggestImportFolderName } from './importDestinationContext'
 
 interface ImportMetadata {
   source?: string
@@ -613,6 +618,8 @@ type RetainedEnterpriseArchiveAtomicSave = {
   optionsIdentity: string
   entries: EnterpriseArchiveAtomicSaveEntry[]
   scriptsToPersist: ScriptDefinition[]
+  /** Positional with scriptsToPersist; absent when nothing updates. */
+  updateTargets?: (ImportUpdateTarget | null)[]
 }
 
 type EnterpriseArchiveSupportMatrixSection = {
@@ -920,6 +927,7 @@ const ENTERPRISE_RESULT_PAGE_SIZE = 50
 
 export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
+  const importScenario = useImportScenario(projectId)
   const apiRef = useRef(api)
   apiRef.current = api
   const fileRef = useRef<HTMLInputElement>(null)
@@ -932,6 +940,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
   const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
+  // One archive names the folder it can be saved into.
+  useSuggestImportFolderName(importItems.length === 1 ? importItems[0].file.name : undefined)
   const [selectedItemId, setSelectedItemId] = useState('')
   const queueItemButtonRefs = useRef(new Map<string, HTMLButtonElement>())
   const pendingQueueItemFocusRef = useRef<string | null>(null)
@@ -1049,6 +1059,21 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // an ambiguous response produces different tokens and therefore a different
   // receipt digest. A retry must submit these same scripts unchanged.
   const retainedAtomicSaveRef = useRef<RetainedEnterpriseArchiveAtomicSave | null>(null)
+  // Each archive's re-import choices (update as a new version, copy), by
+  // queue item, kept with the matches they were made for.
+  const [reimportChoices, setReimportChoices] = useState<Record<string, { identity: string; choices: Record<number, ImportSaveChoice> }>>({})
+  const reimportChoicesFor = (itemId: string, result: EnterpriseArchiveImportResult | null | undefined) => {
+    const matches = result?.existing_scripts
+    const identity = importMatchesIdentity(matches)
+    const entry = reimportChoices[itemId]
+    return buildImportSaveChoices(matches, entry && entry.identity === identity ? entry.choices : {}, (index, choice) => {
+      setReimportChoices(previous => {
+        const current = previous[itemId]
+        const base = current && current.identity === identity ? current.choices : {}
+        return { ...previous, [itemId]: { identity, choices: { ...base, [index]: choice } } }
+      })
+    })
+  }
   // The archives an unconfirmed atomic save covers: none opens in the editor
   // until Convert again reconciles that save.
   const [retainedAtomicSaveItemIds, setRetainedAtomicSaveItemIds] = useState<readonly string[]>([])
@@ -1297,6 +1322,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   useUnsavedWorkGuard(ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
     invalidateOperationScopes()
     setImportItems([])
+    setReimportChoices({})
     setSelectedItemId('')
   }, () => reviewHasPendingDrafts(importItemsRef.current))
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
@@ -1313,7 +1339,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const failedImportMessage = failedFileCount > 0
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
-  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
+  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script'
   const convertButtonLabel = queuedFileCount > 1 ? 'Save reviewed drafts' : 'Save draft'
   const conversionGateMessage = refreshingRemainingDrafts
     ? 'Converting the remaining drafts again. Nothing is saved until you save them.'
@@ -1811,7 +1837,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             ? `Prepare Credentials for Script ${activeResultScriptIndex + 1} of ${resultScripts.length}`
             : 'Review Required Credentials Before Atomic Save')
       : enterpriseCredentialBatchFlow
-        ? `Save remaining ${pendingResultScriptIndices.length} scripts atomically`
+        ? `Save remaining ${countLabel(pendingResultScriptIndices.length, 'script')} atomically`
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
@@ -2406,7 +2432,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // the drop animation whether the drop was accepted.
   const addFilesToQueue = useCallback((fileList?: FileList | File[] | null): number => {
     if (sourceMutationLockedRef.current) return 0
-    const incomingFiles = Array.from(fileList || [])
+    // A .DS_Store or ._ file dropped beside the archives is not a source.
+    const incomingFiles = Array.from(fileList || []).filter(file => !importJunkReason(file.webkitRelativePath || file.name))
     if (incomingFiles.length === 0) return 0
 
     const zipFiles = incomingFiles.filter(isEnterpriseArchiveZipFile)
@@ -2438,8 +2465,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     return zipFiles.length
   }, [invalidateOperationScopes])
 
-  const addFolderToQueue = useCallback((files: File[]): boolean => {
+  const addFolderToQueue = useCallback((pickedFiles: File[]): boolean => {
     if (sourceMutationLockedRef.current) return false
+    // .DS_Store, ._ resource forks and .git files are not part of the script.
+    const files = pickedFiles.filter(file => !importJunkReason(file.webkitRelativePath || file.name))
     const roots = new Set(files.map(file => (file.webkitRelativePath || '').split('/')[0]))
     if (files.length === 0 || roots.size !== 1 || files.some(file => !file.webkitRelativePath) ||
         files.filter(file => file.name.toLowerCase().endsWith('.usr')).length !== 1) {
@@ -2531,6 +2560,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       const nextItems = items.filter(item => item.id !== itemId)
       return nextItems
     })
+    setReimportChoices(choices => Object.fromEntries(Object.entries(choices).filter(([choiceItemId]) => choiceItemId !== itemId)))
     setSelectedItemId(nextSelectedItem)
     setNotice('')
   }
@@ -2539,6 +2569,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     if (sourceMutationLockedRef.current) return
     invalidateOperationScopes()
     setImportItems([])
+    setReimportChoices({})
     setSelectedItemId('')
     setError('')
     setNotice('')
@@ -3082,6 +3113,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           && !requirementsPreserveDestinationValues(conversionSecretBindingRequirements)
         const conversionRequiresParameterizationReview = (conversionResult.parameterization?.suggestions || [])
           .some(suggestion => !suggestion.pre_applied)
+        // A script changed in APEX since its earlier import is not replaced by
+        // a save nobody reviewed: the archive waits for an update-or-copy choice.
+        const conversionChoices = reimportChoicesFor(item.id, conversionResult)
+        const unreviewedEditedUpdates = (conversionResult.existing_scripts ?? [])
+          .filter((match, index) => match?.edited_since_import && !conversionChoices.chosen(index) && conversionChoices.choiceFor(index) === 'update')
+          .length
         if (scriptsToSave.length === 0) {
           const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
@@ -3098,7 +3135,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           failureCount += 1
           continue
         }
-        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings || conversionRequiresParameterizationReview) {
+        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings || conversionRequiresParameterizationReview || unreviewedEditedUpdates > 0) {
           const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
             result: conversionResult,
@@ -3115,7 +3152,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   ? 'Conversion complete. Run draft browser replay before saving this browser script.'
                   : conversionRequiresSecretBindings
                   ? 'Conversion complete. Resolve the redacted credential bindings before saving.'
-                    : 'Conversion complete. Review parameterization suggestions before saving.',
+                    : conversionRequiresParameterizationReview
+                      ? 'Conversion complete. Review parameterization suggestions before saving.'
+                      : `Conversion complete. ${unreviewedEditedUpdates === 1 ? 'A script imported before was' : `${unreviewedEditedUpdates} scripts imported before were`} changed in APEX since; under Imported before, choose Update existing or Create a copy, then save.`,
           }
           conversionItemPatches.set(item.id, patch)
           updateImportItem(item.id, patch)
@@ -3188,6 +3227,23 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         .map(script => sourceProjectId
           ? { ...script, project_id: sourceProjectId }
           : script)
+      // An archive imported before updates its scripts as a new version, as
+      // its matches default to; the retry resends the same choice. Archives
+      // are matched one at a time, so two can name the same earlier script:
+      // the first updates it and the next saves a copy.
+      const targetedScriptIds = new Set<string>()
+      const flattenedUpdateTargets = currentReadySaves.flatMap(entry => {
+        const choices = reimportChoicesFor(entry.item.id, entry.result)
+        return entry.scripts.map((_script, index) => {
+          const target = choices.updateTargetFor(index)
+          if (!target || targetedScriptIds.has(target.script_id)) return null
+          targetedScriptIds.add(target.script_id)
+          return target
+        })
+      })
+      const atomicUpdateTargets = retainedAtomicSave
+        ? retainedAtomicSave.updateTargets
+        : flattenedUpdateTargets.some(Boolean) ? flattenedUpdateTargets : undefined
       // Publish the full retry scope before the request yields. Source/options
       // are locked for the physical request, and route invalidation preserves
       // this exact payload/identity until the promise settles.
@@ -3206,6 +3262,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           scripts: entry.scripts,
         })),
         scriptsToPersist,
+        updateTargets: atomicUpdateTargets,
       })
       const atomicSaveScope = { operationKey, operationId: operationID }
       atomicSaveInFlightRef.current = atomicSaveScope
@@ -3215,6 +3272,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           scripts: scriptsToPersist,
           folder_id: folderId ?? null,
           operation_id: operationID,
+          ...(atomicUpdateTargets ? { update_targets: atomicUpdateTargets } : {}),
         })
         let response
         try {
@@ -3250,6 +3308,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           const entryScripts = response.scripts
             .slice(savedOffset, savedOffset + entry.scripts.length)
             .map((script, index) => withFallbackPersistedScript(script, entry.scripts[index]))
+          const entryUpdates = (atomicUpdateTargets ?? [])
+            .slice(savedOffset, savedOffset + entry.scripts.length)
+            .filter(Boolean).length
           savedOffset += entry.scripts.length
           savedScripts.push(...entryScripts)
           successCount += 1
@@ -3261,7 +3322,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             savedResultScripts: Object.fromEntries(entryScripts.map((script, index) => [index, script])),
             sourceSecretProjectId: sourceProjectId || '',
             error: '',
-            notice: `Converted and saved ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch.`,
+            notice: entryUpdates > 0
+              ? `Converted and saved ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch; ${entryUpdates === entryScripts.length ? (entryUpdates === 1 ? 'it updated the script imported before as a new version' : 'they updated the scripts imported before as new versions') : `${entryUpdates} updated scripts imported before as new versions`}.`
+              : `Converted and saved ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch.`,
           }
           conversionItemPatches.set(entry.item.id, patch)
           updateImportItem(entry.item.id, patch)
@@ -3585,6 +3648,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         }
       }
       setScriptSaveInProgress(true)
+      const reimportTarget = reimportChoicesFor(sourceItemId, preparedReview.result).updateTargetFor(sourceScriptIndex)
       const operationKey = [
         sourceItemId,
         String(sourceGeneration),
@@ -3592,6 +3656,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         sourceProjectId || '',
         folderId || '',
         sourceOptionsIdentity,
+        JSON.stringify(reimportTarget),
       ].join('\u0000')
       let operationID = saveOperationIDsRef.current.get(operationKey)
       if (!operationID) {
@@ -3604,6 +3669,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         scripts: [sourceProjectId ? { ...scriptToSave, project_id: sourceProjectId } : scriptToSave],
         folder_id: folderId ?? null,
         operation_id: operationID,
+        ...(reimportTarget ? { update_targets: [reimportTarget] } : {}),
       })
       const savedScript = response.scripts[0]
       if (!savedScript || response.scripts.length !== 1) {
@@ -3749,6 +3815,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       }
       return sourceProjectId ? { ...script, project_id: sourceProjectId } : script
     })
+    const pendingChoices = reimportChoicesFor(sourceItemId, sourceResult)
+    const pendingUpdateTargets = pendingIndices.map(index => pendingChoices.updateTargetFor(index))
     const operationKey = [
       sourceItemId,
       String(sourceGeneration),
@@ -3757,6 +3825,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       folderId || '',
       sourceOptionsIdentity,
       ...pendingIndices.map(index => String(index)),
+      JSON.stringify(pendingUpdateTargets),
     ].join('\u0000')
     let operationID = saveOperationIDsRef.current.get(operationKey)
     if (!operationID) {
@@ -3771,6 +3840,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         scripts: scriptsToSave,
         folder_id: folderId ?? null,
         operation_id: operationID,
+        ...(pendingUpdateTargets.some(Boolean) ? { update_targets: pendingUpdateTargets } : {}),
       })
       if (response.scripts.length !== scriptsToSave.length) {
         throw new Error(`Atomic save returned ${response.scripts.length} of ${scriptsToSave.length} scripts.`)
@@ -4449,7 +4519,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                     <span className="lr-file-row-main">
                       <strong>{item.file.name}</strong>
                       <small className="lr-file-row-meta">
-                        {item.folderFiles ? `${item.folderFiles.length} files` : item.sourceSize !== undefined ? `${(item.sourceSize / 1024).toFixed(1)} KB` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
+                        {item.folderFiles ? countLabel(item.folderFiles.length, 'file') : item.sourceSize !== undefined ? `${(item.sourceSize / 1024).toFixed(1)} KB` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
                         {reviewOutcome === 'Blocker'
                           ? <ImportIssueSeverityTag severity="blocker" />
                           : <span className={`lr-file-status-pill ${item.status}`}>
@@ -4495,9 +4565,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       )}
       <ImportSaveConfirmation
         result={savedArchiveScripts.length ? { scripts: savedArchiveScripts } : null}
-        onImportMore={handleBrowseArchives}
+        onImportMore={() => { importScenario.reset(); handleBrowseArchives() }}
         onOpen={saved => onImported?.(saved)}
         disabled={sourceMutationLocked}
+        onCreateScenario={importScenario.available && savedArchiveScripts.length
+          ? () => void importScenario.create(importScenarioName(importItems.length === 1 ? importItems[0].file.name : undefined, savedArchiveScripts), savedArchiveScripts)
+          : undefined}
+        scenarioBusy={importScenario.busy}
+        scenarioError={importScenario.errorFor(savedArchiveScripts)}
       />
 
       <details ref={archiveSetupRef} className="lr-completed-setup" open={!result}>
@@ -4618,7 +4693,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             </div>
             <div className="lr-required-files-actions">
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => supplementalFileRef.current?.click()} disabled={!selectedItem || sourceMutationLocked}>
-                Attach Required File(s)
+                Attach Required Files
               </button>
               {selectedSupplementalFiles.length > 0 && (
                 <button type="button" className="btn btn-ghost btn-sm" disabled={sourceMutationLocked} onClick={clearSelectedSupplementalFiles}>
@@ -4990,6 +5065,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           >
             <ScriptImportReview
             title="Review and resolve"
+            existingScripts={selectedItem?.result ? {
+              choices: reimportChoicesFor(selectedItem.id, selectedItem.result),
+              labels: getEnterpriseArchiveResultScripts(selectedItem.result).map(script => script.name),
+            } : undefined}
             compactReview
             showOriginalDiagnostics={false}
             reviewGeneration={reviewScope}

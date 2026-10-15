@@ -414,3 +414,52 @@ func emptyZIP64Fixture(records uint64) []byte {
 	binary.LittleEndian.PutUint32(data[end+16:end+20], math.MaxUint32)
 	return data
 }
+
+// Operating-system and version-control files are not content: a ZIP from a
+// Mac (a __MACOSX folder of ._ resource forks, .DS_Store) or a working copy
+// (.git) yields only the project files, with its container stripped.
+func TestReadZIPLeavesOutOperatingSystemAndVersionControlFiles(t *testing.T) {
+	files, err := ReadZIP(zipFixture(t, []zipFixtureEntry{
+		{name: "Script/Script.usr", body: "usr"},
+		{name: "Script/Action.c", body: "Action() { return 0; }"},
+		{name: "Script/.DS_Store", body: "Bud1"},
+		{name: "__MACOSX/Script/._Action.c", body: "appledouble"},
+		{name: "Script/.git/HEAD", body: "ref: refs/heads/main"},
+		{name: "Script/.gitignore", body: "*.log"},
+	}), Options{StripFirstComponent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].Name != "Script.usr" || files[1].Name != "Action.c" {
+		t.Fatalf("files = %#v, want the two project files with the Script container stripped", files)
+	}
+	files, err = ReadZIP(zipFixture(t, []zipFixtureEntry{
+		{name: "main.js", body: "main"},
+		{name: "._main.js", body: "appledouble"},
+	}), Options{})
+	if err != nil || len(files) != 1 || files[0].Name != "main.js" {
+		t.Fatalf("files=%#v err=%v", files, err)
+	}
+}
+
+func TestReadTARLeavesOutOperatingSystemAndVersionControlFiles(t *testing.T) {
+	var archive bytes.Buffer
+	writer := tar.NewWriter(&archive)
+	for _, entry := range []struct{ name, body string }{
+		{"root/main.js", "main"},
+		{"root/.DS_Store", "Bud1"},
+		{"root/.git/config", "[core]"},
+	} {
+		if err := writer.WriteHeader(&tar.Header{Name: entry.name, Typeflag: tar.TypeReg, Mode: 0o600, Size: int64(len(entry.body))}); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = writer.Write([]byte(entry.body))
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	files, err := ReadTAR(bytes.NewReader(archive.Bytes()), Options{})
+	if err != nil || len(files) != 1 || files[0].Name != "root/main.js" || string(files[0].Data) != "main" {
+		t.Fatalf("files=%#v err=%v", files, err)
+	}
+}

@@ -22,7 +22,8 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'command-center'; testId?: string; ccView?: CommandCenterRouteView }
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown'; focus?: ReportFocus } & RootCauseRouteState
   // scenarioId opens that scenario in the builder, at scenarioStep when given.
-  | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans'; scenarioId?: string; scenarioStep?: ScenarioWizardStep }
+  // scenarioDraftId opens that project scenario draft in the builder.
+  | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans'; scenarioId?: string; scenarioStep?: ScenarioWizardStep; scenarioDraftId?: string }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   // The Script builder's steps are routes of one page: the builder (create,
   // with its workflow and Start new category), Recording Studio (record,
@@ -263,6 +264,10 @@ export function parseAppViewFromHash(hash: string): AppView {
     if (scenarioId && (!scenarioView || scenarioView === 'builder')) {
       return { page: 'tests', scenarioView: 'builder', scenarioId, ...(scenarioStep ? { scenarioStep } : {}), ...workspaceScope }
     }
+    const scenarioDraftId = params.get('draftId') || undefined
+    if (scenarioDraftId && (!scenarioView || scenarioView === 'builder')) {
+      return { page: 'tests', scenarioView: 'builder', scenarioDraftId, ...workspaceScope }
+    }
     return {
       page: 'tests',
       ...(isScenarioView(scenarioView) ? { scenarioView } : {}),
@@ -502,6 +507,7 @@ export function viewToLocationHash(view: AppView): string {
     if (view.scenarioView) params.set('view', view.scenarioView)
     if (view.scenarioId) params.set('scenarioId', view.scenarioId)
     if (view.scenarioId && view.scenarioStep) params.set('step', view.scenarioStep)
+    if (!view.scenarioId && view.scenarioDraftId) params.set('draftId', view.scenarioDraftId)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/tests?${query}` : '#/tests'

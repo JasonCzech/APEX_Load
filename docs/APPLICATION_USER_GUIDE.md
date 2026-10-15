@@ -55,7 +55,7 @@ ready-to-load script. In outline:
 
 1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
    scripts, scenarios, and results are all filtered by it.
-2. Create or import a script, add at least one assertion, then **Validate Script(s)**
+2. Create or import a script, add at least one assertion, then **Validate**
    and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
 3. Build a one-group scenario, launch it from **New run**, and watch it in
    **Command Center**.
@@ -524,6 +524,14 @@ never the values. Secret writes require an authorized human action: editors and
 project admins add project secrets (from Project secrets, the script editor's
 Configure secrets, or an import's credential setup), and project admins rotate them;
 viewers see the inventory and what uses each secret.
+Imports name each secret after its field or variable: a Bruno collection uses the
+name alone (`PASSWORD`, `X_API_KEY`), and other formats put the format or the request
+in front (`POSTMAN_AUTHORIZATION`). A second credential in the same import that wants
+the same name is numbered (`_2`).
+A script from an older import can reference a name ending in a hashed identity; the
+editor's Secret bindings, Author Problems and Checks, and the script library show it by
+its readable name, with the exact name in the details or on hover. Shared assets lists
+exact names.
 Values resolved through `{{secret.NAME}}` are redacted from logs, snapshots, reports,
 and archives regardless of any other setting.
 
@@ -536,7 +544,7 @@ into application or project secrets when you want them genuinely protected.
 
 Before you run a script at scale, prove it works for a single user.
 
-1. **Validate Script(s)** checks the script's structure, action fields, assertions, and settings
+1. **Validate** checks the script's structure, action fields, assertions, and settings
    without executing anything. It runs the same validation the runtime applies at
    admission. Launch separately checks current permissions, capacity, secrets, runner capabilities and governance; validation does not guarantee admission.
 2. **Debug one iteration** replays the script once, interactively, through the
@@ -715,6 +723,10 @@ Once you have a recording:
   recorded script, then preview and apply it to other scripts.
 - **Parameterization review** suggests which recorded literals should become data-pool
   or template values, so the script drives varied data instead of one fixed path.
+  **Generated values** are identifiers and time stamps a client makes up per request,
+  such as trace and message IDs, regenerated each iteration instead of replayed. An ID
+  that every request records with its own value (`X-Request-Id`) becomes one parameter
+  that is new each time it is sent.
 
 The result is an executable script you refine in the Script Editor just like a
 hand-authored one — and you should refine it. A raw recording replays one person's
@@ -723,13 +735,53 @@ exact session; a good script replays a population.
 ## Importing Existing Scripts
 
 If you already have tests in another tool, import them instead of rewriting. Open the
-**Scripts** page and use the import drop zone.
+**Scripts** page and use the import drop zone. Every importer leaves out
+operating-system and version-control files from an archive or a picked folder
+(`.DS_Store`, a `__MACOSX` folder of `._` files, `.git`), so they never count as
+script content. A header HTTP cannot send as recorded (a quote, a line break or a pasted
+curl fragment in its name or value) is left out of the request, which is held for
+review; the import review and the editor's Author Problems name the header and what is
+wrong with it, so you can correct it in the source and import again (a Bruno collection
+instead offers to trim or remove it at review). Only credentials an operator supplies
+(authorization, API and subscription keys, auth tokens, passwords) go to credential
+review; cookies and session, anti-forgery and trace headers are state the source
+recorded, so every importer keeps them as imported and the script shows them (run
+evidence redaction, when it is on, still masks them). An input the source references but never
+supplies (**Required runtime inputs** under the review's data substitutions) takes one value
+for every user, a column of a data pool each virtual user reads its own row of
+(`{{data.alias.column}}`; bind the alias in the scenario's Data step), or a value generated
+each iteration (a UUID, the current time or random digits); the script records the choice.
+An input that looks like a credential or session (a token, key, password, session ID or
+anti-forgery token) takes a project secret (`{{secret.NAME}}`, named after the input and
+numbered when the project already holds that name, so it never sends another credential's
+value unasked; add the secret under Project secrets before a run) or a data pool column, never
+a value kept in the script, which would show it masked; it stays unsupplied until you choose.
+A trace ID is an ordinary input.
+Importing the same source again lists, under **Imported before**, each script an earlier
+import saved and offers to update it as a new version (it keeps its name and folder, and its
+reference key moves to the next version) or create a copy. A source that declares its identity (a Postman collection, an OpenAPI,
+AsyncAPI or RAML title, a WSDL service, a JMeter test plan with its thread groups, a
+LoadRunner project) updates by default; one matched only by its file name (a HAR or
+another sample, a k6 or DevWeb script) or by a default name a tool generated (such as
+VuGen's WebHttpHtml1 or springdoc's OpenAPI definition) defaults to a copy. A script changed in APEX since its import is flagged, because updating
+replaces those changes (its goals and runtime policy stay), and each unset input starts
+from how the updated scripts supplied it. A bulk LoadRunner save holds an archive with such
+a script until you choose update or copy in its review. A JMeter re-import that updates every
+script creates no new scenario: the scenarios that use those scripts run the new versions.
+After a save, every importer offers **Debug** on the first saved script
+and **Create a scenario** from the saved scripts (a project scenario draft with a group
+per script, named after the source), or **Open scenario** when the import already made
+one, as JMeter does from its thread groups. A new folder for the saved scripts starts
+named after the source file (a JMeter plan, a specification, a sample or one LoadRunner
+archive) unless the project already has that folder. A JMeter plan whose scripts still need review
+before they can run cannot save that scenario yet: the review offers **Save the scripts
+without the scenario**, and you create the scenario from them once they are resolved.
 
 | Source | Category | Typical outcome |
 | --- | --- | --- |
 | OpenAPI / Swagger | Contracts & collections | Executable API draft |
 | Postman collection | Contracts & collections | Executable API draft |
-| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay |
+| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review. Only operator-supplied credentials (authorization, API keys, auth tokens, passwords) go through credential review, each under a readable project secret name taken from the variable or field (`{{partnerPassword}}` becomes `PARTNER_PASSWORD`). A second credential wanting the same name is numbered (`_2`), and so is a name the project already uses for another secret, so an import never sends that secret's value; on a re-import, each credential keeps the name its saved scripts already use, including an older hashed name the project configured; cookies and session, anti-forgery and trace headers stay as imported and are listed under Kept as imported. Operating-system and version-control files, files Bruno's own ignore list excludes, and gitignored files Bruno does not load itself (such as logs) are skipped; a gitignored `.env`, environment or request is still imported, as Bruno would open it. The new script folder defaults to the collection's declared name, and the review says when the requests' own tests expect an error response, as a negative-test collection does. Under **Data & parameters**, **Generated values** lists the trace and message IDs and time stamps the collection recorded once; checked values are generated again each iteration, and a session, conversation or transaction ID, or a GUID in another field, waits for you to check it. Each input the collection leaves unset (**Required runtime inputs**) takes one value for every user, a column of a data pool (each virtual user reads its own row as `{{data.alias.column}}`; bind the alias to the pool in the scenario's Data step), or a value generated each iteration (a UUID, the current time or random digits). Re-importing the collection starts each input from how the scripts it updates supplied it. When the folder includes Bruno environments (`environments/*.yml` or `.bru`), **Fill inputs from** sets the inputs an environment defines to its values; secret, disabled and `.env` values are never offered |
 | WSDL / SOAP | Contracts & collections | Executable SOAP draft |
 | AsyncAPI / Kafka | Contracts & collections | Messaging draft |
 | RAML / Anypoint | Contracts & collections | API draft |
@@ -760,6 +812,14 @@ The review flow reports back a promotion status — `ready_for_validation`,
 `ready_with_warnings`, `review_required`, `external_runner_required`, or `unsupported` —
 together with the next action for each one. Map source values, confirm secret bindings,
 and save the reviewed draft.
+
+After a save, **Debug** opens the first saved script in Debug, ready to run one
+iteration against a controlled target. A Bruno collection's review also offers
+**Create a scenario from these scripts**: a project scenario draft with a group per
+saved script, each with one virtual user, opened in the Scenario Builder to shape the
+load. Save keeps it a draft until it is complete, with a load model chosen and every
+script ready, then saves it as a scenario. When many scripts were saved, each still
+opens from **Open a saved script in Visual Editor**.
 
 Coverage for the big legacy sources is documented and evidence-backed rather than
 claimed: see the [LoadRunner Coverage](LOADRUNNER_COVERAGE.md) reference (Web functions, Java `lr` functions, TruClient steps, Java Vuser imports) for exactly which

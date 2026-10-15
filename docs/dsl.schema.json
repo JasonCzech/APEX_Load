@@ -8690,9 +8690,39 @@
       },
       "type": "array"
     },
+    "ImportInput": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "column": {
+          "type": "string"
+        },
+        "digits": {
+          "type": "integer"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "ImportMetadata": {
       "additionalProperties": false,
       "properties": {
+        "inputs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ImportInput"
+          },
+          "type": "object"
+        },
         "preserved": {
           "type": "object"
         },

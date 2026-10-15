@@ -37,3 +37,14 @@ func disclosureSafeImportBatchReceiptScripts(scripts []*dsl.Script) ([]*dsl.Scri
 	}
 	return snapshots, nil
 }
+
+// ImportBatchReceiptSnapshot is script as an import batch receipt keeps it
+// (disclosure-safe where the receipt is), so a current script can be compared
+// with a receipt's snapshot.
+func ImportBatchReceiptSnapshot(script *dsl.Script) (*dsl.Script, error) {
+	snapshots, err := disclosureSafeImportBatchReceiptScripts([]*dsl.Script{script})
+	if err != nil {
+		return nil, err
+	}
+	return snapshots[0], nil
+}

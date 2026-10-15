@@ -161,6 +161,7 @@ export default function ScriptsAuthoringShell({
             editingRetainedJsonText={authoringState.editingRetainedJsonText}
             editingRetainedCreatedSecretNames={authoringState.editingRetainedCreatedSecretNames}
             editingActivity={authoringState.editingActivity}
+            editingWorkspace={authoringState.editingWorkspace}
             projectId={projectId}
             activeProject={activeProject}
             libraryScripts={scripts}

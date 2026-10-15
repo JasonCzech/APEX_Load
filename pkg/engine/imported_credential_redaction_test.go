@@ -275,14 +275,22 @@ func TestImportedCredentialValuesAcceptsNativeHTTPSequenceCredentialSurfaces(t *
 		}},
 	}
 
-	values, err := ImportedCredentialValuesForDisclosure(script)
+	values, err := ImportedCredentialValues(script)
 	if err != nil {
-		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+		t.Fatalf("ImportedCredentialValues: %v", err)
 	}
 	for _, want := range []string{cookieValue, password} {
 		if !containsExactString(values, want) {
 			t.Fatalf("retained values = %#v, want native sequence credential %q", values, want)
 		}
+	}
+	// A script view shows the recorded cookie; the password stays masked.
+	disclosed, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+	}
+	if containsExactString(disclosed, cookieValue) || !containsExactString(disclosed, password) {
+		t.Fatalf("disclosure values = %#v, want the password and not the recorded cookie", disclosed)
 	}
 	request := script.Actions[0].Params["requests"].([]map[string]any)[0]
 	if got := request["header_list"].([]map[string]any)[0]["value"]; got != "sid="+cookieValue {
@@ -1236,12 +1244,17 @@ func TestImportedCookieCredentialsSkipShortPreferenceValues(t *testing.T) {
 			},
 		}},
 	}
-	values, err := ImportedCredentialValuesForDisclosure(script)
+	values, err := ImportedCredentialValues(script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A long value and a short value under a credential-like name are
-	// credentials; short preference and flag values are not.
+	if disclosed, err := ImportedCredentialValuesForDisclosure(script); err != nil {
+		t.Fatal(err)
+	} else if len(disclosed) != 0 {
+		t.Fatalf("disclosure values = %#v, want the recorded cookie shown", disclosed)
+	}
+	// In run evidence a long value and a short value under a credential-like
+	// name are credentials; short preference and flag values are not.
 	for _, want := range []string{session, "ab12"} {
 		if !containsExactString(values, want) {
 			t.Fatalf("values = %#v, want cookie credential %q", values, want)

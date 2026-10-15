@@ -85,6 +85,7 @@ func (d *importDraft) augmentWithAgentforceTransform(agentforceTransform bool) i
 		script.ProjectID = projectID
 		ensureImportProvenance(script, d.Source, d.SourceScriptName)
 	}
+	stampFileImportSourceIdentity(d.SourceScriptName, scripts)
 	attachSourceReviewToScripts(scripts, d.Source, d.SourceScriptName, d.SourceReview)
 
 	sections := appendImportDiagnosticReviewSections(d.Sections, d.Unsupported)

@@ -112,8 +112,9 @@ type collection struct {
 }
 
 type collectionInfo struct {
-	Name   string `json:"name"`
-	Schema string `json:"schema"`
+	PostmanID string `json:"_postman_id"`
+	Name      string `json:"name"`
+	Schema    string `json:"schema"`
 }
 
 type item struct {
@@ -562,6 +563,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, fmt.Errorf("finalize Postman script: %w", err)
 	}
 	result.Script = finalization.Result.Script
+	// A re-import of the same collection (by its Postman ID, else its declared
+	// name) can update this script as a new version.
+	switch {
+	case strings.TrimSpace(col.Info.PostmanID) != "":
+		dsl.SetImportSourceIdentity(result.Script, "postman:"+strings.TrimSpace(col.Info.PostmanID), true, "")
+	case !dsl.GenericImportSourceName(col.Info.Name):
+		dsl.SetImportSourceIdentity(result.Script, col.Info.Name, true, "")
+	default:
+		dsl.SetImportSourceIdentity(result.Script, sourceFileName, false, "")
+	}
 	if sanitizeSensitive && result.Script != nil && result.Script.Metadata != nil && result.Script.Metadata.Import != nil {
 		if result.Script.Metadata.Import.Preserved == nil {
 			result.Script.Metadata.Import.Preserved = make(map[string]any)

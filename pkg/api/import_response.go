@@ -901,6 +901,21 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	if s != nil {
 		response["secret_store"] = s.projectSecretCapabilities(projectID)
 	}
+	if projectMatches {
+		// Positional with scripts: the earlier imported script each one would
+		// update as a new version, or null.
+		reviewed := importDraftScriptPointers(opts.Scripts)
+		if len(reviewed) == 0 {
+			reviewed = importDraftScriptPointers(opts.Script)
+		}
+		existing := s.importExistingScripts(projectID, reviewed)
+		for _, match := range existing {
+			if match != nil {
+				response["existing_scripts"] = existing
+				break
+			}
+		}
+	}
 
 	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
 	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
@@ -1567,6 +1582,10 @@ func safeParameterizationRationale(suggestion paramize.Suggestion) string {
 		return "Detected a runtime correlation; review the source and usage locations before applying."
 	case paramize.KindDataParam:
 		return "Detected per-user test data; apply to bind the listed locations to a generated data source."
+	case paramize.KindGenerated:
+		// Written by paramize without the recorded value: it names the field
+		// and what replaces the value.
+		return suggestion.Rationale
 	default:
 		return "Review the suggested parameterization and its usage locations before applying."
 	}

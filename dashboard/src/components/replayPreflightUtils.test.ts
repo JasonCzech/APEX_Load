@@ -45,6 +45,46 @@ describe('buildLocalReplayPreflight', () => {
     expect(replayPreflightStatusLabel(preflight)).toBe('Needs attention')
   })
 
+  it('names the headers an import left out, as the server does', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        metadata: {
+          execution_blocker: 'import_review_required',
+          import_header_fidelity: {
+            version: 1,
+            omitted_occurrences: [
+              { source_index: 0, name: 'X-Bad', reason_code: 'http_header_invalid_value' },
+              // A marker from before headers were named names nothing.
+              { source_index: 1, name: '<header>', reason_code: 'http_header_invalid_value' },
+              { source_index: 2, name: 'X-Bad', reason_code: 'http_header_duplicate_singleton_header' },
+            ],
+          },
+        },
+      }],
+    })
+
+    expect(preflight.issues).toEqual([
+      'actions[0] "Get profile": execution blocker import_review_required (1 header left out: X-Bad) blocks replay until the imported behavior is resolved',
+    ])
+
+    const mixed = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        metadata: {
+          execution_blocker: 'import_review_required',
+          import_review: { reason_codes: ['http_header_invalid_value', 'http_version_not_preserved'] },
+          import_header_fidelity: { version: 1, omitted_occurrences: [{ source_index: 0, name: 'X-Bad', reason_code: 'http_header_invalid_value' }] },
+        },
+      }],
+    })
+    expect(mixed.issues).toEqual([
+      'actions[0] "Get profile": execution blocker import_review_required (other review and 1 header left out: X-Bad) blocks replay until the imported behavior is resolved',
+    ])
+  })
+
   it('finds execution blockers throughout sequence and deeply nested control surfaces', () => {
     let nested: ScriptActionDefinition = {
       name: 'Deep blocked request',
@@ -254,6 +294,26 @@ describe('buildLocalReplayPreflight', () => {
 
     expect(reconciled.valid).toBe(false)
     expect(reconciled.missing_secrets).toEqual(['API_TOKEN'])
+    expect(reconciled.checks?.find(check => check.id === 'secrets')).toMatchObject({
+      status: 'fail',
+      detail: 'Configure missing project secret: API_TOKEN.',
+    })
+  })
+
+  it('names a missing secret by its display name, keeping the exact name in missing_secrets', () => {
+    const local = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN_84921F7A1055}}' },
+      }],
+    })
+
+    const reconciled = reconcileReplayPreflightSecretStatus(local, [
+      { name: 'API_TOKEN_84921F7A1055', configured: false },
+    ], true, false, new Map([['API_TOKEN_84921F7A1055', 'API_TOKEN']]))
+
+    expect(reconciled.missing_secrets).toEqual(['API_TOKEN_84921F7A1055'])
     expect(reconciled.checks?.find(check => check.id === 'secrets')).toMatchObject({
       status: 'fail',
       detail: 'Configure missing project secret: API_TOKEN.',

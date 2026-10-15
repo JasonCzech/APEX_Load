@@ -345,8 +345,10 @@ func (registry *NameRegistry) Reserve(raw string) bool {
 	return true
 }
 
-// Allocate returns a valid name based on hint. A provenance-derived suffix is
-// used on collision; the credential value is never part of that suffix.
+// Allocate returns a valid name based on hint. A credential wanting a name
+// another credential in the import already took is numbered (_2, _3), so the
+// name stays readable; the same identity always gets the same name back. The
+// credential value is never part of a name.
 func (registry *NameRegistry) Allocate(hint, identity string) string {
 	base := canonicalSuggestion(hint)
 	if registry == nil {
@@ -362,30 +364,17 @@ func (registry *NameRegistry) Allocate(hint, identity string) string {
 	if allocated, exists := registry.allocations[allocationKey]; exists {
 		return allocated
 	}
-	if _, exists := registry.used[base]; !exists {
-		registry.used[base] = struct{}{}
-		registry.allocations[allocationKey] = base
-		return base
-	}
-	sum := sha256.Sum256([]byte("apexload-import-secret-name-v1\x00" + identity))
-	suffix := "_" + strings.ToUpper(hex.EncodeToString(sum[:6]))
-	candidateBase := truncateName(base, credential.MaxLogicalNameBytes-len(suffix))
-	candidate := candidateBase + suffix
-	if _, exists := registry.used[candidate]; !exists {
-		registry.used[candidate] = struct{}{}
-		registry.allocations[allocationKey] = candidate
-		return candidate
-	}
+	candidate := base
 	for counter := 2; ; counter++ {
-		counterSuffix := suffix + "_" + strconv.Itoa(counter)
-		candidate = truncateName(base, credential.MaxLogicalNameBytes-len(counterSuffix)) + counterSuffix
-		if _, exists := registry.used[candidate]; exists {
-			continue
+		if _, exists := registry.used[candidate]; !exists {
+			break
 		}
-		registry.used[candidate] = struct{}{}
-		registry.allocations[allocationKey] = candidate
-		return candidate
+		suffix := "_" + strconv.Itoa(counter)
+		candidate = truncateName(base, credential.MaxLogicalNameBytes-len(suffix)) + suffix
 	}
+	registry.used[candidate] = struct{}{}
+	registry.allocations[allocationKey] = candidate
+	return candidate
 }
 
 func canonicalSuggestion(hint string) string {

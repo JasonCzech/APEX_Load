@@ -1792,6 +1792,45 @@ func secretAPIRequest(t *testing.T, server *Server, method, path string, body an
 	return response
 }
 
+func TestSourceSecretMigrationDenialNamesPolicyAndRole(t *testing.T) {
+	server, _, _, projectID := newProjectSecretAPIServer(t)
+	enableTrustedHeaderAuth(t, server)
+	editor := &AuthenticatedUser{
+		ID: "migration-editor", Subject: "migration-editor",
+		ProjectRoles: map[string]map[string]struct{}{projectID: {RoleEditor: {}}},
+	}
+	admin := &AuthenticatedUser{
+		ID: "migration-admin", Subject: "migration-admin",
+		GlobalRoles: map[string]struct{}{RoleProjectAdmin: {}},
+	}
+	request := func(resolution authResolution) *http.Request {
+		return withAuthenticatedContext(httptest.NewRequest(http.MethodPost, "/", nil), resolution)
+	}
+	denied := func(resolution authResolution) (string, string, *httptest.ResponseRecorder) {
+		reason, message := server.sourceSecretMigrationDenial(request(resolution), projectID)
+		response := httptest.NewRecorder()
+		server.writeSourceSecretMigrationDenied(response, request(resolution), projectID)
+		return reason, message, response
+	}
+
+	reason, message, response := denied(authResolution{User: admin})
+	if reason != "policy_disabled" || !strings.Contains(message, "script_imports.allow_source_secret_migration") ||
+		response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"source_secret_migration_not_allowed"`) {
+		t.Fatalf("policy denial = %q %q %d %s", reason, message, response.Code, response.Body.String())
+	}
+	enableSourceSecretMigration(t, server)
+	if reason, message, _ = denied(authResolution{User: editor}); reason != "role_required" || !strings.Contains(message, "project admin") {
+		t.Fatalf("editor denial = %q %q", reason, message)
+	}
+	if reason, _, _ = denied(authResolution{ServiceAccount: &AuthenticatedServiceAccount{ID: "migration-service"}}); reason != "service_account" {
+		t.Fatalf("service-account denial = %q", reason)
+	}
+	if reason, _, _ = denied(authResolution{User: admin}); reason != "" ||
+		!server.sourceSecretMigrationAuthorized(request(authResolution{User: admin}), projectID) {
+		t.Fatalf("admin denial = %q, want authorized", reason)
+	}
+}
+
 func secretAPIRequestAsSubject(t *testing.T, server *Server, method, path, subject string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var reader *strings.Reader

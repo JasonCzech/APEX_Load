@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -4284,6 +4285,12 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	}
 	if len(visibleSurfaces) != 17 {
 		t.Fatalf("visible import surfaces = %d, want 17 (%#v)", len(visibleSurfaces), visibleSurfaces)
+	}
+	// A search for the protocol finds the collection formats that carry it.
+	for _, id := range []string{"bruno", "postman"} {
+		if !slices.Contains(visibleSurfaces[id].Protocols, "SOAP") {
+			t.Fatalf("%s import surface protocols = %#v, want SOAP among them", id, visibleSurfaces[id].Protocols)
+		}
 	}
 	if description := visibleSurfaces["enterprise_archive"].Description; !strings.Contains(description, "ZIP or USZ") || !strings.Contains(description, "several projects") {
 		t.Fatalf("archive import description = %q, want project formats and collection discovery", description)

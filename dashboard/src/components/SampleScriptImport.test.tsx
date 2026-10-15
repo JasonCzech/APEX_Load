@@ -249,6 +249,66 @@ describe('SampleScriptImport', () => {
     }))
   })
 
+  it('updates the script an earlier import of the same source saved, or saves a copy', async () => {
+    const response = await apiMock.importSample()
+    apiMock.importSample.mockResolvedValue({
+      ...response,
+      existing_scripts: [{
+        script_id: 'earlier-script',
+        name: 'Session flow',
+        ref_key: 'LOC-SCR-0007-v3',
+        updated_at: '2026-10-15T10:00:00Z',
+        matches: 1,
+        same_source: true,
+        edited_since_import: false,
+      }],
+    })
+    await act(async () => root.render(<SampleScriptImport projectId="project-1" />))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Imported before as Session flow (LOC-SCR-0007-v3)')
+    const save = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save draft'))
+    await act(async () => save()?.click())
+    await flushPromises()
+    expect(apiMock.commitGenericImportBatch.mock.calls[0][0]).toEqual(expect.objectContaining({
+      update_targets: [{ script_id: 'earlier-script', expected_updated_at: '2026-10-15T10:00:00Z' }],
+    }))
+  })
+
+  it('saves a copy when the operator chooses to keep the earlier script', async () => {
+    const response = await apiMock.importSample()
+    apiMock.importSample.mockResolvedValue({
+      ...response,
+      existing_scripts: [{
+        script_id: 'earlier-script',
+        name: 'Session flow',
+        updated_at: '2026-10-15T10:00:00Z',
+        matches: 1,
+        same_source: true,
+        edited_since_import: false,
+      }],
+    })
+    await act(async () => root.render(<SampleScriptImport projectId="project-1" />))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
+    })
+    await flushPromises()
+    const choice = container.querySelector<HTMLSelectElement>('.import-existing-scripts select')!
+    await act(async () => {
+      choice.value = 'copy'
+      choice.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save draft'))?.click())
+    await flushPromises()
+    expect(apiMock.commitGenericImportBatch.mock.calls[0][0].update_targets).toBeUndefined()
+  })
+
   it('reuses one atomic operation id after a sample save loses its response', async () => {
     apiMock.commitGenericImportBatch
       .mockRejectedValueOnce(new Error('sample batch response lost'))

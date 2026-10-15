@@ -59,6 +59,10 @@ type Limits struct {
 // Options controls extraction. StripFirstComponent removes a disposable
 // project container only when every regular file shares that same archive-root
 // component. Mixed-root archives retain every validated relative path.
+//
+// Operating-system and version-control files (JunkReason) are never content:
+// the readers leave them out unread, before the common root is found, so a
+// __MACOSX folder neither becomes a source file nor keeps the container.
 type Options struct {
 	Limits              Limits
 	StripFirstComponent bool
@@ -145,6 +149,9 @@ func ReadZIP(data []byte, options Options) ([]File, error) {
 			}
 			continue
 		}
+		if JunkReason(name) != "" {
+			continue
+		}
 		if mode.Type() != 0 {
 			return nil, fmt.Errorf("unsafe archive entry %q: only regular files are permitted", safeDisplayName(entry.Name))
 		}
@@ -215,6 +222,9 @@ func ReadTAR(reader io.Reader, options Options) ([]File, error) {
 			if !isDirectory {
 				return nil, fmt.Errorf("unsafe archive entry %q: directory metadata does not match its path", safeDisplayName(header.Name))
 			}
+			continue
+		}
+		if !isDirectory && JunkReason(name) != "" {
 			continue
 		}
 		if isDirectory || (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) {

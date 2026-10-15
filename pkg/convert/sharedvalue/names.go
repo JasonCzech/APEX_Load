@@ -58,6 +58,13 @@ func CredentialShaped(name string) bool {
 			return true
 		}
 	}
+	// The name endings the parameter projection masks (isSensitiveScriptKey),
+	// such as jsessionid or userSessionId, which SensitiveName does not split.
+	for _, suffix := range []string{"sessionid", "privatekey", "accesskey", "accesskeyid"} {
+		if strings.HasSuffix(normalized, suffix) {
+			return true
+		}
+	}
 	return false
 }
 
