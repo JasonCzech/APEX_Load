@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -160,7 +161,10 @@ type correlationValueUse struct {
 const manualCorrelationValueReplacement = "manual_value_replacement_required"
 
 type correlationApplicationPlan struct {
-	index            int
+	index int
+	// reviewOnly mirrors the correlation's flag: the plan takes part in the
+	// collision check but is never rewritten automatically.
+	reviewOnly       bool
 	value            string
 	queryEncoded     string
 	usage            correlationValueUse
@@ -213,6 +217,7 @@ func prepareCorrelationApplicationWithExtractionLimit(exchanges []exchange, corr
 		}
 		plans = append(plans, correlationApplicationPlan{
 			index:            index,
+			reviewOnly:       corr.reviewOnly,
 			value:            value,
 			queryEncoded:     queryEncoded,
 			usage:            usage,
@@ -444,6 +449,9 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 				return ambiguousLiterals, ambiguousPlans
 			}
 			overlaps := overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
+			if overlaps && !overlapBudget.Exhausted() && reviewOnlyLiteralInsideApplied(plans[left.planIndex], left.literal, plans[right.planIndex], right.literal) {
+				overlaps = false
+			}
 			if !overlaps && !overlapBudget.Exhausted() {
 				overlaps = occurrences.PartiallyOverlap(left.literal, right.literal)
 			}
@@ -461,6 +469,131 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 		}
 	}
 	return ambiguousLiterals, ambiguousPlans
+}
+
+// reviewOnlyLiteralInsideApplied reports whether, of two literals already
+// known to contain one another, the contained (shorter) one belongs to a
+// review-only plan and the longer one to an applied plan. The review-only plan
+// is never rewritten automatically, and replacing the longer literal removes
+// every occurrence nested in it, so that containment is no collision. A
+// Salesforce org ID inside an access token or session id is the common case.
+// Partial overlaps are still checked by the caller, and the reverse (an applied
+// literal inside a review-only one) stays a collision: the longer value may be
+// dynamic, and rewriting part of it would corrupt it.
+func reviewOnlyLiteralInsideApplied(left correlationApplicationPlan, leftLiteral string, right correlationApplicationPlan, rightLiteral string) bool {
+	switch {
+	case left.reviewOnly && !right.reviewOnly:
+		return len(leftLiteral) < len(rightLiteral)
+	case right.reviewOnly && !left.reviewOnly:
+		return len(rightLiteral) < len(leftLiteral)
+	}
+	return false
+}
+
+// collapseSameSourceDuplicateCorrelations keeps one correlation per value and
+// source step. Two rules can recognize the same value in the same response: a
+// Salesforce frontdoor sid is also a generic Location query parameter, one rule
+// keeping the wire spelling and the other decoding it. Kept apart, one literal
+// equals the other or its encoded spelling, so the collision check holds both
+// for manual review and the value is never rewritten. The higher-confidence
+// detection survives (the earlier one on a tie) and takes over the other's
+// consumers, but only when it can rewrite every one of them. Otherwise both
+// stay, as before, rather than leave a consumer silently stale.
+func collapseSameSourceDuplicateCorrelations(exchanges []exchange, correlations []Correlation) []Correlation {
+	if len(correlations) < 2 {
+		return correlations
+	}
+	byStep := make(map[int][]int, len(correlations))
+	out := make([]Correlation, 0, len(correlations))
+	for _, corr := range correlations {
+		merged := false
+		for _, index := range byStep[corr.FoundInStep] {
+			if !sameSourceDuplicateCorrelation(out[index], corr) {
+				continue
+			}
+			winner, loser := out[index], corr
+			if corr.Confidence > winner.Confidence {
+				winner, loser = corr, out[index]
+			}
+			if !correlationServesSteps(exchanges, winner, loser.UsedInSteps) {
+				continue
+			}
+			winner.UsedInSteps = mergeSortedUniqueInts(winner.UsedInSteps, loser.UsedInSteps)
+			winner.UsedInEntries = mergeSortedUniqueInts(winner.UsedInEntries, loser.UsedInEntries)
+			out[index] = winner
+			merged = true
+			break
+		}
+		if !merged {
+			byStep[corr.FoundInStep] = append(byStep[corr.FoundInStep], len(out))
+			out = append(out, corr)
+		}
+	}
+	return out
+}
+
+// sameSourceDuplicateCorrelation reports whether two correlations extract the
+// same value from the same response: the identical literal, or a decoded value
+// and its exact query-encoded wire spelling.
+func sameSourceDuplicateCorrelation(left, right Correlation) bool {
+	if left.FoundInStep <= 0 || left.FoundInStep != right.FoundInStep {
+		return false
+	}
+	leftValue, rightValue := correlationConcreteValue(left), correlationConcreteValue(right)
+	if leftValue == "" || rightValue == "" {
+		return false
+	}
+	return leftValue == rightValue ||
+		decodedWireSpellingPair(left, leftValue, rightValue) ||
+		decodedWireSpellingPair(right, rightValue, leftValue)
+}
+
+// decodedWireSpellingPair reports whether other is the exact query encoding of
+// a url_decode correlation's decoded value.
+func decodedWireSpellingPair(decoding Correlation, decoded, other string) bool {
+	if !strings.EqualFold(strings.TrimSpace(decoding.Convert), "url_decode") {
+		return false
+	}
+	encoded := correlate.QueryEncodedFormOf(decoded)
+	return encoded != "" && encoded == other
+}
+
+// correlationServesSteps reports whether every step outside the correlation's
+// own consumers carries its value where the planner rewrites it: a replaceable
+// occurrence of the value itself or of its exact query encoding.
+func correlationServesSteps(exchanges []exchange, corr Correlation, steps []int) bool {
+	value := correlationConcreteValue(corr)
+	encoded := correlate.QueryEncodedFormOf(value)
+	for _, step := range steps {
+		if slices.Contains(corr.UsedInSteps, step) {
+			continue
+		}
+		if step <= 0 || step > len(exchanges) {
+			return false
+		}
+		served := false
+		for _, surface := range exchangeSurfaces(exchanges[step-1]) {
+			if correlate.ContainsReplaceableOccurrence(surface, value) || (encoded != "" && correlate.ContainsReplaceableOccurrence(surface, encoded)) {
+				served = true
+				break
+			}
+		}
+		if !served {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeSortedUniqueInts(left, right []int) []int {
+	if len(right) == 0 {
+		return left
+	}
+	merged := make([]int, 0, len(left)+len(right))
+	merged = append(merged, left...)
+	merged = append(merged, right...)
+	slices.Sort(merged)
+	return slices.Compact(merged)
 }
 
 // sampleRequestReplacementSurfaces returns references to every field that

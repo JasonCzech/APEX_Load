@@ -750,6 +750,16 @@ func parseMaxRedirects(config map[string]any) int {
 	return maxRedirects
 }
 
+// followableRedirectScheme reports whether a redirect target is a web URL the
+// client can fetch. Any other scheme (an app's private OAuth callback, mailto:,
+// and so on) ends the redirect chain on the 3xx response.
+func followableRedirectScheme(target *url.URL) bool {
+	if target == nil {
+		return false
+	}
+	return strings.EqualFold(target.Scheme, "http") || strings.EqualFold(target.Scheme, "https")
+}
+
 func applyRedirectPolicy(client *http.Client, maxRedirects int) {
 	if maxRedirects <= 0 {
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
