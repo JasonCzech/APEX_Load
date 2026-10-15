@@ -364,6 +364,46 @@ export interface ScriptImportResult<
   expires_at?: string
   import_draft_expires_at?: string
   preflight?: ReplayPreflight
+  /** Positional with scripts: the earlier imported script each one would
+   * update as a new version, or null. Absent when nothing matches. */
+  existing_scripts?: (ImportExistingScript | null)[]
+}
+
+/** How an earlier imported script supplied one input the source leaves unset. */
+export interface ImportPreviousInput {
+  mode: string
+  value?: string
+  alias?: string
+  column?: string
+  generator?: string
+  digits?: number
+}
+
+/** An earlier imported script a new one matches by source identity. */
+export interface ImportExistingScript {
+  script_id: string
+  name: string
+  ref_key?: string
+  folder_id?: string
+  updated_at: string
+  /** Earlier scripts from the same source item; each is offered to one new script, the most recent first. */
+  matches: number
+  /** The source declares its identity (not just a file name), so updating is the default. */
+  same_source: boolean
+  /** Changed in APEX after its import saved it: updating replaces those changes. */
+  edited_since_import: boolean
+  /** Fingerprint of the script's content as reviewed, sent back as expected_content_digest. */
+  content_digest?: string
+  /** How the script supplied each input its import recorded, by input name. */
+  inputs?: Record<string, ImportPreviousInput>
+}
+
+/** Names the earlier script a save updates as a new version, and the version reviewed. */
+export interface ImportUpdateTarget {
+  script_id: string
+  expected_updated_at: string
+  /** The content reviewed: a script put back to it after a failed save is still the version reviewed. */
+  expected_content_digest?: string
 }
 
 export interface ImportAssetUploadResponse {
@@ -1299,6 +1339,8 @@ export interface OracleEBusinessSupportMatrixResponse {
 export interface SaveJMeterImportRequest {
   scripts: ScriptDefinition[]
   scenario_draft?: JMeterScenarioDraft
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface SaveJMeterImportResponse {
@@ -1311,6 +1353,8 @@ export interface SaveEnterpriseArchiveImportRequest {
   scripts: ScriptDefinition[]
   folder_id?: string | null
   operation_id: string
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface SaveEnterpriseArchiveImportResponse {
@@ -1328,6 +1372,8 @@ export interface SavePostmanImportRequest {
   folder_id?: string | null
   mode?: 'create' | 'replace'
   target_script_id?: string
+  /** Makes the replace a re-import update of the version the operator reviewed. */
+  expected_updated_at?: string
 }
 
 export interface SavePostmanImportResponse {
@@ -1359,6 +1405,8 @@ export interface CommitOpenAPIImportRequest {
   mode?: 'create' | 'replace'
   target_script_id?: string
   replace_mode?: 'full' | 'merge_by_operation_id'
+  /** Makes the replace a re-import update of the version the operator reviewed. */
+  expected_updated_at?: string
   dry_run?: boolean
 }
 
@@ -1379,6 +1427,8 @@ export interface CommitAsyncAPIImportBatchRequest {
   scripts: ScriptDefinition[]
   folder_id?: string | null
   operation_id: string
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface CommitAsyncAPIImportBatchResponse {
@@ -1393,6 +1443,8 @@ export interface CommitGenericImportBatchRequest {
   source_profile: GenericImportBatchSourceProfile
   import_session_ids?: string[]
   source_recording_session_ids?: string[]
+  /** Positional with scripts; null creates. */
+  update_targets?: (ImportUpdateTarget | null)[]
 }
 
 export interface CommitGenericImportBatchResponse {

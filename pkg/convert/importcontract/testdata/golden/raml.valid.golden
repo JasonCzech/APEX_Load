@@ -72,6 +72,14 @@
     },
     "created_at": "<TIMESTAMP>",
     "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "source_document": "Orders",
+          "source_document_declared": true
+        }
+      }
+    },
     "name": "raml golden",
     "protocol": "http",
     "updated_at": "<TIMESTAMP>",

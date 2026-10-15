@@ -23,6 +23,7 @@ import { useDropIngestFeedback } from './dropIngestFeedback'
 import ImportCoverageButton from './ImportCoverageButton'
 import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
+import { useImportSaveChoices } from './importReimport'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
@@ -173,6 +174,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const declaredVariables = repairEvidenceRef.current?.summary?.variables_discovered || []
   const parameterization = result?.parameterization
   const resultScripts = result?.scripts || []
+  const saveChoices = useImportSaveChoices(result?.existing_scripts)
   const safeParameterizationScriptIndex = Math.min(parameterizationScriptIndex, Math.max(0, resultScripts.length - 1))
   const parameterizationScript = resultScripts[safeParameterizationScriptIndex]
   const assetPageCount = Math.max(1, Math.ceil(resultScripts.length / JMETER_ASSET_PAGE_SIZE))
@@ -449,9 +451,14 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         project_id: script.project_id || sourceProjectId,
         folder_id: folderId ?? null,
       }))
+      const updateTargets = saveChoices.updateTargets(scripts.length)
+      // When every script updates one imported before, the scenarios using
+      // those scripts run the new versions; another scenario would duplicate.
+      const scenarioKept = Boolean(resultToSave.scenario_draft && updateTargets?.every(Boolean))
       const response = await api.saveJMeterImport({
         scripts,
-        scenario_draft: resultToSave.scenario_draft,
+        ...(scenarioKept ? {} : { scenario_draft: resultToSave.scenario_draft }),
+        ...(updateTargets ? { update_targets: updateTargets } : {}),
       })
       const savedScripts = withFallbackPersistedScripts(response.scripts, resultToSave.scripts)
       const scenarioText = response.scenario ? ' and scenario draft' : ''
@@ -463,7 +470,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         })
       }
       if (!requestIsCurrent()) return
-      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
+      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.${scenarioKept ? ' No new scenario was created: every script updated one imported before.' : ''}`)
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
@@ -766,6 +773,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
           <ScriptImportReview
             tabbed
+            existingScripts={{ choices: saveChoices, labels: resultScripts.map(script => script.name) }}
             onSettingsBusyChange={setSettingsEditing}
             onSettingsApplied={updated => handleParameterizationApplied(0)(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])}
             settingsDisabled={Boolean(savedResult) || Boolean(result.batch)}
@@ -903,6 +911,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                     <span className="lr-preserved-label">Scenario Draft</span>
                     <strong>{result.scenario_draft.groups?.length || 0} groups</strong>
                     <small>{result.scenario_draft.termination_mode === 'iterations' ? 'Iteration completion' : result.scenario_draft.duration || 'Duration not set'}</small>
+                    {saveChoices.updateTargets(resultScripts.length)?.every(Boolean) && (
+                      <small>Not saved: every script updates one imported before, so the scenarios that use them run the new versions. Choose Create a copy for a script to save this scenario too.</small>
+                    )}
                   </div>
                 )}
               </div>

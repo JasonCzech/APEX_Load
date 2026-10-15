@@ -957,6 +957,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, fmt.Errorf("WSDL finalizer invariant failed: %s", strings.Join(finalized.ValidationIssues, "; "))
 	}
 	result.Script = finalized.Script
+	// A re-import of the same service (by its declared name and namespace)
+	// can update this script as a new version. A default service name in the
+	// default namespace (WCF's Service1 in http://tempuri.org/) declares none.
+	if declaredService := convertutil.FirstNonEmpty(selected.ServiceName, firstServiceName(doc), doc.Name); declaredService != "" &&
+		!wsdlDefaultService(doc.TargetNamespace, declaredService) {
+		dsl.SetImportSourceIdentity(result.Script, strings.TrimSpace(doc.TargetNamespace+" "+declaredService), true, "")
+	} else {
+		dsl.SetImportSourceIdentity(result.Script, req.Name, false, "")
+	}
 	result.Findings = finalized.Findings
 	for index := range finalized.Requirements {
 		requirement := &finalized.Requirements[index]
@@ -2231,4 +2240,14 @@ func (result *ConvertResult) Accounting() convertresult.Accounting {
 		result.Stats.OperationsDetected-result.Stats.ConvertedActions,
 		result.SourceReview.ReviewOnlyActionCount(),
 	)
+}
+
+var wsdlDefaultServiceName = regexp.MustCompile(`(?i)^service\d*$`)
+
+// wsdlDefaultService reports whether a service is a generated default: a
+// name like Service1 in no namespace or the default http://tempuri.org/.
+func wsdlDefaultService(namespace, service string) bool {
+	namespace = strings.TrimSpace(namespace)
+	defaultNamespace := namespace == "" || strings.Contains(strings.ToLower(namespace), "tempuri.org")
+	return defaultNamespace && wsdlDefaultServiceName.MatchString(strings.TrimSpace(service))
 }

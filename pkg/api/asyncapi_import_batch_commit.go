@@ -21,6 +21,10 @@ type asyncAPIBatchCommitRequest struct {
 	Scripts     []dsl.Script `json:"scripts"`
 	FolderID    *string      `json:"folder_id,omitempty"`
 	OperationID string       `json:"operation_id"`
+	// UpdateTargets is positional with Scripts: an entry names the earlier
+	// imported script that script updates as a new version (it keeps its
+	// folder); null, or no list, creates.
+	UpdateTargets []*importUpdateTarget `json:"update_targets,omitempty"`
 }
 
 // OpenAPI-Responses: 201
@@ -51,6 +55,12 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "operation_id is required")
 		return
 	}
+	updateTargets, err := normalizeImportUpdateTargets(req.UpdateTargets, len(req.Scripts))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updatesExisting := hasImportUpdateTargets(updateTargets)
 
 	projectID := normalizeProjectID(req.Scripts[0].ProjectID)
 	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
@@ -71,10 +81,14 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		requestedFolderIDs[index] = requestedImportFolderOverride(draft.FolderID, req.FolderID)
 		requestScripts = append(requestScripts, &draft)
 	}
-	requestDigest, err := s.directImportScriptsRequestDigest(requestScripts, map[string]any{
+	digestFields := map[string]any{
 		"profile": asyncAPIBatchCommitProfile,
 		"folder":  req.FolderID,
-	})
+	}
+	if updatesExisting {
+		digestFields["update_targets"] = importUpdateTargetsDigestValue(updateTargets)
+	}
+	requestDigest, err := s.directImportScriptsRequestDigest(requestScripts, digestFields)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint AsyncAPI batch")
 		return
@@ -125,11 +139,18 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			plannedIDs[index] = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
 		}
 	}
+	for index, target := range updateTargets {
+		if target != nil {
+			plannedIDs[index] = target.ScriptID
+		}
+	}
 	// Recover deterministic assets before claiming ephemeral draft capabilities.
 	// A controller restart loses local attestations, but the durable receipt
 	// digest and server-derived IDs still authorize replay of an already-
-	// committed batch; they never authorize a new create.
-	if attempt != nil && !attempt.created {
+	// committed batch; they never authorize a new create. A script to update
+	// exists before the save, so its presence proves nothing; recovery
+	// compares exact content after preparation instead.
+	if attempt != nil && !attempt.created && !updatesExisting {
 		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to recover prior AsyncAPI batch")
 			return
@@ -176,6 +197,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		}
 	}()
 	prepared := make([]*dsl.Script, 0, len(requestScripts))
+	updates := make(map[string]*StoredScript)
 	for index, submitted := range requestScripts {
 		draft := cloneScriptDefinition(submitted)
 		if draft == nil {
@@ -235,10 +257,15 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			return
 		}
 		persistent.ID = plannedIDs[index]
+		if !s.reserveImportUpdate(w, projectID, index, persistent, updateTargets[index], updates) {
+			return
+		}
 		persistent.RefKey = ""
+		stampImportedContentDigest(persistent)
 		prepared = append(prepared, persistent)
 	}
 	allocateAtomicImportBatchScriptNames(prepared)
+	keepUpdatedScriptNames(prepared, updates)
 
 	if attempt != nil && !attempt.created {
 		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
@@ -255,6 +282,11 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		if loadErr == nil && importUpdatesPending(stored, prepared, updateTargets) {
+			// The earlier attempt did not update a script it was to update, so
+			// it did not finish: save normally (its creates, if any, replay).
+			loadErr = errImportUpdateTargetStale
+		}
 		if loadErr == nil {
 			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
@@ -272,7 +304,12 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		}
 	}
 
-	transaction, err = newCreateImportTransaction(s, asyncAPIBatchCommitProfile, prepared, "", nil)
+	// Recovery above adopted an update an earlier attempt applied; anything
+	// else must still be the version the operator reviewed.
+	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+		return
+	}
+	transaction, err = newImportTransaction(s, asyncAPIBatchCommitProfile, prepared, updates, "", nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare AsyncAPI batch: "+err.Error())
 		return
@@ -289,7 +326,11 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 				return
 			}
 		}
-		created, createErr := transaction.createImportedScript(script, asyncAPIBatchCommitProfile)
+		created, createErr := transaction.saveImportedScript(script, asyncAPIBatchCommitProfile)
+		if errors.Is(createErr, errImportUpdateTargetStale) {
+			writeImportUpdateTargetStale(w, index, createErr)
+			return
+		}
 		if createErr != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save AsyncAPI script %d: %v", index+1, createErr))
 			return

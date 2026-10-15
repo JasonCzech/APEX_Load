@@ -409,6 +409,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			_ = i
 		}
+		stampAsyncAPISourceIdentity(script, doc.Info.Title, req.Name, string(target))
 		result.Scripts = append(result.Scripts, script)
 	}
 	if len(result.Scripts) > 0 {
@@ -416,6 +417,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Script = result.Scripts[0]
 	} else {
 		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker, mock, false)
+		stampAsyncAPISourceIdentity(result.Script, doc.Info.Title, req.Name, string(defaultTarget))
 		result.Scripts = []*dsl.Script{result.Script}
 	}
 
@@ -2230,4 +2232,15 @@ func (result *ConvertResult) Accounting() convertresult.Accounting {
 		len(result.Stats.SkippedOperations),
 		result.SourceReview.ReviewOnlyActionCount(),
 	)
+}
+
+// stampAsyncAPISourceIdentity records the specification (its declared title,
+// else the file name) and the broker group a script holds, so a re-import of
+// the same specification can update it as a new version.
+func stampAsyncAPISourceIdentity(script *dsl.Script, title, fileName, group string) {
+	if title = strings.TrimSpace(title); !dsl.GenericImportSourceName(title) {
+		dsl.SetImportSourceIdentity(script, title, true, group)
+		return
+	}
+	dsl.SetImportSourceIdentity(script, fileName, false, group)
 }

@@ -122,12 +122,13 @@ type brunoInspectResponse struct {
 	SharedValues *sharedvalue.Result `json:"shared_values,omitempty"`
 	// PreviousInputs maps a shared-value candidate ID to how the scripts this
 	// re-import updates supplied that input, to offer it again.
-	PreviousInputs map[string]brunoPreviousInput `json:"previous_inputs,omitempty"`
+	PreviousInputs map[string]importPreviousInput `json:"previous_inputs,omitempty"`
 }
 
-// brunoPreviousInput is one input as the existing scripts supply it: a value
-// for every user (Value), a data pool column, or a generated value.
-type brunoPreviousInput struct {
+// importPreviousInput is one input as an existing imported script supplies
+// it: a value for every user (Value), a data pool column, or a generated
+// value. Bruno inspections and every other importer's existing_scripts use it.
+type importPreviousInput struct {
 	Mode      string `json:"mode"`
 	Value     string `json:"value,omitempty"`
 	Alias     string `json:"alias,omitempty"`
@@ -742,7 +743,7 @@ func withBrunoEnvironmentValuesFor(result *brunoconvert.Result, shared *sharedva
 // each input the source leaves unset was supplied last time: the choice an
 // earlier import recorded, or a value-for-every-user parameter of the same
 // name. The first script that supplies an input decides it.
-func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconvert.Result, shared *sharedvalue.Result) map[string]brunoPreviousInput {
+func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconvert.Result, shared *sharedvalue.Result) map[string]importPreviousInput {
 	if result == nil || shared == nil {
 		return nil
 	}
@@ -758,7 +759,7 @@ func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconver
 		existing[scriptID] = stored
 		return stored
 	}
-	previous := map[string]brunoPreviousInput{}
+	previous := map[string]importPreviousInput{}
 	for _, candidate := range shared.Candidates {
 		// A credential-shaped input never becomes a parameter at import, so a
 		// value under its name was put there by hand and stays out of the response.
@@ -773,7 +774,7 @@ func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconver
 			if script == nil {
 				continue
 			}
-			if input, ok := brunoPreviousInputFrom(script, candidate.Name); ok {
+			if input, ok := previousImportInputFrom(script, candidate.Name); ok {
 				previous[candidate.ID] = input
 				break
 			}
@@ -785,23 +786,23 @@ func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconver
 	return previous
 }
 
-func brunoPreviousInputFrom(script *dsl.Script, name string) (brunoPreviousInput, bool) {
+func previousImportInputFrom(script *dsl.Script, name string) (importPreviousInput, bool) {
 	var recorded dsl.ImportInput
 	if script.Metadata != nil && script.Metadata.Import != nil {
 		recorded = script.Metadata.Import.Inputs[name]
 	}
 	switch recorded.Mode {
 	case sharedvalue.BindingData, sharedvalue.BindingGenerated:
-		return brunoPreviousInput{Mode: recorded.Mode, Alias: recorded.Alias, Column: recorded.Column, Generator: recorded.Generator, Digits: recorded.Digits}, true
+		return importPreviousInput{Mode: recorded.Mode, Alias: recorded.Alias, Column: recorded.Column, Generator: recorded.Generator, Digits: recorded.Digits}, true
 	}
 	// A value for every user lives in the parameter, which the script's
 	// author may have edited since.
 	for _, param := range script.Parameters {
 		if param.Name == name && dsl.CanonicalParameterType(param.Type) == "list" && len(param.Values) == 1 && strings.TrimSpace(param.Values[0]) != "" {
-			return brunoPreviousInput{Mode: "value", Value: param.Values[0]}, true
+			return importPreviousInput{Mode: "value", Value: param.Values[0]}, true
 		}
 	}
-	return brunoPreviousInput{}, false
+	return importPreviousInput{}, false
 }
 
 // settleBrunoSecretNames fits the import's readable secret names to the

@@ -63,12 +63,12 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
 	"har":      "0b3323c2222f9a34eaaee03c3e106421e0afc3fe5b768a8dda5e8a8fea37fc88",
-	"jmeter":   "e0cfea72ada43ce06b4d58479d9244996dd39ba0dc6edaba651421a20ba6b819",
+	"jmeter":   "3c6e167f1526ecec0148f58521aba4970b123890c0569e56e89dab6cbd7929c2",
 	"k6":       "223d2eb2c757a624f7c0f670f04d32bb0d9de0abb406ab040af52cbf2b2eba94",
-	"openapi":  "1daf8f24fc70e9e8968051d47ac70c1aedbbb909ce76e124f07766d960f80e65",
-	"postman":  "74ea6c7c7e6f101277ea127091e243e68f201e329247e07ecbfeca4c129cbd39",
+	"openapi":  "2556790828c10f7324153accb4cb0c850171b031581e5aea760b322de638ff9d",
+	"postman":  "d8e22b1ff33f8bd71d312ba049cfd3fcf17424541feb51da39a08550ce7052f4",
 	"raw_http": "baf7c224f75f8963016f84addc2a0a6a65b1d2734d0b708cfc677cba263ce082",
-	"wsdl":     "4790eed3abc380baaca0067468c2ac9a3831a3d06a489886430b9efae59e909a",
+	"wsdl":     "0f94fdda0ed3abd5d8b8c336c64aacfbb7ada5ca3f8e0307e6df52742482587e",
 }
 
 func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
@@ -100,6 +100,9 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			}
 			if importer.name == "postman" {
 				requireIntentionalDelta(t, "postman_source_file_provenance")
+			}
+			if importer.name == "jmeter" || importer.name == "openapi" || importer.name == "postman" || importer.name == "wsdl" {
+				requireIntentionalDelta(t, "import_source_identity")
 			}
 			requireIntentionalDelta(t, "credential_preserving_import_marker")
 			requireIntentionalDelta(t, "script_results_contract")
@@ -581,6 +584,7 @@ func TestCredentialDispositionContractCharacterizesCurrentDeltas(t *testing.T) {
 
 var intentionalDeltaAllowlist = map[string]string{
 	"retired_runner_config_omitted":                  "Empty retired Bruno Runner configuration is omitted from native scripts; populated legacy configuration remains readable for source retention.",
+	"import_source_identity":                         "Imports record where each script came from (the source's declared document, else its file name, and the item within it) so a re-import of the same source can update the earlier script as a new version.",
 	"credential_preserving_import_marker":            "Finalized imports carry a stable policy marker so operator-supplied values remain exact across scripts, source review, persistence, and authorized authoring reads.",
 	"postman_http_credentials_use_shared_projection": "Postman HTTP headers, typed auth, and structured bodies now reach the source-neutral credential projector before any compatibility rewriting.",
 	"postman_source_file_provenance":                 "Postman results identify the collection and selected environment source files so credential guidance can name the exact contributing artifact.",

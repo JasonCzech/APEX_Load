@@ -162,6 +162,57 @@ describe('SharedImportValues', () => {
     })
   })
 
+  it('starts each unset input from how the scripts a re-import updates supplied it', async () => {
+    applyMock.mockResolvedValue({ scripts, diffs: [], applied_count: 2 })
+    render(buildSharedValues([
+      candidate({ id: 'region', kind: 'source_variable', name: 'region', current_value: '' }),
+      candidate({ id: 'tenant', kind: 'source_variable', name: 'tenant', current_value: '' }),
+      candidate({ id: 'request_id', kind: 'source_variable', name: 'request_id', current_value: '' }),
+    ]), {
+      previousInputs: {
+        region: { mode: 'value', value: 'us-east' },
+        tenant: { mode: 'data', alias: 'tenants', column: 'id' },
+        request_id: { mode: 'generated', generator: 'digits', digits: 6 },
+      },
+    })
+    expect(inputFor('region').value).toBe('us-east')
+    const button = container.querySelector<HTMLButtonElement>('.shared-values-actions button')!
+    expect(button.textContent).toBe('Apply to all scripts (3)')
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applyMock).toHaveBeenCalledWith({
+      scripts,
+      values: { region: 'us-east' },
+      bindings: {
+        tenant: { mode: 'data', alias: 'tenants', column: 'id' },
+        request_id: { mode: 'generated', generator: 'digits', digits: 6 },
+      },
+    })
+  })
+
+  it('keeps typed inputs when the scripts a re-import updates change', () => {
+    const sharedValues = buildSharedValues([
+      candidate({ id: 'region', kind: 'source_variable', name: 'region', current_value: '' }),
+      candidate({ id: 'tenant', kind: 'source_variable', name: 'tenant', current_value: '' }),
+    ])
+    render(sharedValues, {
+      previousInputs: {
+        region: { mode: 'value', value: 'us-east' },
+        tenant: { mode: 'value', value: 'acme' },
+      },
+    })
+    type(inputFor('tenant'), 'globex')
+    // The operator switches the save to a copy: only the untouched input
+    // loses its previous value.
+    render(sharedValues, { previousInputs: undefined })
+    expect(inputFor('region').value).toBe('')
+    expect(inputFor('tenant').value).toBe('globex')
+    render(sharedValues, { previousInputs: { region: { mode: 'value', value: 'eu-west' } } })
+    expect(inputFor('region').value).toBe('eu-west')
+    expect(inputFor('tenant').value).toBe('globex')
+  })
+
   it('reads the data pools of its scripts\' project to offer them', async () => {
     listDataPoolsMock.mockResolvedValue({ data_pools: [{ id: 'pool-1', name: 'Tenants', columns: ['tenant_id'] }] })
     act(() => {

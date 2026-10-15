@@ -1114,6 +1114,9 @@ func canonicalImportDraftStructureDigestFromProjection(projected *dsl.Script) (s
 	}); err != nil {
 		return "", fmt.Errorf("inspect projected import draft markers: %w", err)
 	}
+	// An import save stamps the digest of what it writes; a draft never
+	// carries it.
+	projected.Metadata = withoutImportedContentDigest(projected.Metadata)
 	projected.ID = ""
 	projected.RefKey = ""
 	projected.Name = ""

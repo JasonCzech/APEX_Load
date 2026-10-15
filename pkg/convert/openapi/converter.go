@@ -679,6 +679,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		finalized.Requirements[index].Value = ""
 	}
 	result.Script = finalized.Script
+	// A re-import of the same specification (by its declared title, unless a
+	// framework's default) can update this script as a new version.
+	if title := strings.TrimSpace(doc.Info.Title); !dsl.GenericImportSourceName(title) {
+		dsl.SetImportSourceIdentity(result.Script, title, true, "")
+	} else {
+		dsl.SetImportSourceIdentity(result.Script, req.Name, false, "")
+	}
 	result.Summary.BaseURL = result.Script.Config.BaseURL
 	for _, item := range finalized.Diagnostics {
 		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)

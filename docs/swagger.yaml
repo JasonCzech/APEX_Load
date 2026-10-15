@@ -273597,6 +273597,10 @@ paths:
               properties:
                 dry_run:
                   type: boolean
+                expected_updated_at:
+                  type: string
+                  format: date-time
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true
@@ -275815,6 +275819,19 @@ paths:
                         format: date-time
                       version:
                         type: string
+                update_targets:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      expected_content_digest:
+                        type: string
+                      expected_updated_at:
+                        type: string
+                        format: date-time
+                      script_id:
+                        type: string
+                    nullable: true
               required:
                 - operation_id
                 - scripts
@@ -279899,6 +279916,19 @@ paths:
                   type: array
                   items:
                     type: string
+                update_targets:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      expected_content_digest:
+                        type: string
+                      expected_updated_at:
+                        type: string
+                        format: date-time
+                      script_id:
+                        type: string
+                    nullable: true
               required:
                 - operation_id
                 - scripts
@@ -281654,6 +281684,19 @@ paths:
                         format: date-time
                       version:
                         type: string
+                update_targets:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      expected_content_digest:
+                        type: string
+                      expected_updated_at:
+                        type: string
+                        format: date-time
+                      script_id:
+                        type: string
+                    nullable: true
               required:
                 - operation_id
                 - scripts
@@ -284151,6 +284194,19 @@ paths:
                         format: date-time
                       version:
                         type: string
+                update_targets:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      expected_content_digest:
+                        type: string
+                      expected_updated_at:
+                        type: string
+                        format: date-time
+                      script_id:
+                        type: string
+                    nullable: true
       responses:
         "201":
           description: Created
@@ -284550,6 +284606,10 @@ paths:
               properties:
                 dry_run:
                   type: boolean
+                expected_updated_at:
+                  type: string
+                  format: date-time
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true
@@ -289808,6 +289868,10 @@ paths:
               properties:
                 dry_run:
                   type: boolean
+                expected_updated_at:
+                  type: string
+                  format: date-time
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true

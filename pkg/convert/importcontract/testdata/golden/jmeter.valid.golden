@@ -91,8 +91,11 @@
             "warnings": 0
           },
           "original_file_name": "health.jmx",
+          "source_document": "Plan",
+          "source_document_declared": true,
           "source_group_id": "jmx:6dc1fa514e286dc20f57df8a2fcd0515ea1bedb883b6857cfd1fdd8d7a5aaa68:115:ThreadGroup",
           "source_group_line": 1,
+          "source_item": "Users",
           "source_plan_id": "jmx:6dc1fa514e286dc20f57df8a2fcd0515ea1bedb883b6857cfd1fdd8d7a5aaa68",
           "unsupported_count": 0,
           "warning_count": 0
@@ -188,8 +191,11 @@
               "warnings": 0
             },
             "original_file_name": "health.jmx",
+            "source_document": "Plan",
+            "source_document_declared": true,
             "source_group_id": "jmx:6dc1fa514e286dc20f57df8a2fcd0515ea1bedb883b6857cfd1fdd8d7a5aaa68:115:ThreadGroup",
             "source_group_line": 1,
+            "source_item": "Users",
             "source_plan_id": "jmx:6dc1fa514e286dc20f57df8a2fcd0515ea1bedb883b6857cfd1fdd8d7a5aaa68",
             "unsupported_count": 0,
             "warning_count": 0

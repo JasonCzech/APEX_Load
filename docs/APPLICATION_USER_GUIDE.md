@@ -674,6 +674,17 @@ supplies (**Required runtime inputs** under the review's data substitutions) tak
 for every user, a column of a data pool each virtual user reads its own row of
 (`{{data.alias.column}}`; bind the alias in the scenario's Data step), or a value generated
 each iteration (a UUID, the current time or random digits); the script records the choice.
+Importing the same source again lists, under **Imported before**, each script an earlier
+import saved and offers to update it as a new version (it keeps its name and folder, and its
+reference key moves to the next version) or create a copy. A source that declares its identity (a Postman collection, an OpenAPI,
+AsyncAPI or RAML title, a WSDL service, a JMeter test plan with its thread groups, a
+LoadRunner project) updates by default; one matched only by its file name (a HAR or
+another sample, a k6 or DevWeb script) or by a default name a tool generated (such as
+VuGen's WebHttpHtml1 or springdoc's OpenAPI definition) defaults to a copy. A script changed in APEX since its import is flagged, because updating
+replaces those changes (its goals and runtime policy stay), and each unset input starts
+from how the updated scripts supplied it. A bulk LoadRunner save holds an archive with such
+a script until you choose update or copy in its review. A JMeter re-import that updates every
+script creates no new scenario: the scenarios that use those scripts run the new versions.
 After a save, every importer offers **Debug** on the first saved script
 and **Create a scenario** from the saved scripts (a project scenario draft with a group
 per script, named after the source), or **Open scenario** when the import already made

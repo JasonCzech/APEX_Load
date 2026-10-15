@@ -127,7 +127,9 @@
     "metadata": {
       "import": {
         "preserved": {
-          "import_value_policy": "preserve"
+          "import_value_policy": "preserve",
+          "source_document": "urn:health HealthService",
+          "source_document_declared": true
         },
         "source": "wsdl"
       }

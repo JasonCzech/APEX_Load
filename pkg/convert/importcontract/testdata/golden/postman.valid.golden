@@ -88,7 +88,9 @@
           "environment_name": "",
           "environment_source_file": "",
           "environment_values": 0,
-          "import_value_policy": "preserve"
+          "import_value_policy": "preserve",
+          "source_document": "Orders",
+          "source_document_declared": true
         },
         "source": "postman",
         "source_script_name": "Orders"

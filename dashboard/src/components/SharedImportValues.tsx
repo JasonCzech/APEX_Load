@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import type { SharedDataPool } from '../types/dataPools'
 import {
+  type ImportPreviousInput,
   type SharedValueCandidate,
   type SharedValueDiff,
   type SharedValues,
@@ -40,6 +41,11 @@ interface Props {
    * read per virtual user. Without it the alias and column are typed.
    */
   loadDataPools?: () => Promise<SharedDataPool[]>
+  /**
+   * How the scripts a re-import updates supplied each input, by input name.
+   * Each unset input starts from that choice.
+   */
+  previousInputs?: Record<string, ImportPreviousInput>
   onApplied?: (
     scripts: ScriptDefinition[],
     diffs: SharedValueDiff[],
@@ -69,6 +75,29 @@ function initialSelection(): Record<string, boolean> {
   return {}
 }
 
+// A re-import starts each unset input from how the scripts it updates supplied
+// it: the same value for every user (checked, as the operator chose it before),
+// or the same data pool column or generated value.
+function seedFromPrevious(candidates: SharedValueCandidate[], previous: Record<string, ImportPreviousInput> | undefined) {
+  const values: Record<string, string> = {}
+  const selected: Record<string, boolean> = {}
+  const bindings: Record<string, BrunoInputBinding> = {}
+  for (const candidate of candidates) {
+    const input = previous?.[candidate.name]
+    if (!input || candidate.kind !== 'source_variable' || candidate.credential_shaped) continue
+    if (input.mode === 'value' && input.value) {
+      values[candidate.id] = input.value
+      selected[candidate.id] = true
+    } else if (input.mode === 'data') {
+      bindings[candidate.id] = { mode: 'data', alias: input.alias ?? '', column: input.column ?? '' }
+    } else if (input.mode === 'generated') {
+      const generator = input.generator === 'timestamp' || input.generator === 'digits' ? input.generator : 'uuid'
+      bindings[candidate.id] = { mode: 'generated', generator, digits: input.digits }
+    }
+  }
+  return { values, selected, bindings }
+}
+
 export default function SharedImportValues({
   sharedValues,
   guided = false,
@@ -81,6 +110,7 @@ export default function SharedImportValues({
   disabled = false,
   onApplyingChange,
   loadDataPools,
+  previousInputs,
   onApplied,
 }: Props) {
   const headingId = useId()
@@ -98,6 +128,9 @@ export default function SharedImportValues({
   const [reviewing, setReviewing] = useState(false)
   const [error, setError] = useState('')
 
+  // Per-user supply is offered for unset inputs on the apply path; the pool
+  // list is read only when such an input is on screen.
+  const bindable = !guided && !collectOnly
   const onApplyingChangeRef = useRef(onApplyingChange)
   onApplyingChangeRef.current = onApplyingChange
   const onValuesChangeRef = useRef(onValuesChange)
@@ -112,7 +145,9 @@ export default function SharedImportValues({
 
   // A new import or review generation resets the panel; a stale value carried
   // across would be applied to a tree it was never derived from.
+  const touchedRef = useRef(new Set<string>())
   useEffect(() => {
+    touchedRef.current = new Set()
     setValues(initialValues(candidates))
     setSelected(initialSelection())
     setBindings({})
@@ -120,11 +155,41 @@ export default function SharedImportValues({
     onApplyingChangeRef.current?.(false)
     setAppliedCount(0); setReviewing(false)
     setError('')
-  }, [candidates, reviewGeneration])
+  }, [bindable, candidates, reviewGeneration])
 
-  // Per-user supply is offered for unset inputs on the apply path; the pool
-  // list is read only when such an input is on screen.
-  const bindable = !guided && !collectOnly
+  // Inputs start from how the scripts a re-import updates supplied them. A
+  // change in which scripts it updates re-seeds only the inputs the operator
+  // has not touched since the reset.
+  const previousInputsRef = useRef(previousInputs)
+  previousInputsRef.current = previousInputs
+  const previousKey = JSON.stringify(previousInputs ?? {})
+  useEffect(() => {
+    if (!bindable) return
+    const seeded = seedFromPrevious(candidates, previousInputsRef.current)
+    const reseed = candidates.filter(candidate =>
+      candidate.kind === 'source_variable' && !candidate.credential_shaped && !touchedRef.current.has(candidate.id))
+    if (reseed.length === 0) return
+    setValues(previous => {
+      const next = { ...previous }
+      for (const candidate of reseed) next[candidate.id] = seeded.values[candidate.id] ?? candidate.current_value ?? ''
+      return next
+    })
+    setSelected(previous => {
+      const next = { ...previous }
+      for (const candidate of reseed) next[candidate.id] = seeded.selected[candidate.id] ?? false
+      return next
+    })
+    setBindings(previous => {
+      const next = { ...previous }
+      for (const candidate of reseed) {
+        if (seeded.bindings[candidate.id]) next[candidate.id] = seeded.bindings[candidate.id]
+        else delete next[candidate.id]
+      }
+      return next
+    })
+    // What the panel shows changed, so an earlier apply no longer describes it.
+    setAppliedCount(0); setReviewing(false)
+  }, [bindable, candidates, reviewGeneration, previousKey])
   const needsInputs = bindable && candidates.some(candidate => candidate.kind === 'source_variable' && !candidate.credential_shaped)
   // Without a loader the panel reads the pools of its scripts' project.
   const projectId = scripts.find(script => script.project_id)?.project_id
@@ -175,11 +240,13 @@ export default function SharedImportValues({
 
   const toggle = (candidate: SharedValueCandidate) => {
     if (candidate.credential_shaped || applying || disabled) return
+    touchedRef.current.add(candidate.id)
     setSelected(previous => ({ ...previous, [candidate.id]: !previous[candidate.id] }))
     setAppliedCount(0); setReviewing(false)
   }
 
   const setValue = (candidate: SharedValueCandidate, value: string) => {
+    touchedRef.current.add(candidate.id)
     setValues(previous => ({ ...previous, [candidate.id]: value }))
     // Typing a value is intent to use it; requiring a separate checkbox click
     // after filling the field would be a pointless second step.
@@ -188,6 +255,7 @@ export default function SharedImportValues({
   }
 
   const setMode = (candidate: SharedValueCandidate, mode: SupplyMode) => {
+    touchedRef.current.add(candidate.id)
     setBindings(previous => {
       const next = { ...previous }
       if (mode === 'value') delete next[candidate.id]
@@ -203,6 +271,7 @@ export default function SharedImportValues({
   }
 
   const setBinding = (candidate: SharedValueCandidate, binding: BrunoInputBinding) => {
+    touchedRef.current.add(candidate.id)
     setBindings(previous => ({ ...previous, [candidate.id]: binding }))
     setAppliedCount(0); setReviewing(false)
   }
@@ -283,6 +352,7 @@ export default function SharedImportValues({
                     variable={candidate.name}
                     value={values[candidate.id] ?? ''}
                     binding={bindings[candidate.id]}
+                    previous={previousInputs?.[candidate.name]}
                     pools={pools}
                     canBind
                     disabled={applying || disabled}

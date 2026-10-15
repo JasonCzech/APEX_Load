@@ -26369,6 +26369,7 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "expected_updated_at"?: (string) | null;
           "folder_id"?: (string) | null;
           "import_session_id"?: string;
           "mode"?: string;
@@ -27184,6 +27185,11 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -27832,6 +27838,11 @@ export interface operations {
           }>;
           "source_profile": "broker_config" | "browser_recorder" | "browser_recording_har" | "cloudtest" | "curl" | "devweb" | "eventhubs_capture" | "github" | "har" | "k6" | "raml" | "raw_http" | "recorder" | "recorder-export" | "recorder_export" | "rest_json" | "salesforce" | "sample" | "sample-import" | "truclient" | "wsdl";
           "source_recording_session_ids"?: Array<string>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -27950,6 +27961,7 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "expected_updated_at"?: (string) | null;
           "folder_id"?: (string) | null;
           "import_session_id"?: string;
           "mode"?: string;
@@ -142686,6 +142698,11 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -143450,6 +143467,11 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
+          "update_targets"?: Array<({
+            "expected_content_digest"?: string;
+            "expected_updated_at"?: string;
+            "script_id"?: string;
+          }) | null>;
         };
       };
     };
@@ -143500,6 +143522,7 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "expected_updated_at"?: (string) | null;
           "folder_id"?: (string) | null;
           "import_session_id"?: string;
           "mode"?: string;

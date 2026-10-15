@@ -165,6 +165,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 	result.Script = script
+	// A re-import of the same API (by its declared title) can update this
+	// script as a new version.
+	if title := strings.TrimSpace(stringValue(doc["title"])); !dsl.GenericImportSourceName(title) {
+		dsl.SetImportSourceIdentity(script, title, true, "")
+	} else {
+		dsl.SetImportSourceIdentity(script, req.Name, false, "")
+	}
 	result.Stats.ConvertedActions = len(script.Actions)
 	result.SecretRequirements, err = ramlGeneratedCredentialRequirements(
 		script,

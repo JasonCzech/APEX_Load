@@ -2610,6 +2610,96 @@ describe('ProtocolAssetImport', () => {
     expect(document.activeElement).toBe(selectedLane)
   })
 
+  it('replaces the script an earlier import of the same specification saved, fenced on the reviewed version', async () => {
+    const base = await apiMock.importOpenAPI.getMockImplementation()!()
+    apiMock.importOpenAPI.mockResolvedValueOnce({
+      ...base,
+      existing_scripts: [{
+        script_id: 'earlier-orders',
+        name: 'Orders (team)',
+        updated_at: '2026-10-15T10:00:00Z',
+        matches: 1,
+        same_source: true,
+        edited_since_import: false,
+      }],
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" onImported={vi.fn()} />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'orders.yaml', { type: 'application/yaml' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('This source was imported before.')
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => /^Save( draft| script)?/i.test(button.textContent?.trim() ?? '') && !button.textContent?.includes('open') && !button.disabled)
+    expect(save).toBeDefined()
+    await act(async () => save?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'replace',
+      target_script_id: 'earlier-orders',
+      replace_mode: 'full',
+      expected_updated_at: '2026-10-15T10:00:00Z',
+    }))
+  })
+
+  it('updates the script an earlier import saved when one AsyncAPI lane is saved', async () => {
+    const base = await apiMock.importAsyncAPI.getMockImplementation()!()
+    apiMock.importAsyncAPI.mockResolvedValueOnce({
+      ...base,
+      existing_scripts: [{
+        script_id: 'earlier-kafka-lane',
+        name: 'Orders Kafka (team)',
+        updated_at: '2026-10-15T10:00:00.123456Z',
+        matches: 1,
+        same_source: true,
+        edited_since_import: false,
+      }, null],
+    })
+    apiMock.commitAsyncAPIImport.mockImplementation(async ({ script }: { script: { name: string; protocol: string; version: string } }) => ({
+      stored_script: {
+        id: 'earlier-kafka-lane', name: 'Orders Kafka (team)', protocol: script.protocol, version: script.version,
+        project_id: 'project-1', created_at: '2026-01-01T00:00:00Z', script,
+      },
+    }))
+
+    await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" onImported={vi.fn()} />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml')],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('1 of 2 scripts were imported before.')
+
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save Selected Script'))?.click())
+    await flushPromises()
+
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'replace',
+      target_script_id: 'earlier-kafka-lane',
+      replace_mode: 'full',
+      expected_updated_at: '2026-10-15T10:00:00.123456Z',
+    }))
+  })
+
   it('keeps individually saved AsyncAPI lanes in review and never saves them twice', async () => {
     const onImported = vi.fn()
     apiMock.commitAsyncAPIImport.mockImplementation(async ({ script }: { script: { name: string; protocol: string; version: string } }) => ({

@@ -24,6 +24,7 @@ import BrowserReplayProgress from './BrowserReplayProgress'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { type PreparedSecretBindings, type SecretBindingReviewHandle } from './SecretBindingReview'
 import ScriptImportReview from './ScriptImportReview'
+import { reimportReplaceFields, useImportSaveChoices } from './importReimport'
 import SelectorCandidatesReview, { type SelectorCandidate } from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
 import type { ImportSourceIssueFocus } from './ImportSourceIssueFocus'
@@ -795,6 +796,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     kind: ImportKind
     projectId?: string
     folderId: string | null
+    updateKey: string
     operationId: string
   } | null>(null)
   const saveScriptInFlightRef = useRef<{
@@ -1155,6 +1157,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const asyncAPIScriptPageStart = Math.floor(safeAsyncAPISelectedScriptIndex / ASYNCAPI_SCRIPT_PAGE_SIZE) * ASYNCAPI_SCRIPT_PAGE_SIZE
   const visibleAsyncAPIScripts = generatedScripts.slice(asyncAPIScriptPageStart, asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE)
   const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
+  const saveChoices = useImportSaveChoices(result?.existing_scripts)
   const actionCount = typeof stats?.converted_actions === 'number'
     ? stats.converted_actions
     : reviewedScript?.actions?.length ?? 0
@@ -1481,6 +1484,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     setPersistenceInProgress(true)
     const openAPISaveTarget = { ...openAPISaveTargetRef.current }
     const postmanSaveTarget = { ...postmanSaveTargetRef.current }
+    // A script an earlier import of this source saved is updated as a new
+    // version, unless the operator picked a script to replace by hand.
+    const reimportTarget = saveChoices.updateTargetFor(sourceScriptIndex)
     try {
       let scriptToSave = currentReviewedScript
       if (kind === 'recorder-export') {
@@ -1515,9 +1521,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             project_id: sourceProjectId,
             name: currentReviewedScript.name,
             folder_id: currentReviewedScript.folder_id ?? folderId ?? null,
-            mode: openAPISaveTarget.mode,
-            target_script_id: openAPISaveTarget.mode === 'replace' ? openAPISaveTarget.targetScriptId : undefined,
-            replace_mode: openAPISaveTarget.mode === 'replace' ? openAPISaveTarget.replaceMode : undefined,
+            ...(openAPISaveTarget.mode === 'replace'
+              ? { mode: 'replace' as const, target_script_id: openAPISaveTarget.targetScriptId, replace_mode: openAPISaveTarget.replaceMode }
+              : reimportTarget
+                ? { mode: 'replace' as const, ...reimportReplaceFields(reimportTarget) }
+                : { mode: 'create' as const }),
           }
           const response = await api.commitOpenAPIImport(payload)
           const storedScript = response.stored_script || response.scripts?.[0]
@@ -1552,8 +1560,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             project_id: sourceProjectId,
             name: currentReviewedScript.name,
             folder_id: currentReviewedScript.folder_id ?? folderId ?? null,
-            mode: postmanSaveTarget.mode,
-            target_script_id: postmanSaveTarget.mode === 'replace' ? postmanSaveTarget.targetScriptId : undefined,
+            ...(postmanSaveTarget.mode === 'replace'
+              ? { mode: 'replace' as const, target_script_id: postmanSaveTarget.targetScriptId }
+              : reimportTarget
+                ? { mode: 'replace' as const, ...reimportReplaceFields(reimportTarget) }
+                : { mode: 'create' as const }),
           }
           const response = await api.savePostmanImport(payload)
           const storedScript = response.stored_script || response.scripts?.[0]
@@ -1571,8 +1582,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (importDraftHasExpired(currentResult)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
           const response = await api.commitAsyncAPIImport({
             script: currentReviewedScript,
-            mode: 'create',
             folder_id: currentReviewedScript.folder_id ?? folderId ?? null,
+            ...(reimportTarget
+              ? { mode: 'replace' as const, ...reimportReplaceFields(reimportTarget) }
+              : { mode: 'create' as const }),
           })
           const storedScript = response.stored_script || response.scripts?.[0]
           if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
@@ -1615,6 +1628,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           ...(index === sourceScriptIndex ? scriptToSave : script),
           folder_id: script.folder_id ?? destinationFolderID,
         }))
+        const batchUpdateTargets = saveChoices.updateTargets(batchScripts.length)
+        const updateKey = JSON.stringify(batchUpdateTargets ?? null)
         const retainedOperation = genericImportBatchSaveOperationRef.current
         const operationID = retainedOperation
           && retainedOperation.result === currentResult
@@ -1622,6 +1637,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           && retainedOperation.kind === kind
           && retainedOperation.projectId === sourceProjectId
           && retainedOperation.folderId === destinationFolderID
+          && retainedOperation.updateKey === updateKey
           ? retainedOperation.operationId
           : createGenericImportBatchSaveOperationID()
         genericImportBatchSaveOperationRef.current = {
@@ -1630,6 +1646,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           kind,
           projectId: sourceProjectId,
           folderId: destinationFolderID,
+          updateKey,
           operationId: operationID,
         }
         let storedBatch: StoredScript[] = []
@@ -1640,6 +1657,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             operation_id: operationID,
             source_profile: 'cloudtest',
             import_session_ids: currentResult.import_session_ids,
+            ...(batchUpdateTargets ? { update_targets: batchUpdateTargets } : {}),
           })
           if (response.count !== batchScripts.length || response.scripts.length !== batchScripts.length) {
             throw new Error('The CloudTest batch save did not return every Clip script. Retry the same save to reconcile its result.')
@@ -1659,6 +1677,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         throw new Error(`The ${labels.title} save path is unavailable for this import type.`)
       }
       const destinationFolderID = scriptToSave.folder_id ?? folderId ?? null
+      const updateKey = JSON.stringify(reimportTarget)
       const retainedOperation = genericImportBatchSaveOperationRef.current
       const operationID = retainedOperation
         && retainedOperation.result === currentResult
@@ -1666,6 +1685,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         && retainedOperation.kind === kind
         && retainedOperation.projectId === sourceProjectId
         && retainedOperation.folderId === destinationFolderID
+        && retainedOperation.updateKey === updateKey
         ? retainedOperation.operationId
         : createGenericImportBatchSaveOperationID()
       genericImportBatchSaveOperationRef.current = {
@@ -1674,6 +1694,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         kind,
         projectId: sourceProjectId,
         folderId: destinationFolderID,
+        updateKey,
         operationId: operationID,
       }
       const savedScript = await saveTask.run(async () => {
@@ -1682,6 +1703,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           folder_id: destinationFolderID,
           operation_id: operationID,
           source_profile: sourceProfile,
+          ...(reimportTarget ? { update_targets: [reimportTarget] } : {}),
         })
         if (response.count !== 1 || response.scripts.length !== 1) {
           throw new Error('The atomic import save did not return the stored script. Retry the same save to reconcile its result.')
@@ -1829,7 +1851,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         throw new Error('Save All requires every generated script to use the same destination folder.')
       }
       const destinationFolderID = explicitFolderIDs[0] || folderId || null
-      const pendingKey = pendingScriptIndices.join(',')
+      const asyncAPIUpdateTargets = pendingScriptIndices.map(index => saveChoices.updateTargetFor(index))
+      const asyncAPIUpdates = asyncAPIUpdateTargets.some(Boolean)
+      const pendingKey = `${pendingScriptIndices.join(',')}|${JSON.stringify(asyncAPIUpdateTargets)}`
       const retainedOperation = asyncAPIBatchSaveOperationRef.current
       const operationID = retainedOperation
         && retainedOperation.result === sourceResult
@@ -1855,6 +1879,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           scripts: pendingScripts,
           folder_id: destinationFolderID,
           operation_id: operationID,
+          ...(asyncAPIUpdates ? { update_targets: asyncAPIUpdateTargets } : {}),
         })
         if (response.count !== pendingScripts.length || response.scripts.length !== pendingScripts.length) {
           throw new Error('The atomic AsyncAPI save did not return every stored script. Retry the same save to reconcile its result.')
@@ -2366,6 +2391,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         <div className="sample-import-result">
           <ScriptImportReview
             tabbed
+            existingScripts={{ choices: saveChoices, labels: generatedScripts.map(script => script.name) }}
             batchControls={<> {kind === 'asyncapi' && generatedScripts.length > 1 && (
               <div className="sample-import-review-block">
                 <h4>Generated Scripts</h4>
@@ -2581,6 +2607,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       <option value="replace">Replace existing script</option>
                     </select>
                   </label>
+                  {openAPISaveMode === 'create' && saveChoices.updateTargetFor(selectedScriptIndex) && (
+                    <p className="sample-import-save-target-note">Saving updates the script imported before as a new version (see Imported before). Choose Replace existing script to replace a different one.</p>
+                  )}
                   {openAPISaveMode === 'replace' && (
                     <>
                       <label className="sample-import-field">
@@ -2656,6 +2685,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       <option value="replace">Replace existing script</option>
                     </select>
                   </label>
+                  {postmanSaveMode === 'create' && saveChoices.updateTargetFor(selectedScriptIndex) && (
+                    <p className="sample-import-save-target-note">Saving updates the script imported before as a new version (see Imported before). Choose Replace existing script to replace a different one.</p>
+                  )}
                   {postmanSaveMode === 'replace' && (
                     <>
                       <label className="sample-import-field">

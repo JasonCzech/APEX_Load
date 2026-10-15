@@ -23,6 +23,8 @@ import { isRecordedStateHeader, isSensitiveCredentialPreviewKey, normalizeCreden
 import { importActionEntries } from './importReviewIssues'
 import ParameterizationReview from './ParameterizationReview'
 import { ImportTransportPanel } from './ImportTransportPanel'
+import ImportExistingScripts from './ImportExistingScripts'
+import type { ImportSaveChoices } from './importReimport'
 import SharedImportValues from './SharedImportValues'
 import { importDraftExpiryStatus, protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
@@ -462,6 +464,12 @@ interface Props {
   runtimeContent?: ReactNode
   dataContent?: ReactNode
   batchControls?: ReactNode
+  /**
+   * The scripts an earlier import already saved and what the save does to
+   * each (update as a new version, or copy). Its choices also start each
+   * unset input from how the updated scripts supplied it.
+   */
+  existingScripts?: { choices: ImportSaveChoices; labels: readonly string[] }
   compactReview?: boolean
   showOriginalDiagnostics?: boolean
   showCredentials?: boolean
@@ -564,6 +572,7 @@ export default function ScriptImportReview({
   onSettingsBusyChange,
   dataContent,
   batchControls,
+  existingScripts,
   credentialIntroduction,
   reviewNavigation,
   script,
@@ -1200,6 +1209,7 @@ export default function ScriptImportReview({
           reviewGeneration={reviewGeneration}
           disabled={credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleSharedValuesApplyingChange}
+          previousInputs={existingScripts?.choices.previousInputs}
           onApplied={onSharedValuesApplied}
         />
       )}
@@ -1233,6 +1243,9 @@ export default function ScriptImportReview({
       {showPreviewAside && onSettingsApplied && <ImportSourceInventory script={script} />}
     </div>
   )
-  const reviewContent = tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
+  const reimportControl = existingScripts?.choices.hasMatches
+    ? <ImportExistingScripts choices={existingScripts.choices} labels={existingScripts.labels} disabled={saving || reviewBusy || sharedValuesApplying || credentialAction !== null} />
+    : null
+  const reviewContent = tabbed ? <>{reimportControl}{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : <>{reimportControl}{content}</>
   return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
 }

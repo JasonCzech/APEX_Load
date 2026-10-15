@@ -219,6 +219,7 @@ func finalizeImportCommitScript(
 	}
 	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
 	attachImportReplayPreflight(script, sourceProfile, preflight)
+	stampImportedContentDigest(script)
 	return script, preflight, nil
 }
 
@@ -979,6 +980,14 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	// Re-imports may replace content but may never relocate a script or erase
 	// its durable identity/creation metadata.
 	preserveReplacedScriptIdentity(next, existing.Script)
+	if req.ExpectedUpdatedAt != nil {
+		// A re-import updates the script the operator named, under that name,
+		// keeping what APEX set on it that the import does not write.
+		if strings.TrimSpace(existing.Name) != "" {
+			next.Name = existing.Name
+		}
+		keepAPEXScriptSettings(next, existing.Script)
+	}
 	next, preflight, err := finalizeImportCommitScript(
 		next,
 		spec.sourceProfile,
@@ -1045,6 +1054,14 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				projectedNext,
 			)
 		}
+	}
+	if req.ExpectedUpdatedAt != nil && !replacementAlreadyApplied &&
+		!sameImportUpdateTime(existing.Script.UpdatedAt, *req.ExpectedUpdatedAt) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": staleImportUpdate("the script to update changed after review").Error(),
+			"code":  importUpdateTargetStaleCode,
+		})
+		return
 	}
 	if req.DryRun {
 		spec.writeResponse(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})

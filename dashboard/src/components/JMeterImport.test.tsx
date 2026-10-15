@@ -984,6 +984,55 @@ describe('JMeterImport', () => {
     expect(apiMock.saveJMeterImport).not.toHaveBeenCalled()
   })
 
+  it('updates the scripts a re-import matches without saving another scenario', async () => {
+    const base = await apiMock.validateJMeterImport.getMockImplementation()!()
+    apiMock.validateJMeterImport.mockResolvedValueOnce({
+      ...base,
+      scenario_draft: { name: 'Checkout plan', duration: '1m', scenario_mode: 'vuser_driven', groups: [{ name: '', script_name: base.scripts[0].name, vusers: 1 }] },
+      existing_scripts: base.scripts.map((_script: unknown, index: number) => ({
+        script_id: `earlier-${index}`,
+        name: `Earlier ${index}`,
+        updated_at: '2026-10-15T10:00:00Z',
+        content_digest: `digest-${index}`,
+        matches: 1,
+        same_source: true,
+        edited_since_import: false,
+      })),
+    })
+    apiMock.saveJMeterImport.mockResolvedValueOnce({ count: base.scripts.length, scripts: [] })
+
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan />'], 'extractors.jmx', { type: 'application/xml' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Not saved: every script updates one imported before')
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const request = apiMock.saveJMeterImport.mock.calls[0][0]
+    expect(request.update_targets).toEqual(base.scripts.map((_script: unknown, index: number) => ({
+      script_id: `earlier-${index}`,
+      expected_updated_at: '2026-10-15T10:00:00Z',
+      expected_content_digest: `digest-${index}`,
+    })))
+    expect(request).not.toHaveProperty('scenario_draft')
+    expect(container.textContent).toContain('No new scenario was created: every script updated one imported before.')
+  })
+
   it('adds the active project and selected destination folder when saving reviewed scripts', async () => {
     apiMock.saveJMeterImport.mockResolvedValueOnce({
       count: 1,

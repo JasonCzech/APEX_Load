@@ -1164,6 +1164,10 @@ func equivalentCreateOnlyScript(existing, candidate *dsl.Script) bool {
 	left.RefKey, right.RefKey = "", ""
 	left.CreatedAt, right.CreatedAt = time.Time{}, time.Time{}
 	left.UpdatedAt, right.UpdatedAt = time.Time{}, time.Time{}
+	// An import save stamps the digest of what it writes; a draft never
+	// carries it, so it is not part of what makes two scripts the same.
+	left.Metadata = withoutImportedContentDigest(left.Metadata)
+	right.Metadata = withoutImportedContentDigest(right.Metadata)
 	leftJSON, leftErr := json.Marshal(left)
 	rightJSON, rightErr := json.Marshal(right)
 	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)

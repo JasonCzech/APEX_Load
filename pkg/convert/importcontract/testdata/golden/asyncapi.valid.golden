@@ -81,6 +81,15 @@
     "generated_by": "apexload-asyncapi-converter",
     "generated_from": "asyncapi",
     "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "source_document": "Orders",
+          "source_document_declared": true,
+          "source_item": "kafka"
+        }
+      }
+    },
     "name": "asyncapi_golden",
     "protocol": "kafka",
     "updated_at": "<TIMESTAMP>",
@@ -169,6 +178,15 @@
       "generated_by": "apexload-asyncapi-converter",
       "generated_from": "asyncapi",
       "id": "",
+      "metadata": {
+        "import": {
+          "preserved": {
+            "source_document": "Orders",
+            "source_document_declared": true,
+            "source_item": "kafka"
+          }
+        }
+      },
       "name": "asyncapi_golden",
       "protocol": "kafka",
       "updated_at": "<TIMESTAMP>",

@@ -901,6 +901,21 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	if s != nil {
 		response["secret_store"] = s.projectSecretCapabilities(projectID)
 	}
+	if projectMatches {
+		// Positional with scripts: the earlier imported script each one would
+		// update as a new version, or null.
+		reviewed := importDraftScriptPointers(opts.Scripts)
+		if len(reviewed) == 0 {
+			reviewed = importDraftScriptPointers(opts.Script)
+		}
+		existing := s.importExistingScripts(projectID, reviewed)
+		for _, match := range existing {
+			if match != nil {
+				response["existing_scripts"] = existing
+				break
+			}
+		}
+	}
 
 	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
 	mergeProtectedImportCredentialReview(response, protectedCredentialReview)

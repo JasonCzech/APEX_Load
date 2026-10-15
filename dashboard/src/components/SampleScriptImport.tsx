@@ -30,6 +30,7 @@ import { describeAccepted, describeReading, useDropIngestFeedback } from './drop
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions, createReplaySessionId } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { useImportSaveChoices } from './importReimport'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import ReplayPreflightCard from './ReplayPreflightCard'
@@ -487,6 +488,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     result: SampleImportResult
     projectId?: string
     folderId: string | null
+    updateKey: string
     operationId: string
   } | null>(null)
   const {
@@ -536,6 +538,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const availableFormats = availableFormatsByPreset[preset]
   const isJavaHttpPreset = preset === 'java-http'
   const reviewedScript = result?.script || result?.scripts?.[0] || null
+  const saveChoices = useImportSaveChoices(result?.existing_scripts)
   const sourceReview = sourceReviewForSample(result, reviewedScript)
   const importFileAssets = fileAssetSources(reviewedScript)
   const hasMissingFileAssets = importFileAssets.some(source => !isFileAssetReady(source))
@@ -884,17 +887,23 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     try {
       const savedScript = await saveTask.run(async () => {
         const destinationFolderId = scriptToSave.folder_id ?? folderId ?? null
+        // An update keeps the earlier script; a choice changed since the last
+        // attempt is a different save, so it takes a new operation.
+        const updateTargets = saveChoices.updateTargets(1)
+        const updateKey = JSON.stringify(updateTargets ?? null)
         const retained = genericBatchSaveOperationRef.current
         const operationId = retained
           && retained.result === sourceResult
           && retained.projectId === sourceProjectId
           && retained.folderId === destinationFolderId
+          && retained.updateKey === updateKey
           ? retained.operationId
           : `sample-import-${createReplaySessionId()}`
         genericBatchSaveOperationRef.current = {
           result: sourceResult!,
           projectId: sourceProjectId,
           folderId: destinationFolderId,
+          updateKey,
           operationId,
         }
         const response = await api.commitGenericImportBatch({
@@ -902,6 +911,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
           folder_id: destinationFolderId,
           operation_id: operationId,
           source_profile: 'sample',
+          ...(updateTargets ? { update_targets: updateTargets } : {}),
         })
         if (response.count !== 1 || response.scripts.length !== 1) {
           throw new Error('The atomic sample import save did not return the stored script. Retry the same save to reconcile its result.')
@@ -1385,6 +1395,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             secretBindingRequirements={result.secret_binding_requirements}
             onSecretBindingsApply={handleSecretBindingsApply}
             sharedValues={result.shared_values}
+            existingScripts={{ choices: saveChoices, labels: [reviewedScript.name] }}
             sharedValueScripts={result.scripts}
             onSharedValuesApplied={handleSharedValuesApplied}
             projectId={projectId}

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -83,6 +84,51 @@ func readEnterpriseArchive(zipData []byte) (map[string]string, error) {
 // ConvertZip processes a ZIP archive containing enterprise C/VUser source files
 // and returns either converted APEX Load DSL or a review artifact.
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
+	var projectFileName string
+	result, err := convertZip(zipData, opts, &projectFileName)
+	if err == nil {
+		stampEnterpriseSourceIdentity(result, projectFileName, opts.ScriptName)
+	}
+	return result, err
+}
+
+// vugenDefaultScriptName matches the names VuGen gives a new script (its
+// protocol and a number, such as WebHttpHtml1), which unrelated projects
+// share.
+var vugenDefaultScriptName = regexp.MustCompile(`(?i)^(?:webhttphtml|webservices|websocket|truclient(?:web|mobile|native|ie|firefox|chromium)?|javavuser|java|sapgui|sapweb|citrix(?:ica)?|flex|rdp|odbc|oracle2tier|oraclenca|devweb|mqtt|winsock|ldap|ftp|smtp|imap|pop3|dns|siebel(?:web)?|peoplesoft|rte|ajax|silverlight|multiprotocol|multi|mobileapp|mobile|kafka|grpc|vuser|script)\d+$`)
+
+// stampEnterpriseSourceIdentity records the LoadRunner project a script came
+// from (its .usr name, else the name the import was given), so a re-import of
+// the same project can update it as a new version. A name VuGen generated is
+// not a declared identity, so the import's own name stands in for it. An
+// archive that converts to several scripts tells them apart by name.
+func stampEnterpriseSourceIdentity(result *ConvertResult, projectFileName, fallbackName string) {
+	if result == nil {
+		return
+	}
+	document := strings.TrimSpace(strings.TrimSuffix(path.Base(projectFileName), path.Ext(projectFileName)))
+	declared := strings.TrimSpace(projectFileName) != "" && !dsl.GenericImportSourceName(document) &&
+		!vugenDefaultScriptName.MatchString(document)
+	if !declared && strings.TrimSpace(fallbackName) != "" {
+		document = fallbackName
+	}
+	scripts := result.Scripts
+	if len(scripts) == 0 && result.Script != nil {
+		scripts = []*dsl.Script{result.Script}
+	}
+	for _, script := range scripts {
+		item := ""
+		if len(scripts) > 1 && script != nil {
+			item = script.Name
+		}
+		dsl.SetImportSourceIdentity(script, document, declared, item)
+	}
+	if result.Script != nil && len(result.Scripts) > 0 && result.Script != result.Scripts[0] {
+		dsl.SetImportSourceIdentity(result.Script, document, declared, "")
+	}
+}
+
+func convertZip(zipData []byte, opts ConvertOptions, projectFile *string) (*ConvertResult, error) {
 	files, err := readEnterpriseArchive(zipData)
 	if err != nil {
 		return nil, err
@@ -109,6 +155,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	if len(projectFileNames) == 1 {
 		projectFileName = projectFileNames[0]
+		*projectFile = projectFileName
 		content := files[projectFileName]
 		projectSections = ParseConfigSections(content)
 		cfg, err := ParseUSRFile(content)

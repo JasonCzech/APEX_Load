@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,10 @@ type saveEnterpriseArchiveImportRequest struct {
 	Scripts     []dsl.Script `json:"scripts"`
 	FolderID    *string      `json:"folder_id,omitempty"`
 	OperationID string       `json:"operation_id"`
+	// UpdateTargets is positional with Scripts: an entry names the earlier
+	// imported script that script updates as a new version (it keeps its
+	// folder); null, or no list, creates.
+	UpdateTargets []*importUpdateTarget `json:"update_targets,omitempty"`
 }
 
 // OpenAPI-Responses: 201
@@ -50,6 +55,12 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "operation_id is required")
 		return
 	}
+	updateTargets, err := normalizeImportUpdateTargets(req.UpdateTargets, len(req.Scripts))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updatesExisting := hasImportUpdateTargets(updateTargets)
 
 	projectID := normalizeProjectID(req.Scripts[0].ProjectID)
 	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
@@ -70,10 +81,14 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		requestedFolderIDs[index] = requestedImportFolderOverride(draft.FolderID, req.FolderID)
 		requestScripts = append(requestScripts, &draft)
 	}
-	requestDigest, err := s.directImportScriptsRequestDigest(requestScripts, map[string]any{
+	digestFields := map[string]any{
 		"profile": enterpriseArchiveSaveProfile,
 		"folder":  req.FolderID,
-	})
+	}
+	if updatesExisting {
+		digestFields["update_targets"] = importUpdateTargetsDigestValue(updateTargets)
+	}
+	requestDigest, err := s.directImportScriptsRequestDigest(requestScripts, digestFields)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint enterprise archive batch: "+err.Error())
 		return
@@ -108,10 +123,17 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	plannedIDs := importBatchPlannedAssetIDs(
 		attempt, enterpriseArchiveSaveWorkflow, projectID, operationID, len(requestScripts),
 	)
+	for index, target := range updateTargets {
+		if target != nil {
+			plannedIDs[index] = target.ScriptID
+		}
+	}
 	// Adopt only receipt-bound deterministic assets before attempting to claim
 	// browser draft capabilities. Local attestations do not survive a controller
-	// restart, while a committed batch and its request digest do.
-	if attempt != nil && !attempt.created {
+	// restart, while a committed batch and its request digest do. A script to
+	// update exists before the save, so its presence proves nothing; recovery
+	// compares exact content after preparation instead.
+	if attempt != nil && !attempt.created && !updatesExisting {
 		if !s.fenceImportBatchAdoption(w, enterpriseArchiveSaveWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
@@ -136,6 +158,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	}
 	prepared := make([]*dsl.Script, 0, len(requestScripts))
 	profiles := make([]string, 0, len(requestScripts))
+	updates := make(map[string]*StoredScript)
 	claims := make([]*importDraftAttestationClaim, len(requestScripts))
 	defer func() {
 		for _, claim := range claims {
@@ -227,15 +250,25 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		}
 		persistent.RefKey = ""
 		persistent.ID = plannedIDs[index]
+		if !s.reserveImportUpdate(w, projectID, index, persistent, updateTargets[index], updates) {
+			return
+		}
+		stampImportedContentDigest(persistent)
 		prepared = append(prepared, persistent)
 		profiles = append(profiles, profile)
 	}
 	allocateAtomicImportBatchScriptNames(prepared)
+	keepUpdatedScriptNames(prepared, updates)
 	if attempt != nil && !attempt.created {
 		if !s.fenceImportBatchAdoption(w, enterpriseArchiveSaveWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		if loadErr == nil && importUpdatesPending(stored, prepared, updateTargets) {
+			// The earlier attempt did not update a script it was to update, so
+			// it did not finish: save normally (its creates, if any, replay).
+			loadErr = errImportUpdateTargetStale
+		}
 		if loadErr == nil {
 			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
@@ -253,7 +286,12 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		}
 	}
 
-	transaction, err = newCreateImportTransaction(s, enterpriseArchiveSaveProfile, prepared, "", nil)
+	// Recovery above adopted an update an earlier attempt applied; anything
+	// else must still be the version the operator reviewed.
+	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+		return
+	}
+	transaction, err = newImportTransaction(s, enterpriseArchiveSaveProfile, prepared, updates, "", nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare enterprise archive batch: "+err.Error())
 		return
@@ -270,7 +308,11 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 				return
 			}
 		}
-		created, err := transaction.createImportedScript(script, profiles[index])
+		created, err := transaction.saveImportedScript(script, profiles[index])
+		if errors.Is(err, errImportUpdateTargetStale) {
+			writeImportUpdateTargetStale(w, index, err)
+			return
+		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save enterprise archive script %d: %v", index+1, err))
 			return
