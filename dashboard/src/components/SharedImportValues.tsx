@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
+import type { SharedDataPool } from '../types/dataPools'
 import {
   type SharedValueCandidate,
   type SharedValueDiff,
@@ -8,6 +9,8 @@ import {
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { brunoInputBindingComplete, type BrunoInputBinding } from './brunoReviewState'
+import ImportInputSupply, { type SupplyMode } from './ImportInputSupply'
 import { reachLabel, sharedValueNameError } from './sharedImportValueUtils'
 import './SharedImportValues.css'
 
@@ -32,6 +35,11 @@ interface Props {
   reviewGeneration?: string | number
   disabled?: boolean
   onApplyingChange?: (applying: boolean) => void
+  /**
+   * The project's data pools, offered when an input the source left unset is
+   * read per virtual user. Without it the alias and column are typed.
+   */
+  loadDataPools?: () => Promise<SharedDataPool[]>
   onApplied?: (
     scripts: ScriptDefinition[],
     diffs: SharedValueDiff[],
@@ -72,6 +80,7 @@ export default function SharedImportValues({
   reviewGeneration = 0,
   disabled = false,
   onApplyingChange,
+  loadDataPools,
   onApplied,
 }: Props) {
   const headingId = useId()
@@ -79,6 +88,10 @@ export default function SharedImportValues({
   const candidates = useMemo(() => (sharedValues.candidates ?? []).filter(candidate => !guided || candidate.kind !== 'source_variable'), [sharedValues.candidates, guided])
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(candidates))
   const [selected, setSelected] = useState<Record<string, boolean>>(initialSelection)
+  // Inputs the source left unset that each virtual user reads from a data pool
+  // or generates, by candidate ID. Applied with the values, server-side.
+  const [bindings, setBindings] = useState<Record<string, BrunoInputBinding>>({})
+  const [pools, setPools] = useState<SharedDataPool[]>([])
   const [applying, setApplying] = useState(false)
   const [appliedCount, setAppliedCount] = useState(0)
   const [search, setSearch] = useState('')
@@ -102,11 +115,33 @@ export default function SharedImportValues({
   useEffect(() => {
     setValues(initialValues(candidates))
     setSelected(initialSelection())
+    setBindings({})
     setApplying(false)
     onApplyingChangeRef.current?.(false)
     setAppliedCount(0); setReviewing(false)
     setError('')
   }, [candidates, reviewGeneration])
+
+  // Per-user supply is offered for unset inputs on the apply path; the pool
+  // list is read only when such an input is on screen.
+  const bindable = !guided && !collectOnly
+  const needsInputs = bindable && candidates.some(candidate => candidate.kind === 'source_variable' && !candidate.credential_shaped)
+  // Without a loader the panel reads the pools of its scripts' project.
+  const projectId = scripts.find(script => script.project_id)?.project_id
+  const listDataPools = typeof api.listDataPools === 'function' ? api.listDataPools : undefined
+  const loadPools = useCallback(async () => {
+    if (loadDataPools) return loadDataPools()
+    if (!projectId || !listDataPools) return []
+    return (await listDataPools(projectId)).data_pools || []
+  }, [loadDataPools, listDataPools, projectId])
+  useEffect(() => {
+    if (!needsInputs) return
+    let current = true
+    loadPools().then(loaded => {
+      if (current) setPools(loaded.filter(pool => !pool.archived_at))
+    }).catch(() => undefined)
+    return () => { current = false }
+  }, [loadPools, needsInputs])
 
   // Collect mode has no apply step, so the caller needs the current selection
   // continuously — it is carried on that importer's own commit request.
@@ -126,15 +161,16 @@ export default function SharedImportValues({
   const editable = candidates.filter(candidate => !candidate.credential_shaped)
   const hasRequiredInputs = candidates.some(candidate => candidate.kind === 'source_variable')
   const selectedIds = editable
-    .filter(candidate => selected[candidate.id] && (values[candidate.id] ?? '').trim() !== '')
+    .filter(candidate => !bindings[candidate.id] && selected[candidate.id] && (values[candidate.id] ?? '').trim() !== '')
     .map(candidate => candidate.id)
+  const boundIds = editable.filter(candidate => brunoInputBindingComplete(bindings[candidate.id])).map(candidate => candidate.id)
   const nameErrors = new Map(
     editable
       .filter(candidate => selected[candidate.id])
       .map(candidate => [candidate.id, sharedValueNameError(candidate.name)] as const)
       .filter(([, message]) => message !== ''),
   )
-  const canApply = selectedIds.length > 0 && nameErrors.size === 0 && !applying && !disabled
+  const canApply = selectedIds.length + boundIds.length > 0 && nameErrors.size === 0 && !applying && !disabled
   const affectedScriptCount = scriptCount ?? scripts.length
 
   const toggle = (candidate: SharedValueCandidate) => {
@@ -151,6 +187,26 @@ export default function SharedImportValues({
     setAppliedCount(0); setReviewing(false)
   }
 
+  const setMode = (candidate: SharedValueCandidate, mode: SupplyMode) => {
+    setBindings(previous => {
+      const next = { ...previous }
+      if (mode === 'value') delete next[candidate.id]
+      else next[candidate.id] = mode === 'data' ? { mode: 'data', alias: '', column: '' } : { mode: 'generated', generator: 'uuid' }
+      return next
+    })
+    // A binding replaces the value for every user.
+    if (mode !== 'value') {
+      setValues(previous => ({ ...previous, [candidate.id]: '' }))
+      setSelected(previous => ({ ...previous, [candidate.id]: false }))
+    }
+    setAppliedCount(0); setReviewing(false)
+  }
+
+  const setBinding = (candidate: SharedValueCandidate, binding: BrunoInputBinding) => {
+    setBindings(previous => ({ ...previous, [candidate.id]: binding }))
+    setAppliedCount(0); setReviewing(false)
+  }
+
   const handleApply = async () => {
     if (!canApply) return
     setApplying(true)
@@ -159,9 +215,14 @@ export default function SharedImportValues({
     try {
       const payload: Record<string, string> = {}
       for (const id of selectedIds) payload[id] = values[id]
-      const response = await api.applyImportSharedValues({ scripts, values: payload })
+      const boundPayload = Object.fromEntries(boundIds.map(id => [id, bindings[id]]))
+      const response = await api.applyImportSharedValues({
+        scripts,
+        values: payload,
+        ...(boundIds.length > 0 ? { bindings: boundPayload } : {}),
+      })
       if (!mountedRef.current) return
-      setAppliedCount(response.applied_count ?? selectedIds.length)
+      setAppliedCount(response.applied_count ?? selectedIds.length + boundIds.length)
       onApplied?.(
         response.scripts ?? [],
         response.diffs ?? [],
@@ -215,7 +276,23 @@ export default function SharedImportValues({
                 <span className="shared-values-reach">{reachLabel(candidate)}</span>
               </div>
               {candidate.rationale && <p className="shared-values-rationale">{guided ? 'Only detected occurrences are eligible for this substitution.' : candidate.rationale}</p>}{guided && <details><summary>Affected scripts</summary><ul>{(candidate.script_names || []).map(name => <li key={name}>{name}</li>)}</ul><p>Exact request changes are returned after applying. The import does not expose individual request paths for these suggestions.</p></details>}
-              {candidate.credential_shaped ? (
+              {bindable && candidate.kind === 'source_variable' && !candidate.credential_shaped ? (
+                <>
+                  <ImportInputSupply
+                    valueInputId={inputId}
+                    variable={candidate.name}
+                    value={values[candidate.id] ?? ''}
+                    binding={bindings[candidate.id]}
+                    pools={pools}
+                    canBind
+                    disabled={applying || disabled}
+                    onValue={value => setValue(candidate, value)}
+                    onMode={mode => setMode(candidate, mode)}
+                    onBinding={binding => setBinding(candidate, binding)}
+                  />
+                  {nameError && <p className="shared-values-name-error">{nameError}</p>}
+                </>
+              ) : candidate.credential_shaped ? (
                 <p className="shared-values-credential">
                   This looks like a credential. Set it in the Credentials tab — a script
                   parameter of this name is hidden from every later read, so the value would be
@@ -267,7 +344,7 @@ export default function SharedImportValues({
               disabled={!canApply}
               onClick={() => { if (guided && !reviewing) setReviewing(true); else void handleApply() }}
             >
-              {applying ? 'Applying…' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}
+              {applying ? 'Applying…' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length + boundIds.length > 0 ? ` (${selectedIds.length + boundIds.length})` : ''}`}
             </button>
             <small>Nothing changes until you apply.</small>
           </>

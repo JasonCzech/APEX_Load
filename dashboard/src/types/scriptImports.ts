@@ -235,6 +235,8 @@ export interface SharedValueDiff {
 export interface ApplySharedValuesRequest {
   scripts: ScriptDefinition[]
   values: Record<string, string>
+  /** Inputs the source left unset, read per virtual user instead: a data pool column or a generated value. */
+  bindings?: Record<string, { mode: 'data' | 'generated'; alias?: string; column?: string; generator?: 'uuid' | 'timestamp' | 'digits'; digits?: number }>
 }
 
 export interface ApplySharedValuesResponse {

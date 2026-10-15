@@ -315,3 +315,87 @@ func TestHandleApplySharedValuesReturnsRefreshedCandidates(t *testing.T) {
 	}
 	t.Fatalf("refreshed candidates lost tenant: %+v", decoded.SharedValues.Candidates)
 }
+
+func sharedValuesInputScripts() []*dsl.Script {
+	return []*dsl.Script{{
+		Name:      "get-users",
+		Version:   "1.0",
+		Protocol:  "http",
+		ProjectID: "proj-1",
+		Config:    dsl.ScriptConfig{BaseURL: "https://stage.example.com"},
+		Actions: []dsl.Action{{
+			Name:   "get-users",
+			Type:   "http_request",
+			Method: "GET",
+			Target: "/{{var.tenant}}/users?trace={{var.request_id}}",
+			Metadata: map[string]any{
+				"execution_blocker": "import_missing_variables",
+				"missing_variables": []string{"tenant", "request_id"},
+			},
+		}},
+	}}
+}
+
+// Every importer can supply an input the source left unset per virtual user:
+// a data pool column each user reads its own row of, or a value generated
+// each iteration. The script records how each input is supplied, and the gate
+// that waited on them clears.
+func TestHandleApplySharedValuesBindsInputsPerVirtualUser(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	scripts := sharedValuesInputScripts()
+	tenant := sharedValueCandidateID(t, scripts, "tenant")
+	requestID := sharedValueCandidateID(t, scripts, "request_id")
+
+	resp, decoded := postSharedValuesApply(t, server, importSharedValuesApplyRequest{
+		Scripts: scripts,
+		Bindings: map[string]sharedvalue.Binding{
+			tenant:    {Mode: sharedvalue.BindingData, Alias: "tenants", Column: "id"},
+			requestID: {Mode: sharedvalue.BindingGenerated, Generator: "uuid"},
+		},
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	script := decoded.Scripts[0]
+	if got := script.Actions[0].Target; got != "/{{data.tenants.id}}/users?trace={{var.request_id}}" {
+		t.Fatalf("target = %q", got)
+	}
+	found := false
+	for _, param := range script.Parameters {
+		found = found || param.Name == "request_id" && param.Type == "uuid"
+	}
+	if !found {
+		t.Fatalf("parameters = %+v, want a generated request_id", script.Parameters)
+	}
+	inputs := script.Metadata.Import.Inputs
+	if inputs["tenant"].Mode != "data" || inputs["tenant"].Alias != "tenants" || inputs["request_id"].Mode != "generated" {
+		t.Fatalf("inputs = %+v", inputs)
+	}
+	if _, blocked := script.Actions[0].Metadata["execution_blocker"]; blocked {
+		t.Fatalf("the missing-variable gate survived: %+v", script.Actions[0].Metadata)
+	}
+}
+
+func TestHandleApplySharedValuesRefusesUnusableBindings(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	scripts := sharedValuesInputScripts()
+	tenant := sharedValueCandidateID(t, scripts, "tenant")
+	for name, request := range map[string]importSharedValuesApplyRequest{
+		"value and binding":  {Scripts: scripts, Values: map[string]string{tenant: "acme"}, Bindings: map[string]sharedvalue.Binding{tenant: {Mode: sharedvalue.BindingGenerated, Generator: "uuid"}}},
+		"incomplete binding": {Scripts: scripts, Bindings: map[string]sharedvalue.Binding{tenant: {Mode: sharedvalue.BindingData, Alias: "tenants"}}},
+	} {
+		if resp, _ := postSharedValuesApply(t, server, request); resp.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d body=%s, want 400", name, resp.Code, resp.Body.String())
+		}
+	}
+	stale := importSharedValuesApplyRequest{Scripts: scripts, Bindings: map[string]sharedvalue.Binding{"sv_missing": {Mode: sharedvalue.BindingGenerated, Generator: "uuid"}}}
+	if resp, _ := postSharedValuesApply(t, server, stale); resp.Code != http.StatusConflict {
+		t.Errorf("stale binding: status = %d, want 409", resp.Code)
+	}
+	// A repeated literal (the base URL) is not an unset input.
+	baseURL := sharedValueCandidateID(t, sharedValuesTestScripts(), "base_url")
+	literal := importSharedValuesApplyRequest{Scripts: sharedValuesTestScripts(), Bindings: map[string]sharedvalue.Binding{baseURL: {Mode: sharedvalue.BindingGenerated, Generator: "uuid"}}}
+	if resp, _ := postSharedValuesApply(t, server, literal); resp.Code != http.StatusBadRequest {
+		t.Errorf("literal binding: status = %d body=%s, want 400", resp.Code, resp.Body.String())
+	}
+}

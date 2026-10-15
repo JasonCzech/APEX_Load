@@ -61,7 +61,7 @@ it('reads an input from a data pool column or generates it, and says when a re-i
   }
   await act(async () => { root.render(<Harness />); await Promise.resolve() })
   expect(loadDataPools).toHaveBeenCalled()
-  expect(container.querySelector('.bruno-input-previous')?.textContent).toBe('As the last import of these requests supplied it.')
+  expect(container.querySelector('.import-input-previous')?.textContent).toBe('As the last import of these scripts supplied it.')
 
   const select = (label: string) => Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith(label))!.querySelector('select')!
   const choose = (element: HTMLSelectElement, value: string) => act(() => {
@@ -75,7 +75,7 @@ it('reads an input from a data pool column or generates it, and says when a re-i
   expect(bindingsChanged).toHaveBeenLastCalledWith({ 'env-id': { mode: 'data', alias: 'subscribers', column: 'ban' } })
   expect(container.textContent).toContain('{{data.subscribers.ban}}')
   // The value for every user gives way to the binding.
-  expect(container.querySelector('.bruno-input-previous')).toBeNull()
+  expect(container.querySelector('.import-input-previous')).toBeNull()
 
   choose(select('Supply env'), 'generated')
   choose(select('Generate for env'), 'digits')

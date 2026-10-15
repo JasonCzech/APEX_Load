@@ -665,7 +665,12 @@ script content. A header HTTP cannot send as recorded (a quote, a line break or 
 curl fragment in its name or value) is left out of the request, which is held for
 review; the import review and the editor's Author Problems name the header and what is
 wrong with it, so you can correct it in the source and import again (a Bruno collection
-instead offers to trim or remove it at review). After a save, every importer offers **Debug** on the first saved script
+instead offers to trim or remove it at review). An input the source references but never
+supplies (**Required runtime inputs** under the review's data substitutions) takes one value
+for every user, a column of a data pool each virtual user reads its own row of
+(`{{data.alias.column}}`; bind the alias in the scenario's Data step), or a value generated
+each iteration (a UUID, the current time or random digits); the script records the choice.
+After a save, every importer offers **Debug** on the first saved script
 and **Create a scenario** from the saved scripts (a project scenario draft with a group
 per script, named after the source), or **Open scenario** when the import already made
 one, as JMeter does from its thread groups.

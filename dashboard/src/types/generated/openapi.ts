@@ -15888,6 +15888,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "bindings"?: Record<string, Record<string, unknown>>;
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;

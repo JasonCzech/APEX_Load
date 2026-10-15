@@ -2346,7 +2346,7 @@ describe('BrunoImport', () => {
 
     const review = container.querySelector('.bruno-data-review')!
     expect(review.textContent).toContain('{{data.environments.host}}')
-    expect(review.querySelectorAll('.bruno-input-previous')).toHaveLength(2)
+    expect(review.querySelectorAll('.import-input-previous')).toHaveLength(2)
     await act(async () => {
       saveDraftButton()?.click()
       await Promise.resolve()

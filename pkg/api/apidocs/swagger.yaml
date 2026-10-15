@@ -310359,6 +310359,12 @@ paths:
             schema:
               type: object
               properties:
+                bindings:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    description: 'Go type: sharedvalue.Binding'
+                    additionalProperties: true
                 script:
                   type: object
                   properties:

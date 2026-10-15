@@ -10,10 +10,12 @@ import { type SharedValueCandidate, type SharedValues } from '../types/scriptImp
 import { type ScriptDefinition } from '../types/scripts'
 
 const applyMock = vi.fn()
+const listDataPoolsMock = vi.fn()
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => ({
     applyImportSharedValues: applyMock,
+    listDataPools: listDataPoolsMock,
   }),
 }))
 
@@ -56,6 +58,8 @@ describe('SharedImportValues', () => {
 
   beforeEach(() => {
     applyMock.mockReset()
+    listDataPoolsMock.mockReset()
+    listDataPoolsMock.mockResolvedValue({ data_pools: [] })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -112,6 +116,67 @@ describe('SharedImportValues', () => {
     expect(container.querySelector('#shared-value-required')).toBeNull()
     type(search, '')
     expect(inputFor('required').value).toBe('customer-42')
+  })
+
+  function select(label: string, value: string) {
+    const element = Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith(label))?.querySelector('select')
+    if (!element) throw new Error(`no select labelled ${label}`)
+    act(() => {
+      element.value = value
+      element.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+
+  function fieldIn(label: string): HTMLInputElement {
+    const element = Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith(label))?.querySelector('input')
+    if (!element) throw new Error(`no input labelled ${label}`)
+    return element
+  }
+
+  // Any importer's unset input can be read per virtual user, as Bruno's can:
+  // a data pool column, or a value generated each iteration. Only complete
+  // bindings are sent, instead of a value for every user.
+  it('supplies an unset input per virtual user from a data pool or a generator', async () => {
+    applyMock.mockResolvedValue({ scripts, diffs: [], applied_count: 2 })
+    render(buildSharedValues([
+      candidate({ id: 'tenant', kind: 'source_variable', name: 'tenant', current_value: '' }),
+      candidate({ id: 'request_id', kind: 'source_variable', name: 'request_id', current_value: '' }),
+    ]))
+    select('Supply tenant', 'data')
+    type(fieldIn('Alias for tenant'), 'tenants')
+    const button = container.querySelector<HTMLButtonElement>('.shared-values-actions button')!
+    expect(button.disabled).toBe(true)
+    type(fieldIn('Column for tenant'), 'id')
+    select('Supply request_id', 'generated')
+    expect(button.textContent).toBe('Apply to all scripts (2)')
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applyMock).toHaveBeenCalledWith({
+      scripts,
+      values: {},
+      bindings: {
+        tenant: { mode: 'data', alias: 'tenants', column: 'id' },
+        request_id: { mode: 'generated', generator: 'uuid' },
+      },
+    })
+  })
+
+  it('reads the data pools of its scripts\' project to offer them', async () => {
+    listDataPoolsMock.mockResolvedValue({ data_pools: [{ id: 'pool-1', name: 'Tenants', columns: ['tenant_id'] }] })
+    act(() => {
+      root.render(
+        <SharedImportValues
+          sharedValues={buildSharedValues([candidate({ id: 'tenant', kind: 'source_variable', name: 'tenant', current_value: '' })])}
+          scripts={[{ ...script('get-users'), project_id: 'project-1' }]}
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(listDataPoolsMock).toHaveBeenCalledWith('project-1')
+    select('Supply tenant', 'data')
+    expect(container.textContent).toContain('Tenants')
   })
 
   it('pre-fills the value the importer already produced', () => {
